@@ -64,17 +64,6 @@ Returns `1b` if the path is a symbolic link, else returns `0b`
 
 ---
 
-## :package: File Metadata
-
-### `.os.getExtension[path]`
-Returns the file extension as a symbol (e.g., `` `.csv ``).
-
-```q
-.os.getExtension["report.csv"]
-```
-
----
-
 ## :file_folder: File & Directory Operations
 
 ### `.os.del[path]`

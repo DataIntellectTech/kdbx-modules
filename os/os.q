@@ -31,10 +31,7 @@
 .os.isDir:{[path] :.os.exists[path] & not {x~key x} hsym$[10h=type path; `$; ] path;};
 
 // Check if a path exists and is a symbolic link
-.os.isSymlink:{[path] :@[{system x; 1b}; ("readlink "; "dir /al ")[.os.isWindows], .os.toPath path; 0b];};
-
-// Get the file extension of a file
-.os.getExtension:{[path] :`$".", last "." vs (string; ::)[10h=type path] path;};
+.os.isSymlink:{[path] :@[{system x; 1b}; ("readlink "; "dir /al /b 2>nul ")[.os.isWindows], .os.toPath path; 0b];};
 
 // Delete a file
 .os.del:{[path] system ("rm ";"del ")[.os.isWindows], .os.toPath path;};
@@ -55,7 +52,7 @@
 .os.cpDir:{[src; dest] system ("cp -r "; "xcopy /e /h /i /y ")[.os.isWindows], " " sv .os.toPath each (src; dest);};
 
 // Kill a process given a PID and signal
-.os.kill:{[pid; sig] system ("kill -", string[sig], " "; "taskkill ", ("/f "; "")[sig=9], "/PID ")[.os.isWindows], string[pid];};
+.os.kill:{[pid; sig] system ("kill -", string[sig], " "; "taskkill ", (""; "/f ")[sig=9], "/PID ")[.os.isWindows], string[pid];};
 
 // Interupt a process given a PID. Simply kills when ran on Windows
 .os.kill2:.os.kill[; 2];

@@ -155,13 +155,13 @@ Returns the current working directory as a string.
 
 ---
 
-## 🧪 Error Handling
+## :test_tube: Error Handling
 
 For unimplemented operations (e.g., `.os.realpath` on Windows), the function will raise `'nyi` (`not yet implemented`).
 
 ---
 
-## ✅ Compatibility Notes
+## :white_check_mark: Compatibility Notes
 
 - Windows commands use native tools (`cmd.exe`), with fallback redirections as needed (`2>nul`, `>nul`).
 - Symlink creation on Windows may require **admin privileges** or **Developer Mode**.

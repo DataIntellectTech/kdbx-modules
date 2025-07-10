@@ -172,7 +172,7 @@ helloFunc:{show "Hello from job 1"};
 .timer.addjob.simple[`job1; helloFunc; 5]; / Runs every 5 seconds
 
 echoFunc:{show x};
-.timer.addjob.custom[`job2;echoFunc;("Echo this!");10;2;3;0Np;1b];
+.timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;3;0Np;1b];
 
 timeAligned:{show "On the quarter hour"};
 .timer.addjob.mode[`job3;timeAligned;();15;5];

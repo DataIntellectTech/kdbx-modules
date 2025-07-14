@@ -1,6 +1,6 @@
 ## KDB+/Q Timer Function Library
 
-A lightweight, customizable timer management library in kdb+/q for scheduling and executing time-based functions. This module supports fixed-interval scheduling, job metadata tracking, conditional disabling, and debug logging—ideal for systems requiring timed task orchestration.
+A lightweight, customizable timer management library in kdb+/q for scheduling and executing time-based functions. This module supports fixed-interval scheduling, job metadata tracking, conditional disabling, and debug logging — ideal for systems requiring timed task orchestration.
 
 ---
 
@@ -17,12 +17,12 @@ A lightweight, customizable timer management library in kdb+/q for scheduling an
 
 
 ### Core Concepts
-Timer jobs are tracked in ```.timer.procs``` an in-memory table storing job metadata:
+Timer jobs are tracked in **.timer.jobs**, an in-memory table storing job metadata:
 
 | Column        | Type      | Description                                                           |
 | ------------- | --------- | --------------------------------------------------------------------- |
 | id            | symbol    | Unique function identifier                                            |
-| func          | function  | Function to be executed                                               |
+| func          | function  | Function to be executed, passed as a definition or symbol reference   |
 | params        | list      | Parameters passed to the function if required                         |
 | created       | timestamp | Time job was registered                                               |
 | period        | int       | scheduling interval in seconds or minutes depending on mode           |
@@ -40,24 +40,26 @@ Timer jobs are tracked in ```.timer.procs``` an in-memory table storing job meta
 ---
 
 ### Execution Mode
-Timer jobs use one of four scheduling modes, defined by the mode column:
+Timer jobs use one of five scheduling modes, defined by the mode column:
 
 | Mode     | Scheduling Logic                                             | Example                       |
 | -------- | ------------------------------------------------------------ | ----------------------------- |
 | 1        | Jobs scheduled x seconds after previous scheduled start time |                               |
 | 2        | Jobs scheduled x seconds after previous actual start time    |                               |
 | 3        | Jobs scheduled x seconds after previous end time             |                               |
-| 4        | Jobs scheduled for the xth minute of every hour              | x = 10 : 13:15,14:15,15:15... |
-| 5        | Jobs scheduled on the hour in x minute intervals             | x = 15 : 13:00,13:15,13:30... |
+| 4        | Jobs scheduled for the xth minute of every hour              | x = 10 : 13:10,14:10,15:10... |
+| 5        | Jobs scheduled on the hour and in x minute intervals         | x = 15 : 13:00,13:15,13:30... |
 
 ---
 
-### Usage .timer.addjob
-Functions allow you to register new timer-based jobs with varying degrees of customization—ranging from full control over scheduling, parameters, and failure handling to simplified shortcuts for common use cases.
+### Adding Jobs
+Functions shown below allow you to register new timer-based jobs with varying degrees of customization — ranging from full control over scheduling, parameters, and failure handling to simplified shortcuts for common use cases.
+
+###### Function Parameters
 
 | Parameter     | Type      | Description                                                           |
 | ------------- | --------- | --------------------------------------------------------------------- |
-| id            | symbol    | Unique function identifier, must not already exist in .timer.procs    |
+| id            | symbol    | Unique function identifier, must not already exist in .timer.jobs     |
 | func          | function  | Function to be executed when job runs                                 |
 | params        | list      | arguments to pass into the function at run time                       |
 | period        | int       | Time period in seconds or minutes for next run time calculations      |
@@ -66,21 +68,21 @@ Functions allow you to register new timer-based jobs with varying degrees of cus
 | maxtime       | timestamp | Optional timestamp after which the job becomes inactive, 0Np disables |
 | disableonfail | boolean   | If set to 1b, disables future runs if the function fails to execute   |
 
-##### .timer.addjob.custom
+#### .timer.addjob.custom
 Lets you fully define a scheduled job by specifying its function, parameters, timing, mode, and control flags for execution limits and failure handling.
-```
+```q
 .timer.addjob.custom[`job1;{show x};("Hello!");10;1;5;0Np;1b]
 ```
 
-##### .timer.addjob.simple 
-Provides a fast way to schedule a job using sensible defaults—ideal for quick setup when you only need to specify a function, its interval, and minimal configuration. Schedule mode is defaulted to 1.
-```
+#### .timer.addjob.simple 
+Provides a fast way to schedule a job using sensible defaults — ideal for quick setup when you only need to specify a function, its interval, and minimal configuration. Schedule mode is defaulted to 1.
+```q
 .timer.addjob.simple[`job2;{show "Hi"};30]
 ```
 
-##### .timer.addjob.mode 
+#### .timer.addjob.mode 
 Streamlined way to create a simple job with custom mode and parameters while applying default safeguards for failure handling and execution limits.
-```
+```q
 .timer.addjob.mode[`job3;{show "Mode 2"};();15;2]
 ```
 
@@ -89,16 +91,16 @@ Streamlined way to create a simple job with custom mode and parameters while app
 ### Control & Monitoring
 The timer system includes a suite of control functions that let you start, stop, and inspect timer jobs with precision. These utility functions ensure operational flexibility while maintaining the integrity of the scheduling loop.
 
-##### .timer.init
-```
+#### .timer.init
+```q
 .timer.init[]
 ```
 - Purpose: Initializes the timer scheduler by hooking .z.ts to .timer.main[].
 - Effect: Establishes a recurring loop that checks for jobs due to run based on .timer.cycletime. If .z.ts is already defined, it safely preserves and wraps it.
 - Usage: Call once when starting your timer system or restarting after .timer.disable[].
 
-##### .timer.disable
-```
+#### .timer.disable
+```q
 .timer.disable[]
 ```
 - Purpose: Stops the timer execution loop by restoring the original .z.ts handler.
@@ -106,36 +108,36 @@ The timer system includes a suite of control functions that let you start, stop,
 - Safety: Checks if .z.ts was previously saved before attempting to revert it.
 - Usage: Useful during maintenance, debugging, or when manually controlling job flow
 
-##### .timer.enablejobs
-```
+#### .timer.enablejobs
+```q
 .timer.enablejobs[`job1]
 .timer.enablejobs[`job1`job2]
 ```
-- Purpose: Reactivates one or more jobs by setting status:1b in .timer.procs.
+- Purpose: Reactivates one or more jobs by setting status:1b in .timer.jobs.
 - Usage: Accepts a single symbol or list of job IDs. Jobs will resume scheduling and execution as normal.
 
-##### .timer.disablejobs
-```
+#### .timer.disablejobs
+```q
 .timer.disablejobs[`job3]
 .timer.disablejobs[`job4`job5]
 ```
 - Purpose: Deactivates one or more jobs by setting status:0b, preventing them from being picked up by the scheduler.
 - Usage: Ideal for temporarily suspending jobs without deleting their metadata.
 
-##### .timer.deletejobs
-```
+#### .timer.deletejobs
+```q
 .timer.deletejobs[`job3]
 .timer.deletejobs[`job4`job5]
 ```
-- Purpose: Removes jobs from .timer.procs table. Can be done without disabling loop.
+- Purpose: Removes jobs from .timer.jobs table. Can be done without disabling loop.
 - Usage: Ideal for re-defining job params wihtout interrupting other jobs.
 
 
-##### .timer.getactive
-```
+#### .timer.getactive
+```q
 .timer.getactive[]
 ```
-- Purpose: Queries .timer.procs and returns all currently active jobs (status=1b).
+- Purpose: Queries .timer.jobs and returns all currently active jobs (status=1b).
 - Output: Returns a table of job rows, allowing inspection of current scheduling, metadata, and run statistics.
 - Usage: Useful for dashboarding, monitoring job health, or debugging live workflows
 
@@ -144,7 +146,7 @@ The timer system includes a suite of control functions that let you start, stop,
 ### User Customisations
 These are global control variables and can be adjusted by the user after import before initializing with .timer.init.
 #### Debug
-```
+```q
 .timer.debug:1b
 ```
 - Purpose: Enables verbose logging for job execution.
@@ -153,7 +155,7 @@ These are global control variables and can be adjusted by the user after import 
 - Default: 0b (disabled).
 This is useful during development or troubleshooting to inspect scheduler behavior.
 #### Cycle Time
-```
+```q
 .timer.cycletime:1000
 ```
 - Purpose: Sets the interval (in milliseconds) between scheduler checks for jobs that are due to run.
@@ -163,32 +165,32 @@ This is useful during development or troubleshooting to inspect scheduler behavi
 Adjust this value to increase responsiveness or reduce CPU usage, depending on the expected job timing precision.
 
 ### Example 
-```
+```q
 \l timer.q / - package import process may change, just for example
 
 .timer.cycletime:500;
 
 helloFunc:{show "Hello from job 1"};
-.timer.addjob.simple[`job1; helloFunc; 5]; / Runs every 5 seconds
+.timer.addjob.simple[`job1;helloFunc;5];
 
 echoFunc:{show x};
 .timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;3;0Np;1b];
 
-timeAligned:{show "On the quarter hour"};
-.timer.addjob.mode[`job3;timeAligned;();15;5];
+.func.timeAligned:{show "On the quarter hour"};
+.timer.addjob.mode[`job3;`.func.timeAligned;();15;5];
 
 .timer.init[];
 
-/ Enable and disable jobs manually if needed
+// Enable and disable jobs manually if needed
 .timer.disablejobs[`job3]
 .timer.enablejobs[`job3]
 
-/ View all active jobs
+// View all active jobs
 .timer.getactive[]
 
-/ Temporarily halt job execution
+// Temporarily halt job execution
 .timer.disable[]
 
-/ Restart scheduler loop again later
+// Restart scheduler loop again later
 .timer.init[]
 ```

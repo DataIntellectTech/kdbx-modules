@@ -77,24 +77,24 @@
 
 // Create usage log on disk
 .usage.createLog:{[logDir; logName; timestamp]
-	basename:"usage_", logName, "_", string[timestamp], ".log";
-	// Close the current log handle if there is one
-	@[hclose; .usage.logh; ()];
-	// Open the file
-	.usage.logh:hopen hsym`$logDir, "/", basename;
+    basename:"usage_", logName, "_", string[timestamp], ".log";
+    // Close the current log handle if there is one
+    @[hclose; .usage.logh; ()];
+    // Open the file
+    .usage.logh:hopen hsym`$logDir, "/", basename;
  };
 
 // Parse a usage log file and return as a usage table
 .usage.readLog:{[filename]
-	// Remove leading backtick from symbol columns, drop "i" suffix from a and w columns and cast back to integers
-	:update
-		zcmd:`$1_'string zcmd, u:`$1_'string u, a:"I"$-1_'a, w:"I"$-1_'w
-	from
-		@[
-			{update "J"$'" " vs' mem from flip (cols .usage.usage)!("PJNSC*S***J*"; "|")0: x};
-			hsym`$filename;
-			{'"failed to read log file : ", x}
-		];
+    // Remove leading backtick from symbol columns, drop "i" suffix from a and w columns and cast back to integers
+    :update
+            zcmd:`$1_'string zcmd, u:`$1_'string u, a:"I"$-1_'a, w:"I"$-1_'w
+       from
+        @[
+         {update "J"$'" " vs' mem from flip (cols .usage.usage)!("PJNSC*S***J*"; "|")0: x};
+         hsym`$filename;
+         {'"failed to read log file : ", x}
+         ];
  };
 
 // Get the memory info - we don't want to log the physical memory each time
@@ -102,176 +102,172 @@
 
 // Format the message handler argument as a string
 .usage.formatArg:{[zcmd; arg]
-	str:$[10=abs type arg; arg, (); .Q.s1 arg];
-	// Replace %xx hexsequences in HTTP request arguments
-	if[zcmd in`ph`pp; str:.h.uh str];
-	:str;
+    str:$[10=abs type arg; arg, (); .Q.s1 arg];
+    // Replace %xx hexsequences in HTTP request arguments
+    if[zcmd in`ph`pp; str:.h.uh str];
+    :str;
  };
 
 // Log the completion of an external request and return the result
 .usage.logDirect:{[id; zcmd; endTime; result; arg; startTime]
     if[.usage.LEVEL>1;
-		.usage.write (
-			startTime;
-			id;
-			endTime-startTime;
-			zcmd;
-			"c";
-			.z.a;
-			.z.u;
-			.z.w;
-			.usage.formatArg[zcmd; arg];
-			.usage.memInfo[];
-			0Nj;
-			""
-		)
-	];
-	:result;
+       .usage.write (
+                        startTime;
+                        id;
+                        endTime-startTime;
+                        zcmd;
+                        "c";
+                        .z.a;
+                        .z.u;
+                        .z.w;
+                        .usage.formatArg[zcmd; arg];
+                        .usage.memInfo[];
+                        0Nj;
+                        ""
+                        )
+      ];
+    :result;
  };
 
 // Log stats of query before execution
 .usage.logBefore:{[id; zcmd; arg; startTime]
     if[.usage.LEVEL>2;
-		.usage.write (
-			startTime;
-			id;
-			0Nn;
-			zcmd;
-			"b";
-			.z.a;
-			.z.u;
-			.z.w;
-			.usage.formatArg[zcmd; arg];
-			.usage.memInfo[];
-			0Nj;
-			""
-		)
-	];
+       .usage.write (
+                        startTime;
+                        id;
+                        0Nn;
+                        zcmd;
+                        "b";
+                        .z.a;
+                        .z.u;
+                        .z.w;
+                        .usage.formatArg[zcmd; arg];
+                        .usage.memInfo[];
+                        0Nj;
+                        ""
+                        )
+      ];
  };
 
 // Log stats of a completed query and return the result
 .usage.logAfter:{[id; zcmd; endTime; result; arg; startTime]
     if[.usage.LEVEL>1;
-		.usage.write (
-			endTime;
-			id;
-			endTime-startTime;
-			zcmd;
-			"c";
-			.z.a;
-			.z.u;
-			.z.w;
-			.usage.formatArg[zcmd; arg];
-			.usage.memInfo[];
-			-22!result;
-			""
-		)
-	];
-	:result;
+        .usage.write (
+                        endTime;
+                        id;
+                        endTime-startTime;
+                        zcmd;
+                        "c";
+                        .z.a;
+                        .z.u;
+                        .z.w;
+                        .usage.formatArg[zcmd; arg];
+                        .usage.memInfo[];
+                        -22!result;
+                        ""
+                        )
+      ];
+    :result;
  };
 
 // Log stats of a failed query and raise the error
 .usage.logError:{[id; zcmd; endTime; arg; startTime; error]
     if[.usage.LEVEL>0;
-		.usage.write (
-			endTime;
-			id;
-			endTime-startTime;
-			zcmd;
-			"e";
-			.z.a;
-			.z.u;
-			.z.w;
-			.usage.formatArg[zcmd; arg];
-			.usage.memInfo[];
-			0Nj;
-			error
-		)
-	];
-	'error;
+       .usage.write (
+                        endTime;
+                        id;
+                        endTime-startTime;
+                        zcmd;
+                        "e";
+                        .z.a;
+                        .z.u;
+                        .z.w;
+                        .usage.formatArg[zcmd; arg];
+                        .usage.memInfo[];
+                        0Nj;
+                        error
+                        )
+      ];
+    'error;
  };
 
 // Log successful user validation
 .usage.logAuth:{[zcmd; handler; user; pass]
-	:.usage.logDirect[
-		.usage.nextId[];
-		zcmd;
-		.z.P;
-		handler[user; pass];
-		(user; "***");
-		.z.P
-	];
+    :.usage.logDirect[
+                         .usage.nextId[];
+                         zcmd;
+                         .z.P;
+                         handler[user; pass];
+                         (user; "***");
+                         .z.P
+                     ];
  };
 
 // Log successful connection opening/closing
 .usage.logConnection:{[zcmd; handler; arg]
-	:.usage.logDirect[.usage.nextId[]; zcmd; .z.P; handler arg; arg; .z.P];
+    :.usage.logDirect[.usage.nextId[]; zcmd; .z.P; handler arg; arg; .z.P];
  };
 
 // Log before and after query execution is attempted
 .usage.logQuery:{[zcmd; handler; arg]
-	id:.usage.nextId[];
-	.usage.logBefore[id; zcmd; arg; .z.P];
-	:.usage.logAfter[id; zcmd; .z.P; @[handler; arg; .usage.logError[id; zcmd; .z.P; arg; start; ]]; arg; start:.z.P];
+    id:.usage.nextId[];
+    .usage.logBefore[id; zcmd; arg; .z.P];
+    :.usage.logAfter[id; zcmd; .z.P; @[handler; arg; .usage.logError[id; zcmd; .z.P; arg; start; ]]; arg; start:.z.P];
  };
 
 // Log before and after query execution is attempted, filtering with .usage.ignoreList
 .usage.logQueryFiltered:{[zcmd; handler; arg]
-	if[.usage.ignore;
-		if[0h=type arg;
-			if[any first[arg]~/: .usage.ignoreList; :handler arg]
-		];
-		if[10h=type arg;
-			if[any arg~/: .usage.ignoreList; :handler arg]
-		]
-	];
-	:.usage.logQuery[zcmd; handler; arg];
+    if[.usage.ignore;
+       if[0h=type arg;
+          if[any first[arg]~/: .usage.ignoreList; :handler arg]
+         ];
+       if[10h=type arg;
+          if[any arg~/: .usage.ignoreList; :handler arg]
+         ]
+      ];
+    :.usage.logQuery[zcmd; handler; arg];
  };
 
 // Initialise .z functions with usage logging functionality
 .usage.initHandlers:{[]
-	// Initialise unassigned message handlers with default values
-	.z.pw:@[value; `.z.pw; {{[x;y] 1b}}];
-	.z.po:@[value; `.z.po; {{}}];
-	.z.pc:@[value; `.z.pc; {{}}];
-	.z.wo:@[value; `.z.wo; {{}}];
-	.z.wc:@[value; `.z.wc; {{}}];
-	.z.ws:@[value; `.z.ws; {{neg[.z.w] x;}}];
-	.z.pg:@[value; `.z.pg; {value}];
-	.z.ps:@[value; `.z.ps; {value}];
-	.z.pp:@[value; `.z.pp; {{}}];
-	.z.exit:@[value; `.z.exit; {{}}];
+    // Initialise unassigned message handlers with default values
+    .z.pw:@[value; `.z.pw; {{[x;y] 1b}}];
+    .z.po:@[value; `.z.po; {{}}];
+    .z.pc:@[value; `.z.pc; {{}}];
+    .z.wo:@[value; `.z.wo; {{}}];
+    .z.wc:@[value; `.z.wc; {{}}];
+    .z.ws:@[value; `.z.ws; {{neg[.z.w] x;}}];
+    .z.pg:@[value; `.z.pg; {value}];
+    .z.ps:@[value; `.z.ps; {value}];
+    .z.pp:@[value; `.z.pp; {{}}];
+    .z.exit:@[value; `.z.exit; {{}}];
 
-	// Reassign message handlers with usage-logging wrappers
-	.z.pw:.usage.logAuth[`pw; .z.pw; ; ];
-	.z.po:.usage.logConnection[`po; .z.po; ];
-	.z.pc:.usage.logConnection[`pc; .z.pc; ];
-	.z.wo:.usage.logConnection[`wo; .z.wo; ];
-	.z.wc:.usage.logConnection[`wc; .z.wc; ];
-	.z.ws:.usage.logQuery[`ws; .z.ws; ];
-	.z.pg:.usage.logQuery[`pg; .z.pg; ];
-	.z.ps:.usage.logQueryFiltered[`ps; .z.ps; ];
-	.z.ph:.usage.logQuery[`ph; .z.ph; ];
-	.z.pp:.usage.logQuery[`pp; .z.pp; ];
-	.z.exit:.usage.logQuery[`exit; .z.exit; ];
+    // Reassign message handlers with usage-logging wrappers
+    .z.pw:.usage.logAuth[`pw; .z.pw; ; ];
+    .z.po:.usage.logConnection[`po; .z.po; ];
+    .z.pc:.usage.logConnection[`pc; .z.pc; ];
+    .z.wo:.usage.logConnection[`wo; .z.wo; ];
+    .z.wc:.usage.logConnection[`wc; .z.wc; ];
+    .z.ws:.usage.logQuery[`ws; .z.ws; ];
+    .z.pg:.usage.logQuery[`pg; .z.pg; ];
+    .z.ps:.usage.logQueryFiltered[`ps; .z.ps; ];
+    .z.ph:.usage.logQuery[`ph; .z.ph; ];
+    .z.pp:.usage.logQuery[`pp; .z.pp; ];
+    .z.exit:.usage.logQuery[`exit; .z.exit; ];
  };
 
 // Initialise on disk usage logging, if enabled
 .usage.initLog:{[]
-	if[.usage.logToDisk;
-		if[""~.usage.logName, .usage.logDir;
-			.usage.logToDisk:0b;
-			'"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled"
-		];
-		.usage.createLog[.usage.logDir; .usage.logName; .usage.logTimestamp[]]
-	];
+    if[.usage.logToDisk;
+       if[""~.usage.logName, .usage.logDir;
+          .usage.logToDisk:0b;
+          '"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled"
+         ];
+       .usage.createLog[.usage.logDir; .usage.logName; .usage.logTimestamp[]]
+      ];
  };
 
 .usage.init:{[]
-	.usage.initHandlers[];
-	.usage.initLog[];
+    .usage.initHandlers[];
+    .usage.initLog[];
  };
-
-if[.usage.enabled;
-	.usage.init[];
- ];

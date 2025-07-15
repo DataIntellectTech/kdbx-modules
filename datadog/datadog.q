@@ -8,7 +8,7 @@
 
 //send event on linux os using datadog agent
 .dg.sendevent_l:{[event_title;event_text;priority; tags;alert_type]
-    cmd: raze "event_title=",event_title,"; event_text=","\"",event_text,"\"","; priority=","\"",priority,"\"","; tags=","\"#",$[0h=type tags;","sv tags;tags],"\"",";alert_type=",alert_type,"; ","echo \"_e{${#event_title},${#event_text}}:$event_title|$event_text|#$tags|t:$alert_type\" |nc -4u -w0 127.0.0.1 ",string .dg.dogstatsd_port;
+    cmd: raze "event_title=",event_title,"; event_text=","\"",event_text,"\"","; priority=","\"",priority,"\"","; tags=","\"#",$[0h=type tags;","sv tags;tags],"\"",";alert_type=",alert_type,"; ","echo \"_e{${#event_title},${#event_text}}:$event_title|$event_text|p:$priority|#$tags|t:$alert_type\" |nc -4u -w0 127.0.0.1 ",string .dg.dogstatsd_port;
     response:system cmd;
     .dg.dogstatsd_eventlog,:(.z.p;.z.o;cmd;event_title;event_text;0b;response);
  };

@@ -1,99 +1,99 @@
 // Library for utility functions for interacting with the operating system
 
 // Indicator for if the underlying OS is Windows
-.os.isWindows:.z.o in `w32`w64;
+.os.iswindows:.z.o in `w32`w64;
 
 // Return string/symbol/hsym as a string path, using the separators of the OS
-.os.toPath:{[path]
-    if[10h<>type path; path:string path];
-    if[.os.isWindows; path:ssr[path; "/"; "\\"]];
-    :$[":"=first path; 1_; ] path;
+.os.topath:{[path]
+    if[10h<>type path;path:string path];
+    if[.os.iswindows;path:ssr[path;"/";"\\"]];
+    :$[":"=first path;1_;] path;
  };
 
 // Get the absolute path of a file/directory without resolving symlinks
-.os.absPath:{[path]
-    :trim system ("realpath -s ", .os.toPath[path]; "for %F in (\"", .os.toPath[path], "\") do @echo %~fF")[.os.isWindows];;
+.os.abspath:{[path]
+    :trim system("realpath -s ",.os.topath[path];"for %F in (\"",.os.topath[path],"\") do @echo %~fF")[.os.iswindows];;
  };
 
 // Get the absolute path of a file/directory resolving symlinks
-.os.realPath:{[path]
-    if[.os.isWindows; 'nyi];
-    :system "realpath ", .os.toPath path;
+.os.realpath:{[path]
+    if[.os.iswindows;'`nyi];
+    :system"realpath ",.os.topath path;
  };
 
 // Check if a file/directory exists
-.os.exists:{[path] :not ()~key hsym$[10h=type path; `$; ] path;};
+.os.exists:{[path] :not ()~key hsym$[10h=type path;`$;] path;};
 
 // Check if a path exists and is a file
-.os.isFile:{[path] :.os.exists[path] & {x~key x} hsym$[10h=type path; `$; ] path;};
+.os.isfile:{[path] :.os.exists[path]&{x~key x} hsym$[10h=type path;`$;] path;};
 
 // Check if a path exists and is a directory
-.os.isDir:{[path] :.os.exists[path] & not {x~key x} hsym$[10h=type path; `$; ] path;};
+.os.isdir:{[path] :.os.exists[path]&not {x~key x} hsym$[10h=type path;`$;] path;};
 
 // Check if a path exists and is a symbolic link
-.os.isSymlink:{[path] :@[{system x; 1b}; ("readlink "; "dir /al /b 2>nul ")[.os.isWindows], .os.toPath path; 0b];};
+.os.issymlink:{[path] :@[{system x;1b};("readlink ";"dir /al /b 2>nul ")[.os.iswindows],.os.topath path;0b];};
 
 // Delete a file
-.os.del:{[path] system ("rm ";"del ")[.os.isWindows], .os.toPath path;};
+.os.del:{[path] system("rm ";"del ")[.os.iswindows],.os.topath path;};
 
 // Delete a directory
-.os.delDir:{[path] system ("rm -r ";"rd /s /q ")[.os.isWindows],.os.toPath path;};
+.os.deldir:{[path] system("rm -r ";"rd /s /q ")[.os.iswindows],.os.topath path;};
 
 // Create directory (without error if existing), make parent directories as needed
-.os.mkdir:{[path] system "mkdir \"", .os.toPath[path], "\"", $[.os.isWindows; " 2>nul"; " -p"];};
+.os.mkdir:{[path] system"mkdir \"",.os.topath[path],"\"",$[.os.iswindows;" 2>nul"; " -p"];};
 
 // Move/rename a file/directory
-.os.mv:{[src; dest] system ("mv "; "move /y ")[.os.isWindows], " " sv .os.toPath each (src; dest);};
+.os.mv:{[src;dest] system("mv ";"move /y ")[.os.iswindows]," " sv .os.topath each (src; dest);};
 
 // Copy a file
-.os.cp:{[src; dest] system ("cp "; "copy /y ")[.os.isWindows], " " sv .os.toPath each (src; dest);};
+.os.cp:{[src;dest] system("cp ";"copy /y ")[.os.iswindows]," " sv .os.topath each (src; dest);};
 
 // Copy a directory
-.os.cpDir:{[src; dest] system ("cp -r "; "xcopy /e /h /i /y ")[.os.isWindows], " " sv .os.toPath each (src; dest);};
+.os.cpdir:{[src;dest] system("cp -r ";"xcopy /e /h /i /y ")[.os.iswindows]," " sv .os.topath each (src; dest);};
 
 // Kill a process given a PID and signal
-.os.kill:{[pid; sig] system ("kill -", string[sig], " "; "taskkill ", (""; "/f ")[sig=9], "/PID ")[.os.isWindows], string[pid];};
+.os.kill:{[pid;sig] system("kill -",string[sig]," ";"taskkill ",(""; "/f ")[sig=9], "/PID ")[.os.iswindows],string[pid];};
 
 // Interupt a process given a PID. Simply kills when ran on Windows
-.os.kill2:.os.kill[; 2];
+.os.kill2:.os.kill[;2];
 
 // Quit a process given a PID
-.os.kill3:.os.kill[; 3];
+.os.kill3:.os.kill[;3];
 
 // Force kill a process given a PID
-.os.kill9:.os.kill[; 9];
+.os.kill9:.os.kill[;9];
 
 // Delay for a specified number of seconds
-.os.sleep:{[num] num:string num; system ("sleep ", num; "timeout /t ", num, " >nul")[.os.isWindows];}
+.os.sleep:{[num] num:string num;system("sleep ",num;"timeout /t ",num," >nul")[.os.iswindows];}
 
 // Change current working directory
-.os.cd:{[path] system "cd ", .os.toPath path;};
+.os.cd:{[path] system"cd ",.os.topath path;};
 
 // Change the permissions of a file/directory
-.os.chmod:{[path; mode]
-    if[.os.isWindows; 'nyi];
-    system "chmod ", (string; ::)[10h=type mode][mode], " ", .os.toPath path;
+.os.chmod:{[path;mode]
+    if[.os.iswindows;'`nyi];
+    system"chmod ",(string; ::)[10h=type mode][mode]," ",.os.topath path;
  };
 
 // Change the owner of a file/directory
-.os.chown:{[path; owner]
-    if[.os.isWindows; 'nyi];
-    system "chown ", owner, " ", .os.toPath path;
+.os.chown:{[path;owner]
+    if[.os.iswindows;'`nyi];
+    system"chown ",owner, " ",.os.topath path;
  };
 
 // Return the path to the current working directory
-.os.pwd:{[] :system ("pwd"; "cd") .os.isWindows;};
+.os.pwd:{[] :system("pwd";"cd") .os.iswindows;};
 
 // Create a symbolic link
-.os.createSymlink:{[target; name]
-    $[.os.isWindows;
-        system "mklink ", .os.toPath[name], " ", .os.toPath target;
-        system "ln -s ", .os.toPath[target], " ", .os.toPath name
-    ];
+.os.createsymlink:{[target;name]
+    $[.os.iswindows;
+      system"mklink ",.os.topath[name]," ",.os.topath target;
+      system"ln -s ",.os.topath[target]," ",.os.topath name
+     ];
  };
 
 // Create a FIFO file
 .os.mkfifo:{[path]
-    if[.os.isWindows; 'nyi];
-    system "mkfifo ", .os.toPath path;
+    if[.os.iswindows;'`nyi];
+    system"mkfifo ",.os.topath path;
  };

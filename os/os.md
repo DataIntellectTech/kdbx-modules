@@ -10,40 +10,40 @@ Designed to work on both **Linux/Unix** and **Windows**, functions automatically
 
 ## :desktop_computer: OS Detection
 
-### `.os.isWindows`
+### `.os.iswindows`
 Returns `1b` if the current platform is Windows (`w32` or `w64`), otherwise `0b`.
 
 ```q
-.os.isWindows
+.os.iswindows
 ```
 
 ---
 
 ## :file_folder: Path Utilities
 
-### `.os.toPath[path]`
+### `.os.topath[path]`
 Converts a string/symbol/hsym to a valid path as a string (slashes normalised for OS).
 
 ```q
-q).os.toPath "some/relative/path" // on Windows...
+q).os.topath "some/relative/path" // on Windows...
 "some\\relative\\path"
-q).os.toPath `:some/relative/path // on Unix...
+q).os.topath `:some/relative/path // on Unix...
 "some/relative/path"
 ```
 
-### `.os.absPath[path]`
+### `.os.abspath[path]`
 Returns the **absolute path** to a file/directory **without resolving symlinks** (does not check that the path exists).
 
 ```q
-.os.absPath "../file.txt"
+.os.abspath "../file.txt"
 ```
 
-### `.os.realPath[path]`
+### `.os.realpath[path]`
 Returns the **absolute path**, resolving symlinks (does not check that the path exists).
 **Note**: Currently not implemented for Windows (`nyi`).
 
 ```q
-.os.realPath "file.txt"
+.os.realpath "file.txt"
 ```
 
 ---
@@ -53,13 +53,13 @@ Returns the **absolute path**, resolving symlinks (does not check that the path 
 ### `.os.exists[path]`
 Returns `1b` if the file or directory exists, else returns `0b`.
 
-### `.os.isFile[path]`
+### `.os.isfile[path]`
 Returns `1b` if the path exists and is a file, else returns `0b`
 
-### `.os.isDir[path]`
+### `.os.isdir[path]`
 Returns `1b` if the path exists and is a directory, else returns `0b`
 
-### `.os.isSymlink[path]`
+### `.os.issymlink[path]`
 Returns `1b` if the path is a symbolic link, else returns `0b`
 
 ---
@@ -69,26 +69,26 @@ Returns `1b` if the path is a symbolic link, else returns `0b`
 ### `.os.del[path]`
 Deletes a file.
 
-### `.os.delDir[path]`
+### `.os.deldir[path]`
 Deletes a directory and its contents recursively.
 
 ### `.os.mkdir[path]`
 Creates a directory, including parent directories. No error if it already exists.
 
-### `.os.mv[src; dest]`
+### `.os.mv[src;dest]`
 Moves (renames) a file or directory.
 
-### `.os.cp[src; dest]`
+### `.os.cp[src;dest]`
 Copies a file.
 
-### `.os.cpDir[src; dest]`
+### `.os.cpdir[src;dest]`
 Copies a directory and its contents.
 
 ---
 
 ## :link: Symlinks and FIFOs
 
-### `.os.createSymlink[target; name]`
+### `.os.createsymlink[target;name]`
 Creates a symbolic link pointing from `name` to `target`.
 
 - Uses `mklink` on Windows and `ln -s` on Unix.
@@ -102,7 +102,7 @@ Creates a FIFO file (named pipe).
 
 ## :no_entry_sign: Permissions and Ownership
 
-### `.os.chmod[path; mode]`
+### `.os.chmod[path;mode]`
 Changes the file mode/permissions.
 **Not implemented on Windows**.
 
@@ -111,29 +111,29 @@ Changes the file mode/permissions.
 .os.chmod["file.txt"; "go-rwx"]
 ```
 
-### `.os.chown[path; owner]`
+### `.os.chown[path;owner]`
 Changes the file owner.
 **Not implemented on Windows**.
 
 ```q
-.os.chown["file.txt"; "alice"]
+.os.chown["file.txt";"alice"]
 ```
 
 ---
 
 ## :hammer_and_wrench: Process Control
 
-### `.os.kill[pid; sig]`
-Sends a signal to a process (e.g., `2`, `3`, or `9`).
+### `.os.kill[pid;sig]`
+Sends a signal to a process (e.g.,`2`,`3`,or `9`).
 
 ### `.os.kill2[pid]`
-Interrupts a process (`SIGINT`, equivalent to `kill -2`). Behaves as a normal kill on Windows.
+Interrupts a process (`SIGINT`,equivalent to `kill -2`). Behaves as a normal kill on Windows.
 
 ### `.os.kill3[pid]`
-Quits a process (`SIGQUIT`, `kill -3`).
+Quits a process (`SIGQUIT`,`kill -3`).
 
 ### `.os.kill9[pid]`
-Force kills a process (`SIGKILL`, `kill -9`).
+Force kills a process (`SIGKILL`,`kill -9`).
 
 ---
 

@@ -111,6 +111,6 @@
 
 .timer.init:{
     .timer.dotz.orig:@[get;`.z.ts;{}];
-    .z.ts:$[null .timer.dotz.orig;.timer.main;{.timer.dotz.orig`;.timer.main`}];
+    .z.ts:$[{}~.timer.dotz.orig;.timer.main;{.timer.dotz.orig`;.timer.main`}];
     if[not system"t";system "t ",string .timer.cycletime];
     };

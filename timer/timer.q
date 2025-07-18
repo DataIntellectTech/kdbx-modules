@@ -27,14 +27,14 @@
 .timer.addjob.custom:{[id;func;params;period;mode;maxruns;maxtime;disableonfail]
     if[id in key .timer.jobs;'"Cannot add id : ",(string id)," already exists in .timer.jobs"];
     if[-11h=type func;func:get func];
-    `.timer.jobs insert (id;func;params;.z.P;`int$period;`short$mode;0Np;0Np;0Np;0Np;0i;maxruns;maxtime;1b;disableonfail);
+    `.timer.jobs insert (id;func;params;.z.p;`int$period;`short$mode;0Np;0Np;0Np;0Np;0i;maxruns;maxtime;1b;disableonfail);
     .timer.upd.start[id];
     };
 .timer.addjob.simple:.timer.addjob.custom[;;();;1;0Ni;0Np;1b];
 .timer.addjob.mode:.timer.addjob.custom[;;;;;0Ni;0Np;1b];
 
 // Internal utility functions
-.timer.msg.custom:{[code;msg]0N!(string .z.P)," ### ",code," ### ",msg};
+.timer.msg.custom:{[code;msg]0N!(string .z.p)," ### ",code," ### ",msg};
 .timer.msg.info:.timer.msg.custom["INFO";];
 .timer.msg.err:.timer.msg.custom["ERROR";];
 
@@ -42,7 +42,7 @@
 .timer.upd.start:{[id] r:.timer.jobs[id];.timer.nextstart[r`mode][id;r]};
 
 .timer.upd.status:{[r]
-    r[`prevend]:.z.P;
+    r[`prevend]:.z.p;
     r[`prevstart]:r`nextstart;
     r[`runs]+:1;
     if[(not null r[`maxruns])&r[`maxruns]<=r`runs;r[`status]:0b];
@@ -82,13 +82,13 @@
 .timer.disablejobs:{[ids] ids:(),ids;.timer.jobs:update status:0b from .timer.jobs where id in ids};
 .timer.deletejobs:{[ids] ids:(),ids;.timer.jobs:delete from .timer.jobs where id in ids};
 
-.timer.getactive:{[id] select from .timer.jobs where status};
+.timer.getactive:{select from .timer.jobs where status};
 
 // Evalution functions for executing jobs and scheduling
 .timer.runandschedule:{[id]
     r:.timer.jobs[id];
     if[.timer.debug;.timer.msg.info"Executing job id: ",(string id)," for start time: ",(string r`nextstart)];
-    r[`actualstart]:.z.P;
+    r[`actualstart]:.z.p;
     ret:$[count r`params;
         .[r`func;(),r`params;{.timer.msg.err"Job execution failed with error : ",x;0b}];
         @[r`func;`;{.timer.msg.err"Job execution failed with error : ",x;0b}]
@@ -105,12 +105,12 @@
 
 // Cycle functions
 .timer.main:{
-    torun:exec id from .timer.jobs where status,nextstart<.z.P;
+    torun:exec id from .timer.jobs where status,nextstart<.z.p;
     if[count torun;.timer.runandschedule each torun];
     };
 
 .timer.init:{
     .timer.dotz.orig:@[get;`.z.ts;{}];
-    .z.ts:$[{}~.timer.dotz.orig;.timer.main;{.timer.dotz.orig`;.timer.main`}];
+    .z.ts:$[{}~.timer.dotz.orig;.timer.main;{.timer.dotz.orig .z.p;.timer.main .z.p}];
     if[not system"t";system "t ",string .timer.cycletime];
     };

@@ -50,7 +50,7 @@
 
 // Adds compression, sorting and attributes selected
 .loader.finish:{[loadparams]
-    .[set;(`.z.zd;loadparams`compression);{'"Failed to set .z.d: ",x}];                                     // Set .z.zd
+    if[count loadparams `compression;.z.zd:loadparams`compression];                                     // Set .z.zd
     {.loader.util.sorttab (x;where .loader.partitions[;0]=x)} each distinct value .loader.partitions[;0];   // Re-sort and set attributes on each partition
     system"x .z.zd";                                                                                        // Unset .z.zd
     if[loadparams`gc; .Q.gc[]];                                                                             // Garbage collection

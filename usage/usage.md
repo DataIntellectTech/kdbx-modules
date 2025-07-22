@@ -21,20 +21,20 @@ A utility library for logging external queries and connections to a kdb+ session
 
 Logs are stored in `.usage.usage` with the following columns:
 
-| Column   | Type      | Description                               |
-|----------|-----------|-------------------------------------------|
-| time     | `timestamp` | Time of the event                       |
-| id       | `long`     | Unique ID for the request                |
-| exTime   | `timespan` | Execution duration (if applicable)       |
-| zcmd     | `symbol`   | `.z` command (`pg`, `ph`, `pw`, etc.)    |
-| status   | `char`     | `b` = before, `c` = complete, `e` = error |
-| a        | `int`      | Remote IP address                        |
-| u        | `symbol`   | Remote user                              |
-| w        | `int`      | Connection handle                        |
-| cmd      | `string`   | Formatted query/argument to handler      |
-| mem      | `list`     | Partial memory stats from `system "w"`   |
-| sz       | `long`     | Size of result in bytes                  |
-| error    | `string`   | Error message (if applicable)            |
+| Column | Type      | Description                               |
+|--------|-----------|-------------------------------------------|
+| time   | `timestamp` | Time of the event                       |
+| id     | `long`     | Unique ID for the request                |
+| extime | `timespan` | Execution duration (if applicable)       |
+| zcmd   | `symbol`   | `.z` command (`pg`, `ph`, `pw`, etc.)    |
+| status | `char`     | `b` = before, `c` = complete, `e` = error |
+| a      | `int`      | Remote IP address                        |
+| u      | `symbol`   | Remote user                              |
+| w      | `int`      | Connection handle                        |
+| cmd    | `string`   | Formatted query/argument to handler      |
+| mem    | `list`     | Partial memory stats from `system "w"`   |
+| sz     | `long`     | Size of result in bytes                  |
+| error  | `string`   | Error message (if applicable)            |
 
 ---
 
@@ -43,15 +43,15 @@ Logs are stored in `.usage.usage` with the following columns:
 Depending on the desired behaviour, config variables can be set **before running** `.usage.init`:
 
 ```q
-.usage.logdir  : "/path/to/logs";       / Path to log directory
-.usage.logname : "rdb";                 / Identifier used in log file name: usage_{logname}_{timestamp}.log
-.usage.logtimestamp : {.z.Z};           / Function to give log name timestamp suffix (default: {[] :.z.D;})
-.usage.enabled : 1b;                    / Enable logging (default: 1b)
-.usage.logtodisk : 1b;                  / Log to disk (default: 0b)
-.usage.logtomemory : 1b;                / Log to memory table (default: 1b)
-.usage.LEVEL : 2;                       / Logging level (0–3, see below) (default: 3)
-.usage.ignore : 1b;                     / Enable log-skipping for configured functions (default: 1b)
-.usage.ignorelist : enlist `upd;        / Functions to skip logging (in .z.ps only)
+.usage.localtime    : 1b                   // Log using local time or UTC (default: 1b, local)
+.usage.logdir       : "/path/to/logs";     // Path to log directory
+.usage.logname      : "rdb";               // Identifier used in log file name: usage_{logname}_{timestamp}.log
+.usage.logtimestamp : {.z.Z};              // Function to give log name timestamp suffix (default: {[] :.z.D;})
+.usage.logtodisk    : 1b;                  // Log to disk (default: 0b)
+.usage.logtomemory  : 1b;                  // Log to memory table (default: 1b)
+.usage.level        : 2;                   // Logging level (0–3, see below) (default: 3)
+.usage.ignore       : 1b;                  // Enable log-skipping for configured functions (default: 1b)
+.usage.ignorelist   : enlist `upd;         // Functions to skip logging (in .z.ps only)
 ```
 
 Log level meanings:
@@ -143,7 +143,8 @@ Default handlers will be defined if not previously set.
 ## :test_tube: Example
 
 ```q
-/ Set up logging to disk and memory
+// Set up logging to disk and memory
+.usage.localtime:1b;
 .usage.logdir:"logs";
 .usage.logname:"rdb";
 .usage.logtodisk:1b;
@@ -152,9 +153,9 @@ Default handlers will be defined if not previously set.
 \l usage.q
 .usage.init[]
 
-/ Check usage table for synchronous user queries
+// Check usage table for synchronous user queries
 select from .usage.usage where zcmd=`pg
-time                          id  exTime               zcmd status a          u     w  cmd                                                                   mem                           sz  error
+time                          id  extime               zcmd status a          u     w  cmd                                                                   mem                           sz  error
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 2025.07.04D11:57:59.474947647 194                      pg   b      2130706433 kdbNoob 14 "tables[]"                                                            8273600 67108864 67108864 0 0     ""
 2025.07.04D11:57:59.475151569 194 0D00:00:00.000009790 pg   c      2130706433 kdbNoob 14 "tables[]"                                                            8274560 67108864 67108864 0 0 71  ""

@@ -1,9 +1,20 @@
 # kdbx-packages
 
-Repo for storing preliminary code for kdbx packages.
+Repository for Data Intellect KDB-X packages.
 
-See https://data-intellect.atlassian.net/wiki/spaces/TK/pages/1679622150/kdb+Packages
+See [discussions](https://github.com/DataIntellectTech/kdbx-packages/discussions)
+tab for proposed packages and
+[issues](https://github.com/DataIntellectTech/kdbx-packages/issues) tab for
+packages in active development.
 
-Please create a separate directory for each package and place both code + documentation within.
+## Contributing
 
-Style should conform to https://data-intellect.atlassian.net/wiki/spaces/TRAIN/pages/24707114/kdb+Style+Guide
+We enthusiastically welcome contributions from outside of Data Intellect. If you
+would like to contribute code, please do so via Pull Request. We also welcome
+comments on open Pull Requests reviewing code.
+
+Please create a separate directory for each package and place code,
+documentation and unit tests within. All packages must have documentation and
+unit tests to be accepted.
+
+Style should conform to the [style guide](style.md) in this repository.

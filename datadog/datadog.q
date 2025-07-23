@@ -78,7 +78,7 @@
 
 // Initialisation function
 .dg.init:{[useweb]
-    .dg.agentport:@[value;`.dg.agentport; getenv[`DOGSTATSD_PORT]];                                                                  // Define datadog agent port
+    .dg.agentport:@[value;`.dg.agentport; "I"$getenv[`DOGSTATSD_PORT]];                                                              // Define datadog agent port
     .dg.apikey:@[value;`.dg.apikey;getenv[`DOGSTATSD_APIKEY]];                                                                       // Define datadog api key
     .dg.baseurl:@[value;`.dg.baseurl;":https://api.datadoghq.eu/api/v1/"];                                                           // Define base api url
     .dg.metriclog:([] time:`timestamp$();host:`$();message:();name:();metric:`float$();https:`boolean$();status:());                 // Define table to capture metrics

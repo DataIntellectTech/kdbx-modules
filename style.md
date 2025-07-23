@@ -25,7 +25,7 @@ other cases, comments should be on line preceding the code they describe.
 
 Where in-line comments are used, give them the same alignment (using spaces).
 
-Comments should start with `//` followed by a space and then start with
+Comments should start with `/` followed by a space and then start with
 lowercase letter (unless using a proper noun).
 
 ## Naming

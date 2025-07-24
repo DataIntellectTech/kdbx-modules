@@ -13,7 +13,7 @@
 
 / unmocks (i.e. restores) original variable value
 / if the variable previously didn't exist, it's simply deleted
-/ param nm  {symbol}  variable name
+/ param nm  {symbol|::}	variable name, or null to indicate 'unmock all'
 .test.unmock:{[nm]
   if[1=count .test.mocks;:()]; / only sentinel row
   t:0!$[nm~(::);1_.test.mocks;select from .test.mocks where name in nm];

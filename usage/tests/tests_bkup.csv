@@ -1,0 +1,26 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+
+run,0,0,q,.usage.init[],1,1,
+true,0,0,q,min .test.chkwrap[],1,1,
+
+run,0,0,q,.test.setcustomhandlers[],1,1,
+run,0,0,q,.usage.init[],1,1,
+true,0,0,q,.test.chkcustomhandlers[],1,1,
+run,0,0,q,.test.wipecustomhandlers[],1,1,
+
+run,0,0,q,.usage.logtodisk:1b,1,1,
+true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+
+run,0,0,q,.usage[`logtodisk`logname`logdir]:(1b;"file.log";""),1,1,
+true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+
+run,0,0,q,.usage[`logtodisk`logname`logdir]:(1b;"";"/path/to/logs"),1,1,
+true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+
+run,0,0,q,.usage[`logtodisk`logname`logdir]:(1b;"test";"."),1,1,
+run,0,0,q,.test.mock[`.usage.createlog;{z;'"some error"}],1,1,
+true,0,0,q,@[.usage.init;::;::]like"Error creating log file: ./usage_test_*.log | Error: some error",1,1,
+run,0,0,q,.test.unmock[],1,1,
+
+run,0,0,q,.usage[`logtodisk`logname`logdir]:(1b;"test";"."),1,1,
+run,0,0,q,.usage.init[],1,1,

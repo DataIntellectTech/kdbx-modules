@@ -1,0 +1,11 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,.timezone.init[],1,,Initialize package
+true,0,0,q,0<count .timezone.offsets,1,,Confirm tzinfo is read in properly
+true,0,0,q,400<count .timezone.zones,1,,Confirm distinct time zones is populated and significant number available
+true,0,0,q,2025.07.22D14:19:48.386221575=.timezone.localtogmt["America/New_York";2025.07.22D10:19:48.386221575],1,,Test gmt to local 1
+true,0,0,q,1999.03.03D12:13:48.919241092=.timezone.localtogmt["Europe/London";1999.03.03D12:13:48.919241092],1,,Test gmt to local 2
+true,0,0,q,1967.05.02D21:03:52.857237462=.timezone.gmttolocal["America/Toronto";1967.05.03D01:03:52.857237462],1,,Test local to gmt 1
+true,0,0,q,2017.09.01D04:03:52.857237462=.timezone.gmttolocal["America/Los_Angeles";2017.09.01D11:03:52.857237462],1,,Test local to gmt 2
+true,0,0,q,2025.07.21D19:19:48.386221575=.timezone.convert["Asia/Singapore";"America/Vancouver";2025.07.22D10:19:48.386221575],1,,Test timezone to timezone 1
+true,0,0,q,2025.07.24D15:27:58.224707599=.timezone.convert["America/New_York";"America/Toronto";2025.07.24D15:27:58.224707599],1,,Test timezone to timezone 2
+true,0,0,q,2025.11.02D01:30:00.000=.timezone.convert["America/New_York";"America/New_York";2025.11.02D01:30:00.000],1,,DST edge case

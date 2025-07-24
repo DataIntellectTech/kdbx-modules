@@ -8,35 +8,13 @@ This project provides utilities to manage and convert timestamps across timezone
 
 Timezone reference data is sourced from https://timezonedb.com/download and must be downloaded and provided to the package in order to function.
 The downloadable .zip archive includes several files, but only time_zone.csv is used for core functionality.
-You can update this data manually or use the provided Python script to automate the process.
 
----
-
-### Python Utility for Data Updates
-
-A Python script (timezone_download.py) is available to automate daily downloads and updates of time_zone.csv:
-Steps performed:
-- Downloads ZIP archive from TimeZoneDB.
-- Extracts contents into a specified directory.
-- Cleans out unused files (e.g. README, country.csv, database.sql).
-- Prepares time_zone.csv for use in package.
-Command-line usage:
-```sh
-python downloader.py \
-  --fileurl https://timezonedb.com/files/TimeZoneDB.csv.zip \
-  --output /your/output/directory
+Following transformations to save down and be formatted for the package: 
+```q
+t:flip `timezoneID`gmtDateTime`gmtOffset`dst!("S  JIB";csv)0:hsym `:time_zone.csv
+`:tzinfo set t
+`:tzinfo
 ```
-
-Can optionally specficy both fileurl and output directory. If not provided download will default to url in args and the directory where the timezone_download.py script is located. This can be scheduled daily via cron or other job schedulers to update intermittently, updating once daily should be more then sufficient.
-
-### Manual Data Updates
-
-If you prefer not to use the script:
-- Go to https://timezonedb.com/download
-- Download the TimeZoneDB.csv.zip file
-- Extract it manually
-- Place time_zone.csv in your desired config directory
-- Ensure your .timezone.config.file variable is set prior to package initilization
 
 ---
 
@@ -45,9 +23,9 @@ If you prefer not to use the script:
 Set the path to your timezone data file
 
 ```q
-// Point to timezone data file
-.timezone.config.file:"/your/output/directory/time_zone.csv"
-// Initalize package
+/ Overwrite tzinfo file path if neccessary
+.timezone.config.file:"/your/output/directory/tzinfo"
+/ Initalize package
 .timezone.init[]
 ```
 

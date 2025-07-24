@@ -11,7 +11,6 @@
 
 / unmocks (i.e. restores) original variable value
 / if the variable previously didn't exist, it's simply deleted
-/ if called with (::), unmocks all variables
 .test.unmock:{[nm]
   if[1=count .test.mocks;:()]; / only sentinel row
   t:0!$[nm~(::);1_.test.mocks;select from .test.mocks where name in nm];

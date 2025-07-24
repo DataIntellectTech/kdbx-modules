@@ -57,7 +57,7 @@
 .usage.nextid:{[] :.usage.id+:1;};
 
 // Check time preference. Default local time
-.usage.localtime:@[value;`.usage.logtime;1b];
+.usage.localtime:@[value;`.usage.localtime;1b];
 
 // Return local time or UTC
 .usage.currenttime:{[local] $[local;.z.P;.z.p]};
@@ -76,7 +76,7 @@
 .usage.ext:{[x]};
 
 // Flush out in-memory usage records older than flushtime
-.usage.flushusage:{[flushtime] delete from `.usage.usage where time<.usage.currenttime[.usage.logtime]-flushtime;}
+.usage.flushusage:{[flushtime] delete from `.usage.usage where time<.usage.currenttime[.usage.localtime]-flushtime;}
 
 // Create usage log on disk
 .usage.createlog:{[logdir;logname;timestamp]

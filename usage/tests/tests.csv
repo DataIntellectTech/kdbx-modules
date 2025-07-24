@@ -1,0 +1,76 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+
+run,0,0,q,.usage.init[],1,1,out-of-the-box configuration
+run,0,0,q,.test.runhandler[`.z.pw;(`test_user;"pass123")],1,1,
+run,0,0,q,.test.runhandler[`.z.po;1i],1,1,
+run,0,0,q,.test.runhandler[`.z.pc;2i],1,1,
+run,0,0,q,.test.runhandler[`.z.wo;3i],1,1,
+run,0,0,q,.test.runhandler[`.z.wc;4i],1,1,
+run,0,0,q,.test.runhandler[`.z.ws;-8!"1+1"],1,1,
+run,0,0,q,.test.runhandler[`.z.pg;"1+1"],1,1,
+run,0,0,q,.test.runhandler[`.z.ps;(+;2;2)],1,1,
+run,0,0,q,.test.runhandler[`.z.ph;(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`get);`hdr1`hdr2!("hello";"goodbye"))],1,1,
+run,0,0,q,.test.runhandler[`.z.pp;(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`post);`hdr1`hdr2!("hello";"goodbye"))],1,1,
+true,0,0,q,.test.chkusage[],1,1,
+run,0,0,q,.test.reset[],1,1,
+
+run,0,0,q,.test.setcustomhandlers[],1,1,run with custom handlers and verify that they are properly invoked
+run,0,0,q,.usage.init[],1,1,
+run,0,0,q,.test.runhandler[`.z.pw;(`test_user;"pass123")],1,1,
+run,0,0,q,.test.runhandler[`.z.po;1i],1,1,
+run,0,0,q,.test.runhandler[`.z.pc;2i],1,1,
+run,0,0,q,.test.runhandler[`.z.wo;3i],1,1,
+run,0,0,q,.test.runhandler[`.z.wc;4i],1,1,
+run,0,0,q,.test.runhandler[`.z.ws;-8!"1+1"],1,1,
+run,0,0,q,.test.runhandler[`.z.pg;"1+1"],1,1,
+run,0,0,q,.test.runhandler[`.z.ps;(+;2;2)],1,1,
+run,0,0,q,.test.runhandler[`.z.ph;"dummy"],1,1,
+run,0,0,q,.test.runhandler[`.z.pp;"dummy"],1,1,
+true,0,0,q,.test.chkusage[],1,1,
+true,0,0,q,([]zcmd:`.z.pw`.z.po`.z.pc`.z.wo`.z.wc`.z.ws`.z.pg`.z.ps`.z.ph`.z.pp;args:((`test_user;"pass123");1i;2i;3i;4i;-8!"1+1";"1+1";(+;2;2);"dummy";"dummy"))~1_.test.customtracker,1,1,
+run,0,0,q,.test.reset[],1,1,
+
+run,0,0,q,.usage.logtodisk:1b,1,1,should error on invalid logging configurations
+true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+run,0,0,q,.usage[`logtodisk`logdir`logname]:(1b;".";""),1,1,
+true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+run,0,0,q,.usage[`logtodisk`logdir`logname]:(1b;"";"test"),1,1,
+true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+
+run,0,0,q,.test.mock[`.usage.createlog;{z;'"some error"}],1,1,should fail if log file creation errors
+run,0,0,q,.usage[`logtodisk`logdir`logname]:(1b;".";"test"),1,1,
+true,0,0,q,@[.usage.init;::;::]like"Error creating log file: ./usage_test_* | Error: some error",1,1,
+run,0,0,q,.test.unmock[],1,1,
+run,0,0,q,.test.reset[],1,1,
+
+run,0,0,q,.usage[`logtodisk`logdir`name]:(1b;".";"test"),1,1,should correctly write to and read from log file
+run,0,0,q,@[system;"rm usage_test_* 2> /dev/null";::];,1,1,clean up in case of previous run
+run,0,0,q,.usage.init[],1,1,
+run,0,0,q,.test.runhandler[`.z.po;1i],1,1,
+run,0,0,q,.test.runhandler[`.z.pg;"1+1"],1,1,
+run,0,0,q,.test.runhandler[`.z.pg;(avg;1 2 3)],1,1,
+run,0,0,q,.test.runhandler[`.z.pc;1i],1,1,
+true,0,0,q,.test.chkusage .usage.readlog first system"ls usage_test_*",1,1,
+run,0,0,q,.test.reset[],1,1,
+run,0,0,q,.usage[`logtodisk`logdir`name]:(0b;"";""),1,1,
+run,0,0,q,system"rm usage_test_*",1,1,
+
+run,0,0,q,.usage.init[],1,1,log at different levels
+run,0,0,q,.usage.level:0,1,1,log nothing
+run,0,0,q,.z.po 1i,1,1,
+run,0,0,q,.z.pg"1+1",1,1,
+fail,0,0,q,.z.pg"1+`a",1,1,
+run,0,0,q,.z.pc 1i,1,1,
+true,0,0,q,0=count .usage.usage,1,1,
+run,0,0,q,.usage.level:1,1,1,log errors only
+run,0,0,q,.z.po 1i,1,1,
+run,0,0,q,.z.pg"1+1",1,1,
+fail,0,0,q,.z.pg"1+`a",1,1,
+run,0,0,q,.z.pc 1i,1,1,
+true,0,0,q,(1=count .usage.usage)&.usage.usage[0;`zcmd`status`cmd`error]~(`pg;"e";"1+`a";"type"),1,1,
+run,0,0,q,.usage.usage:0#.usage.usage,1,1,
+run,0,0,q,.usage.level:2,1,1,log open/close/queries (no "before" queries)
+run,0,0,q,.z.ps"1+1",1,1,
+run,0,0,q,(1=count .usage.usage)&.usage.usage[0;`zcmd`status`cmd]~(`ps;"c";"1+1"),1,1,
+run,0,0,q,.usage.usage:0#.usage.usage,1,1,
+run,0,0,q,.usage.level:3,1,1,restore default level

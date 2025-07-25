@@ -33,11 +33,11 @@ true,0,0,q,([]zcmd:`.z.pw`.z.po`.z.pc`.z.wo`.z.wc`.z.ws`.z.pg`.z.ps`.z.ph`.z.pp`
 run,0,0,q,.testusg.reset[],1,1,
 
 run,0,0,q,.test.mock[`.usage.logtodisk;1b],1,1,should error on invalid logging configurations
-true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+true,0,0,q,@[.usage.init;::;::]~"logname and logdir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
 run,0,0,q,.test.mock'[`.usage.logtodisk`.usage.logdir`.usage.logname;(1b;".";"")],1,1,
-true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+true,0,0,q,@[.usage.init;::;::]~"logname and logdir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
 run,0,0,q,.test.mock'[`.usage.logtodisk`.usage.logdir`.usage.logname;(1b;"";"test")],1,1,
-true,0,0,q,@[.usage.init;::;::]~"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
+true,0,0,q,@[.usage.init;::;::]~"logname and logdir must be set to enable on disk usage logging. .usage.logToDisk disabled",1,1,
 
 run,0,0,q,.test.mock[`.usage.createlog;{z;'"some error"}],1,1,should fail if log file creation errors
 run,0,0,q,.test.mock'[`.usage.logtodisk`.usage.logdir`.usage.logname;(1b;".";"test")],1,1,

@@ -77,7 +77,7 @@ select from trades where sym=`AAPL
 ```
 
 should be written in line, just like normal code. However for more complex q-sql
-- where there are multiple select, by and where clauses - the statement should
+\- where there are multiple select, by and where clauses - the statement should
 be multilined. For example:
 
 ```q

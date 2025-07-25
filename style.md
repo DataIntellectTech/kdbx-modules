@@ -55,8 +55,6 @@ Use of explicit return (`:`) is encouraged.
 Short anonymous lambdas with implicit parameters are permitted, but longer
 lambdas or those with explicit parameters should be defined as named functions.
 
-
-
 ## Conditionals and execution control
 
 Avoid 'block' statements within conditionals - consider defining separate

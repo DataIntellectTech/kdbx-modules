@@ -41,11 +41,14 @@ Don't use any q reserved names.
 
 ## Functions
 
-Function declaration should be on it's own line with just parameters.
+For multi-line functions, function declaration should be on it's own line with
+just parameters.
 
 Every other line of the function should contain a single statement and be
 terminated by a semi-colon. Closing brace of function should also be terminated
 by a semi-colon.
+
+Multi-line functions should have closing brace on it's own line.
 
 Use of explicit return (`:`) is encouraged.
 
@@ -74,7 +77,7 @@ select from trades where sym=`AAPL
 ```
 
 should be written in line, just like normal code. However for more complex q-sql
-- where there are multiple select, by and where clauses - the statement should
+\- where there are multiple select, by and where clauses - the statement should
 be multilined. For example:
 
 ```q

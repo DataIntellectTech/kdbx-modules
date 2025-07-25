@@ -41,16 +41,21 @@ Don't use any q reserved names.
 
 ## Functions
 
-Function declaration should be on it's own line with just parameters.
+For multi-line functions, function declaration should be on it's own line with
+just parameters.
 
 Every other line of the function should contain a single statement and be
 terminated by a semi-colon. Closing brace of function should also be terminated
 by a semi-colon.
 
+Multi-line functions should have closing brace on it's own line.
+
 Use of explicit return (`:`) is encouraged.
 
 Short anonymous lambdas with implicit parameters are permitted, but longer
 lambdas or those with explicit parameters should be defined as named functions.
+
+
 
 ## Conditionals and execution control
 

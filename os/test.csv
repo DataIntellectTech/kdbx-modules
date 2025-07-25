@@ -1,0 +1,109 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+true,0,0,q,-1h=type .os.iswindows,1,1,
+
+run,0,0,q,.test.mock[`.os.iswindows;0b],1,1,
+true,0,0,q,enlist["path"]~distinct .os.topath each .testos.pathvars"path",1,1,
+true,0,0,q,enlist["path/to/file.ext"]~distinct .os.topath each .testos.pathvars"path/to/file.ext",1,1,
+true,0,0,q,enlist["/abs/path/'with quotes'/x"]~distinct .os.topath each .testos.pathvars"/abs/path/'with quotes'/x",1,1,
+run,0,0,q,.test.mock[`.os.iswindows;1b],1,1,
+true,0,0,q,enlist["path"]~distinct .os.topath each .testos.pathvars"path",1,1,
+true,0,0,q,enlist["path\\to\\file.ext"]~distinct .os.topath each .testos.pathvars"path/to/file.ext",1,1,
+true,0,0,q,enlist["C:\\path\\to\\win\\dir"]~distinct .os.topath each .testos.pathvars"C:\\path\\to\\win\\dir",1,1,
+true,0,0,q,enlist["\\abs\\path\\'with quotes'\\x"]~distinct .os.topath each .testos.pathvars"/abs/path/'with quotes'/x",1,1,
+run,0,0,q,.test.unmock[],1,1,
+
+true,0,0,q,enlist[.testos.sep sv(.testos.cwd;"foo")]~distinct .os.abspath each .testos.pathvars"foo",1,1,
+true,0,0,q,enlist[.testos.cwd]~distinct .os.abspath each .testos.pathvars".",1,1,
+true,0,0,q,enlist[.testos.sep sv({neg[min(1;count x)]_x}.testos.sep vs .testos.cwd)]~distinct .os.abspath each .testos.pathvars"..",1,1,
+true,0,0,q,enlist[.testos.sep sv({neg[min(1;count x)]_x}.testos.sep vs .testos.cwd)]~distinct .os.abspath each .testos.pathvars"../",1,1,
+true,0,0,q,"enlist[.testos.sep sv({neg[min(1;count x)]_x}.testos.sep vs .testos.cwd),enlist""foo""]~distinct .os.abspath each .testos.pathvars""../foo""",1,1,
+true,0,0,q,"enlist[.testos.sep sv({neg[min(2;count x)]_x}.testos.sep vs .testos.cwd),enlist""foo""]~distinct .os.abspath each .testos.pathvars""../../foo/""",1,1,
+true,0,0,q,"enlist[.testos.sep sv({neg[min(1;count x)]_x}.testos.sep vs .testos.cwd),(""foo"";""blah"")]~distinct .os.abspath each .testos.pathvars""../foo/bar/./../blah""",1,1,
+true,0,0,q,"enlist[.testos.root,.testos.sep sv(""foo"";""other-path"";enlist""x"")]~distinct .os.abspath each .testos.pathvars""/foo/bar/blah/../../path/../other-path/./x""",1,1,
+true,0,0,q,"enlist[.testos.root,.testos.sep sv(""foo"";""bar"")]~distinct .os.abspath each .testos.pathvars""/../foo/bar""",1,1,
+true,0,0,q,"enlist[.testos.root,""foo""]~distinct .os.abspath each .testos.pathvars raze[(1+count .testos.sep vs .testos.cwd)#enlist""../""],""foo""",1,1,
+fail,0,0,q,enlist[.testos.sep sv(.testos.osdir;"os.q")]~disctinct .os.abspath each .testos.pathvars"/"sv(.testos.osdir;"os.q/"),1,1,
+
+true,0,0,q,.testos.runnowin"enlist[.testos.sep sv(.testos.osdir;\"foo\")]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"/foo\")",1,1,
+true,0,0,q,".testos.runnowin""enlist[.testos.sep sv(-1_.testos.sep vs .testos.osdir),enlist\""foo\""]~distinct .os.realpath each .testos.pathvars\""/\""sv(.testos.osdir;\""/../foo\"")""",1,1,
+true,0,0,q,.testos.runnowin"enlist[.testos.sep sv(.testos.osdir;\"foo\")]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"/foo/\")",1,1,
+true,0,0,q,.testos.runnowin"enlist[.testos.osdir]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;enlist\".\")",1,1,
+
+run,0,0,q,"@[.os.deldir;.testos.osdirstd,""/testdir"";::]",1,1,clean up just in case
+true,0,0,q,"not .os.exists .os.topath .testos.osdirstd,""/testdir""",1,1,absolute dir doesn't exist
+run,0,0,q,".os.mkdir .testos.osdirstd,""/testdir""",1,1,create it
+true,0,0,q,".os.exists .os.topath .testos.osdirstd,""/testdir""",1,1,now absolute dir exists
+true,0,0,q,".os.exists`$.os.topath .testos.osdirstd,""/testdir""",1,1,same but sym
+true,0,0,q,".os.exists hsym`$.os.topath .testos.osdirstd,""/testdir""",1,1,same but hsym
+run,0,0,q,".os.mkdir .testos.osdirstd,""/testdir""",1,1,nop if it already exists
+run,0,0,q,".os.cd .testos.osdirstd,""/testdir""",1,1,cd into absolute path
+true,0,0,q,system["cd"]~.testos.sep sv(.testos.osdir;"testdir"),1,1,check we're in the right place
+true,0,0,q,.os.exists .os.topath".",1,1,self exists
+true,0,0,q,.os.exists .os.topath"../testdir/",1,1,self exists from outside
+true,0,0,q,not .os.exists"reldir",1,1,relative dir doesn't exist
+run,0,0,q,.os.mkdir"reldir",1,1,make relative dir
+true,0,0,q,.os.exists"reldir",1,1,now relative dir exists
+run,0,0,q,.os.mkdir"nested/rel/dir",1,1,
+true,0,0,q,.os.exists"nested/rel/dir",1,1,
+run,0,0,q,".os.mkdir .testos.osdirstd,""/testdir/nested/abs/dir""",1,1,
+true,0,0,q,.os.exists"nested/abs/dir",1,1,
+run,0,0,q,.os.cp["../os.q";"reldir"],1,1,copy relative path
+true,0,0,q,.os.exists"reldir/os.q",1,1,
+true,0,0,q,not .os.isdir"reldir/os.q",1,1,rel not a dir
+true,0,0,q,.os.isdir"reldir",1,1,rel is a dir
+true,0,0,q,not .os.isdir"/"sv(.testos.osdirstd;"reldir/os.q"),1,1,abs not a dir
+true,0,0,q,not .os.isdir"/"sv(.testos.osdirstd;"reldir"),1,1,abs is a dir
+true,0,0,q,not .os.isdir"idontexist",1,1,
+run,0,0,q,.os.cp["/"sv(.testos.osdirstd;"os.md");"."],1,1,copy from absolute path
+true,0,0,q,.os.exists"os.md",1,1,
+true,0,0,q,.os.exists"../os.md",1,1,
+run,0,0,q,.os.cp["reldir/os.q";"/"sv(.testos.osdirstd;"testdir")],1,1,copy to absolute path
+true,0,0,q,.os.exists"os.q",1,1,
+true,0,0,q,.os.exists"../os.q",1,1
+fail,0,0,q,.os.cp["idontexist.txt";"reldir"],1,1,
+run,0,0,q,.os.mv["os.q";"nested/rel/dir/."],1,1,
+true,0,0,q,not .os.exists"os.q",1,1,
+true,0,0,q,.os.exists"nested/rel/dir/os.q",1,1,
+run,0,0,q,.os.mv["/"sv(.testos.osdirstd;"testdir/os.md");"/"sv(.testos.osdirstd;"testdir/nested/abs/dir/")],1,1,
+true,0,0,q,not .os.exists"os.md",1,1,
+true,0,0,q,.os.exists"nested/abs/dir/os.md",1,1,
+fail,0,0,q,.os.mv["idontexist.txt";"nested"],1,1,
+run,0,0,q,.os.mv["nested";"nested-2"],1,1,
+true,0,0,q,not .os.isdir"nested",1,1,
+true,0,0,q,.os.isdir"nested-2",1,1,
+run,0,0,q,.os.cpdir["nested-2";"/"sv(.testos.osdirstd;"testdir/nested-copy")],1,1,
+true,0,0,q,.os.isdir"nested-2",1,1,
+true,0,0,q,.os.isdir"nested-copy",1,1,
+true,0,0,q,.os.exists"nested-copy/rel/dir/os.q",1,1,sanity check
+run,0,0,q,.os.deldir"nested-copy",1,1,
+true,0,0,q,not .os.exists"nested-copy",1,1,
+run,0,0,q,.os.cp["reldir/os.q";]each("reldir/os_1.q";"reldir/os_2.json";"reldir/os_3.txt";"reldir/os_4.q"),1,1,
+true,0,0,q,`os.q`os_1.q`os_2.json`os_3.txt`os_4.q~key`:reldir,1,1,
+fail,0,0,q,os.cp["reldir/*.q";"i/dont/exist"],1,1,
+run,0,0,q,.os.cp["reldir/*.q";"nested-2/rel/dir"],1,1,
+true,0,0,q,`os.q`os_1.q`os_4.q~key`$":nested-2/rel/dir",1,1,
+run,0,0,q,.os.del"nested-2/rel/dir/os.q",1,1,
+true,0,0,q,not .os.exists"nested-2/reldir/os.q",1,1,
+fail,0,0,q,.os.del"nested-2/rel/dir/os.q",1,1,
+run,0,0,q,.os.del"/"sv(.testos.osdirstd;"testdir/nested-2/rel/dir/os_4.q"),1,1,
+true,0,0,q,not .os.exists"nested-2/rel/dir/os_4.q",1,1
+
+run,0,0,q,.os.createsymlink["reldir/os.q";"rellink"],1,1,
+true,0,0,q,.os.issymlink"rellink",1,1,
+true,0,0,q,not .os.issymlink"nested",1,1,
+true,0,0,q,not .os.issymlink"reldir/os.q",1,1,
+true,0,0,q,enlist[.testos.sep sv(.testos.osdir;"testdir/rellink")]~distinct .os.abspath each .testos.pathvars"rellink",1,1,
+true,0,0,q,.testos.runnowin"enlist[.testos.sep sv(.testos.osdir;\"testdir/reldir/os.q\")]~distinct .os.realpath each .testos.pathvars\"rellink\"",1,1,
+run,0,0,q,.os.createsymlink["/"sv(.testos.osdirstd;"testdir/reldir/os_1.q");"/"sv(.testos.osdirstd;"testdir/abslink")],1,1,
+true,0,0,q,.os.issymlink"/"sv(.testos.osdirstd;"testdir/abslink"),1,1,
+true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/nested"),1,1,
+true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/reldir/os_1.q"),1,1,
+true,0,0,q,enlist[.testos.sep sv(.testos.osdir;"testdir/abslink")]~distinct .os.abspath each .testos.pathvars"/"sv(.testos.osdirstd;"testdir/abslink"),1,1,
+true,0,0,q,.testos.runnowin"enlist[.testos.sep sv(.testos.osdirstd;\"testdir/reldir/os_1.q\")]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
+run,0,0,q,.os.createsymlink["idontexist.q";"badlink"],1,1,can still create bad links
+true,0,0,q,not .os.exists"badlink",1,1,//! TODO: is this this the desired behaviour??
+true,0,0,q,.testos.runnowin"(.testos.sep sv(.testos.osdir;\"testdir/idontexist.q\"))~.os.realpath\"badlink\"",1,1,
+true,0,0,q,.testos.runnowin"not .os.exists .os.realpath\"badlink\"",1,1,
+
+run,0,0,q,.os.cd .testos.cwd,1,1,
+run,0,0,q,".os.deldir .testos.osdirstd,""/testdir""",1,1,

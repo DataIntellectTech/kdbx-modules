@@ -12,13 +12,13 @@
 
 // Get the absolute path of a file/directory without resolving symlinks
 .os.abspath:{[path]
-    :trim system("realpath -s ",.os.topath[path];"for %F in (\"",.os.topath[path],"\") do @echo %~fF")[.os.iswindows];;
+    :trim first system("realpath -ms ",.os.topath[path];"for %F in (\"",.os.topath[path],"\") do @echo %~fF")[.os.iswindows];;
  };
 
 // Get the absolute path of a file/directory resolving symlinks
 .os.realpath:{[path]
     if[.os.iswindows;'`nyi];
-    :system"realpath ",.os.topath path;
+    :first system"realpath -m ",.os.topath path;
  };
 
 // Check if a file/directory exists

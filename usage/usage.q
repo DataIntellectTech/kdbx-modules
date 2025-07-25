@@ -207,7 +207,7 @@
     if[.usage.logtodisk;
        if[""in(.usage.logname;.usage.logdir);
           .usage.logtodisk:0b;
-          '"logName and logDir must be set to enable on disk usage logging. .usage.logToDisk disabled"];
+          '"logname and logdir must be set to enable on disk usage logging. .usage.logToDisk disabled"];
        .[.usage.createlog;
           (.usage.logdir;.usage.logname;.usage.logtimestamp[.usage.localtime]);
           {.usage.logtodisk:0b;'"Error creating log file: ",.usage.logdir,"/usage_",.usage.logname,"_",string[.usage.logtimestamp[.usage.localtime]]," | Error: " ,x}];

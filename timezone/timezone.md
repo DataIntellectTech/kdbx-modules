@@ -9,6 +9,9 @@ This project provides utilities to manage and convert timestamps across timezone
 Timezone reference data is sourced from https://timezonedb.com/download and must be downloaded and provided to the package in order to function.
 The downloadable .zip archive includes several files, but only time_zone.csv is used for core functionality.
 
+There is a copy of tzinfo already in the package default subdirectory : timezone/config/tzinfo.
+Should you need to update can follow the steps below.
+
 Following transformations to save down and be formatted for the package: 
 ```q
 t:flip `timezoneID`gmtDateTime`gmtOffset`dst!("S  JIB";csv)0:hsym `:time_zone.csv

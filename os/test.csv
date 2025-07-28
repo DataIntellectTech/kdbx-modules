@@ -92,14 +92,14 @@ run,0,0,q,.testos.symlinkable".os.createsymlink[\"reldir/os.q\";\"rellink\"]",1,
 true,0,0,q,.testos.symlinkable".os.issymlink\"rellink\"",1,1,
 true,0,0,q,not .os.issymlink"nested",1,1,
 true,0,0,q,not .os.issymlink"reldir/os.q",1,1,
-true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir/rellink\")]~distinct .os.abspath each .testos.pathvars\"rellink\"",1,1,
+true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir\";\"rellink\")]~distinct .os.abspath each .testos.pathvars\"rellink\"",1,1,
 true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdir;\"testdir/reldir/os.q\")]~distinct .os.realpath each .testos.pathvars\"rellink\"",1,1,
 run,0,0,q,.testos.symlinkable".os.createsymlink[\"/\"sv(.testos.osdirstd;\"testdir/reldir/os_1.q\");\"/\"sv(.testos.osdirstd;\"testdir/abslink\")]",1,1,
 true,0,0,q,.testos.symlinkable".os.issymlink\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
 true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/nested"),1,1,
 true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/reldir/os_1.q"),1,1,
-true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir/abslink\")]~distinct .os.abspath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
-true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdirstd;\"testdir/reldir/os_1.q\")]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
+true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir\";\"abslink\")]~distinct .os.abspath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
+true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdir;\"testdir/reldir/os_1.q\")]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
 run,0,0,q,.testos.symlinkable".os.createsymlink[\"idontexist.q\";\"badlink\"]",1,1,can still create bad links
 true,0,0,q,.testos.symlinkable"not .os.exists\"badlink\"",1,1,TODO: is this this the desired behaviour??
 true,0,0,q,.testos.nyiwin"(.testos.sep sv(.testos.osdir;\"testdir/idontexist.q\"))~.os.realpath\"badlink\"",1,1,
@@ -131,7 +131,7 @@ true,0,0,q,.os.kill9 5060;.testos.cmd~"taskkill /f /PID 5060",1,1,
 run,0,0,q,.test.unmock[],1,1,
 run,0,0,q,delete cmd from`.testos,1,1,
 
-true,0,0,q,{s:.z.p;.os.sleep 1;0D00:00:01<.z.p-s}[],1,1,
+true,0,0,q,{s:.z.p;.os.sleep 1;$[.os.iswindows;div[;10];][0D00:00:01]<.z.p-s}[],1,1,windows timings are unreliable
 
 true,0,0,q,.os.pwd[]~.testos.cwd,1,1,
 

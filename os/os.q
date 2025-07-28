@@ -82,7 +82,7 @@
  };
 
 // Return the path to the current working directory
-.os.pwd:{[] :system("pwd";"cd") .os.iswindows;};
+.os.pwd:{[]system"cd"}
 
 // Create a symbolic link
 .os.createsymlink:{[target;name]

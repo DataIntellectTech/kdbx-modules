@@ -4,7 +4,7 @@
 .testos.osdir:.testos.sep sv -1_.testos.sep vs reverse[value{}]2;
 .testos.osdirstd:$[.os.iswindows;"/"sv@[;0;0#]"/"vs ssr[.testos.osdir;"\\";"/"];.testos.osdir];
 .testos.cansymlink:$[.os.iswindows;"B"$first first[system"net session > nul 2>&1 || echo 0"],"1";1b] / admin rights required in windows
-.testos.canchown:$[.os.iswindows;0b;"root"in" "vs first system"groups"];
+.testos.canchown:$[.os.iswindows;1b;"root"in" "vs first system"groups"];
 .testos.warnings:(); / start off optimistic
 
 / returns all path variations: "path" -> ("path";":path";`path;`:path)

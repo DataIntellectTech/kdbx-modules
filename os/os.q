@@ -23,7 +23,7 @@
  };
 
 // Check if a file/directory exists
-.os.exists:{[path] :not ()~key hsym$[10h=type path;`$;] path;};
+.os.exists:{[path] :not ()~@[key;hsym$[10h=type path;`$;]path;()];}; / key throws an error in windows if the link is invalid
 
 // Check if a path exists and is a file
 .os.isfile:{[path] :.os.exists[path]&{x~key x} hsym$[10h=type path;`$;] path;};

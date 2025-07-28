@@ -3,6 +3,7 @@
 .testos.root:$[.os.iswindows;first[.testos.sep vs .testos.cwd],.testos.sep;"/"];
 .testos.osdir:.testos.sep sv -1_.testos.sep vs reverse[value{}]2;
 .testos.osdirstd:$[.os.iswindows;"/"sv 1_"/"vs ssr[.testos.dir;"\\";"/"];.testos.osdir];
+.testos.isroot:$[.os.iswindows;0b;"root"in" "vs first system"groups"];
 
 / returns all path variations: "path" -> ("path";":path";`path;`:path)
 .testos.pathvars:{[path]
@@ -11,7 +12,7 @@
 
 / if not windows, runs the function and verifies against expected output
 / if windowns, checks that the function throws a nyi error
-.testos.runnowin:{[cmd]
+.testos.nyiwin:{[cmd]
   $[.os.iswindows;
     .testos.asserterr[cmd;"nyi"]; / windows -> check nyi
     value cmd] / not windows -> should work
@@ -23,4 +24,11 @@
   $[first res;
     0b; / didn't error
     err~last res] / otherwise verify the error
+  };
+
+/ run if not windows, otherwise simply returns true
+.testos.nowin:{[cmd]
+  $[.os.iswindows;
+    1b;
+    value cmd]
   };

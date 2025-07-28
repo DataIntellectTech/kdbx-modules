@@ -83,25 +83,25 @@ fail,0,0,q,os.cp["reldir/*.q";"i/dont/exist"],1,1,
 run,0,0,q,.os.cp["reldir/*.q";"nested-2/rel/dir"],1,1,
 true,0,0,q,`os.q`os_1.q`os_4.q~key`$":nested-2/rel/dir",1,1,
 run,0,0,q,.os.del"nested-2/rel/dir/os.q",1,1,
-true,0,0,q,not .os.exists"nested-2/reldir/os.q",1,1,
+true,0,0,q,not .os.exists"nested-2/rel/dir/os.q",1,1,
 fail,0,0,q,.os.del"nested-2/rel/dir/os.q",1,1,
 run,0,0,q,.os.del"/"sv(.testos.osdirstd;"testdir/nested-2/rel/dir/os_4.q"),1,1,
 true,0,0,q,not .os.exists"nested-2/rel/dir/os_4.q",1,1
 
-run,0,0,q,.os.createsymlink["reldir/os.q";"rellink"],1,1,
-true,0,0,q,.os.issymlink"rellink",1,1,
+run,0,0,q,.testos.symlinkable".os.createsymlink[\"reldir/os.q\";\"rellink\"]",1,1,
+true,0,0,q,.testos.symlinkable".os.issymlink\"rellink\"",1,1,
 true,0,0,q,not .os.issymlink"nested",1,1,
 true,0,0,q,not .os.issymlink"reldir/os.q",1,1,
-true,0,0,q,enlist[.testos.sep sv(.testos.osdir;"testdir/rellink")]~distinct .os.abspath each .testos.pathvars"rellink",1,1,
+true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir/rellink\")]~distinct .os.abspath each .testos.pathvars\"rellink\"",1,1,
 true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdir;\"testdir/reldir/os.q\")]~distinct .os.realpath each .testos.pathvars\"rellink\"",1,1,
-run,0,0,q,.os.createsymlink["/"sv(.testos.osdirstd;"testdir/reldir/os_1.q");"/"sv(.testos.osdirstd;"testdir/abslink")],1,1,
-true,0,0,q,.os.issymlink"/"sv(.testos.osdirstd;"testdir/abslink"),1,1,
+run,0,0,q,.testos.symlinkable".os.createsymlink[\"/\"sv(.testos.osdirstd;\"testdir/reldir/os_1.q\");\"/\"sv(.testos.osdirstd;\"testdir/abslink\")]",1,1,
+true,0,0,q,.testos.symlinkable".os.issymlink\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
 true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/nested"),1,1,
 true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/reldir/os_1.q"),1,1,
-true,0,0,q,enlist[.testos.sep sv(.testos.osdir;"testdir/abslink")]~distinct .os.abspath each .testos.pathvars"/"sv(.testos.osdirstd;"testdir/abslink"),1,1,
+true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir/abslink\")]~distinct .os.abspath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
 true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdirstd;\"testdir/reldir/os_1.q\")]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
-run,0,0,q,.os.createsymlink["idontexist.q";"badlink"],1,1,can still create bad links
-true,0,0,q,not .os.exists"badlink",1,1,TODO: is this this the desired behaviour??
+run,0,0,q,.testos.symlinkable".os.createsymlink[\"idontexist.q\";\"badlink\"]",1,1,can still create bad links
+true,0,0,q,.testos.symlinkable"not .os.exists\"badlink\"",1,1,TODO: is this this the desired behaviour??
 true,0,0,q,.testos.nyiwin"(.testos.sep sv(.testos.osdir;\"testdir/idontexist.q\"))~.os.realpath\"badlink\"",1,1,
 true,0,0,q,.testos.nyiwin"not .os.exists .os.realpath\"badlink\"",1,1,
 
@@ -111,8 +111,8 @@ true,0,0,q,.testos.nyiwin"(::)~.os.chmod[\"/\"sv(.testos.osdirstd;\"testdir/reld
 true,0,0,q,.testos.nowin"\"drwxrwxrwx\"~first\" \"vs first system\"ls -ld reldir\"",1,1,
 true,0,0,q,.testos.nowin"enlist[\"-rwxrwxrwx\"]~distinct first each\" \"vs'1_system\"ls -l reldir\"",1,1,
 true,0,0,q,.testos.nowin".[.os.chmod;(\"idonotexist\";777);::]~\"os\"",1,1,
-true,0,0,q,.[.os.chown;("reldir/os.q";"nobody");::]~$[.os.iswindows;"nyi";.testos.isroot;::;"os"],1,1,chown only works without sudo with root access
-true,0,0,q,.testos.nowin"$[.testos.isroot;\"nobody\"~(\" \"vs first system\"ls -l reldir/os.q\")2;1b]",1,1,changed ownership only if we are root
+run,0,0,q,.testos.nyiwin".testos.chownable\".os.chown[\\\"reldir/os.q\\\";\\\"nobody\\\"]\"",1,1,
+true,0,0,q,.testos.nowin".testos.chownable\"\\\"nobody\\\"~(\\\" \\\"vs first system\\\"ls -l reldir/os.q\\\")2\"",1,1,
 
 run,0,0,q,.os.cd .testos.cwd,1,1,
 run,0,0,q,".os.deldir .testos.osdirstd,""/testdir""",1,1,
@@ -139,3 +139,5 @@ run,0,0,q,@[.os.del;"fifo.test";::],1,1,clean up just in case
 true,0,0,q,.testos.nyiwin"(::)~.os.mkfifo\"fifo.test\"",1,1,
 true,0,0,q,.testos.nowin"\"p\"~first first\" \"vs first system\"ls -l fifo.test\"",1,1,
 run,0,0,q,.testos.nowin".os.del\"fifo.test\"",1,1,
+
+run,0,0,q,.testos.issuewarnings[],1,1,

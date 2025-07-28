@@ -12,7 +12,8 @@
 
 // Get the absolute path of a file/directory without resolving symlinks
 .os.abspath:{[path]
-    :trim first system("realpath -ms ",.os.topath[path];"for %F in (\"",.os.topath[path],"\") do @echo %~fF")[.os.iswindows];;
+    res:trim first system("realpath -ms ",.os.topath[path];"for %F in (\"",.os.topath[path],"\") do @echo %~fF")[.os.iswindows];
+    $[.os.iswindows;neg["\\"=last res]_;]res / remove (possible) trailing slash in windows for consistency
  };
 
 // Get the absolute path of a file/directory resolving symlinks
@@ -34,13 +35,22 @@
 .os.issymlink:{[path] :@[{system x;1b};("readlink ";"dir /al /b 2>nul ")[.os.iswindows],.os.topath path;0b];};
 
 // Delete a file
-.os.del:{[path] system("rm ";"del ")[.os.iswindows],.os.topath path;};
+.os.del:{[path]
+    $[.os.iswindows;
+      [if[not .os.exists p:.os.topath path;'"The system cannot find the path specified."]; / windows doesn't reliably error so do it manually
+      system"del ",p];
+
+      system"rm ",.os.topath path];
+ };
 
 // Delete a directory
 .os.deldir:{[path] system("rm -r ";"rd /s /q ")[.os.iswindows],.os.topath path;};
 
 // Create directory (without error if existing), make parent directories as needed
-.os.mkdir:{[path] system"mkdir \"",.os.topath[path],"\"",$[.os.iswindows;" 2>nul"; " -p"];};
+.os.mkdir:{[path]
+    p:"\"",.os.topath[path],"\"";
+    system$[.os.iswindows;"if not exist ",p," mkdir ",p;"mkdir -p ",p];
+ };
 
 // Move/rename a file/directory
 .os.mv:{[src;dest] system("mv ";"move /y ")[.os.iswindows]," " sv .os.topath each (src; dest);};

@@ -28,6 +28,10 @@ Where in-line comments are used, give them the same alignment (using spaces).
 Comments should start with `/` followed by a space and then start with
 lowercase letter (unless using a proper noun).
 
+Multi-line functions should have a comment describing the function, which should be
+placed on the line immediately *following* function declaration - this is so that
+q will return the comment when viewing the function definition in REPL/IDE.
+
 ## Naming
 
 All functions and variables should use all lowercase names - no camelCase and no
@@ -43,6 +47,9 @@ Don't use any q reserved names.
 
 For multi-line functions, function declaration should be on it's own line with
 just parameters.
+
+As mentioned in section on comments, multi-line functions should have a comment
+describing the function placed immediately following the function declaration.
 
 Every other line of the function should contain a single statement and be
 terminated by a semi-colon. Closing brace of function should also be terminated

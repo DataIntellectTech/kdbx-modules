@@ -7,7 +7,7 @@
   if[""~p:first (.Q.opt .z.x)`package;'`noPackageDefined];
   $[not ()~key tp:hsym `$p,"/test.csv";KUltf tp;'`noTestCsv];
   system "l ",p,"/",p,".q";
-  if["test.q"in system"ls ",p;system"l ",p,"/test.q"]; / Load any required helper code
+  if[`test.q in key hsym`$p;system"l ",p,"/test.q"]; / Load any required helper code
   KUrt[];
   -1"Test results:";
   show KUTR;

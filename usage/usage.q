@@ -125,7 +125,7 @@
 .usage.logafter:{[id;zcmd;endtime;result;arg;starttime]
   if[.usage.level>1;
     .usage.write (endtime;id;endtime-starttime;zcmd;"c";.z.a;.z.u;.z.w;.usage.formatarg[zcmd;arg];.usage.meminfo[];-22!result;"")];
-  result;
+  :result;
   };
 
 / log stats of a failed query and raise the error

@@ -30,17 +30,32 @@ true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdir;\"foo\")]~distinct
 true,0,0,q,.testos.nyiwin"enlist[.testos.osdir]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;enlist\".\")",1,1,
 
 run,0,0,q,"@[.os.deldir;.testos.osdirstd,""/testdir"";::]",1,1,clean up just in case
-true,0,0,q,"not .os.exists .os.topath .testos.osdirstd,""/testdir""",1,1,absolute dir doesn't exist
+true,0,0,q,"not .os.exists .testos.osdirstd,""/testdir""",1,1,absolute dir doesn't exist
+true,0,0,q,"not .os.isfile .testos.osdirstd,""/testdir""",1,1,
+true,0,0,q,"not .os.isdir .testos.osdirstd,""/testdir""",1,1,
+true,0,0,q,"not .os.issymlink .testos.osdirstd,""/testdir""",1,1,
 run,0,0,q,".os.mkdir .testos.osdirstd,""/testdir""",1,1,create it
-true,0,0,q,".os.exists .os.topath .testos.osdirstd,""/testdir""",1,1,now absolute dir exists
-true,0,0,q,".os.exists`$.os.topath .testos.osdirstd,""/testdir""",1,1,same but sym
-true,0,0,q,".os.exists hsym`$.os.topath .testos.osdirstd,""/testdir""",1,1,same but hsym
+true,0,0,q,".os.exists .testos.osdirstd,""/testdir""",1,1,now absolute dir exists
+true,0,0,q,".os.exists`$.testos.osdirstd,""/testdir""",1,1,same but sym
+true,0,0,q,".os.exists hsym`$.testos.osdirstd,""/testdir""",1,1,same but hsym
+true,0,0,q,"not .os.isfile .testos.osdirstd,""/testdir""",1,1,
+true,0,0,q,".os.isdir .testos.osdirstd,""/testdir""",1,1,
+true,0,0,q,"not .os.issymlink .testos.osdirstd,""/testdir""",1,1,
 run,0,0,q,".os.mkdir .testos.osdirstd,""/testdir""",1,1,nop if it already exists
 run,0,0,q,".os.cd .testos.osdirstd,""/testdir""",1,1,cd into absolute path
 true,0,0,q,system["cd"]~.testos.sep sv(.testos.osdir;"testdir"),1,1,check we're in the right place
-true,0,0,q,.os.exists .os.topath".",1,1,self exists
-true,0,0,q,.os.exists .os.topath"../testdir/",1,1,self exists from outside
+true,0,0,q,.os.exists".",1,1,self exists
+true,0,0,q,not .os.isfile".",1,1,
+true,0,0,q,.os.isdir".",1,1,
+true,0,0,q,not .os.issymlink".",1,1,
+true,0,0,q,.os.exists"../testdir/",1,1,self exists from outside
+true,0,0,q,not .os.isfile"..",1,1,
+true,0,0,q,.os.isdir"..",1,1,
+true,0,0,q,not .os.issymlink"..",1,1,
 true,0,0,q,not .os.exists"reldir",1,1,relative dir doesn't exist
+true,0,0,q,not .os.isfile"reldir",1,1,
+true,0,0,q,not .os.isdir"reldir",1,1,
+true,0,0,q,not .os.issymlink"reldir",1,1,
 run,0,0,q,.os.mkdir"reldir",1,1,make relative dir
 true,0,0,q,.os.exists"reldir",1,1,now relative dir exists
 run,0,0,q,.os.mkdir"nested/rel/dir",1,1,
@@ -49,11 +64,12 @@ run,0,0,q,".os.mkdir .testos.osdirstd,""/testdir/nested/abs/dir""",1,1,
 true,0,0,q,.os.exists"nested/abs/dir",1,1,
 run,0,0,q,.os.cp["../os.q";"reldir"],1,1,copy relative path
 true,0,0,q,.os.exists"reldir/os.q",1,1,
-true,0,0,q,not .os.isdir"reldir/os.q",1,1,rel not a dir
-true,0,0,q,.os.isdir"reldir",1,1,rel is a dir
-true,0,0,q,not .os.isdir"/"sv(.testos.osdirstd;"reldir/os.q"),1,1,abs not a dir
-true,0,0,q,not .os.isdir"/"sv(.testos.osdirstd;"reldir"),1,1,abs is a dir
-true,0,0,q,not .os.isdir"idontexist",1,1,
+true,0,0,q,.os.isfile"reldir/os.q",1,1,
+true,0,0,q,not .os.isdir"reldir/os.q",1,1,
+true,0,0,q,not .os.issymlink"reldir/os.q",1,1,
+true,0,0,q,.os.isfile"/"sv(.testos.osdirstd;"testdir/reldir/os.q"),1,1,
+true,0,0,q,not .os.isdir"/"sv(.testos.osdirstd;"testdir/reldir/os.q"),1,1,
+true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/reldir/os.q"),1,1,
 run,0,0,q,.os.cp["/"sv(.testos.osdirstd;"os.md");"."],1,1,copy from absolute path
 true,0,0,q,.os.exists"os.md",1,1,
 true,0,0,q,.os.exists"../os.md",1,1,
@@ -90,20 +106,28 @@ true,0,0,q,not .os.exists"nested-2/rel/dir/os_4.q",1,1
 
 run,0,0,q,.testos.symlinkable".os.createsymlink[\"reldir/os.q\";\"rellink\"]",1,1,
 true,0,0,q,.testos.symlinkable".os.issymlink\"rellink\"",1,1,
-true,0,0,q,not .os.issymlink"nested",1,1,
-true,0,0,q,not .os.issymlink"reldir/os.q",1,1,
+true,0,0,q,.testos.symlinkable"not .os.isfile\"rellink\"",1,1,
+true,0,0,q,.testos.symlinkable"not .os.isdir\"rellink\"",1,1,
 true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir\";\"rellink\")]~distinct .os.abspath each .testos.pathvars\"rellink\"",1,1,
 true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdir;\"testdir/reldir/os.q\")]~distinct .os.realpath each .testos.pathvars\"rellink\"",1,1,
 run,0,0,q,.testos.symlinkable".os.createsymlink[\"/\"sv(.testos.osdirstd;\"testdir/reldir/os_1.q\");\"/\"sv(.testos.osdirstd;\"testdir/abslink\")]",1,1,
 true,0,0,q,.testos.symlinkable".os.issymlink\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
-true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/nested"),1,1,
-true,0,0,q,not .os.issymlink"/"sv(.testos.osdirstd;"testdir/reldir/os_1.q"),1,1,
+true,0,0,q,.testos.symlinkable"not .os.isfile\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
+true,0,0,q,.testos.symlinkable"not .os.isdir\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
 true,0,0,q,.testos.symlinkable"enlist[.testos.sep sv(.testos.osdir;\"testdir\";\"abslink\")]~distinct .os.abspath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
 true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdir;\"testdir/reldir/os_1.q\")]~distinct .os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"testdir/abslink\")",1,1,
 run,0,0,q,.testos.symlinkable".os.createsymlink[\"idontexist.q\";\"badlink\"]",1,1,can still create bad links
-true,0,0,q,.testos.symlinkable"not .os.exists\"badlink\"",1,1,TODO: is this this the desired behaviour??
+true,0,0,q,.testos.symlinkable".os.exists\"badlink\"",1,1,
+true,0,0,q,.testos.symlinkable"not .os.isfile\"badlink\"",1,1,
+true,0,0,q,.testos.symlinkable"not .os.isdir\"badlink\"",1,1,
+true,0,0,q,.testos.symlinkable".os.issymlink\"badlink\"",1,1,
 true,0,0,q,.testos.nyiwin"(.testos.sep sv(.testos.osdir;\"testdir/idontexist.q\"))~.os.realpath\"badlink\"",1,1,
 true,0,0,q,.testos.nyiwin"not .os.exists .os.realpath\"badlink\"",1,1,
+run,0,0,q,.testos.symlinkable".os.createsymlink[\"reldir\";\"dirlink\"]",1,1,
+true,0,0,q,.testos.symlinkable".os.exists\"dirlink\"",1,1,
+true,0,0,q,.testos.symlinkable".os.issymlink\"dirlink\"",1,1,
+true,0,0,q,.testos.symlinkable"not .os.isfile\"dirlink\"",1,1,
+true,0,0,q,.testos.symlinkable"not .os.isdir\"dirlink\"",1,1,
 
 true,0,0,q,.testos.nyiwin"(::)~.os.chmod[\"reldir/os.q\";777]",1,1,
 true,0,0,q,.testos.nowin"\"-rwxrwxrwx\"~first\" \"vs first system\"ls -l reldir/os.q\"",1,1,

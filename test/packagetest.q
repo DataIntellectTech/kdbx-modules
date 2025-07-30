@@ -1,11 +1,13 @@
 / generic test script to be ran for individual packages
 
 \l test/k4unit.q
+\l test/mock.q
 
 .test.main:{
   if[""~p:first (.Q.opt .z.x)`package;'"no package defined"];
   $[not ()~key tp:hsym `$p,"/test.csv";KUltf tp;'"no test csv"];
   system "l ",p,"/",p,".q";
+  if[`test.q in key hsym`$p;system"l ",p,"/test.q"]; / Load any required helper code
   KUrt[];
   -1"Test results:";
   show KUTR;

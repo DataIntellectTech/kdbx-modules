@@ -43,7 +43,7 @@ KUTR:([]action:`symbol$();ms:`int$();bytes:`long$();lang:`symbol$();code:`symbol
 / timestamp: when test was run
 / comment: description of the test if it's obscure.. 
 
-\c 10000 10000 
+if[not"B"$first getenv`K4UNIT_FIX_CONSOLE_SIZE;system"c 10000 10000"];
 KUstr:{.KU.SAVEFILE 0:.KU.DELIM 0:update code:string code from KUTR} / save test results
 KUltr:{`KUTR upsert("SIJSSIJSIBBBBZ";enlist .KU.DELIM)0:.KU.SAVEFILE} / reload previously saved test results 
 

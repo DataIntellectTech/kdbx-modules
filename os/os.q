@@ -6,8 +6,8 @@
 / return string/symbol/hsym as a string path, using the separators of the OS
 .os.topath:{[path]
   if[10h<>type path;path:string path];
-  if[.os.iswindows;path:ssr[path;"/";"\\"]];
-  :$[":"=first path;1_;] path;
+  p:ssr[path;;].$[.os.iswindows;reverse;]("\\";"/");
+  :$[":"=first p;1_;]p;
   };
 
 / get the absolute path of a file/directory without resolving symlinks

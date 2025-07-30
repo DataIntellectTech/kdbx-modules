@@ -84,6 +84,12 @@ Copies a file.
 ### `.os.cpdir[src;dest]`
 Copies a directory and its contents.
 
+### `.os.mktemp[]`
+Creates a temporary file in `%TEMP%`, if Windows, and in `/tmp`, otherwise. Returns the absolute path of the file as a string.
+
+### `.os.mktempdir[]`
+Create a temporary directory in `%TEMP%, if Windows, and in `/tmp`, otherwise. Returns the absolute path of the directory as a string.
+
 ---
 
 ## :link: Symlinks and FIFOs

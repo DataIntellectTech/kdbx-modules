@@ -26,10 +26,10 @@
 .os.exists:{[path]@[{system x;1b};$[.os.iswindows;{"dir /b ",x," 2>nul"};{"ls ",x," 2>/dev/null"}].os.topath path;0b]}
 
 / check if a path exists and is a file
-.os.isfile:{[path].os.exists[path]&not[.os.issymlink path]&{x~key x} hsym$[10h=abs type path;`$;]path};
+.os.isfile:{[path].os.exists[path]&not[.os.issymlink path]&{x~@[key;x;()]}hsym$[10h=abs type path;`$;]path};
 
 / check if a path exists and is a directory
-.os.isdir:{[path].os.exists[path]&not[.os.issymlink path]&not{x~key x}hsym$[10h=abs type path;`$;]path};
+.os.isdir:{[path].os.exists[path]&not[.os.issymlink path]&not{x~@[key;x;()]}hsym$[10h=abs type path;`$;]path};
 
 / check if a path exists and is a symbolic link
 .os.issymlink:{[path]@[{system x;1b};("readlink ";"dir /al /b 2>nul ")[.os.iswindows],.os.topath path;0b]};

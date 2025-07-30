@@ -32,10 +32,11 @@ Timer jobs are tracked in **.timer.jobs**, an in-memory table storing job metada
 | prevend       | timestamp | End time of previous run                                              |
 | nextstart     | timestamp | time of next scheduled run                                            |
 | runs          | int       | Count of successful executions                                        |
+| status        | boolean   | Whether job is active (1b) or disabled (0b)                           |
 | maxruns       | int       | Max number of runs before job is disabled                             |
 | maxtime       | timestamp | Cutoff time for job scheduling                                        |
-| status        | boolean   | Whether job is active (1b) or disabled (0b)                           |
-| disableonfail | boolean   | Flag to disable job on failure if enabled                             |  
+| disableonfail | boolean   | Flag to disable job on failure if enabled                             |
+| startattime   | timestamp | Start specifically at provided time                                   |  
 
 ---
 
@@ -57,33 +58,41 @@ Functions shown below allow you to register new timer-based jobs with varying de
 
 ###### Function Parameters
 
-| Parameter     | Type      | Description                                                           |
-| ------------- | --------- | --------------------------------------------------------------------- |
-| id            | symbol    | Unique function identifier, must not already exist in .timer.jobs     |
-| func          | function  | Function to be executed when job runs                                 |
-| params        | list      | arguments to pass into the function at run time                       |
-| period        | int       | Time period in seconds or minutes for next run time calculations      |
-| mode          | short     | Scheulding more to determine next run time                            |
-| maxruns       | int       | Optional limit on nnumber of times the job may run. 0Ni to disables   |
-| maxtime       | timestamp | Optional timestamp after which the job becomes inactive, 0Np disables |
-| disableonfail | boolean   | If set to 1b, disables future runs if the function fails to execute   |
+| Parameter     | Type       | Description                                                           |
+| ------------- | ---------- | --------------------------------------------------------------------- |
+| id            | symbol     | Unique function identifier, must not already exist in .timer.jobs     |
+| func          | function   | Function to be executed when job runs                                 |
+| params        | list       | Arguments to pass into the function at run time                       |
+| period        | int        | Time period in seconds or minutes for next run time calculations      |
+| mode          | short      | Scheduling more to determine next run time                            |
+| opts          | dictionary | Optional additional configuration parameters, specifics below         |
+
+###### Function Options
+| Option        | Type      | Description                                                   |
+| ------------- | --------- | ------------------------------------------------------------- |
+| maxruns       | int       | Number of times for function to execute before being disabled |
+| maxtime       | timestamp | Max timestamp for new function executions to be scheduled     |
+| disableonfail | boolean   | By default: 1b, will automatically disable jobs if they fail  |
+| startattime   | timestmap | Specfic timestamp for intial function run                     |
 
 #### .timer.addjob.custom
-Lets you fully define a scheduled job by specifying its function, parameters, timing, mode, and control flags for execution limits and failure handling.
+Lets you fully define a scheduled job by specifying its function, parameters, timing, mode, and options.
 ```q
-.timer.addjob.custom[`job1;{show x};("Hello!");10;1;5;0Np;1b]
+.timer.addjob.custom[`job1;{show x};("Hello!");10;4;(enlist `maxruns)!(enlist 3)];
+.timer.addjob.custom[`job2;{show x+y};(2;3);15;5;(`maxtime`startattime)!(2025.07.30D17:00:000;2025.07.30D09:00:000)];
+.timer.addjob.custom[`job3;{show "Hello, world!"};5;1;()!()];
+```
+
+#### .timer.addjob.default
+Streamlined way to create a simple job with set default options i.e. not maxruns,maxtime or startattime and will automically disable on fail
+```q
+.timer.addjob.default[`job4;{show "Mode 2"};();15;2];
 ```
 
 #### .timer.addjob.simple 
 Provides a fast way to schedule a job using sensible defaults — ideal for quick setup when you only need to specify a function, its interval, and minimal configuration. Schedule mode is defaulted to 1.
 ```q
-.timer.addjob.simple[`job2;{show "Hi"};30]
-```
-
-#### .timer.addjob.mode 
-Streamlined way to create a simple job with custom mode and parameters while applying default safeguards for failure handling and execution limits.
-```q
-.timer.addjob.mode[`job3;{show "Mode 2"};();15;2]
+.timer.addjob.simple[`job5;{show "Hi"};30]
 ```
 
 ---
@@ -154,6 +163,15 @@ These are global control variables and can be adjusted by the user after import 
 - Usage: When set to 1b, job execution attempts, successes, and errors will be logged to the console with timestamps and context via .timer.msg.info and .timer.msg.err.
 - Default: 0b (disabled).
 This is useful during development or troubleshooting to inspect scheduler behavior.
+#### Log Call
+```q
+.timer.logcall:1b
+```
+- Purpose: Logs function execution in usage logs through 0 handle.
+- Type: Boolean (1b for enabled, 0b for disabled).
+- Usage: Enables 0 handle logging for tracking function exection. 
+Default: 1b (enabled)
+This is useful for production use to ensure application is operating as expected 
 #### Cycle Time
 ```q
 .timer.cycletime:1000
@@ -163,6 +181,15 @@ This is useful during development or troubleshooting to inspect scheduler behavi
 - Usage: Controls how frequently .z.ts triggers the main execution loop .timer.main[].
 - Default: 1000 (1 second).
 Adjust this value to increase responsiveness or reduce CPU usage, depending on the expected job timing precision.
+#### Current Timestamp
+```q
+.timer.cp:{.z.p}
+```
+- Purpose: Internal function defined for returning timestamps for all internal logic
+- Type: Function, returns timestamp
+- Usage: Allows the user to overwrite all internal timestamps used for scheduling
+- Default: {.z.p}
+This is useful for backtesting and simulation
 
 ### Example 
 ```q
@@ -174,10 +201,10 @@ helloFunc:{show "Hello from job 1"};
 .timer.addjob.simple[`job1;helloFunc;5];
 
 echoFunc:{show x};
-.timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;3;0Np;1b];
+.timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;(enlist `maxruns)!(enlist 3)];
 
 .func.timeAligned:{show "On the quarter hour"};
-.timer.addjob.mode[`job3;`.func.timeAligned;();15;5];
+.timer.addjob.default[`job3;`.func.timeAligned;();15;5];
 
 .timer.init[];
 
@@ -192,5 +219,5 @@ echoFunc:{show x};
 .timer.disable[]
 
 // Restart scheduler loop again later
-.timer.init[]
+.timer.enable[]
 ```

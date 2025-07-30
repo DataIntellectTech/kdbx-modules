@@ -106,3 +106,36 @@
   if[.os.iswindows;'`nyi];
   system"mkfifo ",.os.topath path;
   };
+
+/ create temporary file, returns the file path
+.os.mktemp:{[]
+  $[.os.iswindows;
+    .os.mktempwin[];
+    first system"mktemp"]
+  };
+
+/ internal - creates a temp file/dir name in windows (%TEMP%\tmp.<current_timestamp>)
+.os.mktempwinname:{[]
+  getenv[`TEMP],"\\tmp.",string[.z.p]except".:D"
+  };
+
+/ internal - creates an empty file in windows
+.os.mktempwin:{[]
+  fn:.os.mktempwinname[];
+  hsym[`$fn]0:();
+  fn
+  };
+
+/ create temporary directory
+.os.mktempdir:{[]
+  $[.os.iswindows;
+    .os.mktempdirwin[];
+    first system"mktemp -d"]
+  };
+
+/ internal - makes a temporary directory in windows
+.os.mktempdirwin:{[]
+  dn:.os.mktempwinname[];
+  system"mkdir ",dn;
+  dn
+  };

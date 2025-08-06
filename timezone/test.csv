@@ -2,6 +2,7 @@ action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,.timezone.init[],1,,Initialize package
 true,0,0,q,0<count .timezone.offsets,1,,Confirm tzinfo is read in properly
 true,0,0,q,400<count .timezone.zones,1,,Confirm distinct time zones is populated and significant number available
+
 true,0,0,q,2025.07.22D14:19:48.386221575=.timezone.localtogmt["America/New_York";2025.07.22D10:19:48.386221575],1,,Test local to gmt 1
 true,0,0,q,1999.03.03D12:13:48.919241092=.timezone.localtogmt["Europe/London";1999.03.03D12:13:48.919241092],1,,Test local to gmt 2
 true,0,0,q,1967.05.02D21:03:52.857237462=.timezone.gmttolocal["America/Toronto";1967.05.03D01:03:52.857237462],1,,Test gmt to local 1
@@ -9,3 +10,11 @@ true,0,0,q,2017.09.01D04:03:52.857237462=.timezone.gmttolocal["America/Los_Angel
 true,0,0,q,2025.07.21D19:19:48.386221575=.timezone.convert["Asia/Singapore";"America/Vancouver";2025.07.22D10:19:48.386221575],1,,Test timezone to timezone 1
 true,0,0,q,2025.07.24D15:27:58.224707599=.timezone.convert["America/New_York";"America/Toronto";2025.07.24D15:27:58.224707599],1,,Test timezone to timezone 2
 true,0,0,q,2025.11.02D01:30:00.000=.timezone.convert["America/New_York";"America/New_York";2025.11.02D01:30:00.000],1,,DST edge case
+
+true,0,0,q,(2025.08.03D22:50:46.515073740;2025.08.04D22:50:46.515073740;2025.08.05D22:50:46.515073740)~.timezone.localtogmt["America/Toronto";(2025.08.03D18:50:46.515073740;2025.08.04D18:50:46.515073740;2025.08.05D18:50:46.515073740)],1,,Test single timezone multi ts 1
+true,0,0,q,(2025.08.03D11:50:46.515073740;2025.08.04D11:50:46.515073740;2025.08.05D11:50:46.515073740)~.timezone.gmttolocal["America/Vancouver";(2025.08.03D18:50:46.515073740;2025.08.04D18:50:46.515073740;2025.08.05D18:50:46.515073740)],1,,Test single timezone multi ts 2
+true,0,0,q,(2025.08.05D19:50:46.515073740;2025.08.05D14:50:46.515073740)~.timezone.gmttolocal[("Europe/London";"America/New_York");2# 2025.08.05D18:50:46.515073740],1,,Test multi timezones multi ts 1
+true,0,0,q,(2025.08.05D17:50:46.515073740;2025.08.05D22:50:46.515073740)~.timezone.localtogmt[("Europe/London";"America/New_York");2# 2025.08.05D18:50:46.515073740],1,,Test multi timezones multi ts 2
+
+true,0,0,q,`notValidTimezone~.[.timezone.gmttolocal;("testTimezone";.z.p);{`$x}],1,,Test error catch for invalid timezone 1
+true,0,0,q,`notValidTimezone~.[.timezone.localtogmt;("testTimezone";.z.p);{`$x}],1,,Test error catch for invalid timezone 2

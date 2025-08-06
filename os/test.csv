@@ -144,6 +144,7 @@ run,0,0,q,.os.cd .testos.cwd,1,1,
 run,0,0,q,".os.deldir .testos.osdirstd,""/testdir""",1,1,
 
 run,0,0,q,.os.setdrysyscalls 1b,1,1,
+run,0,0,q,.test.mock[`.os.iswindows;0b],1,1,
 run,0,0,q,.os.kill[1234;6],1,1,
 run,0,0,q,.os.kill2 5000,1,1,
 run,0,0,q,.os.kill3 6050,1,1,

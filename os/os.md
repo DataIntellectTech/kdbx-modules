@@ -161,6 +161,21 @@ Returns the current working directory as a string.
 
 ---
 
+## :mag: Debug tools
+
+It is sometimes useful to capture system calls rather than execute them (e.g. debugging or testing). The `os` package allows toggling "dry system call" mode on or off. When on, system calls are captured, but not executed. When off (default state), system calls are executed normally.
+
+### `.os.setdrysyscalls[bool]`
+Toggle dry system calls on (`bool=1b`) or off (`bool=0b`). Note that by default, dry system call mode is off.
+
+### `.os.getdrysyscalls[]`
+Returns captured dry system calls.
+
+### `.os.cleardrysyscalls[]`
+Clears captured dry system calls from the stored cache.
+
+---
+
 ## :test_tube: Error Handling
 
 For unimplemented operations (e.g., `.os.realpath` on Windows), the function will raise `'nyi` (`not yet implemented`).

@@ -35,7 +35,10 @@ q).os.topath `:some/relative/path // on Unix...
 Returns the **absolute path** to a file/directory **without resolving symlinks** (does not check that the path exists).
 
 ```q
-.os.abspath "../file.txt"
+q).os.abspath "../file.txt" // on Windows...
+"C:\\path\\to\\file.txt
+q).os.topath "../file.txt" // on Unix...
+"/path/to/file.txt"
 ```
 
 ### `.os.realpath[path]`
@@ -136,7 +139,7 @@ Sends a signal to a process (e.g.,`2`,`3`,or `9`).
 Interrupts a process (`SIGINT`,equivalent to `kill -2`). Behaves as a normal kill on Windows.
 
 ### `.os.kill3[pid]`
-Quits a process (`SIGQUIT`,`kill -3`).
+Quits a process (`SIGQUIT`,`kill -3`). Behaves as a normal kill on Windows.
 
 ### `.os.kill9[pid]`
 Force kills a process (`SIGKILL`,`kill -9`).
@@ -163,7 +166,7 @@ Returns the current working directory as a string.
 
 ## :mag: Debug tools
 
-It is sometimes useful to capture system calls rather than execute them (e.g. debugging or testing). The `os` package allows toggling "dry system call" mode on or off. When on, system calls are captured, but not executed. When off (default state), system calls are executed normally.
+It is sometimes useful to capture system calls rather than execute them (e.g. debugging or testing). The `os` package allows toggling "dry system call" mode on or off. When on, system calls are captured, but not executed. When off (default state), system calls are executed normally. Note: when in dry system call mode, all system calls return `""`, as they are not actually executed.
 
 ### `.os.setdrysyscalls[bool]`
 Toggle dry system calls on (`bool=1b`) or off (`bool=0b`). Note that by default, dry system call mode is off.

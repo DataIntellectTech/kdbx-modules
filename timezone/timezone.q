@@ -17,14 +17,14 @@
 
 / convert from local timestamp to gmt
 .timezone.gmttolocal:{[tz;ts]
-  if[not (tz:`$tz) in .timezone.zones;'`notValidTimezone];
-  $[0>type ts;first;(::)]@exec gmtDateTime+gmtOffset from aj[`timezoneID`gmtDateTime;([]timezoneID:(),tz;gmtDateTime:ts,());.timezone.offsets]
+  if[not all ((),tz:`$tz) in\: .timezone.zones;'`notValidTimezone];
+  $[0>type ts;first;(::)]@exec gmtDateTime+gmtOffset from aj[`timezoneID`gmtDateTime;([]timezoneID:tz;gmtDateTime:ts,());.timezone.offsets]
   };
 
 / convert from gmt to local timestamp
 .timezone.localtogmt:{[tz;ts]
-  if[not (tz:`$tz) in .timezone.zones;'`notValidTimezone];
-  $[0>type ts;first;(::)]@exec localDateTime-gmtOffset from aj[`timezoneID`localDateTime;([]timezoneID:(),tz;localDateTime:ts,());.timezone.offsets]
+  if[not all ((),tz:`$tz) in\: .timezone.zones;'`notValidTimezone];
+  $[0>type ts;first;(::)]@exec localDateTime-gmtOffset from aj[`timezoneID`localDateTime;([]timezoneID:tz;localDateTime:ts,());.timezone.offsets]
   };
 
 / convert between custom timestamps

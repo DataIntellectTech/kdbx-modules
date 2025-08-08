@@ -72,8 +72,7 @@
 .dg.setfunctions:{[useweb]
     if[null method:$[useweb;`web;("lw"!`lin`win) first string .z.o];
        '"Currently only linux and windows operating systems are supported to send metrics and events. Please use "".dg.setfunctions 1b"" to attempt a web request"];
-    .dg.sendmetric::.dg[method] `sendmetric;
-    .dg.sendevent::.dg[method] `sendevent;
+    .dg,:.dg[method];
  }
 
 // Initialisation function

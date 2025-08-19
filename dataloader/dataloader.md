@@ -2,7 +2,7 @@
 
 
 This package is used for automated customisable dataloading and database creation and is a generalisation of http://code.kx.com/wiki/Cookbook/LoadingFromLargeFiles. 
-Load all delimeted files in a directory into memory in configurable chunk sizes then output the resulting tables to disk in kdb+ partiioned format.
+Load all delimeted files in a directory into memory in configurable chunk sizes then output the resulting tables to disk in kdb+ partitioned format.
 When all the data is written, the on-disk data is re-sorted and the attributes are applied.
 
 ---
@@ -16,7 +16,7 @@ When all the data is written, the on-disk data is re-sorted and the attributes a
 
 ---
 
-## :gear: Iniitialisation
+## :gear: Initialisation
 
 After loading the package into the session the unary function `.loader.init` is called with a single argument to initialise the packages global variables and define any configurable sorting/attributes.
 
@@ -62,12 +62,13 @@ The dictionary should/can have the following fields:
 | `tablename`       | Y        | symbol    | Name of table to write data to                                                                                                                                                  |
 | `dbdir`           | Y        | symbol    | Directory to write data to                                                                                                                                                      |
 | `symdir`          | N        | symbol    | Directory to enumerate against                                                                                                                                                  |
+| `enumname`        | N        | symbol    | Name of symfile to enumerate against. Default is `sym                                                                                                                           |
 | `partitiontype`   | N        | symbol    | Partitioning to use. Must be one of `date, month, year, int`. Default is `date`                                                                                                 |
 | `partitioncol`    | N        | symbol    | Column to use to extract partition information.Default is `time`                                                                                                                |
 | `dataprocessfunc` | N        | function  | Diadic function to process data after it has been read in. First argument is load parameters dictionary, second argument is data which has been read in. Default is `{[x;y] y}` |
-| `chunksize`       | N        | int       | Data size in bytes to read in one chunk. Default is `100 MB`                                                                                                                      |
+| `chunksize`       | N        | int       | Data size in bytes to read in one chunk. Default is `100 MB`                                                                                                                    |
 | `compression`     | N        | int list  | Compression parameters to use e.g. `17 2 6`. Default is empty list for no compression                                                                                           |
-| `gc`              | N        | boolean   | Whether to run garbage collection at appropriate points. Default is `0b` (false)                                                                                                  |
+| `gc`              | N        | boolean   | Whether to run garbage collection at appropriate points. Default is `0b` (false)                                                                                                |
 | `filepattern`     | N        | char list | Pattern used to only load certain files e.g. `".csv"`,`("*.csv","*.txt")`                                                                                                       |
 
 The second parameter is a directory handle .e.g 

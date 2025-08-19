@@ -1,0 +1,46 @@
+true,0,0,q,(".loader.init requires a dictionary parameter")~@[.loader.util.sortfilter;`;{x}],1,,Test error trapping for wrong param type
+true,0,0,q,("Error ensure dictionary values are the correct types 11 11 11 1h or -11 -11 -11 -1h")~@[.loader.util.sortfilter;(`tabname`att`column`sort)!(1;2;3;4);{x}],1,,Test error trapping for param value types
+true,0,0,q,("Error ensure argument is a dictionary with keys `tabname`att`column`sort")~@[.loader.util.sortfilter;(`test1`test2`test3`test4)!(`test1;`test2;`test3;1b);{x}],1,,Test error trapping for from param key values
+run,0,0,q,.loader.init[`tabname`att`column`sort!(`default;`p;`sym;1b)],1,,Init package with defaults for all tables
+
+run,0,0,q,.test.dataloader.mockdirs[0b;`trade],1,,Create temporary test directory for checking dataloading with trade no headers
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir!(`time`sym`price`size`side`exchange;"PSFISS";.test.dataloader.delimeter;`trade;`:test/data/hdb);`:test/data/files],1,,Test load of trade file with no headers
+run,0,0,q,\l test/data/hdb,1,,Load database 
+true,0,0,q,`trade in tables[],1,,Test table loaded to db
+true,0,0,q,`p=(meta trade)[`sym][`a],1,,Check sym column is parted
+true,0,0,q,`2024.01.15 in key`:.,1,,Check table saved to correct partition
+true,0,0,q,`sym in key `:.,1,,Check sym file created and enumerated against
+
+run,0,0,q,.test.dataloader.mockdirs[1b;`trade],1,,Create temporary test directory for checking dataloading with trade with headers
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir!(`time`sym`price`size`side`exchange;"PSFISS";enlist .test.dataloader.delimeter;`trade;`:test/data/hdb);`:test/data/files],1,,Test load of trade file with no headers
+run,0,0,q,\l test/data/hdb,1,,Load database 
+true,0,0,q,`trade in tables[],1,,Test table loaded to db
+true,0,0,q,`p=(meta trade)[`sym][`a],1,,Check sym column is parted
+true,0,0,q,`2024.01.15 in key`:.,1,,Check table saved to correct partition
+true,0,0,q,`sym in key `:.,1,,Check sym file created and enumerated against
+
+run,0,0,q,.test.dataloader.mockdirs[1b;`trade],1,,Create temporary test directory for checking dataloading with trade with headers
+run,0,0,q,.test.dataloader.mocksymdir[],1,,Create temporary enum directory
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`symdir!(`time`sym`price`size`side`exchange;"PSFISS";enlist .test.dataloader.delimeter;`trade;`:test/data/hdb;`:test/data/symdir);`:test/data/files],1,,Test load of trade file with specfied symdir
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`trade in tables[],1,,Test table loaded to db
+true,0,0,q,("symdir" in system"ls ../."),1,,Test sym file enumerated to custom directory
+
+run,0,0,q,.test.dataloader.mockdirs[1b;`trade],1,,Create temporary test directory for checking dataloading with trade with headers
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`enumname!(`time`sym`price`size`side`exchange;"PSFISS";enlist .test.dataloader.delimeter;`trade;`:test/data/hdb;`mocksym);`:test/data/files],1,,Test load of trade file with specfied symfile name
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`mocksym in key `:.,1,,Check that db sym file has custom name
+
+run,0,0,q,.test.dataloader.mockdirs[1b;`tradedaily],1,,Create temporary test directory for checking dataloading with tradedaily and custom partitioning
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`partitiontype`partitioncol!(`date`time`sym`price`size`exchange;"DTSFIS";enlist .test.dataloader.delimeter;`tradedaily;`:test/data/hdb;`month;`date);`:test/data/files],1,,Test custom partition overwrites
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,all (`2024.01`2024.02`2024.03`2024.04) in\: key `:.,1,,Check partitions were created as month and all are there
+
+run,0,0,q,.test.dataloader.mockdirs[1b;`trade`quote],1,,Create temporary test directory for checking dataloading with trade and quote at the same time specifying with filepattern
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`filepattern!(`time`sym`price`size`side`exchange;"PSFISS";enlist .test.dataloader.delimeter;`trade;`:test/data/hdb;"trade.csv");`:test/data/files],1,,Test load of trade file
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`filepattern!(`time`sym`bid`ask`bsize`asize`exchange;"PSFFIIS";enlist .test.dataloader.delimeter;`quote;`:test/data/hdb;"quote.csv");`:test/data/files],1,,Test load of quote file
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`trade in tables[],1,,Test trade table loaded to db
+true,0,0,q,`quote in tables[],1,,Test quote table loaded to db
+
+run,0,0,q,.test.dataloader.complete[],1,,Remove testing environment

@@ -1,7 +1,7 @@
 true,0,0,q,(".loader.init requires a dictionary parameter")~@[.loader.util.sortfilter;`;{x}],1,,Test error trapping for wrong param type
 true,0,0,q,("Error ensure dictionary values are the correct types 11 11 11 1h or -11 -11 -11 -1h")~@[.loader.util.sortfilter;(`tabname`att`column`sort)!(1;2;3;4);{x}],1,,Test error trapping for param value types
 true,0,0,q,("Error ensure argument is a dictionary with keys `tabname`att`column`sort")~@[.loader.util.sortfilter;(`test1`test2`test3`test4)!(`test1;`test2;`test3;1b);{x}],1,,Test error trapping for from param key values
-run,0,0,q,.loader.init[`tabname`att`column`sort!(`default;`p;`sym;1b)],1,,Init package with defaults for all tables
+run,0,0,q,.loader.init[`tabname`att`column`sort!(`default`quote`tradedaily;`p`s`;`sym`time`;110b)],1,,Init package with defaults for all tables
 
 run,0,0,q,.test.dataloader.mockdirs[0b;`trade],1,,Create temporary test directory for checking dataloading with trade no headers
 run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir!(`time`sym`price`size`side`exchange;"PSFISS";.test.dataloader.delimeter;`trade;`:test/data/hdb);`:test/data/files],1,,Test load of trade file with no headers
@@ -35,12 +35,42 @@ run,0,0,q,.test.dataloader.mockdirs[1b;`tradedaily],1,,Create temporary test dir
 run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`partitiontype`partitioncol!(`date`time`sym`price`size`exchange;"DTSFIS";enlist .test.dataloader.delimeter;`tradedaily;`:test/data/hdb;`month;`date);`:test/data/files],1,,Test custom partition overwrites
 run,0,0,q,\l test/data/hdb,1,,Load database
 true,0,0,q,all (`2024.01`2024.02`2024.03`2024.04) in\: key `:.,1,,Check partitions were created as month and all are there
+true,0,0,q,all null exec a from 0!meta tradedaily,1,,Check no attributes applied to tradedaily table
+
+run,0,0,q,.test.dataloader.mockdirs[0b;`quote],1,,Create temporary test directory for checking dataloading with quote and diadic function application
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`dataprocessfunc!(`time`sym`bid`ask`bsize`asize`exchange;"PSFFIIS";.test.dataloader.delimeter;`quote;`:test/data/hdb;.test.dataloader.dataprocessfunc);`:test/data/files],1,,Test load of quote file
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`quote in tables[],1,,Check that table loaded to db
+true,0,0,q,`mid in cols quote,1,,Check that column from update function is included in save down
+
+run,0,0,q,.test.dataloader.mockdirs[0b;`quote],1,,Create temporary test directory for checking dataloading with quote reading in with chunks
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`chunksize!(`time`sym`bid`ask`bsize`asize`exchange;"PSFFIIS";.test.dataloader.delimeter;`quote;`:test/data/hdb;200i);`:test/data/files],1,,Test load of quote file
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`quote in tables[],1,,Test quote table loaded to db in chunks
+true,0,0,q,10=count quote,1,,Test all of quote file loaded in chunks
+
+run,0,0,q,.test.dataloader.mockdirs[1b;`trade],1,,Create temporary test directory for checking compression loading
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`compression!(`time`sym`price`size`side`exchange;"PSFISS";enlist .test.dataloader.delimeter;`trade;`:test/data/hdb;(17i;2i;6i));`:test/data/files],1,,Test loading with compression specified
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`trade in tables[],1,,Test trade table loaded to db
+true,0,0,q,(2i;17i;6i)~(-21!`:2024.01.15/trade/exchange)[`algorithm`logicalBlockSize`zipLevel],1,,Check compression for exchange column
+true,0,0,q,(2i;17i;6i)~(-21!`:2024.01.15/trade/price)[`algorithm`logicalBlockSize`zipLevel],1,,Check compression for price column
+true,0,0,q,(2i;17i;6i)~(-21!`:2024.01.15/trade/side)[`algorithm`logicalBlockSize`zipLevel],1,,Check compression for side column
+true,0,0,q,(2i;17i;6i)~(-21!`:2024.01.15/trade/size)[`algorithm`logicalBlockSize`zipLevel],1,,Check compression for size column
+true,0,0,q,(2i;17i;6i)~(-21!`:2024.01.15/trade/sym)[`algorithm`logicalBlockSize`zipLevel],1,,Check compression for sym column
+true,0,0,q,(2i;17i;6i)~(-21!`:2024.01.15/trade/time)[`algorithm`logicalBlockSize`zipLevel],1,,Check compression for time column
+
+run,0,0,q,.test.dataloader.mockdirs[1b;`trade],1,,Create temporary test directory for checking garbage collection loading
+run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`gc!(`time`sym`price`size`side`exchange;"PSFISS";enlist .test.dataloader.delimeter;`trade;`:test/data/hdb;1b);`:test/data/files],1,,Test loading with garbage collection enabled
+run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`trade in tables[],1,,Test trade table loaded to db
 
 run,0,0,q,.test.dataloader.mockdirs[1b;`trade`quote],1,,Create temporary test directory for checking dataloading with trade and quote at the same time specifying with filepattern
 run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`filepattern!(`time`sym`price`size`side`exchange;"PSFISS";enlist .test.dataloader.delimeter;`trade;`:test/data/hdb;"trade.csv");`:test/data/files],1,,Test load of trade file
 run,0,0,q,.loader.loadallfiles[`headers`types`separator`tablename`dbdir`filepattern!(`time`sym`bid`ask`bsize`asize`exchange;"PSFFIIS";enlist .test.dataloader.delimeter;`quote;`:test/data/hdb;"quote.csv");`:test/data/files],1,,Test load of quote file
 run,0,0,q,\l test/data/hdb,1,,Load database
+true,0,0,q,`s=(meta quote)[`time][`a],1,,Check quote table sorted on time
 true,0,0,q,`trade in tables[],1,,Test trade table loaded to db
 true,0,0,q,`quote in tables[],1,,Test quote table loaded to db
 
-run,0,0,q,.test.dataloader.complete[],1,,Remove testing environment
+run,0,0,q,.test.dataloader.complete[],1,,Remove testing evidence

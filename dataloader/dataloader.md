@@ -2,7 +2,17 @@
 
 
 This package is used for automated customisable dataloading and database creation and is a generalisation of http://code.kx.com/wiki/Cookbook/LoadingFromLargeFiles. 
-Load all delimeted files in a directory into memory in configurable chunk sizes then output the resulting tables to disk in kdb+ partitioned format.
+Package employs a chunk-based loading strategy to minimize memory usage when processing large datasets. Rather than loading entire datasets into memory before writing to disk, data is processed incrementally in manageable chunks.
+
+The memory footprint is determined by the maximum of:
+- Memory required to load and save one data chunk
+- Memory required to sort the final resultant table
+
+This approach enables processing of large data volumes with a relatively small memory footprint. Example use cases include: 
+- Large File Processing: Loading very large files by processing them in small, sequential chunks
+- Cross-Partition Loading: Efficiently handling distributed data across multiple small files (e.g., separate monthly files for AAPL and MSFT data)
+
+The chunked architecture ensures scalable performance regardless of total dataset size, making it suitable for processing datasets that would otherwise exceed available system memory.
 When all the data is written, the on-disk data is re-sorted and the attributes are applied.
 
 ---

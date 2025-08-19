@@ -47,4 +47,11 @@
 
 .test.dataloader.mocksymdir:{system "mkdir test/data/symdir"};
 
+.test.dataloader.dataprocessfunc:{[loaderparams;data]
+  / testing function will calculate mid column from quote data
+  update mid:avg(bid;ask) from data
+  };
+
 .test.dataloader.delimeter:",";
+
+.test.dataloader.complete:{system"cd ../../..";system"rm -rf test/data"};

@@ -39,22 +39,22 @@ Set the path to your timezone data file
 ##### .timezone.localtogmt
 Converts a local timestamp to GMT using timezoneID 
 ```q
-// .timezone.localtogmt[localTimezone;timestamp]
-.timezone.localtogmt["America/New_York";2025.07.22D10:19:48.386221575]
+/ .timezone.localtogmt[localTimezone;timestamp]
+.timezone.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575]
 2025.07.22D14:19:48.386221575
 ```
 
 ##### .timezone.gmttolocal
 Converts a GMT timestamp to local using timezoneID
 ```q
-// .timezone.gmttolocal[localTimezone;timestamp]
-.timezone.gmttolocal["America/New_York";2025.07.22D10:19:48.386221575]
+/ .timezone.gmttolocal[localTimezone;timestamp]
+.timezone.gmttolocal[`$"America/New_York";2025.07.22D10:19:48.386221575]
 2025.07.22D06:19:48.386221575
 ```
 
 ##### .timezone.convert
 ```q
-// .timezone.convert[sourceTimezone;destTimezone;timestamp]
-.timezone.convert["America/New_York";"Europe/London";2025.07.22D10:19:48.386221575]
+/ .timezone.convert[sourceTimezone;destTimezone;timestamp]
+.timezone.convert[`$"America/New_York";`$"Europe/London";2025.07.22D10:19:48.386221575]
 2025.07.22D15:19:48.386221575
 ```

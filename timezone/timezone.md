@@ -45,7 +45,7 @@ q)tz.init "path/to/tzinfo"
 Converts a local timestamp to GMT using timezoneID 
 ```q
 // tz.localtogmt[localTimezone;timestamp]
-q)tz.localtogmt["America/New_York";2025.07.22D10:19:48.386221575]
+q)tz.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575]
 2025.07.22D14:19:48.386221575
 ```
 
@@ -53,13 +53,13 @@ q)tz.localtogmt["America/New_York";2025.07.22D10:19:48.386221575]
 Converts a GMT timestamp to local using timezoneID
 ```q
 // tz.gmttolocal[localTimezone;timestamp]
-q)tz.gmttolocal["America/New_York";2025.07.22D10:19:48.386221575]
+q)tz.gmttolocal[`$"America/New_York";2025.07.22D10:19:48.386221575]
 2025.07.22D06:19:48.386221575
 ```
 
 ##### tz.convert
 ```q
 // tz.convert[sourceTimezone;destTimezone;timestamp]
-q)tz.convert["America/New_York";"Europe/London";2025.07.22D10:19:48.386221575]
+q)tz.convert[`$"America/New_York";`$"Europe/London";2025.07.22D10:19:48.386221575]
 2025.07.22D15:19:48.386221575
 ```

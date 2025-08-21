@@ -15,15 +15,15 @@ config.read:{
   tz
   };
 
-/ convert from local timestamp to gmt
 gmttolocal:{[tz;ts]
-  if[not all ((),tz:`$tz) in\: .z.m.zones;'`notValidTimezone];
+  / convert from local timestamp to gmt
+  if[not all ((),tz) in\: .z.m.zones;'`notValidTimezone];
   $[0>type ts;first;(::)]@exec gmtDateTime+gmtOffset from aj[`timezoneID`gmtDateTime;([]timezoneID:tz;gmtDateTime:ts,());.z.m.offsets]
   };
 
-/ convert from gmt to local timestamp
 localtogmt:{[tz;ts]
-  if[not all ((),tz:`$tz) in\: .z.m.zones;'`notValidTimezone];
+  / convert from gmt to local timestamp
+  if[not all ((),tz) in\: .z.m.zones;'`notValidTimezone];
   $[0>type ts;first;(::)]@exec localDateTime-gmtOffset from aj[`timezoneID`localDateTime;([]timezoneID:tz;localDateTime:ts,());.z.m.offsets]
   };
 

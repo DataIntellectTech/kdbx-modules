@@ -23,38 +23,43 @@ t:flip `timezoneID`gmtDateTime`gmtOffset`dst!("S  JIB";csv)0:hsym `:time_zone.cs
 
 ### Package Initialization
 
-Set the path to your timezone data file
+Loading the module will automatically initialise using the included tzinfo.
 
 ```q
-/ Overwrite tzinfo file path if neccessary
-.timezone.config.file:"/your/output/directory/tzinfo"
-/ Initalize package
-.timezone.init[]
+q)tz:use`timezone
+```
+
+If you wish to use an alternative tzinfo file, you can call the init function with
+the path to your file
+
+```q
+q)tz:use`timezone
+q)tz.init "path/to/tzinfo"
 ```
 
 ---
 
 ### Package Use
 
-##### .timezone.localtogmt
+##### tz.localtogmt
 Converts a local timestamp to GMT using timezoneID 
 ```q
-/ .timezone.localtogmt[localTimezone;timestamp]
-.timezone.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575]
+// tz.localtogmt[localTimezone;timestamp]
+q)tz.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575]
 2025.07.22D14:19:48.386221575
 ```
 
-##### .timezone.gmttolocal
+##### tz.gmttolocal
 Converts a GMT timestamp to local using timezoneID
 ```q
-/ .timezone.gmttolocal[localTimezone;timestamp]
-.timezone.gmttolocal[`$"America/New_York";2025.07.22D10:19:48.386221575]
+// tz.gmttolocal[localTimezone;timestamp]
+q)tz.gmttolocal[`$"America/New_York";2025.07.22D10:19:48.386221575]
 2025.07.22D06:19:48.386221575
 ```
 
-##### .timezone.convert
+##### tz.convert
 ```q
-/ .timezone.convert[sourceTimezone;destTimezone;timestamp]
-.timezone.convert[`$"America/New_York";`$"Europe/London";2025.07.22D10:19:48.386221575]
+// tz.convert[sourceTimezone;destTimezone;timestamp]
+q)tz.convert[`$"America/New_York";`$"Europe/London";2025.07.22D10:19:48.386221575]
 2025.07.22D15:19:48.386221575
 ```

@@ -1,0 +1,167 @@
+/ library for utility functions for interacting with the operating system
+
+/ indicator for if the underlying OS is Windows
+.os.iswindows:.z.o in `w32`w64;
+
+/ return string/symbol/hsym as a string path, using the separators of the OS
+.os.topath:{[path]
+  if[10h<>type path;path:string path];
+  p:ssr[path;;].$[.os.iswindows;reverse;]("\\";"/");
+  :$[":"=first p;1_;]p;
+  };
+
+/ get the absolute path of a file/directory without resolving symlinks
+.os.abspath:{[path]
+  res:trim first .os.syscall$[.os.iswindows;"for %F in (\"",.os.topath[path],"\") do @echo %~fF";"realpath -ms ",.os.topath path];
+  $[.os.iswindows;neg["\\"=last res]_;]res / remove (possible) trailing slash in windows for consistency
+  };
+
+/ get the absolute path of a file/directory resolving symlinks
+.os.realpath:{[path]
+  if[.os.iswindows;'`nyi];
+  :first .os.syscall"realpath -m ",.os.topath path;
+  };
+
+/ check if a file/directory exists
+.os.exists:{[path]@[{.os.syscall x;1b};$[.os.iswindows;{"dir /b ",x," 2>nul"};{"ls ",x," 2>/dev/null"}].os.topath path;0b]}
+
+/ check if a path exists and is a file
+.os.isfile:{[path].os.exists[path]&not[.os.issymlink path]&{x~@[key;x;()]}hsym`$.os.topath path};
+
+/ check if a path exists and is a directory
+.os.isdir:{[path].os.exists[path]&not[.os.issymlink path]&not{x~@[key;x;()]}hsym`$.os.topath path};
+
+/ check if a path exists and is a symbolic link
+.os.issymlink:{[path]@[{.os.syscall x;1b};$[.os.iswindows;"dir /al /b 2>nul ";"readlink "],.os.topath path;0b]};
+
+/ delete a file
+.os.del:{[path]
+  $[.os.iswindows;
+    [if[not .os.exists p:.os.topath path;'"The system cannot find the path specified."]; / windows doesn't reliably error so do it manually
+    .os.syscall"del ",p];
+
+    .os.syscall"rm ",.os.topath path];
+  };
+
+/ delete a directory
+.os.deldir:{[path] .os.syscall$[.os.iswindows;"rd /s /q ";"rm -r "],.os.topath path;};
+
+/ create directory (without error if existing), make parent directories as needed
+.os.mkdir:{[path]
+  p:"\"",.os.topath[path],"\"";
+  .os.syscall$[.os.iswindows;"if not exist ",p," mkdir ",p;"mkdir -p ",p];
+  };
+
+/ move/rename a file/directory
+.os.mv:{[src;dest] .os.syscall$[.os.iswindows;"move /y ";"mv "]," " sv .os.topath each (src; dest);};
+
+/ copy a file
+.os.cp:{[src;dest] .os.syscall$[.os.iswindows;"copy /y ";"cp "]," " sv .os.topath each (src; dest);};
+
+/ copy a directory
+.os.cpdir:{[src;dest] .os.syscall$[.os.iswindows;"xcopy /e /h /i /y ";"cp -r "]," " sv .os.topath each (src; dest);};
+
+/ kill a process given a PID and signal
+.os.kill:{[pid;sig] .os.syscall$[.os.iswindows;"taskkill ",$[sig=9;"/f ";""],"/PID ";"kill -",string[sig]," "],string pid;};
+
+/ interupt a process given a PID. Simply kills when ran on Windows
+.os.kill2:.os.kill[;2];
+
+/ quit a process given a PID
+.os.kill3:.os.kill[;3];
+
+/ force kill a process given a PID
+.os.kill9:.os.kill[;9];
+
+/ delay for a specified number of seconds
+.os.sleep:{[num] num:string num;.os.syscall$[.os.iswindows;"timeout /t ",num," >nul";"sleep ",num];}
+
+/ change current working directory
+.os.cd:{[path] .os.syscall"cd ",.os.topath path;};
+
+/ change the permissions of a file/directory
+.os.chmod:{[path;mode]
+  if[.os.iswindows;'`nyi];
+  .os.syscall"chmod ",(string; ::)[10h=type mode][mode]," ",.os.topath path;
+  };
+
+/ change the owner of a file/directory
+.os.chown:{[path;owner]
+  if[.os.iswindows;'`nyi];
+  .os.syscall"chown ",owner, " ",.os.topath path;
+  };
+
+/ return the path to the current working directory
+.os.pwd:{[].os.syscall"cd"}
+
+/ create a symbolic link
+.os.createsymlink:{[target;name]
+  $[.os.iswindows;
+    .os.syscall"mklink ",.os.topath[name]," ",.os.topath target;
+    .os.syscall"ln -s ",.os.topath[target]," ",.os.topath name];
+  };
+
+/ create a FIFO file
+.os.mkfifo:{[path]
+  if[.os.iswindows;'`nyi];
+  .os.syscall"mkfifo ",.os.topath path;
+  };
+
+/ create temporary file, returns the file path
+.os.mktemp:{[]
+  $[.os.iswindows;
+    .os.mktempwin[];
+    first .os.syscall"mktemp"]
+  };
+
+/ internal - creates a temp file/dir name in windows (%TEMP%\tmp.<current_timestamp>)
+.os.mktempwinname:{[]
+  getenv[`TEMP],"\\tmp.",string[.z.p]except".:D"
+  };
+
+/ internal - creates an empty file in windows
+.os.mktempwin:{[]
+  fn:.os.mktempwinname[];
+  hsym[`$fn]0:();
+  fn
+  };
+
+/ create temporary directory
+.os.mktempdir:{[]
+  $[.os.iswindows;
+    .os.mktempdirwin[];
+    first .os.syscall"mktemp -d"]
+  };
+
+/ internal - makes a temporary directory in windows
+.os.mktempdirwin:{[]
+  dn:.os.mktempwinname[];
+  .os.syscall"mkdir ",dn;
+  dn
+  };
+
+/ internal - 'system' wrapper to allow dry runs of system calls
+.os.syscall:system
+
+/ internal - dry system calls, saves them to an internal cache but does not execute them
+.os.drysyscall:{[cmd]
+  .os.syscallcache,:enlist cmd;
+  $[cmd~"cd";;enlist]""
+  };
+
+/ returns all cached dry system calls
+.os.getdrysyscalls:{[]
+  .os.syscallcache
+  };
+
+/ clears dry system calls cache
+.os.cleardrysyscalls:{[]
+  .os.syscallcache:();
+  };
+
+/ toggles dry system calls on (1b) or off (0b)
+.os.setdrysyscalls:{[on]
+  .os.syscall:$[on;.os.drysyscall;system]
+  };
+
+.os.cleardrysyscalls[]

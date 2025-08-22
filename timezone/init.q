@@ -1,7 +1,7 @@
 / library for converting between and managing timezones
 
 / override variables to change internal logic
-config.file:":::config/tzinfo"; / filepath of timezone data to be downloaded with utility script
+config.file:.Q.rp"::config/tzinfo"; / filepath of timezone data to be downloaded with utility script
 
 / read and format file for internal function reference
 config.read:{

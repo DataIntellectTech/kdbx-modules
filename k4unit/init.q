@@ -17,8 +17,8 @@ packagetest:{[p]
   };
   
 / setter functions for config values
-verbose:{[x:`b]VERBOSE::x}
-debug:{[x:{$[x in 0 1 2;x;'"must be one of 0 1 2"]}]DEBUG::x}
+verbose:{[x:{$[x in 0 1 2;x;'"must be one of 0 1 2"]}]VERBOSE::x}
+debug:{[x:`b]DEBUG::x}
 delim:{[x:`c]DELIM::x}
 
 export:([packagetest:packagetest;verbose:verbose;debug:debug;delim:delim;saveresults:KUstr;loadresults:KUltr])

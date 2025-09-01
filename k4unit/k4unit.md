@@ -60,13 +60,13 @@ true   0  0     q    `notValidTimezone~.[timezone.localtogmt;(`testTimezone;.z.p
 There are 3 functions provided for configuring k4unit.
 
 ```q
-/ set debug level, can be 0, 1 or 2. Default = 0
-q)k4unit.debug 0
+/ set debug on/off, can be 0b or 1b. Default = 0b
+q)k4unit.debug 1b
 ```
 
 ```q
-/ set verbose mode on/off, can be 0b or 1b. Default = 1b
-q)k4unit.verbose 0b
+/ set verbose mode, can be 0 (no logging to console), 1 (log filenames) or 2 (log tests). Default = 1
+q)k4unit.verbose 0
 ```
 
 ```q

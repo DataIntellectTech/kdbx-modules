@@ -70,6 +70,6 @@ q)k4unit.verbose 0
 ```
 
 ```q
-/ set delimiter for saving/loading results, must be passed as a char. Default = ,
+/ set delimiter for saving/loading results and test CSVs, must be passed as a char. Default = ,
 q)k4unit.delim "|"
 ```

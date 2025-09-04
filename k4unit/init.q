@@ -1,6 +1,6 @@
 / generic test script to be ran for individual packages
 
-\l k4unit/k4unit.q
+\l ::k4unit.q
 
 packagetest:{[p]
   / Load the Test CSv for the assocaited package 

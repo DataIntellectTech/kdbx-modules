@@ -29,8 +29,7 @@
      {.ps.delhandle[x;.z.w];
        .ps.delhandlef[x;.z.w];
        .ps.add[x]} each table;
-      :((errmsg;(table;.ps.schemas[table]));(x;.ps.schemas[table])) [m~()];
-      ];
+      :((errmsg;(table;.ps.schemas[table]));(table;.ps.schemas[table])) [m~()]];
      :errmsg;
    }
      
@@ -47,7 +46,6 @@
         .ps.delhandle[x;.z.w];
          val:![11 99h;(.ps.addsymsub;.ps.addfiltered)][abs type y] . (x;y)}[;filters] each table;
       :((errmsg;(table;.ps.schemas[table]));(table;.ps.schemas[table])) [m~()]];
-      ];
       :errmsg;
     }
 

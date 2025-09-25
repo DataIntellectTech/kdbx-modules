@@ -20,8 +20,7 @@
       } 
 
 / remove handle from request-filtered-data table
-.ps.delhandlef:{[t;h]
-     delete from `.ps.reqfilteredtbl where table=t, handle=h;}  
+.ps.delhandlef:{[t;h]delete from `.ps.reqfilteredtbl where table=t, handle=h;}  
 
 
 .ps.suball:{

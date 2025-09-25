@@ -6,7 +6,7 @@
 
 
 / get all subscription handles that haven been recorded on tables
-.ps.getallhandles:{:distinct raze union[value .ps.reqalldict;exec handle from .ps.reqfilteredtbl]}
+.ps.getallhandles:{distinct raze union[value .ps.reqalldict;exec handle from .ps.reqfilteredtbl]}
 
 
 / add handle to reqalldict dictionary

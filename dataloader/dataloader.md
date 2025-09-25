@@ -28,18 +28,18 @@ When all the data is written, the on-disk data is re-sorted and the attributes a
 
 ## :gear: Initialisation
 
-After loading the package into the session the unary function `.loader.init` is called with a single argument to initialise the packages global variables and define any configurable sorting/attributes.
+After loading the package into the session the unary function `init` is called with a single argument to initialise the packages global variables and define any configurable sorting/attributes.
 
 ### :mag_right: Params in Depth
 
-The sole argument to `.loader.init` should be a dictionary with the keys `tabname, att, column and sort`. The argument is used to determine how the tables in the resulting database should be sorted and where attributes applied when being persisted.
+The sole argument to `init` should be a dictionary with the keys `tabname, att, column and sort`. The argument is used to determine how the tables in the resulting database should be sorted and where attributes applied when being persisted.
 You may apply default sorting and attributes to all tables loaded in by the package by passing in the `tabname` with a value of `default` and specifying your default sorting and attribute parameters, 
 or you can apply specific sorting and attribute configurations to tables when loading them into the database including determining where they should not be applied by using a specific table name. 
 If no sorting or attributes are required pass in the dictionary with a `tabname` with `default`, `att` and `column` with backticks and `sort` with `0b`, examples shown below:
 ```q
-.loader.init[`tabname`att`column`sort!(`default;`;`;0b)]                               // Apply no sorting or attributes
-.loader.init[`tabname`att`column`sort!(`default;`p;`sym;1b)]                           // Sort all tables loaded in by the sym column and apply the parted attribute
-.loader.init[`tabname`att`column`sort!(`default`trade`quote;`p`s`;`sym`time`;110b)]    // Apply default to all tables, however, sort trade by sym and apply `p and if quote is read in by the function then do not sort or apply attributes
+init[`tabname`att`column`sort!(`default;`;`;0b)]                               // Apply no sorting or attributes
+init[`tabname`att`column`sort!(`default;`p;`sym;1b)]                           // Sort all tables loaded in by the sym column and apply the parted attribute
+init[`tabname`att`column`sort!(`default`trade`quote;`p`s`;`sym`time`;110b)]    // Apply default to all tables, however, sort trade by sym and apply `p and if quote is read in by the function then do not sort or apply attributes
 ```
 The dictionary arguments are outlined below.
 
@@ -55,7 +55,7 @@ The dictionary arguments are outlined below.
 
 ### :rocket: Functions
 
-`.loader.loadallfiles` is the primary function used to load in all data and create the database. 
+`loadallfiles` is the primary function used to load in all data and create the database. 
 The function takes two arguments, a dictionary of loading parameters and a directory containing files to read. 
 The function reads in all specified delimited files into memory from a chosen directory then proceeds to apply any required processing,
 persists the table to disk in a kdb+ partitioned format, compresses the files if directed and finally sorting and applying attributes.
@@ -94,16 +94,16 @@ The second parameter is a directory handle .e.g
 \l dataloader.q
 
 // Initialise the package
-.loader.init[`tabname`att`column`sort!(`default;`p;`sym;1b)]
+init[`tabname`att`column`sort!(`default;`p;`sym;1b)]
 
 // Check table exists
-select from .loader.sortparams
+select from sortparams
 tabname att column sort
 -----------------------
 default  p  sym    1
 
 // Read in data and create db
-.loader.loadallfiles[`headers`types`separator`tablename`dbdir!(`sym`time`price`volume`mktflag`cond`exclude;"SPFICHB";",";`trade;`:hdb); `:TRADE/toload]
+loadallfiles[`headers`types`separator`tablename`dbdir!(`sym`time`price`volume`mktflag`cond`exclude;"SPFICHB";",";`trade;`:hdb); `:TRADE/toload]
 
 //load in db
 \l hdb
@@ -133,4 +133,5 @@ volume | i
 mktflag| c
 cond   | h
 exclude| b
+
 ```

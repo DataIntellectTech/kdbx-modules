@@ -149,7 +149,7 @@
 .ps.initialized:0b;
 
 .ps.init:{
-    $[.ps.availtables | not count .ps.subtables;  
+    $[.ps.availtables |0=count .ps.subtables;  
        .ps.t:tables `.; .ps.t:.ps.subtables];
      .ps.schemas:.ps.t!.ps.extractschema each .ps.t; 
      .ps.tabcols:.ps.t!cols each .ps.t;

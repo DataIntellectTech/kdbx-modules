@@ -29,12 +29,13 @@
     if[not all x in .ps.t; 
          errmsg:(`$sv[csv;string  m:x except .ps.t]," not available for subscription.");
          x@:where x in .ps.t]; 
-    $[count x; 
-     [{.ps.delhandle[x;.z.w];
+    if[count x; 
+     {.ps.delhandle[x;.z.w];
        .ps.delhandlef[x;.z.w];
        .ps.add[x]} each x;
-      :((errmsg;(x;.ps.schemas[x]));(x;.ps.schemas[x])) [m~()]];
-        :errmsg;]
+      :((errmsg;(x;.ps.schemas[x]));(x;.ps.schemas[x])) [m~()];
+      ];
+     :errmsg;
    }
      
 

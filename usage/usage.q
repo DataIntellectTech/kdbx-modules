@@ -67,7 +67,7 @@ logh:@[value;`.z.m.logh;0];
 / write a query log message
 write:{[x]
   if[.z.m.logtodisk; @[neg .z.m.logh;"|" sv .Q.s1 each x;()]];
-  if[.z.m.logtomemory;`.z.m.usage upsert x];
+  if[.z.m.logtomemory; .z.M.usage upsert x];
   .z.m.ext[x];
   };
 
@@ -75,7 +75,7 @@ write:{[x]
 ext:{[x]};
 
 // Flush out in-memory usage records older than flushtime
-flushusage:{[flushtime] delete from `.z.m.usage where time<.z.m.currenttime[.z.m.localtime]-flushtime;}
+flushusage:{[flushtime] delete from .z.M.usage where time<.z.m.currenttime[.z.m.localtime]-flushtime;}
 
 // Create usage log on disk
 createlog:{[logdir;logname;timestamp]

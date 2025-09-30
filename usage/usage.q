@@ -3,7 +3,7 @@
 / handlers with usage-logging wrappers of their current definitions
 
 / table to store usage info
-.usage.usage:@[value;`.usage.usage;([]
+usage:@[value;`.z.m.usage;([]
   time:`timestamp$();
   id:`long$();
   extime:`timespan$();
@@ -20,88 +20,88 @@
 / flags and variables
 
 / whether to log to disk
-.usage.logtodisk:@[value;`.usage.logtodisk;0b];
+logtodisk:@[value;`.z.m.logtodisk;0b];
 
 / whether to log to memory
-.usage.logtomemory:@[value;`.usage.logtomemory;1b];
+logtomemory:@[value;`.z.m.logtomemory;1b];
 
 / whether to check the ignore list for function calls to not log
-.usage.ignore:@[value;`.usage.ignore;1b];
+ignore:@[value;`.z.m.ignore;1b];
 
 / list of function to not log usage of
-.usage.ignorelist:@[value;`.usage.ignorelist;()];
+ignorelist:@[value;`.z.m.ignorelist;()];
 
 / function to generate the log file timestamp suffix
-.usage.logtimestamp:@[value;`.usage.logtimestamp;{{[local] $[local;.z.D;.z.d]}}];
+logtimestamp:@[value;`.z.m.logtimestamp;{{[local] $[local;.z.D;.z.d]}}];
 
 / log directory
 / should be set before loading library to initialise on disk logging
-.usage.logdir:@[value;`.usage.logdir;""];
+logdir:@[value;`.z.m.logdir;""];
 
 / log file will take the form "usage_{logname}_{date/time}.log"
 / should be set before loading library to initialise on disk logging
-.usage.logname:@[value;`.usage.logname;""];
+logname:@[value;`.z.m.logname;""];
 
 / log level
 /	0 = nothing
 /	1 = errors only
 /	2 = + open, close, queries
 /	3 = + log queries before execution
-.usage.level:@[value;`.usage.level;3];
+level:@[value;`.z.m.level;3];
 
 / ID for tracking external queries
-.usage.id:@[value;`.usage.id;0];
+id:@[value;`.z.m.id;0];
 
 / increment ID and return new value
-.usage.nextid:{[] :.usage.id+:1;};
+nextid:{[] :.z.m.id+:1;};
 
 / check time preference. Default local time
-.usage.localtime:@[value;`.usage.localtime;1b];
+localtime:@[value;`.z.m.localtime;1b];
 
 / return local time or UTC
-.usage.currenttime:{[local] $[local;.z.P;.z.p]};
+currenttime:{[local] $[local;.z.P;.z.p]};
 
 / handle to the log file
-.usage.logh:@[value;`.usage.logh;0];
+logh:@[value;`.z.m.logh;0];
 
 / write a query log message
-.usage.write:{[x]
-  if[.usage.logtodisk; @[neg .usage.logh;"|" sv .Q.s1 each x;()]];
-  if[.usage.logtomemory;`.usage.usage upsert x];
-  .usage.ext[x];
+write:{[x]
+  if[.z.m.logtodisk; @[neg .z.m.logh;"|" sv .Q.s1 each x;()]];
+  if[.z.m.logtomemory;`.z.m.usage upsert x];
+  .z.m.ext[x];
   };
 
 // Extension function to extend the logging e.g. publish the log message
-.usage.ext:{[x]};
+ext:{[x]};
 
 // Flush out in-memory usage records older than flushtime
-.usage.flushusage:{[flushtime] delete from `.usage.usage where time<.usage.currenttime[.usage.localtime]-flushtime;}
+flushusage:{[flushtime] delete from `.z.m.usage where time<.z.m.currenttime[.z.m.localtime]-flushtime;}
 
 // Create usage log on disk
-.usage.createlog:{[logdir;logname;timestamp]
+createlog:{[logdir;logname;timestamp]
   basename:"usage_",logname,"_",string[timestamp],".log";
   / close the current log handle if there is one
-  @[hclose;.usage.logh;()];
+  @[hclose;.z.m.logh;()];
   / open the file
-  .usage.logh:hopen hsym`$logdir,"/",basename;
+  .z.m.logh:hopen hsym`$logdir,"/",basename;
   };
 
 / parse a usage log file and return as a usage table
-.usage.readlog:{[filename]
+readlog:{[filename]
   / remove leading backtick from symbol columns, drop "i" suffix from a and w columns and cast back to integers
   :update
     zcmd:`$1_'string zcmd,u:`$1_'string u,a:"I"$-1_'a,w:"I"$-1_'w
     from
-    @[{update "J"$'" " vs' mem from flip (cols .usage.usage)!("PJNSC*S***J*";"|")0: x};
+    @[{update "J"$'" " vs' mem from flip (cols .z.m.usage)!("PJNSC*S***J*";"|")0: x};
       hsym`$filename;
       {'"failed to read log file : ",x}];
   };
 
 / get the memory info - we don't want to log the physical memory each time
-.usage.meminfo:{[] :5#system"w";};
+meminfo:{[] :5#system"w";};
 
 / format the message handler argument as a string
-.usage.formatarg:{[zcmd;arg]
+formatarg:{[zcmd;arg]
   str:$[10=abs type arg;arg,();.Q.s1 arg];
   / replace %xx hexsequences in HTTP request arguments
   if[zcmd in`ph`pp;str:.h.uh str];
@@ -109,61 +109,61 @@
   };
 
 / log the completion of an external request and return the result
-.usage.logdirect:{[id;zcmd;endtime;result;arg;starttime]
-  if[.usage.level>1;
-    .usage.write (starttime;id;endtime-starttime;zcmd;"c";.z.a;.z.u;.z.w;.usage.formatarg[zcmd;arg];.usage.meminfo[];0Nj;"")];
+logdirect:{[id;zcmd;endtime;result;arg;starttime]
+  if[.z.m.level>1;
+    .z.m.write (starttime;id;endtime-starttime;zcmd;"c";.z.a;.z.u;.z.w;.z.m.formatarg[zcmd;arg];.z.m.meminfo[];0Nj;"")];
   :result;
   };
 
 / log stats of query before execution
-.usage.logbefore:{[id;zcmd;arg;starttime]
-  if[.usage.level>2;
-    .usage.write (starttime;id;0Nn;zcmd;"b";.z.a;.z.u;.z.w;.usage.formatarg[zcmd;arg];.usage.meminfo[];0Nj;"")];
+logbefore:{[id;zcmd;arg;starttime]
+  if[.z.m.level>2;
+    .z.m.write (starttime;id;0Nn;zcmd;"b";.z.a;.z.u;.z.w;.z.m.formatarg[zcmd;arg];.z.m.meminfo[];0Nj;"")];
   };
 
 / log stats of a completed query and return the result
-.usage.logafter:{[id;zcmd;endtime;result;arg;starttime]
-  if[.usage.level>1;
-    .usage.write (endtime;id;endtime-starttime;zcmd;"c";.z.a;.z.u;.z.w;.usage.formatarg[zcmd;arg];.usage.meminfo[];-22!result;"")];
+logafter:{[id;zcmd;endtime;result;arg;starttime]
+  if[.z.m.level>1;
+    .z.m.write (endtime;id;endtime-starttime;zcmd;"c";.z.a;.z.u;.z.w;.z.m.formatarg[zcmd;arg];.z.m.meminfo[];-22!result;"")];
   :result;
   };
 
 / log stats of a failed query and raise the error
-.usage.logerror:{[id;zcmd;endtime;arg;starttime;error]
-  if[.usage.level>0;
-    .usage.write (endtime;id;endtime-starttime;zcmd;"e";.z.a;.z.u;.z.w;.usage.formatarg[zcmd;arg];.usage.meminfo[];0Nj;error)];
+logerror:{[id;zcmd;endtime;arg;starttime;error]
+  if[.z.m.level>0;
+    .z.m.write (endtime;id;endtime-starttime;zcmd;"e";.z.a;.z.u;.z.w;.z.m.formatarg[zcmd;arg];.z.m.meminfo[];0Nj;error)];
   'error;
   };
 
 / log successful user validation
-.usage.logauth:{[zcmd;handler;user;pass]
-  :.usage.logdirect[.usage.nextid[];zcmd;.usage.currenttime[.usage.localtime];handler[user;pass];(user;"***");.usage.currenttime[.usage.localtime]];
+logauth:{[zcmd;handler;user;pass]
+  :.z.m.logdirect[.z.m.nextid[];zcmd;.z.m.currenttime[.z.m.localtime];handler[user;pass];(user;"***");.z.m.currenttime[.z.m.localtime]];
   };
 
 / log successful connection opening/closing
-.usage.logconnection:{[zcmd;handler;arg]
-  :.usage.logdirect[.usage.nextid[];zcmd;.usage.currenttime[.usage.localtime];handler arg;arg;.usage.currenttime[.usage.localtime]];
+logconnection:{[zcmd;handler;arg]
+  :.z.m.logdirect[.z.m.nextid[];zcmd;.z.m.currenttime[.z.m.localtime];handler arg;arg;.z.m.currenttime[.z.m.localtime]];
   };
 
 / log before and after query execution is attempted
-.usage.logquery:{[zcmd;handler;arg]
-  id:.usage.nextid[];
-  .usage.logbefore[id;zcmd;arg;.usage.currenttime[.usage.localtime]];
-  :.usage.logafter[id;zcmd;.usage.currenttime[.usage.localtime];@[handler;arg;.usage.logerror[id;zcmd;.usage.currenttime[.usage.localtime];arg;start;]];arg;start:.usage.currenttime[.usage.localtime]];
+logquery:{[zcmd;handler;arg]
+  id:.z.m.nextid[];
+  .z.m.logbefore[id;zcmd;arg;.z.m.currenttime[.z.m.localtime]];
+  :.z.m.logafter[id;zcmd;.z.m.currenttime[.z.m.localtime];@[handler;arg;.z.m.logerror[id;zcmd;.z.m.currenttime[.z.m.localtime];arg;start;]];arg;start:.z.m.currenttime[.z.m.localtime]];
   };
 
 / log before and after query execution is attempted, filtering with .usage.ignoreList
-.usage.logqueryfiltered:{[zcmd;handler;arg]
-  if[.usage.ignore;
+logqueryfiltered:{[zcmd;handler;arg]
+  if[.z.m.ignore;
     if[0h=type arg;
-      if[any first[arg]~/:.usage.ignorelist;:handler arg]];
+      if[any first[arg]~/:.z.m.ignorelist;:handler arg]];
     if[10h=type arg;
-      if[any arg~/:.usage.ignorelist;:handler arg]]];
-  :.usage.logquery[zcmd;handler;arg];
+      if[any arg~/:.z.m.ignorelist;:handler arg]]];
+  :.z.m.logquery[zcmd;handler;arg];
   };
 
 / initialise .z functions with usage logging functionality
-.usage.inithandlers:{[]
+inithandlers:{[]
   / initialise unassigned message handlers with default values
   .z.pw:@[value;`.z.pw;{{[x;y] 1b}}];
   .z.po:@[value;`.z.po;{{}}];
@@ -177,31 +177,31 @@
   .z.exit:@[value;`.z.exit;{{}}];
 
   / reassign message handlers with usage-logging wrappers
-  .z.pw:.usage.logauth[`pw;.z.pw;;];
-  .z.po:.usage.logconnection[`po;.z.po;];
-  .z.pc:.usage.logconnection[`pc;.z.pc;];
-  .z.wo:.usage.logconnection[`wo;.z.wo;];
-  .z.wc:.usage.logconnection[`wc;.z.wc;];
-  .z.ws:.usage.logquery[`ws;.z.ws;];
-  .z.pg:.usage.logquery[`pg;.z.pg;];
-  .z.ps:.usage.logqueryfiltered[`ps;.z.ps;];
-  .z.ph:.usage.logquery[`ph;.z.ph;];
-  .z.pp:.usage.logquery[`pp;.z.pp;];
-  .z.exit:.usage.logquery[`exit;.z.exit;];
+  .z.pw:.z.m.logauth[`pw;.z.pw;;];
+  .z.po:.z.m.logconnection[`po;.z.po;];
+  .z.pc:.z.m.logconnection[`pc;.z.pc;];
+  .z.wo:.z.m.logconnection[`wo;.z.wo;];
+  .z.wc:.z.m.logconnection[`wc;.z.wc;];
+  .z.ws:.z.m.logquery[`ws;.z.ws;];
+  .z.pg:.z.m.logquery[`pg;.z.pg;];
+  .z.ps:.z.m.logqueryfiltered[`ps;.z.ps;];
+  .z.ph:.z.m.logquery[`ph;.z.ph;];
+  .z.pp:.z.m.logquery[`pp;.z.pp;];
+  .z.exit:.z.m.logquery[`exit;.z.exit;];
   };
 
 / initialise on disk usage logging, if enabled
-.usage.initlog:{[]
-  if[.usage.logtodisk;
-    if[""in(.usage.logname;.usage.logdir);
-      .usage.logtodisk:0b;
+initlog:{[]
+  if[.z.m.logtodisk;
+    if[""in(.z.m.logname;.z.m.logdir);
+      .z.m.logtodisk:0b;
       '"logname and logdir must be set to enable on disk usage logging. .usage.logToDisk disabled"];
-    .[.usage.createlog;
-      (.usage.logdir;.usage.logname;.usage.logtimestamp[.usage.localtime]);
-      {.usage.logtodisk:0b;'"Error creating log file: ",.usage.logdir,"/usage_",.usage.logname,"_",string[.usage.logtimestamp[.usage.localtime]]," | Error: " ,x}]];
+    .[.z.m.createlog;
+      (.z.m.logdir;.z.m.logname;.z.m.logtimestamp[.z.m.localtime]);
+      {.z.m.logtodisk:0b;'"Error creating log file: ",.z.m.logdir,"/usage_",.z.m.logname,"_",string[.z.m.logtimestamp[.z.m.localtime]]," | Error: " ,x}]];
   };
 
-.usage.init:{[]
-  .usage.inithandlers[];
-  .usage.initlog[];
+init:{[]
+  .z.m.inithandlers[];
+  .z.m.initlog[];
   };

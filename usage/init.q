@@ -3,4 +3,7 @@
 
 //Return to root module namespace to simplify exposure of public functions
 \d .z.m
-export:([init:init; usage:getusage])
+export:([init:init; usage:getusage; 
+    readlog:readlog; flushusage:flushusage; 
+    ext:ext; nextid:nextid; meminfo:meminfo; 
+    formatarg:formatarg])

@@ -74,7 +74,7 @@ Log level meanings:
 | `logauth`          | Log user/password validation                         |
 | `logconnection`    | Log connection open/close                            |
 | `logquery`         | Log before/after a query                             |
-| `logqueryfiltered` | Like `logquery`, but skips if in `.usage.ignorelist` |
+| `logqueryfiltered` | Like `logquery`, but skips if in `ignorelist` |
 | `logdirect`        | Low-level: log a completed request                   |
 | `logbefore`        | Low-level: log query start                           |
 | `logafter`         | Low-level: log query completion                      |
@@ -88,7 +88,7 @@ and initiates the in memory logs/ on disk logs if enabled.
 | Function              | Description                                                                                                              |
 |-----------------------|--------------------------------------------------------------------------------------------------------------------------|
 | `inithandlers` | Wrap `.z.*` message handlers for logging                                                                                 |
-| `initlog`      | Create file handle if `.usage.logtodisk` is set. Will fail if `.usage.logdir` or `.usage.logname` have not be configured |
+| `initlog`      | Create file handle if `logtodisk` is set. Will fail if `logdir` or `logname` have not be configured |
 | `init`         | Run full initialisation                                                                                                  |
 
 
@@ -171,7 +171,7 @@ formatarg | `.m.usage.export.formatarg[]
 
 
 // Check usage table for synchronous user queries
-select from usage.usage where zcmd=`pg
+select from usage.usage[] where zcmd=`pg
 time                          id  extime               zcmd status a          u     w  cmd                                                                   mem                           sz  error
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 2025.07.04D11:57:59.474947647 194                      pg   b      2130706433 kdbNoob 14 "tables[]"                                                            8273600 67108864 67108864 0 0     ""

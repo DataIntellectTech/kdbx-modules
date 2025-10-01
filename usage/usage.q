@@ -203,7 +203,7 @@ initlog:{[]
 
 / exportable function to get usage table
 getusage:{[] 
-  .z.m.usage };
+  :.z.m.usage };
 
 init:{[]
   .z.m.inithandlers[];

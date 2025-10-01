@@ -201,6 +201,11 @@ initlog:{[]
       {.z.m.logtodisk:0b;'"Error creating log file: ",.z.m.logdir,"/usage_",.z.m.logname,"_",string[.z.m.logtimestamp[.z.m.localtime]]," | Error: " ,x}]];
   };
 
+/ exportable function to get usage table
+getusage:{[] 
+  show .z.m.usage; 
+  };
+
 init:{[]
   .z.m.inithandlers[];
   .z.m.initlog[];

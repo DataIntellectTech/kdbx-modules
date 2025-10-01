@@ -161,7 +161,7 @@ usage.init[]
 usage
 
 init      | `.m.usage.export.init[]
-usage     | +`time`id`extime`zcmd`status`a`u`w`cmd`mem`sz`error!(`timestamp$(..
+getusage  | `.m.usage.export.getusage[]
 readlog   | `.m.usage.export.readlog[]
 flushusage| `.m.usage.export.flushusage[]
 ext       | `.m.usage.export.ext[]
@@ -170,8 +170,9 @@ meminfo   | `.m.usage.export.meminfo[]
 formatarg | `.m.usage.export.formatarg[]
 
 
+
 // Check usage table for synchronous user queries
-select from usage.usage[] where zcmd=`pg
+select from usage.getusage[] where zcmd=`pg
 time                          id  extime               zcmd status a          u     w  cmd                                                                   mem                           sz  error
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 2025.07.04D11:57:59.474947647 194                      pg   b      2130706433 kdbNoob 14 "tables[]"                                                            8273600 67108864 67108864 0 0     ""

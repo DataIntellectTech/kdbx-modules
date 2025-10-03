@@ -87,10 +87,10 @@ run,0,0,q,.z.ps(`fn;`trade;([]x:1 2)),1,1,not ignored
 run,0,0,q,.z.ps"0+0",1,1,ignored
 run,0,0,q,.z.ps"1+0",1,1,not ignored
 true,0,0,q,([]zcmd:`ps;status:6#"bc";cmd:(.Q.s1(+;1;2);.Q.s1(`fn;`trade;([]x:1 2));"1+0")where 3#2)~`zcmd`status`cmd#usage.getusage[],1,1,
-run,0,0,q,.getusage[]:0#usage.getusage[],1,1,
+run,0,0,q,.m.usage.usage:0#usage.getusage[],1,1,
 run,0,0,q,.test.unmock[],1,1,
 
-run,0,0,q,".test.mock[`m.usage.ext;{.testusg.ext,:enlist x}]",1,1,test extension
+run,0,0,q,".test.mock[`.m.usage.ext;{.testusg.ext,:enlist x}]",1,1,test extension
 run,0,0,q,.z.pw[`test_user;"pass123"],1,1,
 run,0,0,q,.z.po 1i,1,1,
 run,0,0,q,.z.pc 2i,1,1,

@@ -5,5 +5,4 @@
 \d .z.m
 export:([init:init; getusage:getusage; 
     readlog:readlog; flushusage:flushusage; 
-    ext:ext; nextid:nextid; meminfo:meminfo; 
-    formatarg:formatarg])
+    meminfo:meminfo; formatarg:formatarg])

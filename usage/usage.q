@@ -195,7 +195,7 @@ initlog:{[]
   if[.z.m.logtodisk;
     if[""in(.z.m.logname;.z.m.logdir);
       .z.m.logtodisk:0b;
-      '"logname and logdir must be set to enable on disk usage logging. .usage.logToDisk disabled"];
+      '"logname and logdir must be set to enable on disk usage logging. logToDisk disabled"];
     .[.z.m.createlog;
       (.z.m.logdir;.z.m.logname;.z.m.logtimestamp[.z.m.localtime]);
       {.z.m.logtodisk:0b;'"Error creating log file: ",.z.m.logdir,"/usage_",.z.m.logname,"_",string[.z.m.logtimestamp[.z.m.localtime]]," | Error: " ,x}]];

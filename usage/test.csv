@@ -2,37 +2,45 @@ action,ms,bytes,lang,code,repeat,minver,comment
 
 before,0,0,q,usage:use`usage,1,,Initialize package
 
+before,0,0,q,.test.resethandlers:{.z.pw:{[x;y] 1b}; .z.po:{}; .z.pc:{}; .z.wo:{}; .z.wc:{}; .z.ws:{neg[.z.w] x}; .z.pg:{value}; .z.ps:{value}; .z.pp:{}; .z.exit:{};},1,1,funtion to reset handles to default
+before,0,0,q,.test.clearusage:{.m.usage.usage:0#.m.usage.usage},1,1,function to clear usage table
+
+before,0,0,q,.test.handlers: ([]zcmd:`pw`po`pc`wo`wc`ws`pg`ps`ph`pp`exit),1,1,
+
 run,0,0,q,usage.init[],1,1,out-of-the-box configuration
-run,0,0,q,.testusg.runhandler[`.z.pw;(`test_user;"pass123")],1,1,
-run,0,0,q,.testusg.runhandler[`.z.po;1i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pc;2i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.wo;3i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.wc;4i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.ws;-8!"1+1"],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pg;"1+1"],1,1,
-run,0,0,q,.testusg.runhandler[`.z.ps;(+;2;2)],1,1,
-run,0,0,q,.testusg.runhandler[`.z.ph;(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`get);`hdr1`hdr2!("hello";"goodbye"))],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pp;(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`post);`hdr1`hdr2!("hello";"goodbye"))],1,1,
-run,0,0,q,.testusg.runhandler[`.z.exit;0],1,1,
-true,0,0,q,.testusg.chkusage[],1,1,
-run,0,0,q,.testusg.reset[],1,1,
+run,0,0,q,.z.pw[`test_user;"pass123"],1,1,
+run,0,0,q,.z.po 1i,1,1,
+run,0,0,q,.z.pc 2i,1,1,
+run,0,0,q,.z.wo 3i,1,1,
+run,0,0,q,.z.wc 4i,1,1,
+run,0,0,q,.z.pg "1+1",1,1,
+run,0,0,q,.z.ps (+;2;2),1,1,
+run,0,0,q,.z.ph (.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`get);`hdr1`hdr2!("hello";"goodbye")),1,1,
+run,0,0,q,.z.pp (.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`post);`hdr1`hdr2!("hello";"goodbye")),1,1,
+run,0,0,q,.z.exit 0,1,1,
+run,0,0,q,.z.ps:{},1,1,swollow web socket response
+run,0,0,q,.z.ws -8!"1+1",1,1,
+true,0,0,q,min .test.handlers in select zcmd from usage.getusage[],1,1,
+run,0,0,q,.test.resethandlers[],1,1, restore default handles
+run,0,0,q,.test.clearusage[],1,1,
 
 run,0,0,q,.testusg.setcustomhandlers[],1,1,run with custom handlers and verify that they are properly invoked
 run,0,0,q,usage.init[],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pw;(`test_user;"pass123")],1,1,
-run,0,0,q,.testusg.runhandler[`.z.po;1i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pc;2i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.wo;3i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.wc;4i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.ws;-8!"1+1"],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pg;"1+1"],1,1,
-run,0,0,q,.testusg.runhandler[`.z.ps;(+;2;2)],1,1,
-run,0,0,q,.testusg.runhandler[`.z.ph;"dummy"],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pp;"dummy"],1,1,
-run,0,0,q,.testusg.runhandler[`.z.exit;255],1,1,
-true,0,0,q,.testusg.chkusage[],1,1,
+run,0,0,q,.z.pw[`test_user;"pass123"],1,1,
+run,0,0,q,.z.po 1i,1,1,
+run,0,0,q,.z.pc 2i,1,1,
+run,0,0,q,.z.wo 3i,1,1,
+run,0,0,q,.z.wc 4i,1,1,
+run,0,0,q,.z.pg "1+1",1,1,
+run,0,0,q,.z.ps (+;2;2),1,1,
+run,0,0,q,.z.ph "dummy",1,1,
+run,0,0,q,.z.pp "dummy",1,1,
+run,0,0,q,.z.exit 255,1,1,
+run,0,0,q,.z.ps:{},1,1,swollow web socket response
+run,0,0,q,.z.ws -8!"1+1",1,1,
 true,0,0,q,([]zcmd:`.z.pw`.z.po`.z.pc`.z.wo`.z.wc`.z.ws`.z.pg`.z.ps`.z.ph`.z.pp`.z.exit;args:((`test_user;"pass123");1i;2i;3i;4i;-8!"1+1";"1+1";(+;2;2);"dummy";"dummy";255))~1_.testusg.customtracker,1,1,
-run,0,0,q,.testusg.reset[],1,1,
+run,0,0,q,.test.resethandlers[],1,1,
+run,0,0,q,.test.clearusage[],1,1,
 
 run,0,0,q,.m.usage.logtodisk:1b,1,1,should error on invalid logging configurations
 true,0,0,q,@[usage.init;::;::]~"logname and logdir must be set to enable on disk usage logging. logToDisk disabled",1,1,
@@ -48,14 +56,14 @@ run,0,0,q,.m.usage.logtodisk:0b,1,1, default value
 run,0,0,q,.m.usage.logdir:"",1,1, default value
 run,0,0,q,.m.usage.logname:"",1,1, default value
 
-run,0,0,q,.testusg.defaultcreatelog:.m.usage.createlog,1,1,should fail if log file creation errors
+run,0,0,q,.test.defaultcreatelog:.m.usage.createlog,1,1,should fail if log file creation errors
 run,0,0,q,.m.usage.createlog:{z;'"some error"},1,1,
 run,0,0,q,.m.usage.logtodisk:1b,1,1,
 run,0,0,q,.m.usage.logdir:".",1,1,
 run,0,0,q,.m.usage.logname:"test",1,1,
 true,0,0,q,@[usage.init;::;::]like"Error creating log file: ./usage_test_* | Error: some error",1,1,
 run,0,0,q,.testusg.reset[],1,1,
-run,0,0,q,.m.usage.createlog:.testusg.defaultcreatelog,1,1, default value
+run,0,0,q,.m.usage.createlog:.test.defaultcreatelog,1,1, default value
 run,0,0,q,.m.usage.logtodisk:0b,1,1, default value
 run,0,0,q,.m.usage.logdir:"",1,1, default value
 run,0,0,q,.m.usage.logname:"",1,1, default value
@@ -66,16 +74,16 @@ run,0,0,q,.m.usage.logdir:".",1,1,
 run,0,0,q,.m.usage.logname:"test",1,1,
 run,0,0,q,@[system;"rm usage_test_* 2> /dev/null";::];,1,1,clean up in case of previous run
 run,0,0,q,usage.init[],1,1,
-run,0,0,q,.testusg.runhandler[`.z.po;1i],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pg;"1+1"],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pg;(avg;1 2 3)],1,1,
-run,0,0,q,.testusg.runhandler[`.z.pc;1i],1,1,
-true,0,0,q,.testusg.chkusage usage.readlog first system"ls usage_test_*",1,1,
-run,0,0,q,.testusg.reset[],1,1,
+run,0,0,q,.z.po 1i,1,1,
+run,0,0,q,.z.pg "1+1",1,1,
+run,0,0,q,.z.pg (avg;1 2 3),1,1,
+run,0,0,q,.z.pc 1i,1,1,
+true,0,0,q,usage.getusage[] ~ usage.readlog first system"ls usage_test_*",1,1,
+run,0,0,q,.m.usage.usage:0#usage.getusage[],1,1, default value
 run,0,0,q,.m.usage.logtodisk:0b,1,1, default value
 run,0,0,q,.m.usage.logdir:"",1,1, default value
 run,0,0,q,.m.usage.logname:"",1,1, default value
-run,0,0,q,system"rm usage_test_*",1,1,
+run,0,0,q,system"rm usage_test_*",1,1,reove usage log file
 
 run,0,0,q,usage.init[],1,1,log at different levels
 run,0,0,q,.m.usage.level:0,1,1,log nothing
@@ -97,7 +105,7 @@ run,0,0,q,(1=count usage.getusage[])&usage.getusage[][0;`zcmd`status`cmd]~(`ps;"
 run,0,0,q,.m.usage.usage:0#usage.getusage[],1,1,
 run,0,0,q,.m.usage.level:3,1,1,restore default level
 
-run,0,0,q,.m.usage.ignore:1b,1,1,
+run,0,0,q,.m.usage.ignore:1b,1,1,test at diffreent log levels
 run,0,0,q,.m.usage.ignorelist:(`upd;"0+0"),1,1,
 run,0,0,q,upd:{y;},1,1,
 run,0,0,q,fn:{y;},1,1,
@@ -111,7 +119,7 @@ run,0,0,q,.m.usage.usage:0#usage.getusage[],1,1, default value
 run,0,0,q,.m.usage.ignore:0b,1,1, default value
 run,0,0,q,.m.usage.ignorelist:(),1,1, default value
 
-run,0,0,q,".m.usage.ext:{.testusg.ext,:enlist x}",1,1,test extension
+run,0,0,q,".m.usage.ext:{.test.ext,:enlist x}",1,1,test extension functions
 run,0,0,q,.z.pw[`test_user;"pass123"],1,1,
 run,0,0,q,.z.po 1i,1,1,
 run,0,0,q,.z.pc 2i,1,1,
@@ -119,13 +127,14 @@ run,0,0,q,.z.wo 3i,1,1,
 run,0,0,q,.z.wc 4i,1,1,
 run,0,0,q,.z.ps:{},1,1,
 run,0,0,q,.z.ws -8!"1+1",1,1,
+run,0,0,q,.test.resethandlers[],1,1,
 run,0,0,q,usage.init[],1,1,re-initialize message handlers
 run,0,0,q,.z.pg"1+1",1,1,
 run,0,0,q,.z.ps(+;2;2),1,1,
 run,0,0,q,.z.ph(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`get);`hdr1`hdr2!("hello";"goodbye")),1,1,
 run,0,0,q,.z.pp(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`post);`hdr1`hdr2!("hello";"goodbye")),1,1,
 run,0,0,q,.z.exit 0,1,1,
-true,0,0,q,usage.getusage[]~flip key[flip usage.getusage[]]!flip .testusg.ext,1,1,
+true,0,0,q,usage.getusage[]~flip key[flip usage.getusage[]]!flip .test.ext,1,1,
 run,0,0,q,.m.usage.usage:0#usage.getusage[],1,1,
 run,0,0,q,.m.usage.ext:{[x]},1,1,redefine usage function
 
@@ -141,5 +150,4 @@ run,0,0,q,usage.flushusage 0D00:01,1,1,no effect on empty table
 true,0,0,q,0=count usage.getusage[],1,1,
 run,0,0,q,.m.usage.currenttime:{[local] $[local;.z.P;.z.p]};,1,1,re define currenttime function
 run,0,0,q,.m.usage.usage: ([] time:`timestamp$(); id:`long$(); extime:`timespan$(); zcmd:`symbol$(); status:`char$(); a:`int$(); u:`symbol$(); w:`int$(); cmd:(); mem:(); sz:`long$(); error:()),1,1,
-
 

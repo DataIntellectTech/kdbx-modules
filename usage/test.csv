@@ -121,11 +121,11 @@ run,0,0,q,.z.ps(`fn;`trade;([]x:1 2)),1,1,not ignored
 run,0,0,q,.z.ps"0+0",1,1,ignored
 run,0,0,q,.z.ps"1+0",1,1,not ignored
 true,0,0,q,([]zcmd:`ps;status:6#"bc";cmd:(.Q.s1(+;1;2);.Q.s1(`fn;`trade;([]x:1 2));"1+0")where 3#2)~`zcmd`status`cmd#usage.getusage[],1,1,
-run,0,0,q,.m.usage.usage:0#usage.getusage[],1,1, default value
+run,0,0,q,.test.clearusage[],1,1, default value
 run,0,0,q,.m.usage.ignore:0b,1,1, default value
 run,0,0,q,.m.usage.ignorelist:(),1,1, default value
 
-run,0,0,q,".m.usage.ext:{.test.ext,:enlist x}",1,1,test extension functionality
+run,0,0,q,"usage.setextension[{.test.ext,:enlist x}]",1,1,test extension functionality
 run,0,0,q,.z.pw[`test_user;"pass123"],1,1,run args against each handle
 run,0,0,q,.z.po 1i,1,1,
 run,0,0,q,.z.pc 2i,1,1,
@@ -141,8 +141,8 @@ run,0,0,q,.z.ph(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`get);`hdr1`hdr2!("hello
 run,0,0,q,.z.pp(.j.j`x`y`z!(1;"http%3a%2f%2fdomain.com";`post);`hdr1`hdr2!("hello";"goodbye")),1,1,
 run,0,0,q,.z.exit 0,1,1,
 true,0,0,q,usage.getusage[]~flip key[flip usage.getusage[]]!flip .test.ext,1,1,
-run,0,0,q,.m.usage.usage:0#usage.getusage[],1,1,
-run,0,0,q,.m.usage.ext:{[x]},1,1,redefine usage function
+run,0,0,q,.test.clearusage[],1,1,
+run,0,0,q,usage.clearextension[],1,1,reset extesnion function to default
 
 run,0,0,q,.m.usage.usage:([]id:1 1 2 2 3;time:2025.07.24+0D12 0D12:00:00.1 0D12:01:59.999999999 0D12:02 0D12:05),1,1,test flush usage table fucntion
 run,0,0,q,.m.usage.currenttime:{2025.07.24D12:07}

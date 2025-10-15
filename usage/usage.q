@@ -74,10 +74,10 @@ write:{[x]
 // Extension function to extend the logging e.g. publish the log message
 ext:{[x]};
 
-// Exportable user accesable function to modify the value of the extension function
+// Exportable user accessible function to modify the value of the extension function
 setextension:{[fn].z.m.ext: fn};
 
-// Exportable user accesable function to clear any functionality assined to the extension function
+// Exportable user accessible function to clear any functionality assined to the extension function
 clearextension:{.z.m.ext:{[x]}};
 
 // Flush out in-memory usage records older than flushtime

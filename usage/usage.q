@@ -17,37 +17,8 @@ usage:@[value;`.z.m.usage;([]
   sz:`long$();
   error:())];
 
-/ flags and variables
-
-/ whether to log to disk
-logtodisk:@[value;`.z.m.logtodisk;0b];
-
-/ whether to log to memory
-logtomemory:@[value;`.z.m.logtomemory;1b];
-
-/ whether to check the ignore list for function calls to not log
-ignore:@[value;`.z.m.ignore;1b];
-
-/ list of function to not log usage of
-ignorelist:@[value;`.z.m.ignorelist;()];
-
 / function to generate the log file timestamp suffix
 logtimestamp:@[value;`.z.m.logtimestamp;{{[local] $[local;.z.D;.z.d]}}];
-
-/ log directory
-/ should be set before loading library to initialise on disk logging
-logdir:@[value;`.z.m.logdir;""];
-
-/ log file will take the form "usage_{logname}_{date/time}.log"
-/ should be set before loading library to initialise on disk logging
-logname:@[value;`.z.m.logname;""];
-
-/ log level
-/	0 = nothing
-/	1 = errors only
-/	2 = + open, close, queries
-/	3 = + log queries before execution
-level:@[value;`.z.m.level;3];
 
 / ID for tracking external queries
 id:@[value;`.z.m.id;0];
@@ -74,10 +45,10 @@ write:{[x]
 // Extension function to extend the logging e.g. publish the log message
 ext:{[x]};
 
-// Exportable user accessible function to modify the value of the extension function
+// Exportable user accesable function to modify the value of the extension function
 setextension:{[fn].z.m.ext: fn};
 
-// Exportable user accessible function to clear any functionality assined to the extension function
+// Exportable user accesable function to clear any functionality assined to the extension function
 clearextension:{.z.m.ext:{[x]}};
 
 // Flush out in-memory usage records older than flushtime
@@ -210,7 +181,19 @@ initlog:{[]
 / exportable function to get usage table
 getusage:{[] :.z.m.usage };
 
-init:{[]
+init:{[x]
+  / default configuration values and flags
+  .z.m.logtodisk:0b;    / whether to log to disk
+  .z.m.logtomemory:1b;  / whether to log to memory
+  .z.m.logdir:"";       / should be set before loading library to initialise on disk logging
+  .z.m.logname:"";      / log file will take the form "usage_{logname}_{date/time}.log"
+  .z.m.ignore:1b;       / whether to check the ignore list for function calls to not log
+  .z.m.ignorelist:();   / list of function to not log usage of
+  .z.m.level:3;         / log level,	0 = nothing, 1 = errors only, 2 = + open, close, queries, 3 = + log queries before execution
+  
+  if[(not x~(::)); (.Q.dd[.z.M] each key[x]) set' value[x]]; / change config vars, passed as a dictionary
+
   .z.m.inithandlers[];
   .z.m.initlog[];
   };
+  

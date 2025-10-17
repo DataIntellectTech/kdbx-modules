@@ -1,10 +1,13 @@
-.testos.sep:$[.os.iswindows;"\\";"/"];
+os:use`os;
+k4unit:use`k4unit;
+k4unit.debug 1b;
+.testos.sep:$[.m.os.iswindows;"\\";"/"];
 .testos.cwd:system"cd";
-.testos.root:$[.os.iswindows;first[.testos.sep vs .testos.cwd],.testos.sep;"/"];
+.testos.root:$[.m.os.iswindows;first[.testos.sep vs .testos.cwd],.testos.sep;"/"];
 .testos.osdir:.testos.sep sv -1_.testos.sep vs reverse[value{}]2;
-.testos.osdirstd:$[.os.iswindows;"/"sv@[;0;0#]"/"vs ssr[.testos.osdir;"\\";"/"];.testos.osdir];
-.testos.cansymlink:$[.os.iswindows;"B"$first first[system"net session > nul 2>&1 || echo 0"],"1";1b] / admin rights required in windows
-.testos.canchown:$[.os.iswindows;1b;"root"in" "vs first system"groups"];
+.testos.osdirstd:$[.m.os.iswindows;"/"sv@[;0;0#]"/"vs ssr[.testos.osdir;"\\";"/"];.testos.osdir];
+.testos.cansymlink:$[.m.os.iswindows;"B"$first first[system"net session > nul 2>&1 || echo 0"],"1";1b] / admin rights required in windows
+.testos.canchown:$[.m.os.iswindows;1b;"root"in" "vs first system"groups"];
 .testos.warnings:(); / start off optimistic
 
 / returns all path variations: "path" -> ("path";":path";`path;`:path)
@@ -15,7 +18,7 @@
 / if not windows, runs the function and verifies against expected output
 / if windowns, checks that the function throws a nyi error
 .testos.nyiwin:{[cmd]
-  $[.os.iswindows;
+  $[.m.os.iswindows;
     .testos.asserterr[cmd;"nyi"]; / windows -> check nyi
     value cmd] / not windows -> should work
   };
@@ -37,7 +40,7 @@
     [.testos.warnings,:enlist warn;1b]]
   };
 
-.testos.nowin:.testos.runif[not .os.iswindows;;""]; / No warning here because we always simply skip this in nyi situations
+.testos.nowin:.testos.runif[not .m.os.iswindows;;""]; / No warning here because we always simply skip this in nyi situations
 .testos.symlinkable:.testos.runif[.testos.cansymlink;;"Skipped symlink tests because we did not have required admin rights"];
 .testos.chownable:.testos.runif[.testos.canchown;;"Skipped chown tests because we did not have required root access"];
 
@@ -60,3 +63,34 @@
   if[b:count warning;-1"!!!WARNING!!! ",warning];
   b
   };
+
+/ framework for mocking variables
+
+.testos.mocks:1!enlist`name`existed`orig!(`;0b;"");
+
+/ mocks a variable
+.testos.mock:{[name;mockval]
+  if[not name in key .testos.mocks;
+    .testos.mocks[name;`existed`orig]:@[{(1b;get x)};name;{(0b;::)}]];
+  name set mockval;
+  };
+
+/ unmocks (i.e. restores) original variable value
+/ if the variable previously didn't exist, it's simply deleted
+/ if called with (::), unmocks all variables
+.testos.unmock:{[nm]
+  if[1=count .testos.mocks;:()]; / only sentinel row
+  t:0!$[nm~(::);1_.testos.mocks;select from .testos.mocks where name in nm];
+  .testos.deletefromns each exec name from t where not existed;
+  exec name set'orig from t where existed;
+  .testos.mocks:(select name from t)_.testos.mocks;
+  };
+
+/ internal - deletes an object from the namespace it belongs to
+.testos.deletefromns:{[obj]
+  if[obj like".z.*";:system"x ",string obj]; / Special .z callbacks
+  split:` vs obj;
+  k:last obj;
+  ns:$[1=count split;`.;` sv -1_split];
+  ![ns;();0b;enlist k];
+  }

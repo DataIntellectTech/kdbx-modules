@@ -45,10 +45,10 @@ write:{[x]
 // Extension function to extend the logging e.g. publish the log message
 ext:{[x]};
 
-// Exportable user accesable function to modify the value of the extension function
+// Exportable user accessible function to modify the value of the extension function
 setextension:{[fn].z.m.ext: fn};
 
-// Exportable user accesable function to clear any functionality assined to the extension function
+// Exportable user accessible function to clear any functionality assined to the extension function
 clearextension:{.z.m.ext:{[x]}};
 
 // Flush out in-memory usage records older than flushtime
@@ -190,10 +190,10 @@ init:{[x]
   .z.m.ignore:1b;       / whether to check the ignore list for function calls to not log
   .z.m.ignorelist:();   / list of function to not log usage of
   .z.m.level:3;         / log level,	0 = nothing, 1 = errors only, 2 = + open, close, queries, 3 = + log queries before execution
-  
-  if[(not x~(::)); (.Q.dd[.z.M] each key[x]) set' value[x]]; / change config vars, passed as a dictionary
+  .z.m.localtime:1b;    / check time preference. Default local time
+
+  if[(not x~(::)); (.Q.dd[.z.M] each key[x]) set' value[x]];
 
   .z.m.inithandlers[];
   .z.m.initlog[];
   };
-  

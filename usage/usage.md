@@ -19,7 +19,7 @@ A utility library for logging external queries and connections to a kdb+ session
 
 ## :label: Usage Table Schema
 
-Logs are stored in `usage` with the following columns:
+Logs are stored in a table `usage` with the following columns:
 
 | Column | Type      | Description                               |
 |--------|-----------|-------------------------------------------|
@@ -40,7 +40,8 @@ Logs are stored in `usage` with the following columns:
 
 ## :gear: Configuration
 
-Depending on the desired behaviour, config variables can be set **before running** `init`:
+Depending on the desired behaviour, config variables can be set when running `init[]`
+by providing a dictionary of the variable name and desired value (default values are set if no dictionary is provided):
 
 ```q
 localtime    : 1b                   // Log using local time or UTC (default: 1b, local)
@@ -82,8 +83,9 @@ Log level meanings:
 
 ### :rocket: Initialisation
 
-The package is initialised by calling the nullary function `init[]` which calls the `inithandlers` and `initlog` functions, overriding the `.z.*` message handlers 
-and initiates the in memory logs/ on disk logs if enabled.
+The package is initialised by calling the function `init[]` which sets the configuration 
+variables and calls the `inithandlers` and `initlog` functions, overriding the `.z.*` message 
+handlers and initiates the in memory logs/ on disk logs if enabled.
 
 | Function              | Description                                                                                                              |
 |-----------------------|--------------------------------------------------------------------------------------------------------------------------|
@@ -134,8 +136,9 @@ Default handlers will be defined if not previously set.
 
 ## :bulb: Notes
 
-- You can override `ext` to forward records to a pub/sub topic, REST endpoint, etc.
-- The in-memory logging table can be disabled by setting `logtomemory:0b`.
+- You can override `ext` by passing a lambda as an argument to `setextension[]`
+  to forward records to a pub/sub topic, REST endpoint, etc.
+- The in-memory logging table can be disabled by setting `logtomemory:0b` when running `init[]`.
 - This module is compatible with kdb+ 3.0 or later.
 
 ---
@@ -143,33 +146,22 @@ Default handlers will be defined if not previously set.
 ## :test_tube: Example
 
 ```q
-// Set up logging to disk and memory in usage.q
-localtime:1b;
-logdir:"logs";
-logname:"rdb";
-logtodisk:1b;
-logtomemory:1b;
-ignorelist,:(`upd; ".hb.checkheartbeat[]");
-```
-
-```q
 // Include usage package in a process
 usage: use `usage
-usage.init[]
 
 // View dictionary of functions
 usage
 
-init      | `.m.usage.export.init[]
-getusage  | `.m.usage.export.getusage[]
-readlog   | `.m.usage.export.readlog[]
-flushusage| `.m.usage.export.flushusage[]
-ext       | `.m.usage.export.ext[]
-nextid    | `.m.usage.export.nextid[]
-meminfo   | `.m.usage.export.meminfo[]
-formatarg | `.m.usage.export.formatarg[]
+init          | `.m.usage.export.init[]
+getusage      | `.m.usage.export.getusage[]
+readlog       | `.m.usage.export.readlog[]
+flushusage    | `.m.usage.export.flushusage[]
+setextension  | `.m.usage.export.setextension[]
+clearextension| `.m.usage.export.clearextension[]
 
 
+// Initialise usage and set up logging to disk and memory by passing a dictionary to init function
+usage.init[`localtime`logdir`logname`logtodisk`logtomemory`ignorelist!(1b;"logs";"rdb";1b;1b;(`upd; ".hb.checkheartbeat[]"))]
 
 // Check usage table for synchronous user queries
 select from usage.getusage[] where zcmd=`pg

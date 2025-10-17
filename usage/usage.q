@@ -3,7 +3,7 @@
 / handlers with usage-logging wrappers of their current definitions
 
 / table to store usage info
-usage:@[value;`.z.m.usage;([]
+usage:([]
   time:`timestamp$();
   id:`long$();
   extime:`timespan$();
@@ -15,25 +15,22 @@ usage:@[value;`.z.m.usage;([]
   cmd:();
   mem:();
   sz:`long$();
-  error:())];
+  error:());
 
 / function to generate the log file timestamp suffix
-logtimestamp:@[value;`.z.m.logtimestamp;{{[local] $[local;.z.D;.z.d]}}];
+logtimestamp:{[local] $[local;.z.D;.z.d]};
 
 / ID for tracking external queries
-id:@[value;`.z.m.id;0];
+id:0;
 
 / increment ID and return new value
 nextid:{[] :.z.m.id+:1;};
-
-/ check time preference. Default local time
-localtime:@[value;`.z.m.localtime;1b];
 
 / return local time or UTC
 currenttime:{[local] $[local;.z.P;.z.p]};
 
 / handle to the log file
-logh:@[value;`.z.m.logh;0];
+logh:0;
 
 / write a query log message
 write:{[x]
@@ -181,7 +178,7 @@ initlog:{[]
 / exportable function to get usage table
 getusage:{[] :.z.m.usage };
 
-init:{[x]
+init:{[configs]
   / default configuration values and flags
   .z.m.logtodisk:0b;    / whether to log to disk
   .z.m.logtomemory:1b;  / whether to log to memory
@@ -192,7 +189,11 @@ init:{[x]
   .z.m.level:3;         / log level,	0 = nothing, 1 = errors only, 2 = + open, close, queries, 3 = + log queries before execution
   .z.m.localtime:1b;    / check time preference. Default local time
 
-  if[(not x~(::)); (.Q.dd[.z.M] each key[x]) set' value[x]];
+  / set custom config values and flags
+  if[not configs~(::);
+    vars:`logtodisk`logtomemory`logdir`logname`ignore`ignorelist`level`localtime inter key configs;
+    (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs];
+  ];
 
   .z.m.inithandlers[];
   .z.m.initlog[];

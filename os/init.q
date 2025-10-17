@@ -167,6 +167,3 @@ setdrysyscalls:{[on]
 cleardrysyscalls[]
 
 export:([topath:topath;abspath:abspath;realpath:realpath;exists:exists;isfile:isfile;isdir:isdir;issymlink:issymlink;del:del;deldir:deldir;mkdir:mkdir;mv:mv;cp:cp;cpdir:cpdir;kill:kill;kill2:kill2;kill3:kill3;kill9:kill9;sleep:sleep;cd:cd;chmod:chmod;chown:chown;pwd:pwd;createsymlink:createsymlink;mkfifo:mkfifo;mktemp:mktemp;mktempdir:mktempdir;getdrysyscalls:getdrysyscalls;cleardrysyscalls:cleardrysyscalls;setdrysyscalls:setdrysyscalls])
-
-/ k4unit:use`k4unit
-/ k4unit.packagetest`os

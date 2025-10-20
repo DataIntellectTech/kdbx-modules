@@ -17,7 +17,7 @@ A lightweight, customizable timer management library in kdb+/q for scheduling an
 
 
 ### Core Concepts
-Timer jobs are tracked in **t.jobs**, an in-memory table storing job metadata:
+Timer jobs are tracked in **jobs**, an in-memory table storing job metadata:
 
 | Column        | Type      | Description                                                           |
 | ------------- | --------- | --------------------------------------------------------------------- |
@@ -60,7 +60,7 @@ Functions shown below allow you to register new timer-based jobs with varying de
 
 | Parameter     | Type       | Description                                                           |
 | ------------- | ---------- | --------------------------------------------------------------------- |
-| id            | symbol     | Unique function identifier, must not already exist in t.jobs     |
+| id            | symbol     | Unique function identifier, must not already exist in jobs table     |
 | func          | function   | Function to be executed when job runs                                 |
 | params        | list       | Arguments to pass into the function at run time                       |
 | period        | int        | Time period in seconds or minutes for next run time calculations      |
@@ -75,24 +75,24 @@ Functions shown below allow you to register new timer-based jobs with varying de
 | disableonfail | boolean   | By default: 1b, will automatically disable jobs if they fail  |
 | startattime   | timestmap | Specfic timestamp for intial function run                     |
 
-#### t.addjob.custom
+#### addjob.custom
 Lets you fully define a scheduled job by specifying its function, parameters, timing, mode, and options.
 ```q
-t.addjob.custom[`job1;{show x};("Hello!");10;4;(enlist `maxruns)!(enlist 3)];
-t.addjob.custom[`job2;{show x+y};(2;3);15;5;(`maxtime`startattime)!(2025.07.30D17:00:000;2025.07.30D09:00:000)];
-t.addjob.custom[`job3;{show "Hello, world!"};5;1;()!()];
+timer.addjob.custom[`job1;{show x};("Hello!");10;4;(enlist `maxruns)!(enlist 3)];
+timer.addjob.custom[`job2;{show x+y};(2;3);15;5;(`maxtime`startattime)!(2025.07.30D17:00:000;2025.07.30D09:00:000)];
+timer.addjob.custom[`job3;{show "Hello, world!"};5;1;()!()];
 ```
 
-#### t.addjob.default
+#### addjob.default
 Streamlined way to create a simple job with set default options i.e. not maxruns,maxtime or startattime and will automically disable on fail
 ```q
-t.addjob.default[`job4;{show "Mode 2"};();15;2];
+timer.addjob.default[`job4;{show "Mode 2"};();15;2];
 ```
 
-#### t.addjob.simple 
+#### addjob.simple 
 Provides a fast way to schedule a job using sensible defaults — ideal for quick setup when you only need to specify a function, its interval, and minimal configuration. Schedule mode is defaulted to 1.
 ```q
-t.addjob.simple[`job5;{show "Hi"};30]
+timer.addjob.simple[`job5;{show "Hi"};30]
 ```
 
 ---
@@ -100,72 +100,79 @@ t.addjob.simple[`job5;{show "Hi"};30]
 ### Control & Monitoring
 The timer system includes a suite of control functions that let you start, stop, and inspect timer jobs with precision. These utility functions ensure operational flexibility while maintaining the integrity of the scheduling loop.
 
-#### t.init
+#### init
 ```q
-t.init[]
+timer.init[]
 ```
-- Purpose: Initializes the timer scheduler by hooking .z.ts to t.main[].
-- Effect: Establishes a recurring loop that checks for jobs due to run based on t.cycletime. If .z.ts is already defined, it safely preserves and wraps it.
-- Usage: Call once when starting your timer system or restarting after t.disable[].
+- Purpose: Initializes the timer scheduler by hooking .z.ts to main[].
+- Effect: Establishes a recurring loop that checks for jobs due to run based on cycletime. If .z.ts is already defined, it safely preserves and wraps it.
+- Usage: Call once when starting your timer system or restarting after timer.disable[].
 
-#### t.disable
+#### disable
 ```q
-t.disable[]
+timer.disable[]
 ```
 - Purpose: Stops the timer execution loop by restoring the original .z.ts handler.
-- Effect: Prevents t.main[] from being automatically triggered, effectively pausing scheduled job execution.
+- Effect: Prevents main[] from being automatically triggered, effectively pausing scheduled job execution.
 - Safety: Checks if .z.ts was previously saved before attempting to revert it.
 - Usage: Useful during maintenance, debugging, or when manually controlling job flow
 
-#### t.enablejobs
+#### enablejobs
 ```q
-t.enablejobs[`job1]
-t.enablejobs[`job1`job2]
+timer.enablejobs[`job1]
+timer.enablejobs[`job1`job2]
 ```
-- Purpose: Reactivates one or more jobs by setting status:1b in t.jobs.
+- Purpose: Reactivates one or more jobs by setting status:1b in jobs table.
 - Usage: Accepts a single symbol or list of job IDs. Jobs will resume scheduling and execution as normal.
 
-#### t.disablejobs
+#### disablejobs
 ```q
-t.disablejobs[`job3]
-t.disablejobs[`job4`job5]
+timer.disablejobs[`job3]
+timer.disablejobs[`job4`job5]
 ```
 - Purpose: Deactivates one or more jobs by setting status:0b, preventing them from being picked up by the scheduler.
 - Usage: Ideal for temporarily suspending jobs without deleting their metadata.
 
-#### t.deletejobs
+#### deletejobs
 ```q
-t.deletejobs[`job3]
-t.deletejobs[`job4`job5]
+timer.deletejobs[`job3]
+timer.deletejobs[`job4`job5]
 ```
-- Purpose: Removes jobs from t.jobs table. Can be done without disabling loop.
+- Purpose: Removes jobs from jobs table. Can be done without disabling loop.
 - Usage: Ideal for re-defining job params wihtout interrupting other jobs.
 
-
-#### t.getactive
+#### getactivejobs
 ```q
-t.getactive[]
+timer.getactive[]
 ```
-- Purpose: Queries t.jobs and returns all currently active jobs (status=1b).
+- Purpose: Queries jobs table and returns all currently active jobs (status=1b).
 - Output: Returns a table of job rows, allowing inspection of current scheduling, metadata, and run statistics.
 - Usage: Useful for dashboarding, monitoring job health, or debugging live workflows
+
+#### getalljobs
+```q
+timer.getalljobs[]
+```
+- Purpose: Viewing the full jobs table.
+- Output: Returns all records in the jobs table.
+- Usage: Useful for viewing all jobs stored in the jobs table.
 
 ---
 
 ### User Customisations
-These are global control variables and can be adjusted by the user after import before initializing with t.init.
+These are global control variables and can be adjusted by the user after import before initializing with init.
 #### Debug
 ```q
-t.debug:1b
+timer.setdebug[1b]
 ```
 - Purpose: Enables verbose logging for job execution.
 - Type: Boolean (1b for enabled, 0b for disabled).
-- Usage: When set to 1b, job execution attempts, successes, and errors will be logged to the console with timestamps and context via t.msg.info and t.msg.err.
+- Usage: When set to 1b, job execution attempts, successes, and errors will be logged to the console with timestamps and context via .msg.info and .msg.err.
 - Default: 0b (disabled).
 This is useful during development or troubleshooting to inspect scheduler behavior.
 #### Log Call
 ```q
-t.logcall:1b
+timer.setlogcall[1b]
 ```
 - Purpose: Logs function execution in usage logs through 0 handle.
 - Type: Boolean (1b for enabled, 0b for disabled).
@@ -174,16 +181,16 @@ Default: 1b (enabled)
 This is useful for production use to ensure application is operating as expected 
 #### Cycle Time
 ```q
-t.cycletime:1000
+timer.setcycletime[1000]
 ```
 - Purpose: Sets the interval (in milliseconds) between scheduler checks for jobs that are due to run.
 - Type: Integer.
-- Usage: Controls how frequently .z.ts triggers the main execution loop t.main[].
+- Usage: Controls how frequently .z.ts triggers the main execution loop main[].
 - Default: 1000 (1 second).
 Adjust this value to increase responsiveness or reduce CPU usage, depending on the expected job timing precision.
 #### Current Timestamp
 ```q
-t.cp:{.z.p}
+timer.setcp[{.z.p}]
 ```
 - Purpose: Internal function defined for returning timestamps for all internal logic
 - Type: Function, returns timestamp
@@ -193,31 +200,49 @@ This is useful for backtesting and simulation
 
 ### Example 
 ```q
-\l timer.q / - package import process may change, just for example
+timer:use`timer / - package import process
 
-t.cycletime:500;
+// View dictionary of functions
+timer
+
+init         | `.m.timer.export.init[]
+getactivejobs| `.m.timer.export.getactivejobs[]
+getalljobs   | `.m.timer.export.getalljobs[]
+addjob       | ``opts`custom`default`simple!(::;`maxruns`maxtime`disableonfai..
+deletejobs   | `.m.timer.export.deletejobs[]
+enablejobs   | `.m.timer.export.enablejobs[]
+disablejobs  | `.m.timer.export.disablejobs[]
+enable       | `.m.timer.export.enable[]
+disable      | `.m.timer.export.disable[]
+setlogcall   | `.m.timer.export.setlogcall[]
+setcycletime | `.m.timer.export.setcycletime[]
+setcp        | `.m.timer.export.setcp[]
+setdebug     | `.m.timer.export.setdebug[]
+
+
+timer.cycletime:500;
 
 helloFunc:{show "Hello from job 1"};
-t.addjob.simple[`job1;helloFunc;5];
+timer.addjob.simple[`job1;helloFunc;5];
 
 echoFunc:{show x};
-t.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;(enlist `maxruns)!(enlist 3)];
+timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;(enlist `maxruns)!(enlist 3)];
 
 .func.timeAligned:{show "On the quarter hour"};
-t.addjob.default[`job3;`.func.timeAligned;();15;5];
+timer.addjob.default[`job3;`.func.timeAligned;();15;5];
 
-t.init[];
+timer.init[]; / - 
 
 // Enable and disable jobs manually if needed
-t.disablejobs[`job3]
-t.enablejobs[`job3]
+timer.disablejobs[`job3]
+timer.enablejobs[`job3]
 
 // View all active jobs
-t.getactive[]
+timer.getactivejobs[]
 
 // Temporarily halt job execution
-t.disable[]
+timer.disable[]
 
 // Restart scheduler loop again later
-t.enable[]
+timer.enable[]
 ``````

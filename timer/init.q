@@ -2,7 +2,7 @@
 
 / override variables to change logic
 debug:0b; / if enabled displays messages for jobs starting and any errors in execution
-logcall:1b; / if enabled will execute timer functions throuhgh 0 handle
+logcall:1b; / if enabled will execute timer functions through 0 handle
 cycletime:100; / frequency to check for new jobs to start (in ms)
 cp:{.z.p}; / return timestamp function used to evaluate start times, can be overwritten for backtesting and simulating
 
@@ -97,7 +97,9 @@ enablejobs:{[ids] ids:(),ids;.m.timer.jobs:update status:1b from .m.timer.jobs w
 disablejobs:{[ids] ids:(),ids;.m.timer.jobs:update status:0b from .m.timer.jobs where id in ids};
 deletejobs:{[ids] ids:(),ids;.m.timer.jobs:delete from .m.timer.jobs where id in ids};
 
-getactive:{select from .m.timer.jobs where status};
+getactivejobs:{select from .m.timer.jobs where status};
+
+getalljobs:{ :.z.m.jobs}
 
 / evalution functions for executing jobs and scheduling
 nextruntime:-0Wp;
@@ -138,5 +140,29 @@ init:{
   if[not system"t";system "t ",string cycletime];
   };
 
+setlogcall:{.z.m.logcall: x}
 
-export:([cp:cp;deletejobs:deletejobs;disable:disable;disablejobs:disablejobs;enable:enable;enablejobs:enablejobs;execute:execute;getactive:getactive;init:init;main:main;runandschedule:runandschedule;addjob:addjob;msg:msg;upd:upd])
+setcycletime:{.z.m.cycletime: x}
+
+setcp:{.z.m.cp: x}
+
+setdebug:{.z.m.debug: x}
+
+
+export:([
+  / control and monitoring jobs
+  init:init;
+  getactivejobs:getactivejobs;
+  getalljobs:getalljobs;
+  addjob:addjob;
+  deletejobs:deletejobs;
+  enablejobs:enablejobs;
+  disablejobs:disablejobs;
+  enable:enable;
+  disable:disable;
+  / set config variables
+  setlogcall:setlogcall;
+  setcycletime:setcycletime;
+  setcp:setcp;
+  setdebug:setdebug
+  ])

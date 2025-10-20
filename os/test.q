@@ -1,6 +1,3 @@
-os:use`os;
-k4unit:use`k4unit;
-k4unit.debug 1b;
 .testos.sep:$[.m.os.iswindows;"\\";"/"];
 .testos.cwd:system"cd";
 .testos.root:$[.m.os.iswindows;first[.testos.sep vs .testos.cwd],.testos.sep;"/"];
@@ -63,34 +60,3 @@ k4unit.debug 1b;
   if[b:count warning;-1"!!!WARNING!!! ",warning];
   b
   };
-
-/ framework for mocking variables
-
-.testos.mocks:1!enlist`name`existed`orig!(`;0b;"");
-
-/ mocks a variable
-.testos.mock:{[name;mockval]
-  if[not name in key .testos.mocks;
-    .testos.mocks[name;`existed`orig]:@[{(1b;get x)};name;{(0b;::)}]];
-  name set mockval;
-  };
-
-/ unmocks (i.e. restores) original variable value
-/ if the variable previously didn't exist, it's simply deleted
-/ if called with (::), unmocks all variables
-.testos.unmock:{[nm]
-  if[1=count .testos.mocks;:()]; / only sentinel row
-  t:0!$[nm~(::);1_.testos.mocks;select from .testos.mocks where name in nm];
-  .testos.deletefromns each exec name from t where not existed;
-  exec name set'orig from t where existed;
-  .testos.mocks:(select name from t)_.testos.mocks;
-  };
-
-/ internal - deletes an object from the namespace it belongs to
-.testos.deletefromns:{[obj]
-  if[obj like".z.*";:system"x ",string obj]; / Special .z callbacks
-  split:` vs obj;
-  k:last obj;
-  ns:$[1=count split;`.;` sv -1_split];
-  ![ns;();0b;enlist k];
-  }

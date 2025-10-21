@@ -160,10 +160,11 @@ timer.getalljobs[]
 ---
 
 ### User Customisations
-These are global control variables and can be adjusted by the user after import before initializing with init.
+These are global control variables and can be adjusted by the user, if no changes are provided the default values are used.
 #### Debug
+The debug variable can be modified by providing the init function a dictionary including `debug as the key and a boolean as the corresponding value.
 ```q
-timer.setdebug[1b]
+timer.init[(enlist `debug)!enlist 1b]
 ```
 - Purpose: Enables verbose logging for job execution.
 - Type: Boolean (1b for enabled, 0b for disabled).
@@ -171,17 +172,19 @@ timer.setdebug[1b]
 - Default: 0b (disabled).
 This is useful during development or troubleshooting to inspect scheduler behavior.
 #### Log Call
+The logcall variable can be modified by providing the init function a dictionary including `logcall as the key and a boolean as the corresponding value.
 ```q
-timer.setlogcall[1b]
+timer.init[(enlist `logcall)!enlist 1b]
 ```
 - Purpose: Logs function execution in usage logs through 0 handle.
 - Type: Boolean (1b for enabled, 0b for disabled).
 - Usage: Enables 0 handle logging for tracking function exection. 
-Default: 1b (enabled)
+Default: 1b (enabled).
 This is useful for production use to ensure application is operating as expected 
 #### Cycle Time
+The cycletime variable can be modified by providing the init function a dictionary including `cycletime as the key and a integer value (in ms) as the corresponding value.
 ```q
-timer.setcycletime[1000]
+timer.init[(enlist `cycletime)!enlist 1000]
 ```
 - Purpose: Sets the interval (in milliseconds) between scheduler checks for jobs that are due to run.
 - Type: Integer.
@@ -189,18 +192,20 @@ timer.setcycletime[1000]
 - Default: 1000 (1 second).
 Adjust this value to increase responsiveness or reduce CPU usage, depending on the expected job timing precision.
 #### Current Timestamp
+The current timestamp can be modified by providing a timestamp inside a lambda as the argument for the setcp function.
 ```q
 timer.setcp[{.z.p}]
 ```
-- Purpose: Internal function defined for returning timestamps for all internal logic
-- Type: Function, returns timestamp
-- Usage: Allows the user to overwrite all internal timestamps used for scheduling
-- Default: {.z.p}
-This is useful for backtesting and simulation
+- Purpose: Internal function defined for returning timestamps for all internal logic.
+- Type: Function, returns timestamp.
+- Usage: Allows the user to overwrite all internal timestamps used for scheduling.
+- Default: {.z.p}.
+This is useful for backtesting and simulation.
 
 ### Example 
 ```q
-timer:use`timer / - package import process
+// Import timer package as timer
+timer:use`timer
 
 // View dictionary of functions
 timer
@@ -214,13 +219,9 @@ enablejobs   | `.m.timer.export.enablejobs[]
 disablejobs  | `.m.timer.export.disablejobs[]
 enable       | `.m.timer.export.enable[]
 disable      | `.m.timer.export.disable[]
-setlogcall   | `.m.timer.export.setlogcall[]
-setcycletime | `.m.timer.export.setcycletime[]
 setcp        | `.m.timer.export.setcp[]
-setdebug     | `.m.timer.export.setdebug[]
 
-
-timer.cycletime:500;
+// Configure jobs to run
 
 helloFunc:{show "Hello from job 1"};
 timer.addjob.simple[`job1;helloFunc;5];
@@ -231,7 +232,8 @@ timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;(enlist `maxruns)!(e
 .func.timeAligned:{show "On the quarter hour"};
 timer.addjob.default[`job3;`.func.timeAligned;();15;5];
 
-timer.init[]; / - 
+// Initialize and set the cycletime
+timer.init[(enlist `cycletime)!enlist 500];
 
 // Enable and disable jobs manually if needed
 timer.disablejobs[`job3]

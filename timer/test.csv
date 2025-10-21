@@ -2,6 +2,10 @@ action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,Testing for adding jobs with all methods
 before,0,0,q,timer:use`timer,1,,Initialize package
 before,0,0,q,timer.setcp[{2025.03.03D12:00:00.000}],1,,Set timestamp return func for testing
+before,0,0,q,.m.timer.debug:0b,1,,Set debug for testing
+before,0,0,q,.m.timer.logcall:1b,1,,Set logcall for testing
+before,0,0,q,.m.timer.cycletime:100,1,,Set cycletime for testing
+
 run,0,0,q,timer.addjob.custom[`testcustom1;{};();10;1;(enlist `maxruns)!(enlist 3)],1,,Add job for custom 1
 true,0,0,q,`testcustom1 in key .m.timer.jobs,1,,Test job in table for custom 1
 true,0,0,q,.m.timer.jobs[`testcustom1][`maxruns]=3,1,,Test option overwrite for custom 1

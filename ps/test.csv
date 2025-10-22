@@ -1,7 +1,7 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,Setup for server and client testing
 comment,,,,,,,Replace $QHOME (defaults to $HOME) to avoid hard-coding
-beforeany,0,0,q,system"q ${HOME}/kdbx-packages/ps/init.q -p 5010 -q &",1,,start server in background
+beforeany,0,0,q,system"q -p 5010 -q &",1,,start server in background
 beforeany,0,0,q,system"sleep 1",1,,wait for server to initialize
 beforeany,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
 beforeany,0,0,q,h"ps:use`ps",,initialize ps package

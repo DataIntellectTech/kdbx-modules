@@ -1,9 +1,8 @@
 [ps.md](https://github.com/user-attachments/files/22662173/ps.md)
 # Publish/Subscribe Utilities
-> **Note:** Initial documentation draft (to be refined post-review).
 
 
-A lightweight kdbx-compatible package provides a list of functions to help users to subscribe to STP with custom data requirements, and publish data from the STP to downstream accordingly. 
+A lightweight kdbx-compatible package provides a list of functions to help users to subscribe to processes (such as a [tickerplant](https://code.kx.com/q/architecture/tickq/)) with custom data requirements, and publish data from the the process to downstream processes accordingly. 
 
 
 
@@ -17,9 +16,9 @@ A lightweight kdbx-compatible package provides a list of functions to help users
 ### Subscription Management:
 
 
-| Name         | Type     | Purpose                                              |
-| ------------ | -------- | ---------------------------------------------------- |
-| `ps.reqalldict`   | dict     | Dictionary mapping each data table to its subscribers  |
+| Name                 | Type     | Purpose                                                                         |
+| -------------------- | -------- | ------------------------------------------------------------------------------- |
+| `ps.reqalldict`      | dict     | Dictionary mapping each data table to its subscribers                           |
 | `ps.reqfilteredtbl`  | table    | Table mapping each data table to its subscribers and their custom requirements  |
 
 
@@ -31,7 +30,7 @@ A lightweight kdbx-compatible package provides a list of functions to help users
 **ps.subscribe**
 
 ```q
-subscribe to STP with/without fitlers. The function takes two arguments: tables and filters, user can specify which table or list of tables to subscribe to, default list which is all tables on top level of STP will be subscrbied if left blank; filters can be a subset of symbols or custom conditions in the form of table created by user, see examples.
+subscribe to a process with/without fitlers. The function takes two arguments: tables and filters, user can specify which table or list of tables to subscribe to, default list which is all tables on top level of the process will be subscrbied if left blank; filters can be a subset of symbols or custom conditions in the form of table created by user, see examples.
 ```
 
 
@@ -60,18 +59,18 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 ### Utilities:
 | Function            | Description                                                                 |
 |---------------------|-----------------------------------------------------------------------------|
-| `ps.add`           | Add a subscriber handle to the “request-all” dictionary.                    |
-| `ps.addfiltered`   | Register a subscription with custom filter conditions.                      |
-| `ps.delhandle`     | Remove a subscriber handle from the request-all registry.                   |
-| `ps.delhandlef`    | Remove a subscriber handle from the request-filtered registry.              |
-| `ps.endd`          | Broadcast an end-of-day event to all subscribers (requires `endofday`).     |
+| `ps.add`           | Add a subscriber handle to the “request-all” dictionary.                     |
+| `ps.addfiltered`   | Register a subscription with custom filter conditions.                       |
+| `ps.delhandle`     | Remove a subscriber handle from the request-all registry.                    |
+| `ps.delhandlef`    | Remove a subscriber handle from the request-filtered registry.               |
+| `ps.endd`          | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
 | `ps.endp`          | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
-| `ps.extractschema` | Return a table’s schema.                                                    |
-| `ps.suball` | Subscribe to all tables.                     |
-| `ps.subfiltered` | Subscribe to tables with filters.                                                   |
-| `ps.addfiltered` | Subscribe to tables with custom conditions.               
-| `ps.addsymsub` | Subscribe to tables with a list of symbols (or one symbol).                                              |
-| `ps.closesub` | Remove handle upon connection close.                 
+| `ps.extractschema` | Return a table’s schema.                                                     |
+| `ps.suball`        | Subscribe to all tables.                                                     |
+| `ps.subfiltered`   | Subscribe to tables with filters.                                            |
+| `ps.addfiltered`   | Subscribe to tables with custom conditions.                                  |
+| `ps.addsymsub`     | Subscribe to tables with a list of symbols (or one symbol).                  |
+| `ps.closesub`      | Remove handle upon connection close.                                         | 
 
 ---
 
@@ -94,7 +93,5 @@ q)ps.substrf["quote";"bid>50.0";"time,sym,bid"]
 ---
 ## Notes:
 
-- By default, all tables on top level of STP are available for subscription, to change that, user can provide specified list of tables using `ps.subtables` on start up.
-- The package initializes with defined list of tables to subscribe to and fetches their schemas and columns for use, and set `ps.initialized` to be True. 
-
-
+- By default, all tables on top level of the process are available for subscription, to change that, users can provide a specified list of tables to `ps.setsubtables` before running `ps.init`.
+- The package initializes with defined list of tables to subscribe to and fetches their schemas and columns for use.

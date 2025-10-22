@@ -2,5 +2,5 @@
 
 export:([
     objsize:objsize;
-    mem:mem
+    memusage:memusage
     ])

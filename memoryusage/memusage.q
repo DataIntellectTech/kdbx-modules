@@ -1,4 +1,7 @@
-// Functionality to return approx. memory size of kdb+ objects
+// Library for viewing the approximate memory size of  kdb+ objects
+// and viewing the approximate memory usage statistics of a kdb session
+
+// Functionality to return approximate memory size of kdb+ objects
 
 // half size for 2.x
 version:.5*1+3.0<=.z.K;
@@ -7,11 +10,11 @@ version:.5*1+3.0<=.z.K;
 ptrsize:$["32"~1_string .z.o;4;8];
 
 attrsize:{.z.m.version*
-	  // `u#2 4 5 unique 32*u
-	  $[`u=a:attr x;32*count distinct x;
-	  // `p#2 2 1 parted (8*u;32*u;8*u+1)
-	    `p=a;8+48*count distinct x;
-	    0]
+	// `u#2 4 5 unique 32*u
+	$[`u=a:attr x;32*count distinct x;
+	// `p#2 2 1 parted (8*u;32*u;8*u+1)
+	`p=a;8+48*count distinct x;
+	0]
 	};
 
 // (16 bytes + attribute overheads + raw size) to the nearest power of 2
@@ -24,13 +27,13 @@ typesize:{4^0N 1 16 0N 1 2 4 8 4 8 1 8 8 4 4 8 8 4 4 4 abs type x};
 
 threshold:100000;
 
-// pick samples randomly accoding to threshold and apply function
 sampling:{[f;x]
-        $[.z.m.threshold<c:count x;f@.z.m.threshold?x;f x]
-        };
+	// pick samples randomly accoding to threshold and apply function
+	$[.z.m.threshold<c:count x;f@.z.m.threshold?x;f x]
+	};
 
-// scale sampling result back to total population
-scaleSampling:{[f;x]
+scalesampling:{[f;x]
+	// scale sampling result back to total population
 	.z.m.sampling[f;x]*max(1;count[x]%.z.m.threshold)
 	};
 
@@ -47,30 +50,30 @@ objsize:{
 	// atom is fixed at 16 bytes, GUID is 32 bytes
 	$[0h>t:type x;$[-2h=t;32;16];
         // list & enum list
-          t within 1 76h;.z.m.vectorsize x;
-	// exit early for anything above 76h
-	  76h<t;0;
-	// complex = complex type in list, pointers + size of each objects
-	  0h in t:.z.m.sampling[type each;x];.z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scaleSampling[{[f;x]sum f each x}[.z.s];x];
-	// complex = if only 1 type and simple list, pointers + sum count each*first type
-	// assume count>1000 has no attrbutes (i.e. table unlikely to have 1000 columns, list of strings unlikely to have attr for some objects only
-	  (d[0] within 1 76h)&1=count d:distinct t;.z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scaleSampling[{sum .z.m.calcsize[count each x;.z.m.typesize x 0;$[1000<count x;0;.z.m.attrsize each x]]};x];
-	// other complex, pointers + size of each objects
-	  .z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scaleSampling[{[f;x]sum f each x}[.z.s];x]]
+        t within 1 76h;.z.m.vectorsize x;
+		// exit early for anything above 76h
+	  	76h<t;0;
+		// complex = complex type in list, pointers + size of each objects
+	  	0h in t:.z.m.sampling[type each;x];.z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scalesampling[{[f;x]sum f each x}[.z.s];x];
+		// complex = if only 1 type and simple list, pointers + sum count each*first type
+		// assume count>1000 has no attrbutes (i.e. table unlikely to have 1000 columns, list of strings unlikely to have attr for some objects only
+	  	(d[0] within 1 76h)&1=count d:distinct t;.z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scalesampling[{sum .z.m.calcsize[count each x;.z.m.typesize x 0;$[1000<count x;0;.z.m.attrsize each x]]};x];
+		// other complex, pointers + size of each objects
+	  	.z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scalesampling[{[f;x]sum f each x}[.z.s];x]]
 	};
 
 
-// Approximate memory usage statistics
+// Functionality for viewing the approximate memory usage statistics of a kdb session
 
 // get all the namespaces in . form
-allns:{`$(enlist enlist "."),".",/:string key `}
+allns:{`.,`$".",/:string key `};
 
-// Get the full var names for a given namespace
 varnames:{[ns;vartype;shortpath]
+// Get the full var names for a given namespace
 	vars:system vartype," ",string ns;
-        // create the full path to the variable.  If it's in . or .q it doesn't have a suffix
-        `$$[shortpath and ns in `.`.q;"";(string ns),"."],/:string vars}
+    // create the full path to the variable.  If it's in . or .q it doesn't have a suffix
+    `$$[shortpath and ns in `.`.q;"";(string ns),"."],/:string vars
+	};
 
-// Approximate memory usage statistics
-mem:{`size xdesc update sizeMB:`int$size%2 xexp 20 from update size:{-22!value x}each variable from ([]variable:raze .z.m.varnames[;;0b] .' .z.m.allns[] cross $[x;"vb";enlist"v"])}
-m:{.z.m.mem[1b]}
+memusage:{`size xdesc update sizeMB:`int$size%2 xexp 20 from update size:{-22!value x}each variable from ([]variable:raze .z.m.varnames[;;0b] .' .z.m.allns[] cross $[x;"vb";enlist"v"])};
+m:{.z.m.memusage[1b]};

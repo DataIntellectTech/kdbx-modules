@@ -1,7 +1,4 @@
-//memusage.q
-
 // Functionality to return approx. memory size of kdb+ objects
-\d .mem
 
 // half size for 2.x
 version:.5*1+3.0<=.z.K;
@@ -9,7 +6,7 @@ version:.5*1+3.0<=.z.K;
 // set the pointer size based on architecture
 ptrsize:$["32"~1_string .z.o;4;8];
 
-attrsize:{version*
+attrsize:{.z.m.version*
 	  // `u#2 4 5 unique 32*u
 	  $[`u=a:attr x;32*count distinct x;
 	  // `p#2 2 1 parted (8*u;32*u;8*u+1)
@@ -20,7 +17,7 @@ attrsize:{version*
 // (16 bytes + attribute overheads + raw size) to the nearest power of 2
 calcsize:{[c;s;a] `long$2 xexp ceiling 2 xlog 16+a+s*c};
 
-vectorsize:{calcsize[count x;typesize x;attrsize x]};
+vectorsize:{.z.m.calcsize[count x;.z.m.typesize x;.z.m.attrsize x]};
 
 // raw size of atoms according to type, type 20h->76h have 4 bytes pointer size
 typesize:{4^0N 1 16 0N 1 2 4 8 4 8 1 8 8 4 4 8 8 4 4 4 abs type x};
@@ -29,12 +26,12 @@ threshold:100000;
 
 // pick samples randomly accoding to threshold and apply function
 sampling:{[f;x]
-        $[threshold<c:count x;f@threshold?x;f x]
+        $[.z.m.threshold<c:count x;f@.z.m.threshold?x;f x]
         };
 
 // scale sampling result back to total population
 scaleSampling:{[f;x]
-	sampling[f;x]*max(1;count[x]%threshold)
+	.z.m.sampling[f;x]*max(1;count[x]%.z.m.threshold)
 	};
 
 objsize:{
@@ -50,21 +47,20 @@ objsize:{
 	// atom is fixed at 16 bytes, GUID is 32 bytes
 	$[0h>t:type x;$[-2h=t;32;16];
         // list & enum list
-          t within 1 76h;vectorsize x;
+          t within 1 76h;.z.m.vectorsize x;
 	// exit early for anything above 76h
 	  76h<t;0;
 	// complex = complex type in list, pointers + size of each objects
-	  0h in t:sampling[type each;x];calcsize[count x;ptrsize;0]+"j"$scaleSampling[{[f;x]sum f each x}[.z.s];x];
+	  0h in t:.z.m.sampling[type each;x];.z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scaleSampling[{[f;x]sum f each x}[.z.s];x];
 	// complex = if only 1 type and simple list, pointers + sum count each*first type
 	// assume count>1000 has no attrbutes (i.e. table unlikely to have 1000 columns, list of strings unlikely to have attr for some objects only
-	  (d[0] within 1 76h)&1=count d:distinct t;calcsize[count x;ptrsize;0]+"j"$scaleSampling[{sum calcsize[count each x;typesize x 0;$[1000<count x;0;attrsize each x]]};x];
+	  (d[0] within 1 76h)&1=count d:distinct t;.z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scaleSampling[{sum .z.m.calcsize[count each x;.z.m.typesize x 0;$[1000<count x;0;.z.m.attrsize each x]]};x];
 	// other complex, pointers + size of each objects
-	  calcsize[count x;ptrsize;0]+"j"$scaleSampling[{[f;x]sum f each x}[.z.s];x]]
+	  .z.m.calcsize[count x;.z.m.ptrsize;0]+"j"$.z.m.scaleSampling[{[f;x]sum f each x}[.z.s];x]]
 	};
 
-\d .api
 
-//api.q
+// Approximate memory usage statistics
 
 // get all the namespaces in . form
 allns:{`$(enlist enlist "."),".",/:string key `}
@@ -76,7 +72,5 @@ varnames:{[ns;vartype;shortpath]
         `$$[shortpath and ns in `.`.q;"";(string ns),"."],/:string vars}
 
 // Approximate memory usage statistics
-mem:{`size xdesc update sizeMB:`int$size%2 xexp 20 from update size:{-22!value x}each variable from ([]variable:raze varnames[;;0b] .' allns[] cross $[x;"vb";enlist"v"])}
-m:{mem[1b]}
-
-\d .
+mem:{`size xdesc update sizeMB:`int$size%2 xexp 20 from update size:{-22!value x}each variable from ([]variable:raze .z.m.varnames[;;0b] .' .z.m.allns[] cross $[x;"vb";enlist"v"])}
+m:{.z.m.mem[1b]}

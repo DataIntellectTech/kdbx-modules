@@ -1,7 +1,11 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,Testing for adding jobs with all methods
 before,0,0,q,timer:use`timer,1,,Initialize package
-before,0,0,q,.m.timer.cp:{2025.03.03D12:00:00.000},1,,Set timestamp return func for testing
+before,0,0,q,timer.setcp[{2025.03.03D12:00:00.000}],1,,Set timestamp return func for testing
+before,0,0,q,.m.timer.debug:0b,1,,Set debug for testing
+before,0,0,q,.m.timer.logcall:1b,1,,Set logcall for testing
+before,0,0,q,.m.timer.cycletime:100,1,,Set cycletime for testing
+
 run,0,0,q,timer.addjob.custom[`testcustom1;{};();10;1;(enlist `maxruns)!(enlist 3)],1,,Add job for custom 1
 true,0,0,q,`testcustom1 in key .m.timer.jobs,1,,Test job in table for custom 1
 true,0,0,q,.m.timer.jobs[`testcustom1][`maxruns]=3,1,,Test option overwrite for custom 1
@@ -64,17 +68,17 @@ run,0,0,q,timer.deletejobs[`testcustom1],1,,Run delete jobs for one job
 true,0,0,q,not `testcustom1 in key .m.timer.jobs,1,,Check deleted jobs for one job
 run,0,0,q,timer.deletejobs[`testcustom2`testcustom3],1,,Run delete jobs for multiple jobs
 true,0,0,q,all not `testcustom2`testcustom3 in\: key .m.timer.jobs,1,,Check deleted jobs for mutliple jobs
-true,0,0,q,6=count timer.getactive[],1,,Check get active utility function
+true,0,0,q,6=count timer.getactivejobs[],1,,Check get active utility function
 
 comment,,,,,,,Testing job execution and status/start time updates
 run,0,0,q,timer.addjob.custom[`testexec1;{.test.exec1:1b};();10;1;(enlist `maxruns)!(enlist 1)],1,,Add job for exec 1
-run,0,0,q,timer.runandschedule[`testexec1],1,,Test timer function exec 1
+run,0,0,q,.m.timer.runandschedule[`testexec1],1,,Test timer function exec 1
 true,0,0,q,.test.exec1,1,,Test run suceeded for exec 1
 true,0,0,q,not .m.timer.jobs[`testexec1][`status],1,,Test maxruns disabled job
 run,0,0,q,timer.addjob.default[`testexec2;{.test.exec2:x};(1b);10;1],1,,add job for exec 2
-run,0,0,q,timer.runandschedule[`testexec2],1,,Test timer function exec 2
+run,0,0,q,.m.timer.runandschedule[`testexec2],1,,Test timer function exec 2
 true,0,0,q,.test.exec2,1,,Test run succeeded for exec 2
 run,0,0,q,testexec3:{.test.exec3:x+y};timer.addjob.default[`testexec3;`testexec3;(2;3);10;1],1,,Add job for exec 3
-run,0,0,q,timer.runandschedule[`testexec3],1,,Test timer function exec 3
+run,0,0,q,.m.timer.runandschedule[`testexec3],1,,Test timer function exec 3
 true,0,0,q,.test.exec3=5,1,,Test run succeeded for exec 3
 

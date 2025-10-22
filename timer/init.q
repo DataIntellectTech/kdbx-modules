@@ -1,10 +1,7 @@
 / library for creating and managing stored timer functions
 
-/ override variables to change logic
-debug:0b; / if enabled displays messages for jobs starting and any errors in execution
-logcall:1b; / if enabled will execute timer functions throuhgh 0 handle
-cycletime:100; / frequency to check for new jobs to start (in ms)
-cp:{.z.p}; / return timestamp function used to evaluate start times, can be overwritten for backtesting and simulating
+/ return timestamp function used to evaluate start times, can be overwritten for backtesting and simulating
+cp:{.z.p}; 
 
 / in memory table maintaining time functions and scheduling of execution 
 jobs:(
@@ -90,14 +87,16 @@ nextstart[5h]:{[id;r]
   };
 
 / utility functions for setting up jobs and monitoring live
-disable:{.[.z.M.enabled;();:;0b]};
-enable:{.[.z.M.enabled;();:;1b]};
+disable:{.[.z.M.enabled;();:;0b];};
+enable:{.[.z.M.enabled;();:;1b];};
 
-enablejobs:{[ids] ids:(),ids;.m.timer.jobs:update status:1b from .m.timer.jobs where id in ids};
-disablejobs:{[ids] ids:(),ids;.m.timer.jobs:update status:0b from .m.timer.jobs where id in ids};
-deletejobs:{[ids] ids:(),ids;.m.timer.jobs:delete from .m.timer.jobs where id in ids};
+enablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:1b from .z.m.jobs where id in ids};
+disablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:0b from .z.m.jobs where id in ids};
+deletejobs:{[ids] ids:(),ids;.z.m.jobs:delete from .z.m.jobs where id in ids};
 
-getactive:{select from .m.timer.jobs where status};
+getactivejobs:{select from .z.m.jobs where status};
+
+getalljobs:{ :.z.m.jobs}
 
 / evalution functions for executing jobs and scheduling
 nextruntime:-0Wp;
@@ -123,15 +122,27 @@ enabled:0b;
 main:{
   / determines what jobs to run
   if[(nextruntime<p:cp[])&enabled;
-    torun:exec id from .m.timer.jobs where status,nextstart<p;
+    torun:exec id from .z.m.jobs where status,nextstart<p;
     if[count torun;runandschedule each torun];
-    .m.timer.nextruntime:exec min[nextstart] from .m.timer.jobs;
+    .z.m.nextruntime:exec min[nextstart] from .z.m.jobs;
     ];
   };
 
-init:{
+setcp:{.z.m.cp: x};
+
+init:{[configs]
+  / sets default config vars
+  .z.m.debug:0b; / if enabled displays messages for jobs starting and any errors in execution
+  .z.m.logcall:1b; / if enabled will execute timer functions through 0 handle
+  .z.m.cycletime:100; / frequency to check for new jobs to start (in ms)
+
+  / set custom config vars
+  if[not configs~(::);
+    vars:`logcall`cycletime`debug inter key configs;
+    (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs];
+  ];
   / appends to any existing .z.ts logic and start system cycle for timer job evaluation
-  $[enabled;:();.m.timer.enabled:1b]; / bomb out of function if already enabled
+  $[enabled;:();.z.m.enabled:1b]; / bomb out of function if already enabled
   $[@[{value x;1b};`.z.ts;0b]; / test if there is a pre-existing .z.ts definition
     .z.ts:{[x;y] main y; x@y}[.z.ts];
     .z.ts:{main x}];
@@ -139,4 +150,17 @@ init:{
   };
 
 
-export:([cp:cp;deletejobs:deletejobs;disable:disable;disablejobs:disablejobs;enable:enable;enablejobs:enablejobs;execute:execute;getactive:getactive;init:init;main:main;runandschedule:runandschedule;addjob:addjob;msg:msg;upd:upd])
+export:([
+  / control and monitoring jobs
+  init:init;
+  getactivejobs:getactivejobs;
+  getalljobs:getalljobs;
+  addjob:addjob;
+  deletejobs:deletejobs;
+  enablejobs:enablejobs;
+  disablejobs:disablejobs;
+  enable:enable;
+  disable:disable;
+  / setter for cp variable
+  setcp:setcp
+  ])

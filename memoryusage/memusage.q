@@ -3,13 +3,9 @@
 
 // Functionality to return approximate memory size of kdb+ objects
 
-// half size for 2.x
-version:.5*1+3.0<=.z.K;
+ptrsize:8 / set the pointer size to 8 for 64 bit machines
 
-// set the pointer size based on architecture
-ptrsize:$["32"~1_string .z.o;4;8];
-
-attrsize:{.z.m.version*
+attrsize:{
 	// `u#2 4 5 unique 32*u
 	$[`u=a:attr x;32*count distinct x;
 	// `p#2 2 1 parted (8*u;32*u;8*u+1)

@@ -68,17 +68,17 @@ addsymsub:{[table;syms]
 closesub:{[h]
   / remove handles upon connection close
   delhandle[;h] each key[.z.m.reqalldict];
-  delete from `.m.ps.reqfilteredtbl where handle=h;
+  delete from .z.M.reqfilteredtbl where handle=h;
   };
 
 / define .z.pc, add bespoke actions as needed
 .z.pc:{closesub[x]};
 
 / broadcast to all subscribers upon end of day, client needs to define endofday function
-endd:{(neg getallhandles[])@\:`endofday`};
+callendofday:{(neg getallhandles[])@\:`endofday`};
 
 / broadcast to all subscribers upon end of period, client needs to define endofperiod function
-endp:{(neg getallhandles[])@\:`endofperiod`};
+callendofperiod:{(neg getallhandles[])@\:`endofperiod`};
 
 / get table schema
 extractschema:{[table]0#value table};
@@ -86,8 +86,7 @@ extractschema:{[table]0#value table};
 subscribe:{[table;filters]
   / single entry point for subscriptions: uses default list when no table name provided; routes to suball if filters null, otherwise subfiltered
   if[`~table;table:.z.m.t];
-  if[not`~table;
-    :$[`~filters;suball;subfiltered[;filters]]table];
+  :$[`~filters;suball;subfiltered[;filters]]table;
   };
 
 publish:{[t;x]
@@ -104,21 +103,17 @@ pubclear:{[t]
   @[`.;;0#] each t;
   };
 
-substr:{[table;syms]
+subtable:{[table;syms]
   / allow non-kdb+ process to subscribe to tables with/without symbols
   res:subscribe[`$table;$[count syms;`$vs[csv;syms];`]];
   :$[10h~type last res;'last res;res];
   };
 
-substrf:{[table;filters;columns]
+subtablecustom:{[table;filters;columns]
   / allow non-kdb+ process to subscribe to tables with custom conditions
   res:subscribe[`$table;1!enlist `table`filts`columns!(`$table;filters;columns)];
   :$[10h~type last res;'last res;res];
   };
-
-/ set .u functions in case they get called
-.u.sub:subscribe;
-.u.pub:publish;
 
 / create a list of tables for subscription, allow users to set subtables, otherwise set to null
 setsubtables:{@[.z.M;`subtables;:;$[x~`;0#x;x]];};
@@ -132,5 +127,3 @@ init:{
   .z.m.tabcols:.z.m.t!cols each .z.m.t;
   if[count .z.m.tabcols;@[.z.M;`initialized;:;1b]];
   };
-
-export:`availtables`initialized _ .z.m

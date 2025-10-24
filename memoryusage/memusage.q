@@ -81,7 +81,8 @@ memusage:{
   / get the value of each var using -22!
   vars: update size:{-22! value x}each variable from vars;
   / calculate the size in mb
-  `size xdesc update sizeMB:`int$size%2 xexp 20 from vars};
+  `size xdesc update sizeMB:`int$size%2 xexp 20 from vars
+  };
 
 memusageall:{.z.m.memusage[1b]}; / returns memory usage table with variables and views
 

@@ -4,7 +4,6 @@ This package can be used to calculate the approximate size of an object in memor
 ## Main funtions
 The package contains two methods for calculating memory usage. 
 
-
 The `memusage` functions generate a table containing the approximate memoryusage of each object in the kdb session in bytes / megabytes using -22!. This can be useful quick approximations. 
 
 `memusagevars[]`:Generates a table of the approximate memory usage statistics of all variables in a kdb session.
@@ -16,8 +15,6 @@ The `memusage` functions generate a table containing the approximate memoryusage
 The `objsize` function is more computationally expensive, it tries to calculate the actual memory size of an object by including nested types and attributes.
 
 `objsize[]`:Returns the approximate size of an individual kdb object including nested types and attributes.
-
-
 
 ## memusage table schema
 The memusage table is returned from either the `memusagevars` or `memusageall` functions.

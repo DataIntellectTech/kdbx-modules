@@ -1,8 +1,6 @@
 //Load core functionality into root module namespace
-\l dataloader.q
+\l ::dataloader.q
 //Create secondary namespace level and load relevant script into it
-\d .z.m.util
-\l ::util.q
+util:use`dataloader.util
 //Return to root module namespace to simplify exposure of public functions
-\d .z.m
 export:([init:init;loadallfiles:loadallfiles])

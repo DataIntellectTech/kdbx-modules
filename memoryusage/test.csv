@@ -1,0 +1,50 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,memusage:use`memoryusage,1,1,load package into session
+
+run,0,0,q,.test.list:();.test.sym:`symbol$();.test.int:`int$();.test.str:`char$();.test.date:`date$();.test.time:`time$();.test.guid:`guid$(),1,1,test expected size of empty variables is 0
+true,0,0,q,0~memusage.objsize[.test.list],1,1, 
+true,0,0,q,0~memusage.objsize[.test.sym],1,1, 
+true,0,0,q,0~memusage.objsize[.test.int],1,1, 
+true,0,0,q,0~memusage.objsize[.test.str],1,1, 
+true,0,0,q,0~memusage.objsize[.test.date],1,1, 
+true,0,0,q,0~memusage.objsize[.test.time],1,1,
+true,0,0,q,0~memusage.objsize[.test.guid],1,1,  
+
+run,0,0,q,.test.sym:`;.test.int:0i;.test.str:" ";.test.date:2000.01.01;.test.time:00:00:00.000;.test.bool:1b,1,1,test expected size of nullary litterals is as expected
+true,0,0,q,16~memusage.objsize[.test.sym],1,1, 
+true,0,0,q,16~memusage.objsize[.test.int],1,1, 
+true,0,0,q,16~memusage.objsize[.test.str],1,1, 
+true,0,0,q,16~memusage.objsize[.test.date],1,1, 
+true,0,0,q,16~memusage.objsize[.test.time],1,1, 
+true,0,0,q,16~memusage.objsize[.test.bool],1,1, 
+
+run,0,0,q,.test.sym:`sym;.test.int:1i;.test.date:.z.d;.test.time:.z.t,1,1,test expected size of single atoms
+true,0,0,q,16~memusage.objsize[.test.sym],1,1, 
+true,0,0,q,16~memusage.objsize[.test.int],1,1, 
+true,0,0,q,16~memusage.objsize[.test.date],1,1, 
+true,0,0,q,16~memusage.objsize[.test.time],1,1, 
+
+run,0,0,q,.test.guid:-1?0ng,1,1,test expected size of a guid
+true,0,0,q,32~memusage.objsize[.test.guid],1,1, 
+
+run,0,0,q,.test.str:"hello";,1,1,test expected size of a small string
+true,0,0,q,32~memusage.objsize[.test.str],1,1, 
+
+run,0,0,q,.test.func:{x+x*y},1,1,providing a function should cause early exit and return 0
+true,0,0,q,0~memusage.objsize[.test.func],1,1,
+
+run,0,0,q,.test.dict:(`a`b`c)!(1 2 3),1,1,test the size of a dictionary is calculated and returned
+true,0,0,q,32<memusage.objsize[.test.dict]
+
+run,0,0,q,.test.smalltable:([]a:`a`b`c; b:1 2 3),1,1,test the size of table is calculated and returned
+run,0,0,q,.test.largetable:([]date:1000000?.z.d; sym:1000000?`2; price:1000000?100.00),1,1,large table for testing
+true,0,0,q,20000000<memusage.objsize[.test.largetable]
+true,0,0,q,32<memusage.objsize[.test.smalltable]
+
+true,0,0,q,0<count .test.result:select from memusage.memusagevars[] where variable in `.test.largetable,1,1,does large table show in memusage
+true,0,0,q,0<count select from .test.result where ((sizeMB>0)&size>0),1,1,does large table show size and sizeMB
+
+run,0,0,q,tview::select from .test.smalltable,1,1,test memusage and views
+true,0,0,q,1~count select from  memusage.memusageall[] where variable in `..tview,1,1,is view shown in memusageall table
+true,0,0,q,0~count select from  memusage.memusagevars[] where variable in `..tview,1,1,no views shown in memusagevars
+

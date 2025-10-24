@@ -48,8 +48,22 @@ deletefromns:{[obj]
   }
 
 / setter functions for config values
-verbose:{[x:{$[x in 0 1 2;x;'"must be one of 0 1 2"]}]VERBOSE::x}
-debug:{[x:`b]DEBUG::x}
-delim:{[x:`c]DELIM::x}
+verbose:{[x:{$[x in 0 1 2;x;'"must be one of 0 1 2"]}]VERBOSE::x};
+debug:{[x:`b]DEBUG::x};
+delim:{[x:`c]DELIM::x};
 
-export:([packagetest:packagetest;verbose:verbose;debug:debug;delim:delim;saveresults:KUstr;loadresults:KUltr;mock:mock;unmock:unmock;deletefromns:deletefromns])
+/ getter function for KUTR table
+getresults:{ :.z.m.KUTR};
+
+export:([
+  packagetest:packagetest;
+  getresults:getresults;
+  verbose:verbose;
+  debug:debug;
+  delim:delim;
+  saveresults:KUstr;
+  loadresults:KUltr;
+  mock:mock;
+  unmock:unmock;
+  deletefromns:deletefromns
+  ])

@@ -7,9 +7,9 @@ The package contains two methods for calculating memory usage.
 
 The `memusage` functions generate a table containing the approximate memoryusage of each object in the kdb session in bytes / megabytes using -22!. This can be useful quick approximations. 
 
-`memusagevars[]`:Generates a table of the approximate memory usage statistics of variables in a kdb session.
+`memusagevars[]`:Generates a table of the approximate memory usage statistics of all variables in a kdb session.
 
-`memusageall[]`:Generates a table of the approximate memory usage statistics of variables and aliases in a kdb session.
+`memusageall[]`:Generates a table of the approximate memory usage statistics of all variables and views in a kdb session.
 
 ----
 

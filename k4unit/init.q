@@ -63,7 +63,7 @@ export:([
   delim:delim;
   saveresults:KUstr;
   loadresults:KUltr;
-  mock:mock;unmock:
-  unmock;deletefromns:
-  deletefromns
+  mock:mock;
+  unmock:unmock;
+  deletefromns:deletefromns
   ])

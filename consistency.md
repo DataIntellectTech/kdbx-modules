@@ -9,7 +9,8 @@ Every package must have:
 The tests should be runnable as 
 
 ```q
-/ insert code here to run tests
+q)k4unit:use`k4unit
+q)k4unit.packagetest`package_to_test
 ```
 
 ## Paths 

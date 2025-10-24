@@ -8,10 +8,10 @@ applyattr:{[dloc;colname;att]
 
 // Function used to sort and apply attributes to tables on disk based on format provided at initialisation of package.
 sorttab:{[d]
-    if[1>sum exec sort from .z.m.sortparams;:()];
-    sp:$[count tabparams:select from .z.m.sortparams where tabname=d[0];
+    if[1>sum exec sort from .m.dataloader.sortparams;:()];
+    sp:$[count tabparams:select from .m.dataloader.sortparams where tabname=d[0];
          tabparams;
-         count defaultparams:select from .z.m.sortparams where tabname=`default;
+         count defaultparams:select from .m.dataloader.sortparams where tabname=`default;
          defaultparams
         ];
     {[sp;dloc]                                                                                              // Loop through each directory and sort the data
@@ -22,9 +22,9 @@ sorttab:{[d]
     }[sp] each distinct (),last d;
  };
 
-// Function checks keys are correct and value have the right types for loader.loadallfiles argument
+// Function checks keys are correct and value have the right types for loadallfiles argument
 paramfilter:{[loadparams]
-    if[not 99h=type loadparams; '".loader.loadallfiles requires a dictionary parameter"];                   // Check the input
+    if[not 99h=type loadparams; '"loadallfiles requires a dictionary parameter"];                   // Check the input
     req:`headers`types`tablename`dbdir`separator;                                                           // Required fields
     if[not all req in key loadparams;
        '"loaddata requires a dictionary parameter with keys of ",(", " sv string req)," : missing ",", " sv string req except key loadparams];
@@ -45,8 +45,10 @@ paramfilter:{[loadparams]
 
 // Function checks dictionary argument for init function has correct headers and types
 sortfilter:{[sortparams]
-    if[not 99h=type sortparams; '".loader.init requires a dictionary parameter"];
-    if[not (abs type each value sortparams)~11 11 11 1h;'"Error, ensure dictionary values are the correct types 11 11 11 1h or -11 -11 -11 -1h"];
+    if[not 99h=type sortparams; '"init requires a dictionary parameter"];
+    if[not (abs type each value sortparams)~11 11 11 1h;'"Error ensure dictionary values are the correct types 11 11 11 1h or -11 -11 -11 -1h"];
     if[not `tabname`att`column`sort~key sortparams; '"Error ensure argument is a dictionary with keys `tabname`att`column`sort"];
     flip (),/: sortparams
  };
+
+export:.z.m;

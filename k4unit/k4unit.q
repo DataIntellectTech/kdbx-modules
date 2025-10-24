@@ -109,15 +109,6 @@ KUrtf:{ / (refresh test file) updates test file x with realistic <ms>/<bytes>/<r
 	kutr:update bytes:`long$floor 1.5*bytesx from kutr;
 	x 0:DELIM 0:select action,ms,bytes,lang,string code,repeat,minver,comment from kut upsert select code,ms,bytes,repeat from kutr} 
 
-KUf::distinct exec file from KUTR / fristance: KUrtf each KUf
-KUslow::delete okms from select from KUTR where not okms
-KUslowf::distinct exec file from KUslow
-KUbig::delete okbytes from select from KUTR where not okbytes
-KUbigf::distinct exec file from KUbig
-KUerr::delete ok from select from KUTR where not ok
-KUerrf::distinct exec file from KUerr
-KUinvalid::delete ok,valid from select from KUTR where not valid
-KUinvalidf::distinct exec file from KUinvalid
 
 / VERBOSE:
 / 0 - no logging to console

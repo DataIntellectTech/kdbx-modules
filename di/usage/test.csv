@@ -1,9 +1,9 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 
-before,0,0,q,usage:use`usage,1,,Initialize package
+before,0,0,q,usage:use`di.usage,1,,Initialize package
 
 before,0,0,q,.test.resethandlers:{.z.pw:{[x;y] 1b}; .z.po:{}; .z.pc:{}; .z.wo:{}; .z.wc:{}; .z.ws:{neg[.z.w] x}; .z.pg:{value x}; .z.ps:{value x}; .z.pp:{}; .z.exit:{};},1,1,funtion to reset handles to default
-before,0,0,q,.test.clearusage:{.m.usage.usage:0#.m.usage.usage},1,1,function to clear usage table
+before,0,0,q,.test.clearusage:{.m.di.0usage.usage:0#.m.di.0usage.usage},1,1,function to clear usage table
 
 before,0,0,q,.test.handlers: (`pw`po`pc`wo`wc`ws`pg`ps`ph`pp`exit),1,1,modified handlers
 before,0,0,q,.test.customtracker:([]zcmd:`symbol$(); args:()),1,1,table to track custom handlers arguments
@@ -53,10 +53,10 @@ true,0,0,q,@[usage.init;(`logtodisk`logdir`logname)!(1b;"";"test");::]~"logname 
 run,0,0,q,.test.resethandlers[],1,1,restore default handles
 run,0,0,q,.test.clearusage[],1,1,clear usage table
 
-run,0,0,q,.test.defaultcreatelog:.m.usage.createlog,1,1,
-run,0,0,q,.m.usage.createlog:{z;'"some error"},1,1,should fail if log file creation errors
+run,0,0,q,.test.defaultcreatelog:.m.di.0usage.createlog,1,1,
+run,0,0,q,.m.di.0usage.createlog:{z;'"some error"},1,1,should fail if log file creation errors
 true,0,0,q,@[usage.init;(`logtodisk`logdir`logname)!(1b;".";"test");::]like"Error creating log file: ./usage_test_* | Error: some error",1,1,
-run,0,0,q,.m.usage.createlog:.test.defaultcreatelog,1,1, default value
+run,0,0,q,.m.di.0usage.createlog:.test.defaultcreatelog,1,1, default value
 run,0,0,q,.test.resethandlers[],1,1,restore default handles
 run,0,0,q,.test.clearusage[],1,1,clear usage table
 
@@ -128,8 +128,8 @@ run,0,0,q,.test.clearusage[],1,1,
 run,0,0,q,usage.clearextension[],1,1,reset extesnion function to default
 
 run,0,0,q,usage.init[],1,1,test flushusage function
-run,0,0,q,.m.usage.usage:([]id:1 1 2 2 3;time:2025.07.24+0D12 0D12:00:00.1 0D12:01:59.999999999 0D12:02 0D12:05),1,1,test flush usage table fucntion
-run,0,0,q,.m.usage.currenttime:{2025.07.24D12:07}
+run,0,0,q,.m.di.0usage.usage:([]id:1 1 2 2 3;time:2025.07.24+0D12 0D12:00:00.1 0D12:01:59.999999999 0D12:02 0D12:05),1,1,test flush usage table fucntion
+run,0,0,q,.m.di.0usage.currenttime:{2025.07.24D12:07}
 run,0,0,q,usage.flushusage 0D00:05,1,1,
 true,0,0,q,usage.getusage[]~([]id:2 3;time:2025.07.24+0D12:02 0D12:05),1,1,
 run,0,0,q,usage.flushusage 5D,1,1,nop
@@ -138,10 +138,10 @@ run,0,0,q,usage.flushusage 0,1,1,wipe
 true,0,0,q,0=count usage.getusage[],1,1,
 run,0,0,q,usage.flushusage 0D00:01,1,1,no effect on empty table
 true,0,0,q,0=count usage.getusage[],1,1,
-run,0,0,q,.m.usage.currenttime:{[local] $[local;.z.P;.z.p]};,1,1,re define currenttime function
-run,0,0,q,.m.usage.usage: ([] time:`timestamp$(); id:`long$(); extime:`timespan$(); zcmd:`symbol$(); status:`char$(); a:`int$(); u:`symbol$(); w:`int$(); cmd:(); mem:(); sz:`long$(); error:()),1,1,
+run,0,0,q,.m.di.0usage.currenttime:{[local] $[local;.z.P;.z.p]};,1,1,re define currenttime function
+run,0,0,q,.m.di.0usage.usage: ([] time:`timestamp$(); id:`long$(); extime:`timespan$(); zcmd:`symbol$(); status:`char$(); a:`int$(); u:`symbol$(); w:`int$(); cmd:(); mem:(); sz:`long$(); error:()),1,1,
 run,0,0,q,.test.resethandlers[],1,1,
 run,0,0,q,.test.clearusage[],1,1,
 
 run,0,0,q,usage.init[(enlist `test)!enlist 1b],1,1,pass a non config var to init
-fail,0,0,q,key .m.usage.test,1,1,
+fail,0,0,q,key .m.di.0usage.test,1,1,

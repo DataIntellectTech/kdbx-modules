@@ -23,14 +23,14 @@ subscribe to a process with/without fitlers. The function takes two arguments: t
 ```
 
 
-**pubsub.subtable**
+**pubsub.subscribestr**
 
 ```q
 allows non-kdb users to subscribe via strings containing tables and symbols, see examples.
 ```
 
 
-**pubsub.subtablecustom**
+**pubsub.subscribestrfilter**
 
 ```q
 allows non-kdb users to subscribe via strings of custom conditions, see examples.
@@ -46,13 +46,13 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 ---
 
 ### Utilities:
-| Function                 | Description                                                                  |
-|--------------------------|------------------------------------------------------------------------------|
-| `pubsub.setsubtables`    | Set a specified list of tables tthat are available for subscription.         | 
-| `pubsub.callendofday`    | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
-| `pubsub.callendofperiod` | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
-| `pubsub.closesub`        | Remove handle upon connection close.                                         | 
-| `pubsub.subclear`        | Publish tables and clear up the contents.                                    |
+| Function                  | Description                                                                  |
+|---------------------------|------------------------------------------------------------------------------|
+| `pubsub.setsubscribestrs` | Set a specified list of tables that are available for subscription.          | 
+| `pubsub.callendofday`     | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
+| `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
+| `pubsub.closesub`         | Remove handle upon connection close.                                         | 
+| `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
 
 ---
 
@@ -70,8 +70,8 @@ q)pubsub.subscribe[`trade;`]
 q)conditions:([tabname:`trade`quote] filts:("";"bid>100,bid<200"); columns:("time,sym,price";""))
 q)pubsub.subscribe[`;conditions]
 
-q)pubsub.subtable["trade";"GOOG,AAPL"]
-q)pubsub.subtablecustom["quote";"bid>50.0";"time,sym,bid"]
+q)pubsub.subscribestr["trade";"GOOG,AAPL"]
+q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 
 ```
 ---

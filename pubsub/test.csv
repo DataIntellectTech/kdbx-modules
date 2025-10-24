@@ -99,14 +99,14 @@ true,0,0,q,(enlist enlist((>;`bid;100);(<;`bid;200)))~(select from res where tab
 
 true,0,0,q,clt~first h(`.m.pubsub.getallhandles`),1,,test getallhandles function,one client handle only in the case
 
-run,0,0,q,"res:h(`pubsub.subtable;""trade"";""GOOG,AAPL"")",1,,test subscribe with strings
+run,0,0,q,"res:h(`pubsub.subscribestr;""trade"";""GOOG,AAPL"")",1,,test subscribe with strings
 true,0,0,q,`trade~first res[0],1,,client receives subscribed table confirmation
 true,0,0,q,98h~type first res[1],1,,client receives table schema
 run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table=`trade",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(in;`sym;enlist `GOOG`AAPL),1,, test symbols are listed under filters
 
-run,0,0,q,"res:h(`pubsub.subtablecustom;""quote"";""bid>50.0"";""time,sym,bid"")",1,,test subscribe with strings
+run,0,0,q,"res:h(`pubsub.subscribestrfilter;""quote"";""bid>50.0"";""time,sym,bid"")",1,,test subscribe with strings
 true,0,0,q,`quote~first res[0],1,,client receives subscribed table confirmation
 true,0,0,q,98h~type first res[1],1,,client receives table schema
 run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table=`quote",1,,check filtered table for the subscription

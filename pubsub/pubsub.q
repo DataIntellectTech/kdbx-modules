@@ -103,26 +103,26 @@ pubclear:{[t]
   @[`.;;0#] each t;
   };
 
-subtable:{[table;syms]
+subscribestr:{[table;syms]
   / allow non-kdb+ process to subscribe to tables with/without symbols
   res:subscribe[`$table;$[count syms;`$vs[csv;syms];`]];
   :$[10h~type last res;'last res;res];
   };
 
-subtablecustom:{[table;filters;columns]
+subscribestrfilter:{[table;filters;columns]
   / allow non-kdb+ process to subscribe to tables with custom conditions
   res:subscribe[`$table;1!enlist `table`filts`columns!(`$table;filters;columns)];
   :$[10h~type last res;'last res;res];
   };
 
-/ create a list of tables for subscription, allow users to set subtables, otherwise set to null
-setsubtables:{@[.z.M;`subtables;:;$[x~`;0#x;x]];};
-setsubtables`;
+/ create a list of tables for subscription, allow users to set subscribestrs, otherwise set to null
+setsubscribestrs:{@[.z.M;`subscribestrs;:;$[x~`;0#x;x]];};
+setsubscribestrs`;
 
 initialized:0b;
 
 init:{
-  .z.m.t:$[count .z.m.subtables;.z.m.subtables;tables[]except`reqfilteredtbl];
+  .z.m.t:$[count .z.m.subscribestrs;.z.m.subscribestrs;tables[]except`reqfilteredtbl];
   .z.m.schemas:.z.m.t!extractschema each .z.m.t;
   .z.m.tabcols:.z.m.t!cols each .z.m.t;
   if[count .z.m.tabcols;@[.z.M;`initialized;:;1b]];

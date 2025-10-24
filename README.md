@@ -17,4 +17,5 @@ Please create a separate directory for each package and place code,
 documentation and unit tests within. All packages must have documentation and
 unit tests to be accepted.
 
-Style should conform to the [style guide](style.md) in this repository.
+Style should conform to the [style guide](style.md) in this repository,
+and implement the outlined [consistency requirements](consistency.md). 

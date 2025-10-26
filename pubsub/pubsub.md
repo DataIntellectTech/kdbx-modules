@@ -48,7 +48,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 ### Utilities:
 | Function                  | Description                                                                  |
 |---------------------------|------------------------------------------------------------------------------|
-| `pubsub.setsubscribestrs` | Set a specified list of tables that are available for subscription.          | 
+| `pubsub.setsubtables`     | Set a specified list of tables that are available for subscription.          | 
 | `pubsub.callendofday`     | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
 | `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
 | `pubsub.closesub`         | Remove handle upon connection close.                                         | 
@@ -61,6 +61,8 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 q)pubsub:use`pubsub
 q).u.sub:pubsub.subscribe
 q).u.pub:pubsub.publish
+
+q)pubsub.setsubtables[`trade`quote]
 
 q)pubsub.subscribe[`;`]
 q)pubsub.subscribe[`;`AAPL`GOOG]

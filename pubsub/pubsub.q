@@ -115,7 +115,7 @@ subscribestrfilter:{[table;filters;columns]
   :$[10h~type last res;'last res;res];
   };
 
-/ create a list of tables for subscription, allow users to set subscribestrs, otherwise set to null
+/ create a list of tables for subscription, allow users to set subtables, otherwise set to null
 setsubtables:{@[.z.M;`subtables;:;$[x~`;0#x;x]];};
 setsubtables`;
 

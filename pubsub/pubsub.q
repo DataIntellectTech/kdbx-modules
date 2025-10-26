@@ -116,13 +116,13 @@ subscribestrfilter:{[table;filters;columns]
   };
 
 / create a list of tables for subscription, allow users to set subscribestrs, otherwise set to null
-setsubscribestrs:{@[.z.M;`subscribestrs;:;$[x~`;0#x;x]];};
-setsubscribestrs`;
+setsubtables:{@[.z.M;`subtables;:;$[x~`;0#x;x]];};
+setsubtables`;
 
 initialized:0b;
 
 init:{
-  .z.m.t:$[count .z.m.subscribestrs;.z.m.subscribestrs;tables[]except`reqfilteredtbl];
+  .z.m.t:$[count .z.m.subtables;.z.m.subtables;tables[]except`reqfilteredtbl];
   .z.m.schemas:.z.m.t!extractschema each .z.m.t;
   .z.m.tabcols:.z.m.t!cols each .z.m.t;
   if[count .z.m.tabcols;@[.z.M;`initialized;:;1b]];

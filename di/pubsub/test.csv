@@ -4,26 +4,26 @@ comment,,,,,,,Replace $QHOME (defaults to $HOME) to avoid hard-coding
 beforeany,0,0,q,system"q -p 5010 -q &",1,,start server in background
 beforeany,0,0,q,system"sleep 1",1,,wait for server to initialize
 beforeany,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
-beforeany,0,0,q,h"pubsub:use`pubsub",,initialize pubsub package
+beforeany,0,0,q,h"pubsub:use`di.pubsub",,initialize pubsub package
 true,0,0,q,h>0,1,,verify client connected to server
 beforeany,0,0,q,h"trade:([]time:\"p\"$();`g#sym:`$();price:\"f\"$();tsize:\"i\"$());",1,,define trade table on server
 beforeany,0,0,q,h"quote:([]time:\"p\"$();`g#sym:`$();bid:\"f\"$();bidsize:\"i\"$();ask:\"f\"$();asksize:\"i\"$());",1,,define quote table on server
-run,0,0,q,h".m.pubsub.init[]",,
-true,0,0,q,1b~h".m.pubsub.initialized",1,,confirm server initialized with necessary data
+run,0,0,q,h".m.di.0pubsub.init[]",,
+true,0,0,q,1b~h".m.di.0pubsub.initialized",1,,confirm server initialized with necessary data
 run,0,0,q,clt:first h"key[.z.W]",1,,get client handle on server
 run,0,0,q,upd:insert,1,,define local upd function
 
-run,0,0,q,res:h(`.m.pubsub.suball;`quote),1,,test subscribe to quote for all symbols
-true,0,0,q,clt in h".m.pubsub.reqalldict[`quote]",1,,client is subscribed
+run,0,0,q,res:h(`.m.di.0pubsub.suball;`quote),1,,test subscribe to quote for all symbols
+true,0,0,q,clt in h".m.di.0pubsub.reqalldict[`quote]",1,,client is subscribed
 true,0,0,q,`quote~res[0]0,1,,client receives subscribed table confirmation
 true,0,0,q,98h~type res[1;0],1,,client receives table schema
 
-run,0,0,q,res:h(`.m.pubsub.add;`trade),1,,test adding handle to trade table
-true,0,0,q,clt in h".m.pubsub.reqalldict[`trade]",1,,client handle is added
+run,0,0,q,res:h(`.m.di.0pubsub.add;`trade),1,,test adding handle to trade table
+true,0,0,q,clt in h".m.di.0pubsub.reqalldict[`trade]",1,,client handle is added
 
 run,0,0,q,res:h(`pubsub.subscribe;`;`),1,,test subscribe to all tables without filtering
-true,0,0,q,clt in h".m.pubsub.reqalldict[`trade]",1,,client handle is added
-true,0,0,q,clt in h".m.pubsub.reqalldict[`quote]",1,,client handle is added
+true,0,0,q,clt in h".m.di.0pubsub.reqalldict[`trade]",1,,client handle is added
+true,0,0,q,clt in h".m.di.0pubsub.reqalldict[`quote]",1,,client handle is added
 true,0,0,q,98h~type res[1;0],1,,client receives table schema
 true,0,0,q,98h~type res[1;1],1,,client receives table schema
 
@@ -43,25 +43,25 @@ run,0,0,q,h(`pubsub.pubclear;`trade),1,,call pubclear on trade table
 true,0,0,q,0=h"count trade",1,,test trade table cleared on server
 true,0,0,q,all tdata in trade,1,,test published data received on client
 
-run,0,0,q,res:h(`.m.pubsub.subfiltered;`trade`quote;`IBM`NVO),1,,test subscribe to specified tables with list of symbols
+run,0,0,q,res:h(`.m.di.0pubsub.subfiltered;`trade`quote;`IBM`NVO),1,,test subscribe to specified tables with list of symbols
 true,0,0,q,`trade`quote~res[0],1,,client receives subscribed table confirmation
 true,0,0,q,98h~type res[1;0],1,,client receives table schema
 true,0,0,q,98h~type res[1;1],1,,client receives table schema
-run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table in `trade`quote",1,,check filtered table for the subscription
+run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table in `trade`quote",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(in;`sym;enlist `IBM`NVO),1,, test symbols are listed under filters
 
 run,0,0,q,hclose h,1,,test closesub function-handles are removed after connection close
 run,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
 run,0,0,q,clt:first h"key[.z.W]",1,,get client handle on server
-true,0,0,q,(`$())~h"key .m.pubsub.reqalldict",1,,handle not in reqalldict since previous handle removed and new subscription not made
-true,0,0,q,not clt in(h".m.pubsub.reqfilteredtbl")`handle,1,,handle not in reqfilteredtbl
+true,0,0,q,(`$())~h"key .m.di.0pubsub.reqalldict",1,,handle not in reqalldict since previous handle removed and new subscription not made
+true,0,0,q,not clt in(h".m.di.0pubsub.reqfilteredtbl")`handle,1,,handle not in reqfilteredtbl
 
 run,0,0,q,res:h(`pubsub.subscribe;`;`AAPL`GOOG),1,,test subscribe to all tables with specified symbols
 true,0,0,q,`quote`trade~res 0,1,,client receives subscribed table confirmation
 true,0,0,q,98h~type res[1;0],1,,client receives table schema
 true,0,0,q,98h~type res[1;1],1,,client receives table schema
-run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table in `trade`quote",1,,check filtered table for the subscription
+run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table in `trade`quote",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(in;`sym;enlist `AAPL`GOOG),1,, test symbols are listed under filters
 
@@ -69,7 +69,7 @@ run,0,0,q,res:h(`pubsub.subscribe;`trade`dummy;`AAPL`GOOG),1,,test subscribe wit
 true,0,0,q,(`$"dummy not available for subscription")~res[0],1,,client receives error message for the incorrect table name
 true,0,0,q,`trade~first res[1;0],1,,client receives subscribed table confirmation
 true,0,0,q,98h~type res[1;1] 1,1,,client receives table schema
-run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table in `trade",1,,check filtered table for the subscription
+run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table in `trade",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(in;`sym;enlist `AAPL`GOOG),1,, test symbols are listed under filters
 
@@ -92,23 +92,23 @@ run,0,0,q,"d:select from nquote where bid>100,bid<200",1,,get quotes under custo
 run,0,0,q,h(`pubsub.publish;`quote;nquote),1,,call publish on new quote data
 true,0,0,q,d~quote,1,,test only quotes meeting the custom conditions are published
 
-run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table in `trade`quote",1,,check filtered table for the subscription
+run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table in `trade`quote",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,(enlist`time`sym`price!`time`sym`price)~(select from res where table=`trade)`columns,1,, test selected columns are listed under columns
 true,0,0,q,(enlist enlist((>;`bid;100);(<;`bid;200)))~(select from res where table=`quote)`filts,1,, test constraints listed under filters
 
-true,0,0,q,clt~first h(`.m.pubsub.getallhandles`),1,,test getallhandles function,one client handle only in the case
+true,0,0,q,clt~first h(`.m.di.0pubsub.getallhandles`),1,,test getallhandles function,one client handle only in the case
 
 run,0,0,q,"res:h(`pubsub.subscribestr;""trade"";""GOOG,AAPL"")",1,,test subscribe with strings
 true,0,0,q,`trade~first res[0],1,,client receives subscribed table confirmation
 true,0,0,q,98h~type first res[1],1,,client receives table schema
-run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table=`trade",1,,check filtered table for the subscription
+run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`trade",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(in;`sym;enlist `GOOG`AAPL),1,, test symbols are listed under filters
 
 run,0,0,q,"res:h(`pubsub.subscribestrfilter;""quote"";""bid>50.0"";""time,sym,bid"")",1,,test subscribe with strings
 true,0,0,q,`quote~first res[0],1,,client receives subscribed table confirmation
 true,0,0,q,98h~type first res[1],1,,client receives table schema
-run,0,0,q,res:h"select from .m.pubsub.reqfilteredtbl where table=`quote",1,,check filtered table for the subscription
+run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters

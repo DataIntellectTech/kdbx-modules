@@ -190,3 +190,13 @@ For unimplemented operations (e.g., `os.realpath` on Windows), the function will
 - Windows commands use native tools (`cmd.exe`), with fallback redirections as needed (`2>nul`, `>nul`).
 - Symlink creation on Windows may require **admin privileges** or **Developer Mode**.
 - Compatible with kdb+ 2.7 and later.
+
+## :gear: Loading Package
+The package can be loaded into a session using the use keyword.
+
+```q
+// Load package into session
+
+os:use`di.os
+
+```

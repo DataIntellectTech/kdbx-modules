@@ -147,18 +147,10 @@ Default handlers will be defined if not previously set.
 
 ```q
 // Include usage package in a process
-usage: use `usage
+usage: use `di.usage
 
 // View dictionary of functions
 usage
-
-init          | `.m.usage.export.init[]
-getusage      | `.m.usage.export.getusage[]
-readlog       | `.m.usage.export.readlog[]
-flushusage    | `.m.usage.export.flushusage[]
-setextension  | `.m.usage.export.setextension[]
-clearextension| `.m.usage.export.clearextension[]
-
 
 // Initialise usage and set up logging to disk and memory by passing a dictionary to init function
 usage.init[`localtime`logdir`logname`logtodisk`logtomemory`ignorelist!(1b;"logs";"rdb";1b;1b;(`upd; ".hb.checkheartbeat[]"))]

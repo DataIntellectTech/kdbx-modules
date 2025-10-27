@@ -1,5 +1,6 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,os:use`di.os,1,,Initialize package
+before,0,0,q,"system ""l "", os.abspath[""di/os/test.q""]",1,1,load additional testing functions / dependencies
 true,0,0,q,-1h=type .m.di.0os.iswindows,1,1,
 
 run,0,0,q,k4unit.mock[`.m.di.0os.iswindows;0b],1,1,

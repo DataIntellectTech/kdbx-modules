@@ -26,14 +26,14 @@ t:flip `timezoneID`gmtDateTime`gmtOffset`dst!("S  JIB";csv)0:hsym `:time_zone.cs
 Loading the module will automatically initialise using the included tzinfo.
 
 ```q
-q)tz:use`timezone
+q)tz:use`di.timezone
 ```
 
 If you wish to use an alternative tzinfo file, you can call the init function with
 the path to your file
 
 ```q
-q)tz:use`timezone
+q)tz:use`di.timezone
 q)tz.init "path/to/tzinfo"
 ```
 

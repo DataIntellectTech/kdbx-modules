@@ -30,14 +30,10 @@ Below is an example of loading the package into a session and viewing the size o
 
 ```q
 \\ Loading the package into a session
-memusage: use `memoryusage
+memusage: use `di.memoryusage
 
 \\ View dictionary of functions
 memusage
-
-objsize     | `.m.memoryusage.export.objsize[]
-memusageall | `.m.memoryusage.export.memusageall[]
-memusagevars| `.m.memoryusage.export.memusagevars[]
 
 \\ Calculating the memory usage of an object
 

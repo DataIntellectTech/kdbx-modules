@@ -205,21 +205,10 @@ This is useful for backtesting and simulation.
 ### Example 
 ```q
 // Import timer package as timer
-timer:use`timer
+timer:use`di.timer
 
 // View dictionary of functions
 timer
-
-init         | `.m.timer.export.init[]
-getactivejobs| `.m.timer.export.getactivejobs[]
-getalljobs   | `.m.timer.export.getalljobs[]
-addjob       | ``opts`custom`default`simple!(::;`maxruns`maxtime`disableonfai..
-deletejobs   | `.m.timer.export.deletejobs[]
-enablejobs   | `.m.timer.export.enablejobs[]
-disablejobs  | `.m.timer.export.disablejobs[]
-enable       | `.m.timer.export.enable[]
-disable      | `.m.timer.export.disable[]
-setcp        | `.m.timer.export.setcp[]
 
 // Configure jobs to run
 

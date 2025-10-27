@@ -1,10 +1,10 @@
-.testos.sep:$[.m.os.iswindows;"\\";"/"];
+.testos.sep:$[.m.di.0os.iswindows;"\\";"/"];
 .testos.cwd:system"cd";
-.testos.root:$[.m.os.iswindows;first[.testos.sep vs .testos.cwd],.testos.sep;"/"];
+.testos.root:$[.m.di.0os.iswindows;first[.testos.sep vs .testos.cwd],.testos.sep;"/"];
 .testos.osdir:.testos.sep sv -1_.testos.sep vs reverse[value{}]2;
-.testos.osdirstd:$[.m.os.iswindows;"/"sv@[;0;0#]"/"vs ssr[.testos.osdir;"\\";"/"];.testos.osdir];
-.testos.cansymlink:$[.m.os.iswindows;"B"$first first[system"net session > nul 2>&1 || echo 0"],"1";1b] / admin rights required in windows
-.testos.canchown:$[.m.os.iswindows;1b;"root"in" "vs first system"groups"];
+.testos.osdirstd:$[.m.di.0os.iswindows;"/"sv@[;0;0#]"/"vs ssr[.testos.osdir;"\\";"/"];.testos.osdir];
+.testos.cansymlink:$[.m.di.0os.iswindows;"B"$first first[system"net session > nul 2>&1 || echo 0"],"1";1b] / admin rights required in windows
+.testos.canchown:$[.m.di.0os.iswindows;1b;"root"in" "vs first system"groups"];
 .testos.warnings:(); / start off optimistic
 
 / returns all path variations: "path" -> ("path";":path";`path;`:path)
@@ -15,7 +15,7 @@
 / if not windows, runs the function and verifies against expected output
 / if windowns, checks that the function throws a nyi error
 .testos.nyiwin:{[cmd]
-  $[.m.os.iswindows;
+  $[.m.di.0os.iswindows;
     .testos.asserterr[cmd;"nyi"]; / windows -> check nyi
     value cmd] / not windows -> should work
   };
@@ -37,7 +37,7 @@
     [.testos.warnings,:enlist warn;1b]]
   };
 
-.testos.nowin:.testos.runif[not .m.os.iswindows;;""]; / No warning here because we always simply skip this in nyi situations
+.testos.nowin:.testos.runif[not .m.di.0os.iswindows;;""]; / No warning here because we always simply skip this in nyi situations
 .testos.symlinkable:.testos.runif[.testos.cansymlink;;"Skipped symlink tests because we did not have required admin rights"];
 .testos.chownable:.testos.runif[.testos.canchown;;"Skipped chown tests because we did not have required root access"];
 

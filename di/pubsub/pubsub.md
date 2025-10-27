@@ -58,7 +58,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 
 ### Example: 
 ```q
-q)pubsub:use`pubsub
+q)pubsub:use`di.pubsub
 q).u.sub:pubsub.subscribe
 q).u.pub:pubsub.publish
 

@@ -17,7 +17,7 @@ run,0,0,q,"(` sv filespath,`tradedaily.csv)0:csv 0:tradedailytab",1,,Save traded
 run,0,0,q,"(` sv filespath,`quotenh.csv)0:1_csv 0:quotetab",1,,Save quote csv without headers
 run,0,0,q,"(` sv filespath,`quote.csv)0:csv 0:quotetab",1,,Save quote csv with headers
 
-run,0,0,q,dataloader.init[`tabname`att`column`sort!(`default`quote`tradedaily;`p`s`;`sym`time`;110b)],1,,Init package with defaults for all tables
+run,0,0,q,dataloader.addsortparams[`quote`tradedaily;`s`;`time`;10b],1,,Add custom sort parameters
 
 run,0,0,q,dataloader.loadallfiles[`headers`types`separator`tablename`dbdir`filepattern!(`time`sym`price`size`side`exchange;"PSFISS";csv;`trade;hdbpath;"tradenh.csv");filespath],1,,Test load of trade file with no headers
 run,0,0,q,\l test/data/hdb,1,,Load database 

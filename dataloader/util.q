@@ -7,18 +7,18 @@ applyattr:{[dloc;colname;att]
   };
 
 // Function used to sort and apply attributes to tables on disk based on format provided at initialisation of package.
-sorttab:{[d]
-  if[1>sum exec sort from .m.dataloader.sortparams;:()];
-  sp:$[count tabparams:select from .m.dataloader.sortparams where tabname=d[0];
+sorttab:{[sortparams;d]
+  if[1>sum exec sort from sortparams;:()];
+  sp:$[count tabparams:select from sortparams where tabname=d[0];
     tabparams;
-    count defaultparams:select from .m.dataloader.sortparams where tabname=`default;
+    count defaultparams:select from sortparams where tabname=`default;
     defaultparams
     ];
   {[sp;dloc]                                                                                    / Loop through each directory and sort the data
     if[count sortcols:exec column from sp where sort,not null column;
       .[xasc;(sortcols;dloc);{[sortcols;dloc;e]'"failed to sort ",string[dloc]," by these columns : ",(", " sv string sortcols),".  The error was: ",e}[sortcols;dloc]]];
     if[count attrcols:select column,att from sp where not null att;
-      applyattr[dloc;;]'[attrcols`column;attrcols`att]];                                        / Apply attribute(s)
+      applyattr[dloc]'[attrcols`column;attrcols`att]];                                          / Apply attribute(s)
   }[sp]each distinct(),last d;
  };
 
@@ -41,12 +41,6 @@ paramfilter:{[loadparams]
   if[(`filepattern in key loadparams)& 10h=type loadparams`filepattern;                         / If a filepattern was specified ensure that it's a list
      loadparams[`filepattern]:enlist loadparams`filepattern];
   loadparams
- };
-
-// Function checks dictionary argument for init function has correct headers and types
-sortfilter:{[sortparams]
-  if[not 99h=type sortparams;'"init requires a dictionary parameter"];
-  flip(),/:sortparams
  };
 
 export:.z.m;

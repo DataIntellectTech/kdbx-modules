@@ -28,37 +28,42 @@ When all the data is written, the on-disk data is re-sorted and the attributes a
 
 ## :gear: Initialisation
 
-After loading the package into the session the unary function `init` is called with a single argument to initialise the packages global variables and define any configurable sorting/attributes.
+After loading the package into the session, the `loadallfiles` function is ready to run. By default, tables will be written with the `p` attribute applied to the `sym` column and sorted. 
 
-### :mag_right: Params in Depth
+### :mag_right: Custom sorting parameters
 
-The sole argument to `init` should be a dictionary with the keys `tabname, att, column and sort`. The argument is used to determine how the tables in the resulting database should be sorted and where attributes applied when being persisted.
-You may apply default sorting and attributes to all tables loaded in by the package by passing in the `tabname` with a value of `default` and specifying your default sorting and attribute parameters, 
-or you can apply specific sorting and attribute configurations to tables when loading them into the database including determining where they should not be applied by using a specific table name. 
+By default, the sorting paramters for all tables are:
+```
+tabname att column sort
+-----------------------
+default p   sym    1
+```
+
+That is, for every table the `p` attribute will be applied to the `sym` column and sorted. If the table being loaded requires different attributes applied on different columns, custom sorting parameters can be added using the `addsortparams` function. This takes 4 inputs: tabname, att, column, and sort. These arguments are used to determine how the tables in the resulting database should be sorted and where attributes applied when being persisted. Furthermore, this will add (or update existing) parameters for the specified table.
+
+You may apply default sorting and attributes to all tables loaded in by the package by passing in the `tabname` with a value of `default` and specifying your default sorting and attribute parameters. By passing in `default` this will overwrite the current default paramters.
+
 If no sorting or attributes are required pass in the dictionary with a `tabname` with `default`, `att` and `column` with backticks and `sort` with `0b`, examples shown below:
 ```q
-init[`tabname`att`column`sort!(`default;`;`;0b)]                               // Apply no sorting or attributes
-init[`tabname`att`column`sort!(`default;`p;`sym;1b)]                           // Sort all tables loaded in by the sym column and apply the parted attribute
-init[`tabname`att`column`sort!(`default`trade`quote;`p`s`;`sym`time`;110b)]    // Apply default to all tables, however, sort trade by sym and apply `p and if quote is read in by the function then do not sort or apply attributes
+dataloader:use`dataloader
+dataloader.addsortparams[`tabname`att`column`sort!(`default;`;`;0b)]                               / Overwrite default to apply no sorting or attributes
+dataloader.addsortparams[`tabname`att`column`sort!(`default;`p;`sym;1b)]                           / Overwrite default to sort all tables loaded in by the sym column and apply the parted attribute
+dataloader.addsortparams[`tabname`att`column`sort!(`default`trade`quote;`p`s`;`sym`time`;110b)]    / Apply default to all tables, however, sort trade by sym and apply `p and if quote is read in by the function then do not sort or apply attributes
 ```
 The dictionary arguments are outlined below.
 
-| Key       | Values                | Description                                                                      |
+| Input     | Type                  | Description                                                                      |
 |-----------|-----------------------|----------------------------------------------------------------------------------|
 | `tabname` | symbol/ symbol list   | Name of table                                                                    |
 | `att`     | symbol/ symbol list   | Attributes corresponding to the table names                                      |
 | `column`  | symbol/ symbol list   | Columns to sort and apply attributes to                                          |
 | `sort`    | boolean /boolean list | Determines if the corresponding table will be sorted (1b: sorted; 0b:not sorted) |
 
-
 ---
 
 ### :rocket: Functions
 
-`loadallfiles` is the primary function used to load in all data and create the database. 
-The function takes two arguments, a dictionary of loading parameters and a directory containing files to read. 
-The function reads in all specified delimited files into memory from a chosen directory then proceeds to apply any required processing,
-persists the table to disk in a kdb+ partitioned format, compresses the files if directed and finally sorting and applying attributes.
+`loadallfiles` is the primary function used to load in all data and create the database. The function takes two arguments, a dictionary of loading parameters and a directory containing files to read. The function reads in all specified delimited files into memory from a chosen directory then proceeds to apply any required processing, persists the table to disk in a kdb+ partitioned format, compresses the files if directed and finally sorting and applying attributes.
 
 
 ## :mag_right: Params in depth
@@ -91,22 +96,20 @@ The second parameter is a directory handle .e.g
 ### :test_tube: Example
 
 ```q
-\l dataloader.q
+dataloader:use`dataloader
 
-// Initialise the package
-init[`tabname`att`column`sort!(`default;`p;`sym;1b)]
-
-// Check table exists
-select from sortparams
+// If using custom sorting parameters, check they are as expected
+dataloader.sortparams[]
 tabname att column sort
 -----------------------
 default  p  sym    1
 
 // Read in data and create db
-loadallfiles[`headers`types`separator`tablename`dbdir!(`sym`time`price`volume`mktflag`cond`exclude;"SPFICHB";",";`trade;`:hdb); `:TRADE/toload]
+dataloader.loadallfiles[`headers`types`separator`tablename`dbdir!(`sym`time`price`volume`mktflag`cond`exclude;"SPFICHB";",";`trade;`:hdb);`:TRADE/toload]
 
 //load in db
 \l hdb
+
 //check table and sorting
 select from trade
 
@@ -122,7 +125,6 @@ date       sym  time                          price volume mktflag cond exclude
 
 // Ensure attributes are applied
 meta trade
-
 c      | t f a
 -------| -----
 date   | d
@@ -133,5 +135,4 @@ volume | i
 mktflag| c
 cond   | h
 exclude| b
-
 ```

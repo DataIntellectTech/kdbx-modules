@@ -53,7 +53,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 | `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
 | `pubsub.closesub`         | Remove handle upon connection close.                                         | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
-
+| `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas).  |
 ---
 
 ### Example: 
@@ -63,6 +63,7 @@ q).u.sub:pubsub.subscribe
 q).u.pub:pubsub.publish
 
 q)pubsub.setsubtables[`trade`quote]
+q)pubsub.init[]
 
 q)pubsub.subscribe[`;`]
 q)pubsub.subscribe[`;`AAPL`GOOG]
@@ -81,4 +82,4 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 
 - By default, all tables on top level of the process are available for subscription.
 - The user should define the `.u.sub` and the `.u.pub` functions within the process.
-- The package initializes with defined list of tables to subscribe to and fetches their schemas and columns for use.
+- The package initializes with defined list of tables to subscribe to and fetches their schemas and columns for use. This is done via calling `init` function.

@@ -3,8 +3,8 @@
 A library used to publish metrics and events to the DataDog application through DataDog agents or https, dynamically adapting the delivery
 mechanism depending on host operating system.
 
->  **Note:** Using the functions `.dg.sendmetric` and `.dg.sendevent` on a Windows OS relies on Poweshell being installed.
->  If Powershell is not installed please use `.dg.setfunctions 1b` to send data via https.
+>  **Note:** Using the functions `sendmetric` and `sendevent` on a Windows OS relies on Poweshell being installed.
+>  If Powershell is not installed please initialise the package using `init[1b]` to send data via https.
 > 
 > **Note:** To send metrics and events to DataDog via https you must either have TLS certificates set up on your machine or set the environment variable `SSL_VERIFY_SERVER=NO`. 
 
@@ -23,17 +23,17 @@ mechanism depending on host operating system.
 Config variables used to connect to DataDog and change the mode of delivery can be set **before initialising** the package:
 
 ```q
-.dg.agentport  : 8125                    // (int) Port that the DataDog agent is listening on, should be passed in through the environment variable "DOGSTATSD_PORT". The default DataDog agent port is 8125.
-.dg.apikey     : "your api key"          // (str) API key used to connect with your DataDog account, should be passed in through the environment variable "DOGSTATSD_APIKEY".
-.dg.baseurl    : "DataDog web address"   // (str) Web address to base DataDog api. (default: ":https://.api.datadoghq.eu/api/v1").
+agentport  : 8125                    // (int) Port that the DataDog agent is listening on, should be passed in through the environment variable "DOGSTATSD_PORT". The default DataDog agent port is 8125.
+apikey     : "your api key"          // (str) API key used to connect with your DataDog account, should be passed in through the environment variable "DOGSTATSD_APIKEY".
+baseurl    : "DataDog web address"   // (str) Web address to base DataDog api. (default: ":https://.api.datadoghq.eu/api/v1").
 ```
 
 ---
 
 ## :memo: Initialisation
 
-The package is initialised by calling the monadic function `.dg.init` with a boolean argument, `1b: use https delivery; 0b: use DataDog agent`.
-The init function will then set the appropriate variables, initialise the in memory log tables and call `.dg.setfunctions` in order to define the `.dg.sendmetric` and `.dg.sendevent` functions.
+The package is initialised by calling the monadic function `init` with a boolean argument, `1b: use https delivery; 0b: use DataDog agent`.
+The init function will then set the appropriate variables and call `setfunctions` in order to define the `sendmetric` and `sendevent` functions.
 ---
 
 ## :wrench: Functions
@@ -45,18 +45,18 @@ Primary functions used to push data to DataDog. These are the only functions req
 
 | Function         | Params                                                                                      | Description                      |
 |------------------|---------------------------------------------------------------------------------------------|----------------------------------|
-| `.dg.sendmetric` | (`metricname`: string; `metricvalue`: float; `tags`:string)                                       | Primary metric delivery function |
-| `.dg.sendevent`  | (`eventtitle`: string; `eventtext`: string; `priority`: string; `tags`: string; `alerttype`: string ) | Primary event delivery function  |
+| `sendmetric` | (`metricname`: string; `metricvalue`: float; `tags`:string)                                       | Primary metric delivery function |
+| `sendevent`  | (`eventtitle`: string; `eventtext`: string; `priority`: string; `tags`: string; `alerttype`: string ) | Primary event delivery function  |
 
 #### :mag_right:Parameters in depth
 
-`.dg.sendmetric`
+`sendmetric`
 ```q
 metricname   : "string"                      // The name of the timeseries.
 metricvalue  : "short/real/int/long/float"   // Point relating to a metric. A scalar value (cannot be a string).
 tags         : "string"                      // A list of tags associated with the metric.     
 ```
-`.dg.sendevent`
+`sendevent`
 ```q
 eventtitle   : "string"    // The event title.
 eventtext    : "string"    // The body of the event. Limited to 4000 characters. The text supports markdown. To use markdown in the event text, start the text block with %%% \n and end the text block with \n %%%.
@@ -71,7 +71,7 @@ alerttype    : "string"    // Allowed values: error,warning,info,success,user_up
 
 The metric Log is used to record all metrics delivered to the DataDog application. It allows the user to determine if packages are being delivered successfully, 
 analyse the package sent along with the metric names and values and determine if a package was delivered via the DataDog agent or via https. 
-The log is stored in `.dg.metriclog` with the following columns:
+The log can be retrived using `getmerticlog` and includes the following columns:
 
 | Column      | Type        | Description                               |
 |-------------|-------------|-------------------------------------------|
@@ -85,7 +85,7 @@ The log is stored in `.dg.metriclog` with the following columns:
 
 The event Log is used to record all events delivered to the DataDog application. It allows the user to determine if packages are being delivered successfully,
 analyse the package sent along with the event title and text and determine if a package was delivered via the DataDog agent or via https.
-The log is stored in `.dg.eventlog` with the following columns:
+The log can be retrived using `geteventlog` includes the following columns:
 
 | Column     | Type        | Description                               |
 |------------|-------------|-------------------------------------------|
@@ -101,28 +101,30 @@ The log is stored in `.dg.eventlog` with the following columns:
 ---
 
 ## :test_tube: Example
+Set your enviorment variables.
+agentport = 8125
+apikey = "yourapikey"
+baseurl = ":https://api.datadoghq.eu/api/v1/"
 
 ```q
-.dg.agentport:8125;
-.dg.apikey:"yourapikey";
-.dg.baseurl:":https://api.datadoghq.eu/api/v1/";
+// Import datadog package into a session
+datadog:use`di.datadog 
 
-\l datadog.q 
 // Initialise the package and send data via https
-.dg.init[1b]
+datadog.init[1b]
 
-.dg.sendmetric["custom.metric";123;"shell"];
-.dg.sendevent["Test_Event";"This is a test";"normal";"test";"info"]
+datadog.sendmetric["custom.metric";123;"shell"];
+datadog.sendevent["Test_Event";"This is a test";"normal";"test";"info"]
 
 // Check log tables for delivery success
-select from .dg.metriclog;
+select from datadog.getmetriclog[];
 
 time                          host   message                                                                                                              name            metric https status
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 2025.07.16D08:53:51.158486300 hostname "{\"series\":[{\"metric\":\"custom.metric\",\"points\":[[1752656031,123]],\"host\":\"hotname\",\"tags\":\"shell\"}]}" "custom.metric" 123    1     "{\"status\": \"ok\"}"
 
 
-select from .dg.eventlog;
+select from datadog.geteventlog[];
 
 time                          host   message                                                                                                                    title        text             https status               ..
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------..

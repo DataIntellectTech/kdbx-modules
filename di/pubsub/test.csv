@@ -113,5 +113,5 @@ run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters
 
-run,0,0,q,neg[h](exit;0),1,,close background process
+run,0,0,q,neg[h](exit;0);neg[h](::),1,,close background process and flush
 run,0,0,q,hclose h,1,,close handle

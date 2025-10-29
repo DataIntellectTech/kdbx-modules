@@ -6,6 +6,8 @@ before,0,0,q,.m.di.0timer.debug:0b,1,,Set debug for testing
 before,0,0,q,.m.di.0timer.logcall:1b,1,,Set logcall for testing
 before,0,0,q,.m.di.0timer.cycletime:100,1,,Set cycletime for testing
 
+run,0,0,q,timer.deletejobs key[.m.di.0timer.jobs]`id,1,,Clear jobs table in case of test rerun
+
 run,0,0,q,timer.addjob.custom[`testcustom1;{};();10;1;(enlist `maxruns)!(enlist 3)],1,,Add job for custom 1
 true,0,0,q,`testcustom1 in key .m.di.0timer.jobs,1,,Test job in table for custom 1
 true,0,0,q,.m.di.0timer.jobs[`testcustom1][`maxruns]=3,1,,Test option overwrite for custom 1
@@ -81,4 +83,3 @@ true,0,0,q,.test.exec2,1,,Test run succeeded for exec 2
 run,0,0,q,testexec3:{.test.exec3:x+y};timer.addjob.default[`testexec3;`testexec3;(2;3);10;1],1,,Add job for exec 3
 run,0,0,q,.m.di.0timer.runandschedule[`testexec3],1,,Test timer function exec 3
 true,0,0,q,.test.exec3=5,1,,Test run succeeded for exec 3
-

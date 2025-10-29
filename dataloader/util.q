@@ -6,8 +6,7 @@ applyattr:{[dloc;colname;att]
   ]
   };
 
-// Function used to sort and apply attributes to tables on disk based on format provided at initialisation of package.
-sorttab:{[sortparams;d]
+sorttab:{[sortparams;d]                                                                         / Function used to sort and apply attributes to tables on disk based on format provided at initialisation of package.
   if[1>sum exec sort from sortparams;:()];
   sp:$[count tabparams:select from sortparams where tabname=d[0];
     tabparams;
@@ -22,8 +21,7 @@ sorttab:{[sortparams;d]
   }[sp]each distinct(),last d;
  };
 
-// Function checks keys are correct and value have the right types for loadallfiles argument
-paramfilter:{[loadparams]
+paramfilter:{[loadparams]                                                                       / Function checks keys are correct and value have the right types for loadallfiles argument
   if[not 99h=type loadparams;'"loadallfiles requires a dictionary parameter"];                  / Check the input
   req:`headers`types`tablename`dbdir`separator;                                                 / Required fields
   if[not all req in key loadparams;

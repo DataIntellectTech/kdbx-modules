@@ -1,8 +1,6 @@
 / generic dataloader library
 
-/ loads data in from delimited file, applies processing function, enumerates and writes to db
-/ NOTE: it is not trivial to check user has inputted headers correctly, assume they have
-loaddata:{[loadparams;rawdata]
+loaddata:{[loadparams;rawdata]                                                                  / loads data in from delimited file, applies processing function, enumerates and writes to db. NOTE: it is not trivial to check user has inputted headers correctly, assume they have
   data:$[(`$"," vs rawdata 0)~loadparams`headers;                                               / check if first row matches headers provided
     (loadparams`types`separator)0:rawdata;                                                      / if so, read in the files normally
     flip loadparams[`headers]!(loadparams`types`separator)0:rawdata                             / if not, add the headers manually
@@ -16,24 +14,21 @@ loaddata:{[loadparams;rawdata]
   if[loadparams`gc;.Q.gc[]];
   };
 
-/ write data for provdided database and partition
-writedatapartition:{[data;dbdir;partitiontype;partitioncol;tablename;partition]
+writedatapartition:{[data;dbdir;partitiontype;partitioncol;tablename;partition]                 / write data for provdided database and partition
   towrite:data where partition=partitiontype$data partitioncol;
   writepath:` sv .Q.par[dbdir;partition;tablename],`;
   .[upsert;(writepath;towrite);{'"failed to save table: ",x}];
   .z.m.partitions[writepath]:(tablename;partition);
   };
 
-/ adds compression, sorting and attributes selected
-finish:{[loadparams]
+finish:{[loadparams]                                                                            / adds compression, sorting and attributes selected
   if[count loadparams`compression;.z.zd:loadparams`compression];                                / temporarily set compression defaults
   {.z.m.util.sorttab[.z.m.sp](x;where .z.m.partitions[;0]=x)}each distinct value .z.m.partitions[;0];
   system"x .z.zd";
   if[loadparams`gc;.Q.gc[]];
   };
 
-/ load all the files from a specified directory
-loadallfiles:{[loadparams:.z.m.util.paramfilter;dir]
+loadallfiles:{[loadparams:.z.m.util.paramfilter;dir]                                            / load all the files from a specified directory
   .z.m.partitions:()!();
   .z.m.filesread:();
   filelist:$[`filepattern in key loadparams;
@@ -47,8 +42,7 @@ loadallfiles:{[loadparams:.z.m.util.paramfilter;dir]
 sp:flip`tabname`att`column`sort!(1#`default;`p;`sym;1b);
 sortparams:{[].z.m.sp};
 
-/ add custom sorting parameters to the sortparams table
-addsortparams:{[tabname;att;column;sort]
+addsortparams:{[tabname;att;column;sort]                                                        / add custom sorting parameters to the sortparams table
   x:flip(flip sortparams[]),'(tabname;att;column;sort);
   .z.m.sp:select from x where i=(last;i)fby tabname;
   };

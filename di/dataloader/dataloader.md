@@ -45,7 +45,7 @@ You may apply default sorting and attributes to all tables loaded in by the pack
 
 If no sorting or attributes are required pass in the dictionary with a `tabname` with `default`, `att` and `column` with backticks and `sort` with `0b`, examples shown below:
 ```q
-dataloader:use`dataloader
+dataloader:use`di.dataloader
 dataloader.addsortparams[`tabname`att`column`sort!(`default;`;`;0b)]                               / Overwrite default to apply no sorting or attributes
 dataloader.addsortparams[`tabname`att`column`sort!(`default;`p;`sym;1b)]                           / Overwrite default to sort all tables loaded in by the sym column and apply the parted attribute
 dataloader.addsortparams[`tabname`att`column`sort!(`default`trade`quote;`p`s`;`sym`time`;110b)]    / Apply default to all tables, however, sort trade by sym and apply `p and if quote is read in by the function then do not sort or apply attributes
@@ -96,7 +96,7 @@ The second parameter is a directory handle .e.g
 ### :test_tube: Example
 
 ```q
-dataloader:use`dataloader
+dataloader:use`di.dataloader
 
 // If using custom sorting parameters, check they are as expected
 dataloader.sortparams[]

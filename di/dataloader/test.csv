@@ -1,6 +1,6 @@
-run,0,0,q,dataloader:use`dataloader,1,,Load in dataloader package
-run,0,0,q,os:use`os,1,,Load in os package for system commands
-run,0,0,q,os.cd hsym first`$system"echo $HOME/kdbx-packages/dataloader",1,,Cd to dataloader directory
+run,0,0,q,dataloader:use`di.dataloader,1,,Load in dataloader package
+run,0,0,q,os:use`di.os,1,,Load in os package for system commands
+run,0,0,q,os.cd hsym first`$system"echo $HOME/kdbx-packages/di/dataloader",1,,Cd to dataloader directory
 run,0,0,q,{if[os.isdir x;os.deldir x]}`:test,1,,Delete test directory if it already existed
 run,0,0,q,os.mkdir each`:test/data/hdb`:test/data/files`:test/data/symdir,1,,Create hdb/files/enum directory
 run,0,0,q,hdbpath:hsym`$os.abspath`:test/data/hdb,,1,,Hardcode hdb path
@@ -85,5 +85,5 @@ true,0,0,q,`s=meta[quote][`time;`a],1,,Check quote table sorted on time
 true,0,0,q,`trade in tables[],1,,Test trade table loaded to db
 true,0,0,q,`quote in tables[],1,,Test quote table loaded to db
 
-run,0,0,q,os.cd hsym first`$system"echo $HOME/kdbx-packages/dataloader",1,,Cd to dataloader directory
+run,0,0,q,os.cd hsym first`$system"echo $HOME/kdbx-packages/di/dataloader",1,,Cd to dataloader directory
 run,0,0,q,os.deldir`:test/,1,,Delete the test directory

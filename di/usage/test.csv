@@ -148,5 +148,3 @@ run,0,0,q,.test.clearusage[],1,1,
 
 run,0,0,q,usage.init[(enlist `test)!enlist 1b],1,1,pass a non config var to init
 fail,0,0,q,key .m.di.0usage.test,1,1,
-
-run,0,0,q,rerun:1b,1,,

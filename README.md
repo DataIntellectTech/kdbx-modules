@@ -7,6 +7,19 @@ tab for proposed packages and
 [issues](https://github.com/DataIntellectTech/kdbx-packages/issues) tab for
 packages in active development.
 
+Each package consists of: 
+
+* code
+* documentation
+* tests
+
+Tests are run using k4unit (which is also a module). To run the tests for a package: 
+
+```q
+q)k4unit:use`k4unit
+q)k4unit.packagetest`package_to_test
+```
+
 ## Contributing
 
 We enthusiastically welcome contributions from outside of Data Intellect. If you

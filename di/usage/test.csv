@@ -7,6 +7,7 @@ before,0,0,q,.test.clearusage:{.m.di.0usage.usage:0#.m.di.0usage.usage},1,1,func
 
 before,0,0,q,.test.handlers: (`pw`po`pc`wo`wc`ws`pg`ps`ph`pp`exit),1,1,modified handlers
 before,0,0,q,.test.customtracker:([]zcmd:`symbol$(); args:()),1,1,table to track custom handlers arguments
+before,0,0,q,.test.resetcustomtracker:{.test.customtracker:0#.test.customtracker},1,1,function to clear customtracker table
 before,0,0,q,.test.setcustomhandler:{[handler]handler set {[zcmd;args] `.test.customtracker upsert (zcmd;args)}[handler;];},1,1,funtion to apply custom functionality to handlers
 before,0,0,q,.test.custompasshandler:{[handler]handler set {[zcmd;user;pass] `.test.customtracker upsert (zcmd;(user;pass))}[handler;;];},1,1,funtion to apply custom .z.pw handler
 
@@ -27,6 +28,7 @@ true,0,0,q,(count .test.handlers) = count select distinct zcmd from usage.getusa
 run,0,0,q,.test.resethandlers[],1,1,restore default handles
 run,0,0,q,.test.clearusage[],1,1,clear usage table
 
+run,0,0,q,.test.resetcustomtracker[],1,1,clear custom tracker in case of test rerun
 run,0,0,q,.test.setcustomhandler each .Q.dd[`.z] each .test.handlers,1,1,run with custom handlers and verify that they are wrapped and properly invoked after running usage.init
 run,0,0,q,.test.custompasshandler `.z.pw,1,1,
 run,0,0,q,usage.init[],1,1,initialize usage to wrap custom handlers
@@ -107,6 +109,7 @@ run,0,0,q,.test.resethandlers[],1,1,restore default handles
 run,0,0,q,.test.clearusage[],1,1,default value
 
 run,0,0,q,usage.init[],1,1,test extension functionality
+run,0,0,q,.test.ext:(),1,1,set to be empty in case of test rerun
 run,0,0,q,"usage.setextension[{.test.ext,:enlist x}]",1,1,
 run,0,0,q,.z.pw[`test_user;"pass123"],1,1,run args against each handle
 run,0,0,q,.z.po 1i,1,1,

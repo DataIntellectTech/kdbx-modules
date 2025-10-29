@@ -1,13 +1,13 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,Setup for server and client testing
 comment,,,,,,,Replace $QHOME (defaults to $HOME) to avoid hard-coding
-beforeany,0,0,q,system"q -p 5010 -q &",1,,start server in background
-beforeany,0,0,q,system"sleep 1",1,,wait for server to initialize
-beforeany,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
-beforeany,0,0,q,h"pubsub:use`di.pubsub",,initialize pubsub package
+run,0,0,q,system"q -p 5010 -q &",1,,start server in background
+run,0,0,q,system"sleep 1",1,,wait for server to initialize
+run,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
+run,0,0,q,h"pubsub:use`di.pubsub",,initialize pubsub package
 true,0,0,q,h>0,1,,verify client connected to server
-beforeany,0,0,q,h"trade:([]time:\"p\"$();`g#sym:`$();price:\"f\"$();tsize:\"i\"$());",1,,define trade table on server
-beforeany,0,0,q,h"quote:([]time:\"p\"$();`g#sym:`$();bid:\"f\"$();bidsize:\"i\"$();ask:\"f\"$();asksize:\"i\"$());",1,,define quote table on server
+run,0,0,q,h"trade:([]time:\"p\"$();`g#sym:`$();price:\"f\"$();tsize:\"i\"$());",1,,define trade table on server
+run,0,0,q,h"quote:([]time:\"p\"$();`g#sym:`$();bid:\"f\"$();bidsize:\"i\"$();ask:\"f\"$();asksize:\"i\"$());",1,,define quote table on server
 run,0,0,q,h".m.di.0pubsub.init[]",,
 true,0,0,q,1b~h".m.di.0pubsub.initialized",1,,confirm server initialized with necessary data
 run,0,0,q,clt:first h"key[.z.W]",1,,get client handle on server
@@ -112,3 +112,6 @@ true,0,0,q,98h~type first res[1],1,,client receives table schema
 run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters
+
+run,0,0,q,neg[h](exit;0);neg[h](::),1,,close background process and flush
+run,0,0,q,hclose h,1,,close handle

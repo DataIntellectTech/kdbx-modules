@@ -2,7 +2,7 @@
 # Publish/Subscribe Utilities
 
 
-A lightweight kdbx-compatible package provides a list of functions to help users to subscribe to processes (such as a [tickerplant](https://code.kx.com/q/architecture/tickq/)) with custom data requirements, and publish data from the the process to downstream processes accordingly. 
+A lightweight kdbx-compatible module provides a list of functions to help users to subscribe to processes (such as a [tickerplant](https://code.kx.com/q/architecture/tickq/)) with custom data requirements, and publish data from the the process to downstream processes accordingly. 
 
 
 
@@ -82,4 +82,4 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 
 - By default, all tables on top level of the process are available for subscription.
 - The user should define the `.u.sub` and the `.u.pub` functions within the process.
-- The package initializes with defined list of tables to subscribe to and fetches their schemas and columns for use. This is done via calling `init` function.
+- The module initializes with defined list of tables to subscribe to and fetches their schemas and columns for use. This is done via calling `init` function.

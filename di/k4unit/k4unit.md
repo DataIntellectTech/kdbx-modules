@@ -1,25 +1,25 @@
-## KDB-X Package Testing Framework 
+## KDB-X module Testing Framework 
 
-Includes a module that is used for testing another package
+Includes a module that is used for testing another module
 
 ---
 
 ### To Use: 
-Navigate to root project directory (kdbx-packages)
+Navigate to root project directory (kdbx-modules)
 
-Run the KDB-X q session and then load the k4unit package. 
+Run the KDB-X q session and then load the k4unit module. 
 ```q
 q)k4unit:use`di.k4unit
 ```
 
-Then run the package test function to run the tests on another package, example:
+Then run the module test function to run the tests on another module, example:
 ```q
-q)k4unit.packagetest`di.timezone
+q)k4unit.moduletest`di.timezone
 ```
 
-As part of the test cases it rquires the "before" test to module load the package with the same naming convention used for the tests, in this case "timezone":
+As part of the test cases it rquires the "before" test to module load the module with the same naming convention used for the tests, in this case "timezone":
 ``` 
-before,0,0,q,timezone:use`di.timezone,1,,Initialize package
+before,0,0,q,timezone:use`di.timezone,1,,Initialize module
 true,0,0,q,2025.07.22D14:19:48.386221575=timezone.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575],1,,Test local to gmt 1
 ```
 

@@ -3,9 +3,9 @@
 Repository for Data Intellect KDB-X modules.
 
 See [discussions](https://github.com/DataIntellectTech/kdbx-modules/discussions)
-tab for proposed packages and
+tab for proposed modules and
 [issues](https://github.com/DataIntellectTech/kdbx-modules/issues) tab for
-packages in active development.
+modules in active development.
 
 ## Usage
 
@@ -40,11 +40,11 @@ Each module consists of:
 * documentation
 * tests
 
-Tests are run using k4unit (which is also a module). To run the tests for a package: 
+Tests are run using k4unit (which is also a module). To run the tests for a module: 
 
 ```q
 q)k4unit:use`k4unit
-q)k4unit.packagetest`package_to_test
+q)k4unit.moduletest`module_to_test
 ```
 
 ## Contributing

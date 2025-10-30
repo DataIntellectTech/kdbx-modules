@@ -1,8 +1,8 @@
 # `dataloader.q` –  Loading delimited data and creating databases for kdb+
 
 
-This package is used for automated customisable dataloading and database creation and is a generalisation of http://code.kx.com/wiki/Cookbook/LoadingFromLargeFiles. 
-Package employs a chunk-based loading strategy to minimize memory usage when processing large datasets. Rather than loading entire datasets into memory before writing to disk, data is processed incrementally in manageable chunks.
+This module is used for automated customisable dataloading and database creation and is a generalisation of http://code.kx.com/wiki/Cookbook/LoadingFromLargeFiles. 
+module employs a chunk-based loading strategy to minimize memory usage when processing large datasets. Rather than loading entire datasets into memory before writing to disk, data is processed incrementally in manageable chunks.
 
 The memory footprint is determined by the maximum of:
 - Memory required to load and save one data chunk
@@ -28,7 +28,7 @@ When all the data is written, the on-disk data is re-sorted and the attributes a
 
 ## :gear: Initialisation
 
-After loading the package into the session, the `loadallfiles` function is ready to run. By default, tables will be written with the `p` attribute applied to the `sym` column and sorted. 
+After loading the module into the session, the `loadallfiles` function is ready to run. By default, tables will be written with the `p` attribute applied to the `sym` column and sorted. 
 
 ### :mag_right: Custom sorting parameters
 
@@ -41,7 +41,7 @@ default p   sym    1
 
 That is, for every table the `p` attribute will be applied to the `sym` column and sorted. If the table being loaded requires different attributes applied on different columns, custom sorting parameters can be added using the `addsortparams` function. This takes 4 inputs: tabname, att, column, and sort. These arguments are used to determine how the tables in the resulting database should be sorted and where attributes applied when being persisted. Furthermore, this will add (or update existing) parameters for the specified table.
 
-You may apply default sorting and attributes to all tables loaded in by the package by passing in the `tabname` with a value of `default` and specifying your default sorting and attribute parameters. By passing in `default` this will overwrite the current default paramters.
+You may apply default sorting and attributes to all tables loaded in by the module by passing in the `tabname` with a value of `default` and specifying your default sorting and attribute parameters. By passing in `default` this will overwrite the current default paramters.
 
 If no sorting or attributes are required pass in the dictionary with a `tabname` with `default`, `att` and `column` with backticks and `sort` with `0b`, examples shown below:
 ```q

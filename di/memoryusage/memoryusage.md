@@ -1,8 +1,8 @@
 # Memory Usage
-This package can be used to calculate the approximate size of an object in memory, or for generating a table containing the approximate size of each object in memory.
+This module can be used to calculate the approximate size of an object in memory, or for generating a table containing the approximate size of each object in memory.
 
 ## Main funtions
-The package contains two methods for calculating memory usage. 
+The module contains two methods for calculating memory usage. 
 
 The `memusage` functions generate a table containing the approximate memoryusage of each object in the kdb session in bytes / megabytes using -22!. This can be useful quick approximations. 
 
@@ -26,10 +26,10 @@ The memusage table is returned from either the `memusagevars` or `memusageall` f
 | sizeMB   | `int`       | The approximatee size of the object in MB   | 
 
 ## Example
-Below is an example of loading the package into a session and viewing the size of different objects.
+Below is an example of loading the module into a session and viewing the size of different objects.
 
 ```q
-\\ Loading the package into a session
+\\ Loading the module into a session
 memusage: use `di.memoryusage
 
 \\ View dictionary of functions

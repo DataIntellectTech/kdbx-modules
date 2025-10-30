@@ -1,6 +1,6 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,Testing for adding jobs with all methods
-before,0,0,q,timer:use`di.timer,1,,Initialize package
+before,0,0,q,timer:use`di.timer,1,,Initialize module
 before,0,0,q,timer.setcp[{2025.03.03D12:00:00.000}],1,,Set timestamp return func for testing
 before,0,0,q,.m.di.0timer.debug:0b,1,,Set debug for testing
 before,0,0,q,.m.di.0timer.logcall:1b,1,,Set logcall for testing

@@ -1,7 +1,7 @@
 # Data Intellect KDB-X Module Consistency Guide
 
-## Package Contents
-Every package must have: 
+## module Contents
+Every module must have: 
 1. The code 
 2. Documentation in a .md file
 3. Tests, conforming to k4unit
@@ -10,7 +10,7 @@ The tests should be runnable as
 
 ```q
 q)k4unit:use`k4unit
-q)k4unit.packagetest`package_to_test
+q)k4unit.moduletest`module_to_test
 ```
 
 ## Paths 

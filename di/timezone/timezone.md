@@ -6,13 +6,13 @@ This project provides utilities to manage and convert timestamps across timezone
 
 ### TimeZoneDB Data Source
 
-Timezone reference data is sourced from https://timezonedb.com/download and must be downloaded and provided to the package in order to function.
+Timezone reference data is sourced from https://timezonedb.com/download and must be downloaded and provided to the module in order to function.
 The downloadable .zip archive includes several files, but only time_zone.csv is used for core functionality.
 
-There is a copy of tzinfo already in the package default subdirectory : timezone/config/tzinfo.
+There is a copy of tzinfo already in the module default subdirectory : timezone/config/tzinfo.
 Should you need to update can follow the steps below.
 
-Following transformations to save down and be formatted for the package: 
+Following transformations to save down and be formatted for the module: 
 ```q
 t:flip `timezoneID`gmtDateTime`gmtOffset`dst!("S  JIB";csv)0:hsym `:time_zone.csv
 `:tzinfo set t
@@ -21,7 +21,7 @@ t:flip `timezoneID`gmtDateTime`gmtOffset`dst!("S  JIB";csv)0:hsym `:time_zone.cs
 
 ---
 
-### Package Initialization
+### module Initialization
 
 Loading the module will automatically initialise using the included tzinfo.
 
@@ -39,7 +39,7 @@ q)tz.init "path/to/tzinfo"
 
 ---
 
-### Package Use
+### module Use
 
 ##### tz.localtogmt
 Converts a local timestamp to GMT using timezoneID 

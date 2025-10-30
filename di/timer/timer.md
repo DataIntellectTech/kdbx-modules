@@ -204,7 +204,7 @@ This is useful for backtesting and simulation.
 
 ### Example 
 ```q
-// Import timer package as timer
+// Import timer module as timer
 timer:use`di.timer
 
 // View dictionary of functions

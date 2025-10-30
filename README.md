@@ -3,9 +3,9 @@
 Repository for Data Intellect KDB-X modules.
 
 See [discussions](https://github.com/DataIntellectTech/kdbx-modules/discussions)
-tab for proposed packages and
+tab for proposed modules and
 [issues](https://github.com/DataIntellectTech/kdbx-modules/issues) tab for
-packages in active development.
+modules in active development.
 
 ## Usage
 

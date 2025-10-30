@@ -1,5 +1,5 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,memusage:use`di.memoryusage,1,1,load package into session
+before,0,0,q,memusage:use`di.memoryusage,1,1,load module into session
 
 run,0,0,q,.test.list:();.test.sym:`symbol$();.test.int:`int$();.test.str:`char$();.test.date:`date$();.test.time:`time$();.test.guid:`guid$(),1,1,test expected size of empty variables is 0
 true,0,0,q,0~memusage.objsize[.test.list],1,1, 

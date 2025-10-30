@@ -83,7 +83,7 @@ Log level meanings:
 
 ### :rocket: Initialisation
 
-The package is initialised by calling the function `init[]` which sets the configuration 
+The module is initialised by calling the function `init[]` which sets the configuration 
 variables and calls the `inithandlers` and `initlog` functions, overriding the `.z.*` message 
 handlers and initiates the in memory logs/ on disk logs if enabled.
 
@@ -146,7 +146,7 @@ Default handlers will be defined if not previously set.
 ## :test_tube: Example
 
 ```q
-// Include usage package in a process
+// Include usage module in a process
 usage: use `di.usage
 
 // View dictionary of functions

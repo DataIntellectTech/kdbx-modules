@@ -1,5 +1,5 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,timezone:use`di.timezone,1,,Initialize package
+before,0,0,q,timezone:use`di.timezone,1,,Initialize module
 
 true,0,0,q,2025.07.22D14:19:48.386221575=timezone.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575],1,,Test local to gmt 1
 true,0,0,q,1999.03.03D12:13:48.919241092=timezone.localtogmt[`$"Europe/London";1999.03.03D12:13:48.919241092],1,,Test local to gmt 2

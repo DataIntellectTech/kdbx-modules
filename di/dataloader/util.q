@@ -7,7 +7,7 @@ applyattr:{[dloc;colname;att]
   ]
   };
 
-/ function used to sort and apply attributes to tables on disk based on format provided at initialisation of package
+/ function used to sort and apply attributes to tables on disk based on format provided at initialisation of module
 sorttab:{[sortparams;d]
   if[1>sum exec sort from sortparams;:()];
   sp:$[count tabparams:select from sortparams where tabname=d[0];

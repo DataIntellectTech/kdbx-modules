@@ -1,11 +1,11 @@
-/ generic test script to be ran for individual packages
+/ generic test script to be ran for individual modules
 
 \l ::k4unit.q
 
-packagetest:{[p]
-  / Load the Test CSv for the assocaited package 
-  / First line of the package will load the package using the following format 
-  / package:use`package 
+moduletest:{[p]
+  / Load the Test CSv for the assocaited module 
+  / First line of the module will load the module using the following format 
+  / module:use`module 
   $[not ()~key tp:.Q.dd[hsym`$.Q.m.mp p;`test.csv];KUltf tp;'"no test csv"];
 
   KUrt[];
@@ -56,7 +56,7 @@ delim:{[x:`c]DELIM::x};
 getresults:{ :.z.m.KUTR};
 
 export:([
-  packagetest:packagetest;
+  moduletest:moduletest;
   getresults:getresults;
   verbose:verbose;
   debug:debug;

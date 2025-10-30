@@ -166,7 +166,7 @@ Returns the current working directory as a string.
 
 ## :mag: Debug tools
 
-It is sometimes useful to capture system calls rather than execute them (e.g. debugging or testing). The `os` package allows toggling "dry system call" mode on or off. When on, system calls are captured, but not executed. When off (default state), system calls are executed normally. Note: when in dry system call mode, all system calls return `""`, as they are not actually executed.
+It is sometimes useful to capture system calls rather than execute them (e.g. debugging or testing). The `os` module allows toggling "dry system call" mode on or off. When on, system calls are captured, but not executed. When off (default state), system calls are executed normally. Note: when in dry system call mode, all system calls return `""`, as they are not actually executed.
 
 ### `os.setdrysyscalls[bool]`
 Toggle dry system calls on (`bool=1b`) or off (`bool=0b`). Note that by default, dry system call mode is off.
@@ -191,11 +191,11 @@ For unimplemented operations (e.g., `os.realpath` on Windows), the function will
 - Symlink creation on Windows may require **admin privileges** or **Developer Mode**.
 - Compatible with kdb+ 2.7 and later.
 
-## :gear: Loading Package
-The package can be loaded into a session using the use keyword.
+## :gear: Loading module
+The module can be loaded into a session using the use keyword.
 
 ```q
-// Load package into session
+// Load module into session
 
 os:use`di.os
 

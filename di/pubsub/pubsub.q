@@ -5,15 +5,15 @@ reqalldict:enlist[`]!();
 reqfilteredtbl:([]table:`symbol$();handle:`int$();filts:();columns:());
 
 / get all subscription handles that haven been recorded on tables
-getallhandles:{distinct raze union[value .z.m.reqalldict;exec handle from .z.m.reqfilteredtbl]};
+getallhandles:{distinct raze union[value reqalldict;exec handle from reqfilteredtbl]};
 
 / add handle to reqalldict dictionary
-add:{[t] if[not .z.w in .z.m.reqalldict[t];.z.m.reqalldict[t],:.z.w]};
+add:{[t] if[not .z.w in reqalldict t;reqalldict[t],:.z.w]};
 
 delhandle:{[t;h]
   / remove handle from request-all-data table
-  if[t in key .z.m.reqalldict; @[.z.M.reqalldict;t;except;h]];
-  if[not count .z.m.reqalldict[t];.z.m.reqalldict _:t];
+  if[t in key reqalldict;@[.z.M.reqalldict;t;except;h]];
+  if[not count reqalldict[t];reqalldict _:t];
   };
 
 / remove handle from request-filtered-data table
@@ -22,14 +22,14 @@ delhandlef:{[t;h]delete from .z.M.reqfilteredtbl where table=t, handle=h};
 suball:{[table]
   / subscribe to table without filtering i.e. all data from the subscribed table
   m:(); table,:();
-  if[not all table in .z.m.t;
-    errmsg:(`$sv[csv;string  m:table except .z.m.t]," not available for subscription.");
-    table@:where table in .z.m.t];
+  if[not all table in t;
+    errmsg:(`$sv[csv;string  m:table except t]," not available for subscription.");
+    table@:where table in t];
   if[count table;
     {delhandle[x;.z.w];
     delhandlef[x;.z.w];
     add[x]} each table;
-    :((errmsg;(table;.z.m.schemas[table]));(table;.z.m.schemas[table])) [m~()]];
+    :((errmsg;(table;schemas table));(table;schemas table))[m~()]];
   errmsg
   };
 
@@ -38,14 +38,14 @@ subfiltered:{[table;filters]
   m:();
   $[99h=type filters;
     table:key[filters] first cols filters; table,:()];
-  if[not all table in .z.m.t;
-    errmsg: (`$sv[csv;string  m:table except .z.m.t]," not available for subscription");
-    table@:where table in .z.m.t];
+  if[not all table in t;
+    errmsg: (`$sv[csv;string  m:table except t]," not available for subscription");
+    table@:where table in t];
   if[count table;
     {delhandlef[x;.z.w];
     delhandle[x;.z.w];
     val:![11 99h;(addsymsub;addfiltered)][abs type y] . (x;y)}[;filters] each table;
-    :((errmsg;(table;.z.m.schemas[table]));(table;.z.m.schemas[table])) [m~()]];
+    :((errmsg;(table;schemas table));(table;schemas table)) [m~()]];
   errmsg
   };
 
@@ -54,20 +54,20 @@ addfiltered:{[table;cond]
   / if either filters or columns parsing fails, subscription should not be logged as no half query should be created
   filters:$[all null f:cond[table;`filts];();@[parse;"select from t where ",f;{'"incorrect filters for parsing"}][2]];
   columns:$[all null c:cond[table;`columns];();@[parse;"select ",c," from t";{'"incorrect columns for parsing"}][4]];
-  @[eval;(?;.z.m.schemas[table];filters;0b;columns);{'"incorrect query with filters-",.Q.s1[y],"  columns-",.Q.s1[z]," error-",x}[;filters;columns]];
+  @[eval;(?;schemas table;filters;0b;columns);{'"incorrect query with filters-",.Q.s1[y],"  columns-",.Q.s1[z]," error-",x}[;filters;columns]];
   @[.z.M;`reqfilteredtbl;upsert;(table;.z.w;filters;columns)]
   };
 
 addsymsub:{[table;syms]
   / subscribe to tables with symbols
   filts:enlist enlist (in;`sym;enlist syms);
-  @[eval;(?;.z.m.schemas[table];filts;0b;());{'"incompatible with table schema:",string[y]," error-",x}[;syms]];
+  @[eval;(?;schemas table;filts;0b;());{'"incompatible with table schema:",string[y]," error-",x}[;syms]];
   @[.z.M;`reqfilteredtbl;upsert;(table;.z.w;filts;())]
   };
 
 closesub:{[h]
   / remove handles upon connection close
-  delhandle[;h] each key[.z.m.reqalldict];
+  delhandle[;h]each key reqalldict;
   delete from .z.M.reqfilteredtbl where handle=h;
   };
 
@@ -85,15 +85,15 @@ extractschema:{[table]0#value table};
 
 subscribe:{[table;filters]
   / single entry point for subscriptions: uses default list when no table name provided; routes to suball if filters null, otherwise subfiltered
-  if[`~table;table:.z.m.t];
+  if[`~table;table:t];
   :$[`~filters;suball;subfiltered[;filters]]table;
   };
 
 publish:{[t;x]
   / single entry point for publishing
   if[not count x;:()];
-  if[count h:.z.m.reqalldict[t];-25!(h;(`upd;t;x))];
-  if[count d:select from .z.m.reqfilteredtbl where table=t;
+  if[count h:reqalldict t;-25!(h;(`upd;t;x))];
+  if[count d:select from reqfilteredtbl where table=t;
     {if[count filtered:eval(?;y;z`filts;0b;z`columns);neg[z`handle](`upd;x;filtered)]}[t;x;] each d];
   };
 
@@ -116,14 +116,14 @@ subscribestrfilter:{[table;filters;columns]
   };
 
 / create a list of tables for subscription, allow users to set subtables, otherwise set to null
-setsubtables:{@[.z.M;`subtables;:;$[x~`;0#x;x]];};
+setsubtables:{.z.m.subtables:$[x~`;0#x;x]};
 setsubtables`;
 
 initialized:0b;
 
 init:{
-  .z.m.t:$[count .z.m.subtables;.z.m.subtables;tables[]except`reqfilteredtbl];
-  .z.m.schemas:.z.m.t!extractschema each .z.m.t;
-  .z.m.tabcols:.z.m.t!cols each .z.m.t;
-  if[count .z.m.tabcols;@[.z.M;`initialized;:;1b]];
+  .z.m.t:$[count subtables;subtables;tables[]except`reqfilteredtbl];
+  .z.m.schemas:t!extractschema each t;
+  .z.m.tabcols:t!cols each t;
+  if[count tabcols;.z.m.initialized:1b];
   };

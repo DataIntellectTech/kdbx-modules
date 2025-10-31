@@ -14,7 +14,7 @@ attrsize:{
 / (16 bytes + attribute overheads + raw size) to the nearest power of 2
 calcsize:{[c;s;a] `long$2 xexp ceiling 2 xlog 16+a+s*c};
 
-vectorsize:{.z.m.calcsize[count x;.z.m.typesize x;.z.m.attrsize x]};
+vectorsize:{calcsize[count x;typesize x;attrsize x]};
 
 / raw size of atoms according to type, type 20h->76h have 4 bytes pointer size
 typesize:{4^0N 1 16 0N 1 2 4 8 4 8 1 8 8 4 4 8 8 4 4 4 abs type x};
@@ -28,7 +28,7 @@ sampling:{[f;x]
 scalesampling:{[f;x]
   / scale sampling result back to total population
   threshold:100000;
-  .z.m.sampling[f;x]*max(1;count[x]%threshold)
+  sampling[f;x]*max(1;count[x]%threshold)
   };
 
 objsize:{
@@ -47,16 +47,16 @@ objsize:{
   / atom is fixed at 16 bytes, GUID is 32 bytes
   $[0h>t:type x;$[-2h=t;32;16];
     / list & enum list
-    t within 1 76h;.z.m.vectorsize x;
+    t within 1 76h;vectorsize x;
 	/ exit early for anything above 76h
 	76h<t;0;
 	/ complex = complex type in list, pointers + size of each objects
-	0h in t:.z.m.sampling[type each;x];.z.m.calcsize[count x;ptrsize;0]+"j"$.z.m.scalesampling[{[f;x]sum f each x}[.z.s];x];
+	0h in t:sampling[type each;x];calcsize[count x;ptrsize;0]+"j"$scalesampling[{[f;x]sum f each x}[.z.s];x];
 	/ complex = if only 1 type and simple list, pointers + sum count each*first type
 	/ assume count>1000 has no attrbutes (i.e. table unlikely to have 1000 columns, list of strings unlikely to have attr for some objects only
-	(d[0] within 1 76h)&1=count d:distinct t;.z.m.calcsize[count x;ptrsize;0]+"j"$.z.m.scalesampling[{sum .z.m.calcsize[count each x;.z.m.typesize x 0;$[1000<count x;0;.z.m.attrsize each x]]};x];
+	(d[0] within 1 76h)&1=count d:distinct t;calcsize[count x;ptrsize;0]+"j"$scalesampling[{sum calcsize[count each x;typesize x 0;$[1000<count x;0;attrsize each x]]};x];
 	/ other complex, pointers + size of each objects
-	.z.m.calcsize[count x;ptrsize;0]+"j"$.z.m.scalesampling[{[f;x]sum f each x}[.z.s];x]]
+	calcsize[count x;ptrsize;0]+"j"$scalesampling[{[f;x]sum f each x}[.z.s];x]]
   };
 
 
@@ -75,15 +75,15 @@ varnames:{[ns;vartype;shortpath]
 memusage:{
   / create a table of memory usage statistics containing all objects in a session
   / cross each namespace with "v" (varaibles) and "b" (views)
-  namespaces:.z.m.allns[] cross $[x;"vb";enlist"v"];
+  namespaces:allns[] cross $[x;"vb";enlist"v"];
   / get the full var names for a given namespace
-  vars:([]variable:raze .z.m.varnames[;;0b] .' namespaces);
+  vars:([]variable:raze varnames[;;0b] .' namespaces);
   / get the value of each var using -22!
   vars: update size:{-22! value x}each variable from vars;
   / calculate the size in mb
   `size xdesc update sizeMB:`int$size%2 xexp 20 from vars
   };
 
-memusageall:{.z.m.memusage[1b]}; / returns memory usage table with variables and views
+memusageall:{memusage[1b]}; / returns memory usage table with variables and views
 
-memusagevars:{.z.m.memusage[0b]}; / returns memory usage table with just variables
+memusagevars:{memusage[0b]}; / returns memory usage table with just variables

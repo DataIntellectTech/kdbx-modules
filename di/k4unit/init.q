@@ -53,17 +53,6 @@ debug:{[x:`b]DEBUG::x};
 delim:{[x:`c]DELIM::x};
 
 / getter function for KUTR table
-getresults:{ :.z.m.KUTR};
+getresults:{KUTR};
 
-export:([
-  moduletest:moduletest;
-  getresults:getresults;
-  verbose:verbose;
-  debug:debug;
-  delim:delim;
-  saveresults:KUstr;
-  loadresults:KUltr;
-  mock:mock;
-  unmock:unmock;
-  deletefromns:deletefromns
-  ])
+export:([moduletest;getresults;verbose;debug;delim;saveresults:KUstr;loadresults:KUltr;mock;unmock;deletefromns])

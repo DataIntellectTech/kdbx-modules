@@ -1,7 +1,3 @@
 \l ::memusage.q
 
-export:([
-  objsize:objsize;
-  memusageall:memusageall;
-  memusagevars:memusagevars
-  ])
+export:([objsize;memusageall;memusagevars])

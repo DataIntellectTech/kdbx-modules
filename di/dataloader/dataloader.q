@@ -30,13 +30,13 @@ writedatapartition:{[data;dbdir;partitiontype;partitioncol;tablename;partition]
 finish:{[loadparams]
   / temporarily set compression defaults
   if[count loadparams`compression;.z.zd:loadparams`compression];
-  {.z.m.util.sorttab[.z.m.sp](x;where .z.m.partitions[;0]=x)}each distinct value .z.m.partitions[;0];
+  {util.sorttab[sp](x;where partitions[;0]=x)}each distinct value partitions[;0];
   system"x .z.zd";
   if[loadparams`gc;.Q.gc[]];
   };
 
 / load all the files from a specified directory
-loadallfiles:{[loadparams:.z.m.util.paramfilter;dir]
+loadallfiles:{[loadparams:util.paramfilter;dir]
   .z.m.partitions:()!();
   .z.m.filesread:();
   / get the contents of the directory based on optional filepattern
@@ -45,12 +45,12 @@ loadallfiles:{[loadparams:.z.m.util.paramfilter;dir]
     key dir:hsym dir];
   filelist:` sv'dir,'filelist;
   {[loadparams;file].Q.fsn[loaddata loadparams,(enlist`filename)!enlist file;file;loadparams`chunksize]}[loadparams]each filelist;
-  .z.m.finish loadparams;
+  finish loadparams;
   };
 
 / set default sorting parameters
 sp:flip`tabname`att`column`sort!(1#`default;`p;`sym;1b);
-sortparams:{[].z.m.sp};
+sortparams:{[]sp};
 
 / add custom sorting parameters to the sortparams table
 addsortparams:{[tabname;att;column;sort]

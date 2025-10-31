@@ -90,13 +90,13 @@ nextstart[5h]:{[id;r]
 disable:{.[.z.M.enabled;();:;0b];};
 enable:{.[.z.M.enabled;();:;1b];};
 
-enablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:1b from .z.m.jobs where id in ids};
-disablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:0b from .z.m.jobs where id in ids};
-deletejobs:{[ids] ids:(),ids;.z.m.jobs:delete from .z.m.jobs where id in ids};
+enablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:1b from jobs where id in ids};
+disablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:0b from jobs where id in ids};
+deletejobs:{[ids] ids:(),ids;.z.m.jobs:delete from jobs where id in ids};
 
-getactivejobs:{select from .z.m.jobs where status};
+getactivejobs:{select from jobs where status};
 
-getalljobs:{ :.z.m.jobs}
+getalljobs:{jobs}
 
 / evalution functions for executing jobs and scheduling
 nextruntime:-0Wp;
@@ -122,13 +122,13 @@ enabled:0b;
 main:{
   / determines what jobs to run
   if[(nextruntime<p:cp[])&enabled;
-    torun:exec id from .z.m.jobs where status,nextstart<p;
+    torun:exec id from jobs where status,nextstart<p;
     if[count torun;runandschedule each torun];
-    .z.m.nextruntime:exec min[nextstart] from .z.m.jobs;
+    .z.m.nextruntime:exec min[nextstart] from jobs;
     ];
   };
 
-setcp:{.z.m.cp: x};
+setcp:{.z.m.cp:x};
 
 init:{[configs]
   / sets default config vars

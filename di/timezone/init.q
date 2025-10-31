@@ -38,4 +38,4 @@ init:{
 
 init .z.m.config.file
 
-export:([gmttolocal:gmttolocal;localtogmt:localtogmt;convert:convert;init:init])
+export:([gmttolocal;localtogmt;convert;init])

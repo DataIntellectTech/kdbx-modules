@@ -150,17 +150,4 @@ init:{[configs]
   };
 
 
-export:([
-  / control and monitoring jobs
-  init:init;
-  getactivejobs:getactivejobs;
-  getalljobs:getalljobs;
-  addjob:addjob;
-  deletejobs:deletejobs;
-  enablejobs:enablejobs;
-  disablejobs:disablejobs;
-  enable:enable;
-  disable:disable;
-  / setter for cp variable
-  setcp:setcp
-  ])
+export:([init;getactivejobs;getalljobs;addjob;deletejobs;enablejobs;disablejobs;enable;disable;setcp])

@@ -3,4 +3,4 @@
 / load util submodule
 util:use`di.dataloader.util
 / expose public function
-export:([loadallfiles:loadallfiles;addsortparams:addsortparams;sortparams:sortparams])
+export:([loadallfiles;addsortparams;sortparams])

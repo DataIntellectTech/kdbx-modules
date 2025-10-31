@@ -1,0 +1,37 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,datadog:use`di.datadog,1,,Initialize module
+run,0,0,q,resetmetriclog:{.m.di.0datadog.metriclog:0#.m.di.0datadog.metriclog},1,,Set a function to clear metric log table
+run,0,0,q,reseteventlog:{.m.di.0datadog.eventlog:0#.m.di.0datadog.eventlog},1,,Set a function to clear event log table
+run,0,0,q,k4unit.mock[`.m.di.0datadog.agentport;5010i],1,,Mock the datadog agent port
+
+comment,,,,,,,Set expected tables 
+run,0,0,q,sm_lin:enlist`host`message`name`metric`https`status!(`l64;"bash -c \"echo  -n 'custom.metric:123|g|#shell' > /dev/udp/127.0.0.1/5010\"";"custom.metric";123f;0b;()),1,,Create an expected send metric log when using linux
+run,0,0,q,"se_lin:enlist`host`message`title`text`https`status!(`l64;""eventtitle=Test_Event; eventtext=\""This is a test\""; priority=\""normal\""; tags=\""#test\"";alerttype=info; echo \""_e{${#eventtitle},${#eventtext}}:$eventtitle|$eventtext|p:$priority|#$tags|t:$alerttype\"" |nc -4u -w0 127.0.0.1 5010"";""Test_Event"";""This is a test"";0b;())",1,,Create an expected send event log when using linux
+run,0,0,q,"sm_web:enlist`host`message`name`metric`https`status!(`homer.aquaq.co.uk;""{\""series\"":[{\""metric\"":\""custom.metric\"",\""points\"":[[0000000000,123]],\""host\"":\""HOMER.AQUAQ.CO.UK\"",\""tags\"":\""shell\""}]}"";""custom.metric"";123f;1b;""No api key specified"")",1,,Create an expected send metric log when using web
+run,0,0,q,"se_web:enlist`host`message`title`text`https`status!(`homer.aquaq.co.uk;""{\""title\"":\""Test_Event\"",\""text\"":\""This is a test\"",\""priority\"":\""normal\"",\""tags\"":\""test\"",\""alert_type\"":\""info\""}"";""Test_Event"";""This is a test"";1b;""No api key specified"")",1,,Create an expected send event log when using web
+
+comment,,,,,,,Test linux
+run,0,0,q,k4unit.mock[`.m.di.0datadog.opsys;`l64],1,,Mock linux operating system
+run,0,0,q,datadog.init 0b,1,,Init the package with linux os
+run,0,0,q,datadog.sendmetric["custom.metric";123;"shell"],1,,Send a dummy metric
+run,0,0,q,datadog.sendevent["Test_Event";"This is a test";"normal";"test";"info"],1,,Send a dummy event
+true,0,0,q,sm_lin~``time _datadog.getmetriclog[],1,,Check it is as expected
+true,0,0,q,se_lin~``time _datadog.geteventlog[],1,,Check it is as expected
+run,0,0,q,resetmetriclog[],1,,Reset metric log table for next test
+run,0,0,q,reseteventlog[],1,,Reset event log table for next test
+
+comment,,,,,,,Test windows (NOTE:there is currently no way to test windows functionality until any windows builds of kdbx are available)
+run,0,0,q,k4unit.mock[`.m.di.0datadog.opsys;`win],1,,Mock linux operating system
+run,0,0,q,datadog.init 0b,1,,Init the package with linux os
+
+comment,,,,,,,Test web
+run,0,0,q,k4unit.mock[`.m.di.0datadog.opsys;`l64],1,,Mock linux operating system
+run,0,0,q,datadog.init 1b,1,,Init the package with linux os with useweb
+run,0,0,q,datadog.sendmetric["custom.metric";123;"shell"],1,,Send a dummy metric
+run,0,0,q,datadog.sendevent["Test_Event";"This is a test";"normal";"test";"info"],1,,Send a dummy event
+run,0,0,q,"@[`.m.di.0datadog.metriclog;`message;{raze@[""[[""vs x;1;""[["",(10#""0""),10_]}']",1,,Update the unixtime in the table to be 0s
+true,0,0,q,sm_web~test:``time _datadog.getmetriclog[],1,,Check it is as expected
+true,0,0,q,se_web~``time _datadog.geteventlog[],1,,Check it is as expected
+
+comment,,,,,,,Tidy up
+run,0,0,q,k4unit.unmock(::),1,,unmock all variables

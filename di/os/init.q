@@ -145,18 +145,18 @@ syscall:system
 
 / internal - dry system calls, saves them to an internal cache but does not execute them
 drysyscall:{[cmd]
-  @[.z.M;`syscallcache;,;enlist cmd];
+  .z.m.syscallcache,:enlist cmd;
   $[cmd~"cd";;enlist]""
   };
 
 / returns all cached dry system calls
 getdrysyscalls:{[]
-  .z.m.syscallcache
+  syscallcache
   };
 
 / clears dry system calls cache
 cleardrysyscalls:{[]
-  @[.z.M;`syscallcache;:;()];
+  .z.m.syscallcache:();
   };
 
 / toggles dry system calls on (1b) or off (0b)

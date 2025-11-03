@@ -1,3 +1,4 @@
+action,ms,bytes,lang,code,repeat,minver,comment
 run,0,0,q,dataloader:use`di.dataloader,1,,Load in dataloader module
 run,0,0,q,os:use`di.os,1,,Load in os module for system commands
 run,0,0,q,os.cd hsym first`$system"echo $HOME/kdbx-modules/di/dataloader",1,,Cd to dataloader directory

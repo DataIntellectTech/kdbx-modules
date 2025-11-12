@@ -3,11 +3,11 @@ before,0,0,q,datadog:use`kx.printf,1,,Load printf
 before,0,0,q,datadog:use`di.datadog,1,,Initialize module
 run,0,0,q,resetmetriclog:{.m.di.0datadog.metriclog:0#.m.di.0datadog.metriclog},1,,Set a function to clear metric log table
 run,0,0,q,reseteventlog:{.m.di.0datadog.eventlog:0#.m.di.0datadog.eventlog},1,,Set a function to clear event log table
-run,0,0,q,k4unit.mock[`.m.di.0datadog.agentport;5010i],1,,Mock the datadog agent port
+run,0,0,q,k4unit.mock[`.m.di.0datadog.agentport;5010],1,,Mock the datadog agent port
 
 comment,,,,,,,Set expected tables 
 run,0,0,q,sm_lin:enlist`host`message`name`metric`https`status!(`l64;"bash -c \"echo  -n 'custom.metric:123|g|#shell' > /dev/udp/127.0.0.1/5010\"";"custom.metric";123f;0b;()),1,,Create an expected send metric log when using linux
-run,0,0,q,"se_lin:enlist`host`message`title`text`https`status!(`l64;""eventtitle=Test_Event; eventtext=\""This is a test\""; priority=\""normal\""; tags=\""#test\"";alerttype=info; echo \""_e{${#eventtitle},${#eventtext}}:$eventtitle|$eventtext|p:$priority|#$tags|t:$alerttype\"" |nc -4u -w0 127.0.0.1 5010"";""Test_Event"";""This is a test"";0b;())",1,,Create an expected send event log when using linux
+run,0,0,q,"se_lin:enlist`host`message`title`text`https`status!(`l64;""echo \""_e{Test_Event,This is a test}:Test_Event|This is a test|p:normal|#test|t:info\"" |nc -4u -w0 127.0.0.1 5010"";""Test_Event"";""This is a test"";0b;())",1,,Create an expected send event log when using linux
 run,0,0,q,"sm_web:enlist`host`message`name`metric`https`status!(`homer.aquaq.co.uk;""{\""series\"":[{\""metric\"":\""custom.metric\"",\""points\"":[[0000000000,123]],\""host\"":\""HOMER.AQUAQ.CO.UK\"",\""tags\"":\""shell\""}]}"";""custom.metric"";123f;1b;""No api key specified"")",1,,Create an expected send metric log when using web
 run,0,0,q,"se_web:enlist`host`message`title`text`https`status!(`homer.aquaq.co.uk;""{\""title\"":\""Test_Event\"",\""text\"":\""This is a test\"",\""priority\"":\""normal\"",\""tags\"":\""test\"",\""alert_type\"":\""info\""}"";""Test_Event"";""This is a test"";1b;""No api key specified"")",1,,Create an expected send event log when using web
 

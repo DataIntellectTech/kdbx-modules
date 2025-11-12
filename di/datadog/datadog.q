@@ -1,7 +1,6 @@
 / -----datadog.q -----
 / package used to push metrics and events from a q process to datadog.
 / default delivery method is through the datadog agent installed on the host. use useweb "1b" to switch delivery to https in the init function
-([printf]):use`kx.printf;
 
 / define tables to capture events and metrics
 metriclog:([]time:`timestamp$();host:`$();message:();name:();metric:`float$();https:`boolean$();status:());
@@ -13,21 +12,6 @@ opsys:.z.o; / pre-define operating system to help with testing
 lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
   / send event on linux os using datadog agent
   cmd:printf ("echo \"_e{%s,%s}:%s|%s|p:%s|#%s|t:%s\" |nc -4u -w0 127.0.0.1 %s";eventtitle;eventtext;eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype;agentport);
-  
-  / lin.sendevent["abc";"def";"low";("tag1";"tag2");"warning"] gives an output of 
-  / "echo \"_e{abc,def}:abc|def|p:low|#tag1,tag2|t:warning\" |nc -4u -w0 127.0.0.1 0Ni"
-  / when using the printf 
-  / compared to the method below
-
-  / cmd:raze
-  /   ("eventtitle=";      eventtitle;
-  /    "; eventtext=\"";   eventtext;
-  /    "\"; priority=\"";  priority;
-  /    "\"; tags=\"#";     $[0h=type tags;","sv tags;tags];
-  /    "\";alerttype=";    alerttype;
-  /    "; echo \"_e{${#eventtitle},${#eventtext}}:$eventtitle|$eventtext|p:$priority|#$tags|t:$alerttype\" |nc -4u -w0 127.0.0.1 ",string agentport
-  /   );
-
   response:system cmd;
   eventlog,:(.z.p;opsys;cmd;eventtitle;eventtext;0b;response);
   };
@@ -98,6 +82,7 @@ setfunctions:{[useweb]
 
 init:{[useweb]
   / initialisation function
+  ([.z.m.printf]):use`kx.printf;
   .z.m.agentport:@[value;.z.M.agentport;"I"$getenv`DOGSTATSD_PORT];       / define datadog agent port
   .z.m.apikey:@[value;.z.M.apikey;getenv`DOGSTATSD_APIKEY];               / define datadog api key
   .z.m.baseurl:@[value;.z.M.baseurl;":https://api.datadoghq.eu/api/v1/"]; / define base api url

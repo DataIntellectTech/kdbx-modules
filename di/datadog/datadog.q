@@ -11,14 +11,21 @@ opsys:.z.o; / pre-define operating system to help with testing
 
 lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
   / send event on linux os using datadog agent
-  cmd:raze"eventtitle=",eventtitle,"; eventtext=","\"",eventtext,"\"","; priority=","\"",priority,"\"","; tags=","\"#",$[0h=type tags;","sv tags;tags],"\"",";alerttype=",alerttype,"; ","echo \"_e{${#eventtitle},${#eventtext}}:$eventtitle|$eventtext|p:$priority|#$tags|t:$alerttype\" |nc -4u -w0 127.0.0.1 ",string agentport;
+  cmd:raze
+    ("eventtitle=";      eventtitle;
+     "; eventtext=\"";   eventtext;
+     "\"; priority=\"";  priority;
+     "\"; tags=\"#";     $[0h=type tags;","sv tags;tags];
+     "\";alerttype=";    alerttype;
+     "; echo \"_e{${#eventtitle},${#eventtext}}:$eventtitle|$eventtext|p:$priority|#$tags|t:$alerttype\" |nc -4u -w0 127.0.0.1 ",string agentport
+    );
   response:system cmd;
   eventlog,:(.z.p;opsys;cmd;eventtitle;eventtext;0b;response);
   };
 
 lin.sendmetric:{[metricname;metricvalue;tags]
   / send metric on linux os using datadog agent
-  cmd:raze"bash -c \"echo  -n '",metricname,":",(string metricvalue),"|g|#",$[0h=type tags;","sv tags;tags],"' > /dev/udp/127.0.0.1/",string agentport,"\"";
+  cmd:"bash -c \"echo  -n '",metricname,":",string[metricvalue],"|g|#",$[0h=type tags;","sv tags;tags],"' > /dev/udp/127.0.0.1/",string[agentport],"\"";
   response:system cmd;
   metriclog,:(.z.p;opsys;cmd;metricname;`float$metricvalue;0b;response);
   };
@@ -29,7 +36,7 @@ pushtodogagent:{[message]
   / shell command to push data
   cmd:"powershell -Command \"";
   cmd,:" $udpClient = New-Object System.Net.Sockets.UdpClient;";
-  cmd,:" $udpClient.Connect('127.0.0.1','",raze string agentport, "');";
+  cmd,:" $udpClient.Connect('127.0.0.1','",string[agentport], "');";
   cmd,:" $bytes = [System.Text.Encoding]::ASCII.GetBytes('",raze message, "');";
   cmd,:" $udpClient.Send($bytes, $bytes.Length );";
   cmd,:" $udpClient.Close();\"";
@@ -85,5 +92,5 @@ init:{[useweb]
   .z.m.agentport:@[value;.z.M.agentport;"I"$getenv`DOGSTATSD_PORT];       / define datadog agent port
   .z.m.apikey:@[value;.z.M.apikey;getenv`DOGSTATSD_APIKEY];               / define datadog api key
   .z.m.baseurl:@[value;.z.M.baseurl;":https://api.datadoghq.eu/api/v1/"]; / define base api url
-  .z.m.setfunctions useweb;                                               / sets delivery method
+  setfunctions useweb;                                               / sets delivery method
   };

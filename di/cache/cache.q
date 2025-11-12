@@ -32,21 +32,21 @@ getid:{:id+::1};
 add:{[function;id;status]
   / Don't trap the error here - if it throws an error, we want it to be propagated out
   res:value function;
-  $[(.z.m.maxindividual*MB)>size:-22!res;
+  $[(maxindividual*MB)>size:-22!res;
     / check if we need more space to store this item
-    [now:.z.m.cp[];
-    if[0>requiredsize:(.z.m.maxsize*MB) - size+sum exec size from cache; evict[neg requiredsize;now]];
+    [now:cp[];
+    if[0>requiredsize:(maxsize*MB) - size+sum exec size from cache; evict[neg requiredsize;now]];
     / Insert to the cache table
-    .z.M.cache upsert (id;now;now;size);
+    `cache upsert (id;now;now;size);
     / and insert to the function and results dictionary
-    .z.m.funcs[id]:enlist function;
-    .z.m.results[id]:enlist res;
+    funcs[id]:enlist function;
+    results[id]:enlist res;
     / Update the performance
-    trackperf[id;status;now]];
+    trackperf[0N!id;0N!status;0N!now]];
     / Otherwise just log it as an addfail - the result set is too big
-    trackperf[id;`fail;.z.m.cp[]]];
+    trackperf[id;`fail;cp[]]];
   / Return the result	
   res};
 
-trackperf:{[id;status;currenttime] .z.M.perf insert ((count id)#currenttime;id;(count id)#status)};
+trackperf:{[id;status;currenttime] `perf insert ((count id)#currenttime;id;(count id)#status)};
 

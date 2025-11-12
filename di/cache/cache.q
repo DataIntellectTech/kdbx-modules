@@ -12,21 +12,21 @@ maxindividual:50;
 / make sure the maxindividual isn't bigger than maxsize
 maxindividual:maxsize&maxindividual;
 
-MB:2 xexp 20
+MB:2 xexp 20;
 
 / a table to store the cache values in memory
-cache:([id:`u#`long$()] lastrun:`timestamp$();lastaccess:`timestamp$();size:`long$())
+cache:([id:`u#`long$()] lastrun:`timestamp$();lastaccess:`timestamp$();size:`long$());
 
 / a dictionary of the functions
-funcs:(`u#`long$())!()
+funcs:(`u#`long$())!();
 / the results of the functions
-results:(`u#`long$())!()
+results:(`u#`long$())!();
 
 / table to track the cache performance
-perf:([]time:`timestamp$();id:`long$();status:`symbol$())
+perf:([]time:`timestamp$();id:`long$();status:`symbol$());
 
-id:0j
-getid:{:id+::1}
+id:0j;
+getid:{:id+::1};
 
 / add to cache
 add:{[function;id;status]

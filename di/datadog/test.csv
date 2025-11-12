@@ -30,7 +30,7 @@ run,0,0,q,datadog.init 1b,1,,Init the package with linux os with useweb
 run,0,0,q,datadog.sendmetric["custom.metric";123;"shell"],1,,Send a dummy metric
 run,0,0,q,datadog.sendevent["Test_Event";"This is a test";"normal";"test";"info"],1,,Send a dummy event
 run,0,0,q,"@[`.m.di.0datadog.metriclog;`message;{raze@[""[[""vs x;1;""[["",(10#""0""),10_]}']",1,,Update the unixtime in the table to be 0s
-true,0,0,q,sm_web~test:``time _datadog.getmetriclog[],1,,Check it is as expected
+true,0,0,q,sm_web~``time _datadog.getmetriclog[],1,,Check it is as expected
 true,0,0,q,se_web~``time _datadog.geteventlog[],1,,Check it is as expected
 
 comment,,,,,,,Tidy up

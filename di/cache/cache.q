@@ -42,7 +42,7 @@ add:{[function;id;status]
     funcs[id]:enlist function;
     results[id]:enlist res;
     / Update the performance
-    trackperf[0N!id;0N!status;0N!now]];
+    trackperf[id;status;now]];
     / Otherwise just log it as an addfail - the result set is too big
     trackperf[id;`fail;cp[]]];
   / Return the result	

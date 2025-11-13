@@ -11,7 +11,7 @@ opsys:.z.o; / pre-define operating system to help with testing
 
 lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
   / send event on linux os using datadog agent
-  cmd:printf ("echo \"_e{%s,%s}:%s|%s|p:%s|#%s|t:%s\" |nc -4u -w0 127.0.0.1 %s";eventtitle;eventtext;eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype;agentport);
+  cmd:printf ("echo \"_e{%d,%d}:%s|%s|p:%s|#%s|t:%s\" |nc -4u -w0 127.0.0.1 %s";count eventtitle;count eventtext;eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype;agentport);
   response:system cmd;
   eventlog,:(.z.p;opsys;cmd;eventtitle;eventtext;0b;response);
   };
@@ -24,6 +24,7 @@ lin.sendmetric:{[metricname;metricvalue;tags]
   };
 
 / following three functions are used to push metrics and events to datadog through udp and powershell on windows os
+/ windows os unable to be tested currently so following three functions have not been unit tested.
 
 pushtodogagent:{[message]
   / shell command to push data
@@ -82,7 +83,7 @@ setfunctions:{[useweb]
 
 init:{[useweb]
   / initialisation function
-  ([.z.m.printf]):use`kx.printf;
+  if[not`printf in key .z.m;([.z.m.printf]):@[use;`kx.printf;{'"printf module not found, please install"}]]
   .z.m.agentport:@[value;.z.M.agentport;"I"$getenv`DOGSTATSD_PORT];       / define datadog agent port
   .z.m.apikey:@[value;.z.M.apikey;getenv`DOGSTATSD_APIKEY];               / define datadog api key
   .z.m.baseurl:@[value;.z.M.baseurl;":https://api.datadoghq.eu/api/v1/"]; / define base api url

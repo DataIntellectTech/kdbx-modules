@@ -101,7 +101,7 @@ The log can be retrived using `geteventlog` includes the following columns:
 ---
 
 ## :test_tube: Example
-Set your enviorment variables.
+Set your environment variables.
 agentport = 8125
 apikey = "yourapikey"
 baseurl = ":https://api.datadoghq.eu/api/v1/"

@@ -21,8 +21,8 @@ run,0,0,q,resetmetriclog[],1,,Reset metric log table for next test
 run,0,0,q,reseteventlog[],1,,Reset event log table for next test
 
 comment,,,,,,,Test windows (NOTE:there is currently no way to test windows functionality until any windows builds of kdbx are available)
-run,0,0,q,k4unit.mock[`.m.di.0datadog.opsys;`win],1,,Mock linux operating system
-run,0,0,q,datadog.init 0b,1,,Init the package with linux os
+run,0,0,q,k4unit.mock[`.m.di.0datadog.opsys;`win],1,,Mock windows operating system
+run,0,0,q,datadog.init 0b,1,,Init the package with windows os
 
 comment,,,,,,,Test web
 run,0,0,q,k4unit.mock[`.m.di.0datadog.opsys;`l64],1,,Mock linux operating system
@@ -35,3 +35,4 @@ true,0,0,q,se_web~``time _datadog.geteventlog[],1,,Check it is as expected
 
 comment,,,,,,,Tidy up
 run,0,0,q,k4unit.unmock(::),1,,unmock all variables
+comment,,,,,,,TODO: Currently tests cannot be repeated (variables might not be cleared correctly)

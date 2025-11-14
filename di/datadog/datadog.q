@@ -81,11 +81,26 @@ setfunctions:{[useweb]
   .z.m.sendevent:value ` sv .z.M,method,`sendevent;
   };
 
-init:{[useweb]
+
+
+init:{[configs]
+
+  / local function
+  envcheck: {$[count x; x; y]};
+
+  / Default values
+  .z.m.agentport:envcheck["J"$getenv`DOGSTATSD_PORT;8125]; / define datadog agent port
+  .z.m.apikey:getenv`DOGSTATSD_APIKEY; / define datadog api key - default value is empty string, so no need to check
+  .z.m.baseurl:envcheck[getenv `DOGSTATSD_URL;":https://api.datadoghq.eu/api/v1/"]; / define base api url
+  .z.m.useweb:0b; / default - don't use web
+
+  / Values from config dictionary take priority
+  if[not configs~(::);
+    vars:`agentport`apikey`baseurl`useweb inter key configs;
+    (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs]
+    ];
+
   / initialisation function
   if[not`printf in key .z.m;([.z.m.printf]):@[use;`kx.printf;{'"printf module not found, please install"}]]
-  .z.m.agentport:@[value;.z.M.agentport;"I"$getenv`DOGSTATSD_PORT];       / define datadog agent port
-  .z.m.apikey:@[value;.z.M.apikey;getenv`DOGSTATSD_APIKEY];               / define datadog api key
-  .z.m.baseurl:@[value;.z.M.baseurl;":https://api.datadoghq.eu/api/v1/"]; / define base api url
   setfunctions useweb;                                               / sets delivery method
   };

@@ -7,6 +7,29 @@ metriclog:([]time:`timestamp$();host:`$();message:();name:();metric:`float$();ht
 eventlog:([]time:`timestamp$();host:`$();message:();title:();text:();https:`boolean$();status:());
 opsys:.z.o; / pre-define operating system to help with testing
 
+/ Filter for sending metrics
+metfilter:{[dict]
+  
+  requiredpars:`metricname`metricvalue;
+  optionalpars: `metrictype`samplerate`tags;
+  validpars: requiredpars,optionalpars;
+
+  / Checks
+  if[not 99h=type dict; '"input must be a dictionary"];
+  pars: key dict;
+  if[(count validpars)<count dict; '"rank"];
+  if[not (count pars)=count distinct pars; '"keys must be unique"];
+  if[any not pars in validpars; '"valid argument names: ", csv sv string each validpars];
+  if[not all requiredpars in pars; '"required arguments: ", csv sv string each requiredpars];
+  / Conversions
+  dict[`metricvalue]: string dict[`metricvalue];
+  if[`samplerate in pars;dict[`samplerate]:string dict[`samplerate]];
+  if[`tags in pars;dict[`tags]:{$[0h=type x;"," sv x;x]} dict[`tags]];
+
+  / Standardise order to fit datadog format
+  k!dict[k:validpars where validpars in pars]
+ }
+
 / following two functions used to push data to datadog agent on linux os
 
 lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
@@ -16,12 +39,18 @@ lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
   eventlog,:(.z.p;opsys;cmd;eventtitle;eventtext;0b;response);
   };
 
-lin.sendmetric:{[metricname;metricvalue;tags]
-  / send metric on linux os using datadog agent
-  cmd:"bash -c \"echo  -n '",metricname,":",string[metricvalue],"|g|#",$[0h=type tags;","sv tags;tags],"' > /dev/udp/127.0.0.1/",string[agentport],"\"";
+lin.sendmetric:{[dict:metfilter]
+  / extract dictionary values
+  (pars;args): (key;value)@\:dict;
+  leaders:([metricname:"";metricvalue:":";metrictype:"|";samplerate:"|@";tags:"|#"]);
+  / match error here if `metricvalue`metricname keys not in dict
+  ([metricname;metricvalue]):dict;
+
+  ddmsg: raze (leaders[pars]),'(args);
+  cmd:printf("bash -c \"echo  -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
   response:system cmd;
-  metriclog,:(.z.p;opsys;cmd;metricname;`float$metricvalue;0b;response);
-  };
+  metriclog,:(.z.p;opsys;cmd;metricname;"F"$metricvalue;0b;response)
+ }
 
 / following three functions are used to push metrics and events to datadog through udp and powershell on windows os
 / windows os unable to be tested currently so following three functions have not been unit tested.

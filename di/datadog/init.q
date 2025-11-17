@@ -7,7 +7,7 @@ geteventlog:{.z.m.eventlog};
 
 / exportable functions to access the relevant send event/metric functions
 / the releveant metric and event functions are assinged when init is run
-exportsendmetric:{[metricname;metricvalue;tags].z.m.sendmetric[metricname;metricvalue;tags]};
+exportsendmetric:{[dict].z.m.sendmetric[dict]};
 
 exportsendevent:{[eventtitle;eventtext;priority;tags;alerttype].z.m.sendevent[eventtitle;eventtext;priority;tags;alerttype]};
 

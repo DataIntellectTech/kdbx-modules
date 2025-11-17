@@ -1,0 +1,101 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,analytics:use`analytics,1,1,load module into session
+run,0,0,q,N:20;prob:0.2,1,,initialize testing parameters
+run,0,0,q,zerotable:table:`time xasc ([]time:N?.z.P;sym:N?`AMD`AAPL`MSFT`IBM;ask:N?100f;bid:N?100f;asize:N?500i;bsize:N?500i;ex:N?`NYSE`CME`LSE),1,,define testing table
+run,0,0,q,update ask:?[prob>N?1f;0n;ask] from `table,1,,add null values in testing table
+run,0,0,q,update bid:?[prob>N?1f;0n;bid] from `table,1,,add null values in testing table
+run,0,0,q,update asize:?[prob>N?1f;0n;asize] from `table,1,,add null values in testing table
+run,0,0,q,update bsize:?[prob>N?1f;0n;bsize] from `table,1,,add null values in testing table
+run,0,0,q,update ex:?[prob>N?1f;`;ex] from `table,1,,add null values in testing table
+run,0,0,q,update ask:?[prob>N?1f;0;ask] from `zerotable,1,,add zero values in testing table
+run,0,0,q,update bid:?[prob>N?1f;0;bid] from `zerotable,1,,add zero values in testing table
+run,0,0,q,update asize:?[prob>N?1f;0;asize] from `zerotable,1,,add zero values in testing table
+run,0,0,q,update bsize:?[prob>N?1f;0;bsize] from `zerotable,1,,add zero values in testing table
+
+run,0,0,q,t1:analytics.ffill[`table`keycols!(table;`ask`bid)],1,,fill ask and bid columns
+true,0,0,q,0=(sum/)(null 1_t1`ask;null 1_t1`bid),1,,verify no missing values in the columns except first row
+true,0,0,q,(sum 1_null table`ask)=(count t1`ask)-(count distinct t1`ask),1,,verify number of filled matches with missing values 
+true,0,0,q,(sum 1_null table`bid)=(count t1`bid)-(count distinct t1`bid),1,,verify number of filled matches with missing values
+
+run,0,0,q,t2:analytics.ffill[`table`by!(table; `sym)],1,,fill by sym 
+run,0,0,q,nullcols:cols[t2] where any each null t2 cols[t2],1,,get null columns
+run,0,0,q,"symlist:differ exec sym from t:`sym xasc ?[`t2;();0b;(`sym,nullcols)!(`sym,nullcols)]",1,,get sorted symbol list
+true,0,0,q,"symlist~symlist | (|/) null t (nullcols except `sym)",1,,verify all nulls appears on the first occurrence of each sym value, i.e. no prior value to forward fill with
+
+run,0,0,q,t3:analytics.ffill[`table`by`keycols!(table; `sym;`asize)],1,,fill asize column only by sym 
+run,0,0,q,symlist:differ exec sym from t:`sym xasc ?[`t3;();0b;(`sym`asize)!(`sym`asize)],1,,get sorted symbol list
+true,0,0,q,symlist~symlist | null t `asize,1,,verify all nulls appears on the first occurrence of each sym value, i.e. no prior value to forward fill with
+
+run,0,0,q,t4:analytics.ffill[table],1,,fill whole table(note first row will not get filled as no prior value)
+true,0,0,q,0b~(any/) null 1_t4,1,,verify all null values filled 
+
+run,0,0,q,nestedtable:([]sym:`a`b`c`a;exch:("LDN";"";"HK";"");v: (12 39;9 9;0N;1 2)),1,,define testing table with nested values
+run,0,0,q,t4:analytics.ffill[nestedtable],1,,fill whole table
+true,0,0,q,0b~1b in (raze/) value flip null t4,1,, verify all null values filled
+true,0,0,q,(exec v from t4 where sym=`b)~(exec v from t4 where sym=`c),1,,verify nested values is filled forward
+true,0,0,q,(raze exec exch from t4)~("LDNLDNHKHK"),1,,verify nested values is filled forward
+
+run,0,0,q,t5:analytics.ffill[`table`by`keycols!(nestedtable; `sym;`exch)],1,,fill by sym 
+true,0,0,q,(raze (exec distinct exch from t5 where sym=`a;exec distinct exch from t5 where sym=`b))~("LDN";""),1,,verify exch column filled where sym=`a and not filled for sym=`b since no prior value
+true,0,0,q,null first exec v from t5 where sym=`c,1,,verify v column is not filled as keycols is exch only
+
+run,0,0,q,t6:analytics.ffillzero[`table`by`keycols!(zerotable; `sym;`bid`ask)],1,,fill zero values by sym 
+run,0,0,q,symlist:differ exec sym from t:`sym xasc ?[`t6;();0b;(`sym`bid`ask)!(`sym`bid`ask)],1,,get sorted symbol list
+true,0,0,q,symlist~symlist | 0= t `bid,1,,verify all zeros appears on the first occurrence of each sym value, i.e. no prior value to forward fill with
+true,0,0,q,symlist~symlist | 0= t `ask,1,,verify all zeros appears on the first occurrence of each sym value, i.e. no prior value to forward fill with
+
+run,0,0,q,params:`start`end`interval`round!(09:32;12:00;00:30;0b),1,,define input dictionary
+true,0,0,q,(09:32 10:02 10:32 11:02 11:32)~analytics.intervals[params],1,,,verify intervals generated as specified
+
+run,0,0,q,params:`start`end`interval`round!(09:32;12:00;00:30;1b),1,,define input dictionary
+true,0,0,q,(09:30 10:00 10:30 11:00 11:30 12:00)~analytics.intervals[params],1,,,verify intervals generated as specified
+
+run,0,0,q,params:`start`end`interval!(09:32;12:00;00:30),1,,define interval dictionary
+true,0,0,q,(09:30 10:00 10:30 11:00 11:30 12:00)~analytics.intervals[params],1,,,verify intervals generated as specified
+
+run,0,0,q,params:`start`end`interval!(2001.04.07;2001.05.01;5),1,,define input dictionary
+true,0,0,q,(2001.04.05 2001.04.10 2001.04.15 2001.04.20 2001.04.25 2001.04.30)~analytics.intervals[params],1,,,verify intervals generated as specified
+
+run,0,0,q,params:`start`end`interval`round!(2001.04.07;2001.05.01;5;0b),1,,define input dictionary
+true,0,0,q,(2001.04.07 2001.04.12 2001.04.17 2001.04.22 2001.04.27)~analytics.intervals[params],1,,,verify intervals generated as specified
+
+run,0,0,q,params:`start`end`interval`round!(2001.04.07;2001.05.01;5;0b),1,,define input dictionary
+true,0,0,q,(2001.04.07 2001.04.12 2001.04.17 2001.04.22 2001.04.27)~analytics.intervals[params],1,,,verify intervals generated as specified
+
+run,0,0,q,params:`start`end`interval!(00:01:00.000000007;00:05:00.000000001;50000000000),1,,define input dictionary
+true,0,0,q,(0D00:00:50.000000000 0D00:01:40.000000000 0D00:02:30.000000000 0D00:03:20.000000000 0D00:04:10.000000000 0D00:05:00.000000000)~analytics.intervals[params],1,,,verify intervals generated as specified
+
+run,0,0,q,t:([]sym:`a`b`a;exch:`nyse`nyse`cme;price:1 2 3),1,,define testing table
+run,0,0,q,dic:`table`keycols!(t;`sym`exch),1,,define input dictionary
+true,0,0,q,([]sym:`a`b`a;exch:`nyse`nyse`cme)~analytics.rack[dic],1,,verify table is unalterted with input dictionary
+
+run,0,0,q,dic:`table`keycols`timeseries`fullexpansion!(t;`sym`exch;`start`end`interval!09:00 12:00 01:00;1b),1,,define input dictionary
+run,0,0,q,res:analytics.rack[dic],1,,call rack function on input
+true,0,0,q,(16~count res)& (98h=type res),1,,verify output as a table with expected number of rows 
+true,0,0,q,(&/) raze (`a`b in res`sym ; (`nyse`cme) in res`exch; (09:00 10:00 11:00 12:00) in res`interval),1,, verify output contains all possible values
+
+run,0,0,q,dic:`table`keycols`timeseries`base`fullexpansion!(t;`sym`exch;`start`end`interval!00:00:00 02:00:00 00:30:00;flip (enlist`base)!enlist `buy`sell`buy`sell;1b),1,,define input dictionary
+run,0,0,q,res:analytics.rack[dic],1,,call rack function on input
+true,0,0,q,(80~count res)& (98h=type res),1,,verify output as a table with expected number of rows 
+true,0,0,q,(&/) raze (`a`b in res`sym ; (`nyse`cme) in res`exch; (00:00:00 00:30:00 01:00:00 01:30:00 02:00:00) in res`interval),1,, verify output contains all possible values
+
+run,0,0,q,dic:`table`keycols`timeseries!(t;`sym`exch;`start`end`interval!00:00:00 02:00:00 00:35:00),1,,define input dictionary without fullexpansion parameter
+run,0,0,q,res:analytics.rack[dic],1,,call rack function on input
+true,0,0,q,(12~count res)& (98h=type res),1,,verify output as a table with expected number of rows 
+true,0,0,q,(&/) raze (`a`b in res`sym ; (`nyse`cme) in res`exch; (00:00:00 00:35:00 01:10:00 01:45:00) in res`interval),1,, verify output contains all possible values without fullexpansion which has default value 0b
+
+run,0,0,q,quote:([]date:2001.01.05;sym:N?`6;time:N?.z.t;side:N?`A`B;level:N?(0;2;1;4);price:N?100f;size:N?100i),1,,define table for pivot
+run,0,0,q,args:(`table`by`piv`var)!(quote;`sym;`side;`size),1,,define input dictionary
+run,0,0,q,res:analytics.pivot args,1,,call pivot function on input
+true,0,0,q,"(99h=type res)&(((),args`by)~cols key res)&((`size_A`size_B)~cols value res)",1,,verify output in the correct format
+true,0,0,q,(asc (raze value flip value res) except 0n)~(asc raze quote args`var),1,,verify pivoted values conform to original data 
+
+run,0,0,q,args:(`table`by`piv`var)!(quote;`date`sym`time;`level;`price),1,,define input dictionary
+run,0,0,q,res:analytics.pivot args,1,,call pivot function on input
+true,0,0,q,"(99h=type res)&(((),args`by)~cols key res)&(`price_0`price_1`price_2`price_4~cols value res)",1,,verify output in the correct format
+true,0,0,q,(asc (raze value flip value res) except 0n)~(asc raze quote args`var),1,,verify pivoted values conform to original data 
+
+run,0,0,q,args:(`table`by`piv`var)!(quote;`date`sym;`side`level;`price`size),1,,define input dictionary
+run,0,0,q,res:analytics.pivot args,1,,call pivot function on input
+true,0,0,q,"(99h=type res)&(((),args`by)~cols key res)&(((count distinct (,/') flip string quote args`piv)*count args`by)~count cols value res)",1,,verify output in the correct format
+true,0,0,q,(asc (raze value flip value res) except 0n)~(asc raze quote args`var),1,,verify pivoted values conform to original data 

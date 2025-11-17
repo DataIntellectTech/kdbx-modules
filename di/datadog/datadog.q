@@ -11,7 +11,7 @@ opsys:.z.o; / pre-define operating system to help with testing
 
 lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
   / send event on linux os using datadog agent
-  cmd:printf ("echo \"_e{%d,%d}:%s|%s|p:%s|#%s|t:%s\" |nc -4u -w0 127.0.0.1 %s";count eventtitle;count eventtext;eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype;agentport);
+  cmd:printf ("echo \"_e{%d,%d}:%s|%s|p:%s|#%s|t:%s\" |nc -4u -w0 127.0.0.1 %s";count eventtitle;count eventtext;eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype;string[agentport]);
   response:system cmd;
   eventlog,:(.z.p;opsys;cmd;eventtitle;eventtext;0b;response);
   };
@@ -89,7 +89,7 @@ init:{[configs]
   envcheck: {$[count x; x; y]};
 
   / Default values
-  .z.m.agentport:envcheck["J"$getenv`DOGSTATSD_PORT;8125]; / define datadog agent port
+  .z.m.agentport:"J"$envcheck[getenv`DOGSTATSD_PORT;string 8125]; / define datadog agent port
   .z.m.apikey:getenv`DOGSTATSD_APIKEY; / define datadog api key - default value is empty string, so no need to check
   .z.m.baseurl:envcheck[getenv `DOGSTATSD_URL;":https://api.datadoghq.eu/api/v1/"]; / define base api url
   .z.m.useweb:0b; / default - don't use web

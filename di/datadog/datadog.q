@@ -7,13 +7,31 @@ metriclog:([]time:`timestamp$();host:`$();message:();name:();metric:`float$();ht
 eventlog:([]time:`timestamp$();host:`$();message:();title:();text:();https:`boolean$();status:());
 opsys:.z.o; / pre-define operating system to help with testing
 
+/ Filter for sending events
+eventfilter:{[dict]
+  requiredpars:`eventtitle`eventtext;
+  optionalpars: `eventdate`hostname`priority`alerttype`tags;
+  validpars: requiredpars,optionalpars;
+  / Checks
+  if[not 99h=type dict; '"input must be a dictionary"];
+  pars: key dict;
+  if[(count validpars)<count dict; '"rank"];
+  if[not (count pars)=count distinct pars; '"keys must be unique"];
+  if[any not pars in validpars; '"valid argument names: ", csv sv string each validpars];
+  if[not all requiredpars in pars; '"required arguments: ", csv sv string each requiredpars];
+  / Conversions
+  if[`eventdate in pars;dict[`eventdate]:string dict[`eventdate]];
+  if[`tags in pars;dict[`tags]:{$[0h=type x;"," sv x;x]} dict[`tags]];
+
+  / Standardise order to fit datadog format
+  (validpars inter key dict)#dict
+ }
+
 / Filter for sending metrics
 metfilter:{[dict]
-  
   requiredpars:`metricname`metricvalue;
   optionalpars: `metrictype`samplerate`tags;
   validpars: requiredpars,optionalpars;
-
   / Checks
   if[not 99h=type dict; '"input must be a dictionary"];
   pars: key dict;
@@ -32,9 +50,13 @@ metfilter:{[dict]
 
 / following two functions used to push data to datadog agent on linux os
 
-lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
+lin.sendevent:{[(pars!args):eventfilter]
+  (eventtitle;eventtext):args 0 1;
+  leaders:([eventtitle:printf("_e{%d,%d}:";count eventtitle;count eventtext);
+    eventtext:"|";eventdate:"|d:";hostname:"|h:";priority:"|p:";alerttype:"|t:";tags:"|#"]);
+  ddmsg:raze (leaders[pars]),'(args);
   / send event on linux os using datadog agent
-  cmd:printf ("echo \"_e{%d,%d}:%s|%s|p:%s|#%s|t:%s\" |nc -4u -w0 127.0.0.1 %s";count eventtitle;count eventtext;eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype;string[agentport]);
+  cmd:printf("bash -c \"echo  -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
   response:system cmd;
   eventlog,:(.z.p;.z.h;cmd;eventtitle;eventtext;0b;response);
   };
@@ -71,11 +93,13 @@ win.sendmetric:{[(pars!args):metfilter]
   metriclog,:(.z.p;.z.h;ddmsg;metricname;`float$metricvalue;0b;response);
   };
 
-win.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
-  / override used to send events through windows powershell to datadog agent
-  event:"_e{",string[count eventtitle],",",string[count eventtext],"}:",eventtitle,"|",eventtext,"|p:",priority,"#",$[0h=type tags;","sv tags;tags],"|t:",alerttype;
-  response:raze@[pushtodogagent;event;{'"Error pushing data to agent: ",x}];
-  eventlog,:(.z.p;.z.h;event;eventtitle;eventtext;0b;response);
+win.sendevent:{[(pars!args):eventfilter]
+  (eventtitle;eventtext):args 0 1;
+  leaders:([eventtitle:printf("_e{%d,%d}:";count eventtitle;count eventtext);
+    eventtext:"|";eventdate:"|d:";hostname:"|h:";priority:"|p:";alerttype:"|t:";tags:"|#"]);
+  ddmsg:raze (leaders[pars]),'(args);
+  response:raze@[pushtodogagent;ddmsg;{'"Error pushing data to agent: ",x}];
+  eventlog,:(.z.p;.z.h;ddmsg;eventtitle;eventtext;0b;response);
   };
 
 / the following two functions are used to push data to datadog through https post using .Q.hp

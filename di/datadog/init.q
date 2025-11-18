@@ -1,20 +1,10 @@
 \l ::datadog.q
 
-/ exportable getter functions for event and metric table
-getmetriclog:{.z.m.metriclog};
-
-geteventlog:{.z.m.eventlog};
-
-/ exportable functions to access the relevant send event/metric functions
-/ the releveant metric and event functions are assinged when init is run
-exportsendmetric:{[dict].z.m.sendmetric[dict]};
-
-exportsendevent:{[eventtitle;eventtext;priority;tags;alerttype].z.m.sendevent[eventtitle;eventtext;priority;tags;alerttype]};
-
+/ export functions to be accessible outside private
 export:([
   init:init;
-  getmetriclog:getmetriclog;
-  geteventlog:geteventlog;
-  sendmetric:exportsendmetric;
-  sendevent:exportsendevent
+  getmetriclog:{.z.m.metriclog}; / metric table
+  geteventlog:{.z.m.eventlog}; / event table
+  sendmetric:{[dict].z.m.sendmetric[dict]};
+  sendevent:{[eventtitle;eventtext;priority;tags;alerttype].z.m.sendevent[eventtitle;eventtext;priority;tags;alerttype]}
   ])

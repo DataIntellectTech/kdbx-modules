@@ -27,7 +27,7 @@ metfilter:{[dict]
   if[`tags in pars;dict[`tags]:{$[0h=type x;"," sv x;x]} dict[`tags]];
 
   / Standardise order to fit datadog format
-  k!dict[k:validpars where validpars in pars]
+  (validpars inter key dict)#dict
  }
 
 / following two functions used to push data to datadog agent on linux os
@@ -36,20 +36,16 @@ lin.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
   / send event on linux os using datadog agent
   cmd:printf ("echo \"_e{%d,%d}:%s|%s|p:%s|#%s|t:%s\" |nc -4u -w0 127.0.0.1 %s";count eventtitle;count eventtext;eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype;string[agentport]);
   response:system cmd;
-  eventlog,:(.z.p;opsys;cmd;eventtitle;eventtext;0b;response);
+  eventlog,:(.z.p;.z.h;cmd;eventtitle;eventtext;0b;response);
   };
 
-lin.sendmetric:{[dict:metfilter]
-  / extract dictionary values
-  (pars;args): (key;value)@\:dict;
+lin.sendmetric:{[(pars!args):metfilter]
   leaders:([metricname:"";metricvalue:":";metrictype:"|";samplerate:"|@";tags:"|#"]);
-  / match error here if `metricvalue`metricname keys not in dict
-  ([metricname;metricvalue]):dict;
-
-  ddmsg: raze (leaders[pars]),'(args);
+  (metricname;metricvalue):args 0 1;
+  ddmsg:raze (leaders[pars]),'(args);
   cmd:printf("bash -c \"echo  -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
   response:system cmd;
-  metriclog,:(.z.p;opsys;cmd;metricname;"F"$metricvalue;0b;response)
+  metriclog,:(.z.p;.z.h;cmd;metricname;"F"$metricvalue;0b;response)
  }
 
 / following three functions are used to push metrics and events to datadog through udp and powershell on windows os
@@ -67,11 +63,12 @@ pushtodogagent:{[message]
   response
   };
 
-win.sendmetric:{[metricname;metricvalue;tags]
-  / override used to send metrics through windows powershell to datadog agent
-  metric:raze metricname,":",string metricvalue,"|g|#",$[0h=type tags;","sv tags;tags];
-  response:raze@[pushtodogagent;metric;{'"Error pushing data to agent: ",x}];
-  metriclog,:(.z.p;.z.h;metric;metricname;`float$metricvalue;0b;response);
+win.sendmetric:{[(pars!args):metfilter]
+  leaders:([metricname:"";metricvalue:":";metrictype:"|";samplerate:"|@";tags:"|#"]);
+  (metricname;metricvalue):args 0 1;
+  ddmsg:raze (leaders[pars]),'(args);
+  response:raze@[pushtodogagent;ddmsg;{'"Error pushing data to agent: ",x}];
+  metriclog,:(.z.p;.z.h;ddmsg;metricname;`float$metricvalue;0b;response);
   };
 
 win.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]

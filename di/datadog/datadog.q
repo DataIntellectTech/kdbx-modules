@@ -25,7 +25,7 @@ eventfilter:{[dict]
 
   / Standardise order to fit datadog format
   (validpars inter key dict)#dict
- }
+ };
 
 / Filter for sending metrics
 metfilter:{[dict]
@@ -46,7 +46,7 @@ metfilter:{[dict]
 
   / Standardise order to fit datadog format
   (validpars inter key dict)#dict
- }
+ };
 
 / following two functions used to push data to datadog agent on linux os
 
@@ -68,7 +68,7 @@ lin.sendmetric:{[(pars!args):metfilter]
   cmd:printf("bash -c \"echo  -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
   response:system cmd;
   metriclog,:(.z.p;.z.h;cmd;metricname;"F"$metricvalue;0b;response)
- }
+ };
 
 / following three functions are used to push metrics and events to datadog through udp and powershell on windows os
 / windows os unable to be tested currently so following three functions have not been unit tested.
@@ -104,14 +104,16 @@ win.sendevent:{[(pars!args):eventfilter]
 
 / the following two functions are used to push data to datadog through https post using .Q.hp
 
-web.sendevent:{[eventtitle;eventtext;priority;tags;alerttype]
+web.sendevent:{[dict:eventfilter]
+  (eventtitle;eventtext):dict[`eventtitle;`eventtext];
   / sends events via https post to datadog api
   url:baseurl,"events?api_key=",apikey;
-  json:.j.j`title`text`priority`tags`alert_type!(eventtitle;eventtext;priority;$[0h=type tags;","sv tags;tags];alerttype);
+  json:.j.j dict; / TODO: Check if keys of this dictionary need to be specific
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
   eventlog,:(.z.p;.z.h;json;eventtitle;eventtext;1b; response);
   };
 
+/ TODO: Handle v1 and v2 api urls
 web.sendmetric:{[metricname;metricvalue;tags]
   / sends metrics via https post to datadog api
   url:baseurl,"series?api_key=",apikey;
@@ -145,6 +147,7 @@ init:{[configs]
   .z.m.useweb:0b; / default - don't use web
 
   / Values from config dictionary take priority
+  / TODO: overwriting from configs needs fixed
   if[not configs~(::);
     vars:`agentport`apikey`baseurl`useweb inter key configs;
     (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs]

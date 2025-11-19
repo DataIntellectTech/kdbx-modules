@@ -5,7 +5,8 @@
 / define tables to capture events and metrics
 metriclog:([]time:`timestamp$();host:`$();message:();name:();metric:`float$();https:`boolean$();status:());
 eventlog:([]time:`timestamp$();host:`$();message:();title:();text:();https:`boolean$();status:());
-opsys:.z.o; / pre-define operating system to help with testing
+/ pre-define operating system to help with testing
+opsys:.z.o;
 
 / Filter for sending events
 eventfilter:{[dict]
@@ -104,23 +105,24 @@ win.sendevent:{[(pars!args):eventfilter]
 
 / the following two functions are used to push data to datadog through https post using .Q.hp
 
+/ TODO: Handle variety of web requests (different post requests, different versions)
 web.sendevent:{[dict:eventfilter]
-  (eventtitle;eventtext):dict[`eventtitle;`eventtext];
+  (eventtitle;eventtext;priority;tags;alerttype):dict[`eventtitle`eventtext`priority`tags`alerttype];
   / sends events via https post to datadog api
   url:baseurl,"events?api_key=",apikey;
-  json:.j.j dict; / TODO: Check if keys of this dictionary need to be specific
+  json:.j.j `title`text`priority`tags`alert_type!(eventtitle;eventtext;priority;tags;alerttype);
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
   eventlog,:(.z.p;.z.h;json;eventtitle;eventtext;1b; response);
   };
 
-/ TODO: Handle v1 and v2 api urls
-web.sendmetric:{[metricname;metricvalue;tags]
+web.sendmetric:{[dict:metfilter]
+  (metricname;metricvalue;metrictype;samplerate;tags):dict[`metricname`metricvalue`metrictype`samplerate`tags];
   / sends metrics via https post to datadog api
   url:baseurl,"series?api_key=",apikey;
   unixtime:floor((`long$.z.p)-1970.01.01D00:00)%1e9;
-  json:.j.j(enlist`series)!enlist(enlist(`metric`points`host`tags!(metricname;enlist(unixtime;metricvalue);upper string .z.h;$[0h=type tags;","sv tags;tags])));
+  json:.j.j(enlist`series)!enlist(enlist(`metric`points`host`tags!(metricname;enlist(unixtime;metricvalue);upper string .z.h;tags)));
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
-  metriclog,:(.z.p;.z.h;json;metricname;`float$metricvalue;1b;response);
+  metriclog,:(.z.p;.z.h;json;metricname;"F"$metricvalue;1b;response);
   };
 
 / utility functions used to manage send functions
@@ -133,27 +135,26 @@ setfunctions:{[useweb]
   .z.m.sendevent:value ` sv .z.M,method,`sendevent;
   };
 
-
-
 init:{[configs]
-
-  / local function
-  envcheck: {$[count x; x; y]};
-
   / Default values
-  .z.m.agentport:"J"$envcheck[getenv`DOGSTATSD_PORT;string 8125]; / define datadog agent port
-  .z.m.apikey:getenv`DOGSTATSD_APIKEY; / define datadog api key - default value is empty string, so no need to check
-  .z.m.baseurl:envcheck[getenv `DOGSTATSD_URL;":https://api.datadoghq.eu/api/v1/"]; / define base api url
-  .z.m.useweb:0b; / default - don't use web
+  envcheck: {$[count x; x; y]};
+  / define datadog agent port
+  .z.m.agentport:"J"$envcheck[getenv`DOGSTATSD_PORT;string 8125];
+  / define datadog api key - default value is empty string, so no need to check
+  .z.m.apikey:getenv`DOGSTATSD_APIKEY;
+  / define base api url
+  .z.m.baseurl:envcheck[getenv `DOGSTATSD_URL;":https://api.datadoghq.eu/api/v1/"];
+  / default - don't use web
+  .z.m.useweb:0b;
 
   / Values from config dictionary take priority
-  / TODO: overwriting from configs needs fixed
-  if[not configs~(::);
+  if[not (configs~(::)) or ((0=count configs) and 99h~type configs);
     vars:`agentport`apikey`baseurl`useweb inter key configs;
     (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs]
     ];
 
   / initialisation function
-  if[not`printf in key .z.m;([.z.m.printf]):@[use;`kx.printf;{'"printf module not found, please install"}]]
-  setfunctions useweb;                                               / sets delivery method
+  if[not`printf in key .z.m;([.z.m.printf]):@[use;`kx.printf;{'"printf module not found, please install"}]];
+  / sets delivery method
+  setfunctions useweb;
   };

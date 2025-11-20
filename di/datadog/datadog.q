@@ -57,7 +57,7 @@ lin.sendevent:{[(pars!args):eventfilter]
     eventtext:"|";eventdate:"|d:";hostname:"|h:";priority:"|p:";alerttype:"|t:";tags:"|#"]);
   ddmsg:raze (leaders[pars]),'(args);
   / send event on linux os using datadog agent
-  cmd:printf("bash -c \"echo  -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
+  cmd:printf("bash -c \"echo -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
   response:system cmd;
   eventlog,:(.z.p;.z.h;cmd;eventtitle;eventtext;0b;response);
   };
@@ -66,7 +66,7 @@ lin.sendmetric:{[(pars!args):metfilter]
   leaders:([metricname:"";metricvalue:":";metrictype:"|";samplerate:"|@";tags:"|#"]);
   (metricname;metricvalue):args 0 1;
   ddmsg:raze (leaders[pars]),'(args);
-  cmd:printf("bash -c \"echo  -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
+  cmd:printf("bash -c \"echo -n '%s' > /dev/udp/127.0.0.1/%s\"";ddmsg;string agentport);
   response:system cmd;
   metriclog,:(.z.p;.z.h;cmd;metricname;"F"$metricvalue;0b;response)
  };

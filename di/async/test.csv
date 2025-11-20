@@ -1,0 +1,62 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,async:use`di.async,1,1,load module into session
+
+comment,,,,,,,Testing async.deferred
+run,0,0,q,system"q -p 1234 -q &",1,,start server in background
+run,0,0,q,system"q -p 1235 -q &",1,,start server in background
+run,0,0,q,system"sleep 1",1,,wait for server to initialize
+run,0,0,q,h:raze @[hopen;;()]each(`::1234;`::1235),1,,open handles stored in h on client for testing
+true,0,0,q,all h>0,1,,verify client connected to server
+run,0,0,q,h[0]"f:{x+1}",1,,define function f on one handle
+run,0,0,q,r1:async.deferred[h;({x+1};1)],1,,testing async.deferred call that should execute on both servers
+true,0,0,q,r1~((1b;1b);(2;2)),1,,successful async.deferred call with expected result
+run,0,0,q,r2:async.deferred[h;({x+`a};1)],1,,testing async.deferred call that should fail
+true,0,0,q,not any r2[0;],1,,async.deferred call failed on both servers with expected result
+run,0,0,q,r3:async.deferred[h;(`f;1)],1,,testing async.deferred call that should fail on one server
+true,0,0,q,10b ~ r3[0;],1,,async.deferred call failed on one server with expected result
+run,0,0,q,r4:async.deferred[h[1];({exit 0};())],1,,server exits while client is waiting for result
+true,0,0,q,(first r4[1])~"error: comm fail: handle closed while waiting for result",1,,async.deferred call failed with expected message received
+run,0,0,q,r5:async.deferred[h;({x+1};1)],1,,testing async.deferred call that should fail on one closed handle and be successful on the other
+true,0,0,q,(r5[0];r5[1])~(10b;(2;"error: comm fail: failed to send query")),1,,async.deferred failed to send query to one handle successful on the other
+
+comment,,,,,,,Testing async.postback
+run,0,0,q,system"q -p 1235 -q &",1,,start server in background
+run,0,0,q,system"sleep 1",1,,wait for server to initialize
+run,0,0,q,h:raze @[hopen;;()]each(`::1234;`::1235),1,,open handles stored in h on client for testing
+true,0,0,q,all h>0,1,,verify client connected to server
+run,0,0,q,".test.result:([]handle:();time:();result:())",1,,define table .test.result to store results from async.postback
+run,0,0,q,".test.storeresult:{`.test.result upsert (.z.w;.z.t;enlist x)}",1,,define a function to store the posted back results in table .test.result
+run,0,0,q,async.postback[h;({x+1};2);`.test.storeresult],1,,testing async.postback that should execute on both servers
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,(enlist 3;enlist 3) ~ -2#exec result from .test.result,1,,successful async.postback with expected result
+run,0,0,q,async.postback[h;({x+`a};2);`.test.storeresult],1,,testing async.postback call that should fail
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,all all (exec result from -2#.test.result) like\: "error*",1,,async.postback call failed on both servers with expected result
+run,0,0,q,async.postback[h;(`f;1);`.test.storeresult],1,,testing async.postback call that should fail on one server
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.result,1,,async.postback call failed on one server with expected result
+
+comment,,,,,,,Testing async.broadcast_deferred
+run,0,0,q,r1:async.broadcast_deferred[h;({x+1};1)],1,,testing async.broadcast_deferred call that should execute on both servers
+true,0,0,q,r1~((1b;1b);(2;2)),1,,successful async.broadcast_deferred call with expected result
+run,0,0,q,r2:async.broadcast_deferred[h;({x+`a};1)],1,,testing async.broadcast_deferred call that should fail
+true,0,0,q,not any r2[0;],1,,async.broadcast_deferred call failed on both servers with expected result
+run,0,0,q,r3:async.broadcast_deferred[h;(`f;1)],1,,testing async.broadcast_deferred call that should fail on one server
+true,0,0,q,10b ~ r3[0;],1,,async.broadcast_deferred call failed on one server with expected result
+run,0,0,q,r3:async.broadcast_deferred[h;(`f;1)],1,,testing async.deferred call that should fail on one server
+true,0,0,q,10b ~ r3[0;],1,,async.deferred call failed on one server with expected result
+
+comment,,,,,,,Testing async.broadcast_postback
+run,0,0,q,".test.result:([]handle:();time:();result:())",1,,define a function to store the posted back results in variable .dbg.r
+run,0,0,q,".test.storeresult:{`.test.result upsert (.z.w;.z.t;enlist x)}",1,,define a function to store the posted back results in table .dbg.tab
+run,0,0,q,async.broadcast_postback[h;({x+1};2);`.test.storeresult],1,,testing async.postback that should execute on both servers
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,(enlist 3;enlist 3) ~ -2#exec result from .test.result,1,,successful async.postback with expected result
+run,0,0,q,async.broadcast_postback[h;({x+`a};2);`.test.storeresult],1,,testing async.postback call that should fail
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,all all (exec result from -2#.test.result) like\: "error*",1,,async.postback call failed on both servers with expected result
+run,0,0,q,async.broadcast_postback[h;(`f;1);`.test.storeresult],1,,testing async.postback call that should fail on one server
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.result,1,,async.postback call failed on one server with expected result
+
+run,0,0,q,@[;"exit 0";()] each neg h,,1,,closing remaining server process

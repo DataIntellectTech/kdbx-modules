@@ -120,7 +120,7 @@ web.sendmetric:{[dict:metfilter]
   / sends metrics via https post to datadog api
   url:baseurl,"series?api_key=",apikey;
   unixtime:floor((`long$.z.p)-1970.01.01D00:00)%1e9;
-  json:.j.j(enlist`series)!enlist(enlist(`metric`points`host`tags!(metricname;enlist(unixtime;metricvalue);upper string .z.h;tags)));
+  json:.j.j(enlist`series)!enlist(enlist(`metric`points`host`tags!(metricname;enlist(unixtime;"F"$metricvalue);upper string .z.h;tags)));
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
   metriclog,:(.z.p;.z.h;json;metricname;"F"$metricvalue;1b;response);
   };

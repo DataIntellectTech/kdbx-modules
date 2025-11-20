@@ -7,9 +7,9 @@ run,0,0,q,reseteventlog[],1,,Reset event log table for next test
 
 
 comment,,,,,,,Set expected tables 
-run,0,0,q,sm_lin:enlist`host`message`name`metric`https`status!(.z.h;"bash -c \"echo -n 'test:123' > /dev/udp/127.0.0.1/8125\"";"test";123;0b;()),1,,Create an expected send metric log when using linux
+run,0,0,q,sm_lin:enlist`host`message`name`metric`https`status!(.z.h;"bash -c \"echo -n 'test:123' > /dev/udp/127.0.0.1/8125\"";"test";123f;0b;()),1,,Create an expected send metric log when using linux
 run,0,0,q,"se_lin:enlist`host`message`title`text`https`status!(.z.h;""bash -c \""echo -n '_e{10,14}:Test_Event|This is a test' > /dev/udp/127.0.0.1/8125\"""";""Test_Event"";""This is a test"";0b;())",1,,Create an expected send event log when using linux
-run,0,0,q,"sm_web:enlist`host`message`name`metric`https`status!(.z.h;""{\""series\"":[{\""metric\"":\""test\"",\""points\"":[[0000000000,123]],\""host\"":\""HOMER.AQUAQ.CO.UK\"",\""tags\"":\""tag test\""}]}"";""test"";123;1b;""No api key specified"")",1,,Create an expected send metric log when using web
+run,0,0,q,"sm_web:enlist`host`message`name`metric`https`status!(.z.h;""{\""series\"":[{\""metric\"":\""test\"",\""points\"":[[0000000000,123]],\""host\"":\""HOMER.AQUAQ.CO.UK\"",\""tags\"":\""tag test\""}]}"";""test"";123f;1b;""No api key specified"")",1,,Create an expected send metric log when using web
 run,0,0,q,"se_web:enlist`host`message`title`text`https`status!(.z.h;""{\""title\"":\""Test_Event\"",\""text\"":\""This is a test\"",\""priority\"":\""high\"",\""tags\"":\""testtag\"",\""alert_type\"":\""test_type\""}"";""Test_Event"";""This is a test"";1b;""No api key specified"")",1,,Create an expected send event log when using web
 
 comment,,,,,,,Test linux

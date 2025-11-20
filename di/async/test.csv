@@ -36,27 +36,27 @@ run,0,0,q,async.postback[h;(`f;1);`.test.storeresult],1,,testing async.postback 
 run,0,0,q,@[;"";()] each h,1,,wait for server response
 true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.result,1,,async.postback call failed on one server with expected result
 
-comment,,,,,,,Testing async.broadcast_deferred
-run,0,0,q,r1:async.broadcast_deferred[h;({x+1};1)],1,,testing async.broadcast_deferred call that should execute on both servers
-true,0,0,q,r1~((1b;1b);(2;2)),1,,successful async.broadcast_deferred call with expected result
-run,0,0,q,r2:async.broadcast_deferred[h;({x+`a};1)],1,,testing async.broadcast_deferred call that should fail
-true,0,0,q,not any r2[0;],1,,async.broadcast_deferred call failed on both servers with expected result
-run,0,0,q,r3:async.broadcast_deferred[h;(`f;1)],1,,testing async.broadcast_deferred call that should fail on one server
-true,0,0,q,10b ~ r3[0;],1,,async.broadcast_deferred call failed on one server with expected result
-run,0,0,q,r3:async.broadcast_deferred[h;(`f;1)],1,,testing async.deferred call that should fail on one server
-true,0,0,q,10b ~ r3[0;],1,,async.deferred call failed on one server with expected result
+comment,,,,,,,Testing async.broadcastdeferred
+run,0,0,q,r1:async.broadcastdeferred[h;({x+1};1)],1,,testing async.broadcastdeferred call that should execute on both servers
+true,0,0,q,r1~((1b;1b);(2;2)),1,,successful async.broadcastdeferred call with expected result
+run,0,0,q,r2:async.broadcastdeferred[h;({x+`a};1)],1,,testing async.broadcastdeferred call that should fail
+true,0,0,q,not any r2[0;],1,,async.broadcastdeferred call failed on both servers with expected result
+run,0,0,q,r3:async.broadcastdeferred[h;(`f;1)],1,,testing async.broadcastdeferred call that should fail on one server
+true,0,0,q,10b ~ r3[0;],1,,async.broadcastdeferred call failed on one server with expected result
+run,0,0,q,r3:async.broadcastdeferred[h;(`f;1)],1,,testing async.broadcastdeferred call that should fail on one server
+true,0,0,q,10b ~ r3[0;],1,,async.broadcastdeferred call failed on one server with expected result
 
-comment,,,,,,,Testing async.broadcast_postback
-run,0,0,q,".test.result:([]handle:();time:();result:())",1,,define a function to store the posted back results in variable .dbg.r
-run,0,0,q,".test.storeresult:{`.test.result upsert (.z.w;.z.t;enlist x)}",1,,define a function to store the posted back results in table .dbg.tab
-run,0,0,q,async.broadcast_postback[h;({x+1};2);`.test.storeresult],1,,testing async.postback that should execute on both servers
+comment,,,,,,,Testing async.broadcastpostback
+run,0,0,q,".test.result:([]handle:();time:();result:())",1,,define table .test.result to store results from async.broadcastpostback
+run,0,0,q,".test.storeresult:{`.test.result upsert (.z.w;.z.t;enlist x)}",1,,define a function .test.storeresult to store the posted back results in .test.result
+run,0,0,q,async.broadcastpostback[h;({x+1};2);`.test.storeresult],1,,testing async.broadcastpostback that should execute on both servers
 run,0,0,q,@[;"";()] each h,1,,wait for server response
-true,0,0,q,(enlist 3;enlist 3) ~ -2#exec result from .test.result,1,,successful async.postback with expected result
-run,0,0,q,async.broadcast_postback[h;({x+`a};2);`.test.storeresult],1,,testing async.postback call that should fail
+true,0,0,q,(enlist 3;enlist 3) ~ -2#exec result from .test.result,1,,successful async.broadcastpostback with expected result
+run,0,0,q,async.broadcastpostback[h;({x+`a};2);`.test.storeresult],1,,testing async.broadcastpostback call that should fail
 run,0,0,q,@[;"";()] each h,1,,wait for server response
-true,0,0,q,all all (exec result from -2#.test.result) like\: "error*",1,,async.postback call failed on both servers with expected result
-run,0,0,q,async.broadcast_postback[h;(`f;1);`.test.storeresult],1,,testing async.postback call that should fail on one server
+true,0,0,q,all all (exec result from -2#.test.result) like\: "error*",1,,async.broadcastpostback call failed on both servers with expected result
+run,0,0,q,async.broadcastpostback[h;(`f;1);`.test.storeresult],1,,testing async.broadcastpostback call that should fail on one server
 run,0,0,q,@[;"";()] each h,1,,wait for server response
-true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.result,1,,async.postback call failed on one server with expected result
+true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.result,1,,async.broadcastpostback call failed on one server with expected result
 
 run,0,0,q,@[;"exit 0";()] each neg h,,1,,closing remaining server process

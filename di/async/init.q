@@ -1,3 +1,3 @@
 \l ::async.q
 
-export:([deferred;postback;broadcast_deferred;broadcast_postback])
+export:([deferred;postback;broadcastdeferred;broadcastpostback])

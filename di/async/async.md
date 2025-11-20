@@ -18,24 +18,6 @@ If either of these are carried out via asynchronous broadcast, the request will 
 
 ---
 
-### Package Initialization
-
-Loading the module will automatically initialise using the included async module.
-
-```q
-q)async:use`async
-```
-
-If you wish to use an alternative async file, you can call the init function with
-the path to your file
-
-```q
-q)async:use`async
-q)async.init "path/to/async"
-```
-
----
-
 ### Package Use
 
 Note, in each of the examples below handles is a list of two handles to different server processes
@@ -50,12 +32,12 @@ q)async.deferred[handles;"2+2"]
 4 4
 ```
 
-##### async.broadcast_deferred
+##### async.broadcastdeferred
 As above, except the query will be sent via asynchronous broadcast. 
 Note, that if there is an issue with any of the handles, the query won't be sent down any handle
 ```q
-// async.broadcast_deferred[handles;query]
-q)async.broadcast_deferred[handles;"2+2"]
+// async.broadcastdeferred[handles;query]
+q)async.broadcastdeferred[handles;"2+2"]
 1 1
 4 4
 
@@ -75,12 +57,12 @@ q)async.postback[handles;"2+2";{show x}]
 4
 ```
 
-##### async.broadcast_postback
+##### async.broadcastpostback
 As above, except the query will be sent via asynchronous broadcast. 
 Similar to async.broadcast_deferred, if there is an issue with any of the handles, the query won't be sent down any handle
 ```q
-// async.broadcast_postback[handles;query;postback]
-q)async.broadcast_postback[handles;"2+2";{show x}]
+// async.broadcastpostback[handles;query;postback]
+q)async.broadcastpostback[handles;"2+2";{show x}]
 11b
 4
 4

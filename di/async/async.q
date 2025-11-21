@@ -9,7 +9,7 @@ send:{[w;h;q]
 
 deferred:{[handles;query]
   / for sending deferred synchronous message to a list of handles
-  sent:.z.m.send[1b;;query] each handles:neg abs handles,();
+  sent:send[1b;;query] each handles:neg abs handles,();
   / block and wait for the results
   res:{$[y;@[x;(::);(0b;"error: comm fail: handle closed while waiting for result")];(0b;"error: comm fail: failed to send query")]}'[abs handles;sent];
   / return results

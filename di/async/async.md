@@ -1,6 +1,6 @@
 ## KDB+/Q Asynchronous Communication Library
 
-This library provides kdb+/q functions for sending either deferred synchronous or asynchronous postback requests from a client across a list of handles, with error trapping at various points. Either type of request can be sent via conventional kdb+/q IPC or asynchronous broadcast.
+This library provides kdb+/q functions for sending either deferred synchronous or asynchronous postback requests from a client  process over a handle or list of handles, with error trapping at various points. Either type of request can be sent via conventional kdb+/q IPC or asynchronous broadcast.
 
 Each of the library functions have no dependencies on the server-side code.
 
@@ -14,7 +14,7 @@ kdb+ processes can communicate with each using either synchronous or asynchronou
 
 - asynchronous postback: the client sends an asynchronous request which is wrapped in a function to be posted back to the client when the result is ready. This allows the server flexibility as to how and when the query is processed, and allows the client to continue processing while the server is generating the result.
 
-If either of these are carried out via asynchronous broadcast, the request will only be serialized once across a list of handles – thereby reducing CPU and memory load on the client process.
+If either of these are carried out via asynchronous broadcast, the request will only be serialized once across a list of handles as opposed to convetional kdb+/q IPC where the request is serialised for each handle. For sending a larger message across multiple handles, this can reduce latency as well as memory/CPU overhead. 
 
 ---
 

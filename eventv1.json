@@ -1,0 +1,15 @@
+{
+  "title": "Example-Event",
+  "text": "A text message.",
+  "aggregation_key": "aggregate_by_this",
+  "alert_type": "error",
+  "date_happened": 120391209,
+  "device_name": "device name",
+  "host": "HOST",
+  "priority": "normal",
+  "related_event_id": 413,
+  "source_type_name": "type_of_event",
+  "tags": [
+    "test:ExampleEvent"
+  ]
+}

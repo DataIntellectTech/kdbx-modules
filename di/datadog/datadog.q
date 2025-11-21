@@ -152,6 +152,8 @@ init:{[configs]
     vars:`agentport`apikey`baseurl`useweb inter key configs;
     (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs]
     ];
+  
+  .z.m.baseurlversion:`$l where (l:"/" vs baseurl) like "v*";
 
   / initialisation function
   if[not`printf in key .z.m;([.z.m.printf]):@[use;`kx.printf;{'"printf module not found, please install"}]];

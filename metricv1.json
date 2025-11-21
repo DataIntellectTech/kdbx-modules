@@ -1,0 +1,19 @@
+{
+  "series": [
+    {
+      "metric": "system.load.1",
+      "points": [
+        [
+          1636629071,
+          1.1
+        ]
+      ],
+      "tags": [
+        "test:ExampleMetric"
+      ],
+      "type": "one of <empty string>, count, gauge, rate",
+      "host": "string",
+      "interval": 300
+    }
+  ]
+}

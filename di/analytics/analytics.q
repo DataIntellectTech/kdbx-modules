@@ -34,7 +34,7 @@ intervals:{[d]
   / create time intervals with bespoke increments
   $[99h<> type d; '`$"input should be a dictionary";
      not all `start`end`interval in fkey:key[d];'`$"Input parameter must be a dictionary with at least three keys (an optional key round):\n\t-",sv["\n\t-";string `start`end`interval];
-     any not (itype:.Q.ty'[d`start`end`interval`round]) in ("MmuUjJhHNnVvDdPpB");'`$("One or more of inputs are of an invalid type.");
+     any not (itype:.Q.ty'[d`start`end`interval`round]) in ("MmuUiIjJhHNnVvDdPptTB");'`$("One or more of inputs are of an invalid type.");
         1<count distinct 2#itype:'`$"interval start and end data type mismatch"];
         
   istart:d`start;

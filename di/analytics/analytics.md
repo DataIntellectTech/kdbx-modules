@@ -91,20 +91,22 @@ ffillzero[`table`by`keycols!(priceData; `sym; `price)]
 
 **Description**  
 
-Generates custom time or numeric interval sequences with configurable start, end, and increment parameters. Supports multiple temporal data types and optional rounding.
+Generates custom time or numeric interval sequences with configurable start, end, and increment parameters. Supports multiple temporal data types with optional rounding to interval boundaries.
 
 **Parameters**
 - Dictionary containing:
   - `start`: Beginning of interval range (**required**)
   - `end`: End of interval range (**required**)
-  - `interval`: Step size between intervals (**required**)
-  - `round`: Boolean flag for rounding start time to nearest interval (optional, default: `1b`)
+  - `interval`: Step size between successive intervals (**required**)
+  - `round`: Boolean flag for rounding start  to nearest interval boundary (optional, default: `1b`)
 
 **Behaviour**
-- Supports multiple data types: `minute`, `second`, `time`, `timespan`, `timestamp`, `month`, `date`, `int`, `long`, `real`, `float`, `short`, `byte`.
+- Supports multiple data types: `minute`, `second`, `time`, `timespan`, `timestamp`, `month`, `date`, `int`, `long`, `short`, `byte`.
 - `start` and `end` must have matching data types.
 - When `round` is false or omitted, `start` is rounded down to the nearest interval boundary.
-- The final interval is excluded if it exceeds the `end` parameter.
+- The sequence excludes any final interval that would exceed `end`.
+- Date/month intervals: `interval` must be int or long (fractional dates/months not permitted)
+- Timestamp intervals: interval accepts minute, second, timespan, int, or long. When using numeric types (int/long), values represent nanoseconds—use caution to prevent overflow.
 
 **Examples**
 ```q
@@ -112,7 +114,7 @@ Generates custom time or numeric interval sequences with configurable start, end
 intervals[`start`end`interval!(09:30:00.000; 16:00:00.000; 00:15:00.000)]
 
 // Daily intervals without rounding
-intervals[`start`end`interval`round!(2024.01.01; 2024.12.31; 1D; 0b)]
+intervals[`start`end`interval`round!(2024.01.01; 2024.12.31; 1; 0b)]
 
 // Hourly timestamps with automatic rounding
 intervals[`start`end`interval!(2024.01.01D09:00:00; 2024.01.01D17:00:00; 01:00:00)]

@@ -35,11 +35,17 @@ intervals:{[d]
   $[99h<> type d; '`$"input should be a dictionary";
      not all `start`end`interval in fkey:key[d];'`$"Input parameter must be a dictionary with at least three keys (an optional key round):\n\t-",sv["\n\t-";string `start`end`interval];
      any not (itype:.Q.ty'[d`start`end`interval`round]) in ("MmuUiIjJhHNnVvDdPptTB");'`$("One or more of inputs are of an invalid type.");
-        1<count distinct 2#itype:'`$"interval start and end data type mismatch"];
+     1<count distinct 2#itype;'`$"interval start and end data type mismatch";
+      (not (itype 2) in ("iIjJ")) & (itype 0) in ("MmDd");'`$"interval types should be int/long for date/month intervals"];
         
   istart:d`start;
   iend:d`end;
   istep:d`interval;
+
+ if[(itype 0) in "Pp";
+   if[(itype 2) in "Uu";istep:(`long$istep)*60*1000000000];
+   if[(itype 2) in "Vv";istep:(`long$istep)*1000000000]];
+
   adjStart:$[(`round in fkey) & not d`round; 
              istart;
              istep*`long$istart div istep];

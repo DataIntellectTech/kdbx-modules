@@ -8,10 +8,32 @@ eventlog:([]time:`timestamp$();host:`$();message:();title:();text:();https:`bool
 / pre-define operating system to help with testing
 opsys:.z.o;
 
+change_dict:([category:"change";cr_name:"testn";cr_type:"testt";eventtitle:"testtitle";eventtext:"testtexts";authorname:"name";authortype:"type";impacted_resource_name:"irname";impacted_resource_type:"irtype"]);
+alert_dict:([category:"alert";eventtitle:"testtitle";eventtext:"testtexts";linkcategory:"tc";linkurl:"turl";eventstatus:"status"]);
+
+useweb:1b;
+baseurlversion:`v2;
+
 / Filter for sending events
 eventfilter:{[dict]
+  if[not ((`$"alert")=`$dict`category) or (`$"change")=`$dict`category; '"category only change or alert"];
+
   requiredpars:`eventtitle`eventtext;
   optionalpars: `eventdate`hostname`priority`alerttype`tags;
+
+  $[useweb;$[baseurlversion=`v1;
+  (optionalpars,:`aggregation_key`source_type_name`related_event_id`device);
+  baseurlversion=`v2;$[(`$dict`category)=`$"alert";
+                      (requiredpars,:`category`eventstatus;optionalpars:`aggregation_key`integration_id`message`tags`timestamp`priority`custom;
+                      if[any (string key dict) like "*link*";(requiredpars,:`linkcategory`linkurl;optionalpars,:`linktitle)]);
+                      (`$dict`category)=`$"change";(requiredpars,:`category`cr_name`cr_type;optionalpars:`aggregation_key`integration_id`message`tags`timestamp`change_metadata`new_value`prev_value;
+                      if[any (string key dict) like "*author*"; (requiredpars,:`authorname`authortype)];
+                      if[any (string key dict) like "*impacted_resource*"; (requiredpars,:`impacted_resource_name`impacted_resource_type)])]
+  ];
+    (requiredpars:`eventtitle`eventtext;
+    optionalpars: `eventdate`hostname`priority`alerttype`tags)
+    ];
+  
   validpars: requiredpars,optionalpars;
   / Checks
   if[not 99h=type dict; '"input must be a dictionary"];
@@ -20,6 +42,7 @@ eventfilter:{[dict]
   if[not (count pars)=count distinct pars; '"keys must be unique"];
   if[any not pars in validpars; '"valid argument names: ", csv sv string each validpars];
   if[not all requiredpars in pars; '"required arguments: ", csv sv string each requiredpars];
+
   / Conversions
   if[`eventdate in pars;dict[`eventdate]:string dict[`eventdate]];
   if[`tags in pars;dict[`tags]:{$[0h=type x;"," sv x;x]} dict[`tags]];
@@ -108,9 +131,15 @@ win.sendevent:{[(pars!args):eventfilter]
 / TODO: Handle variety of web requests (different post requests, different versions)
 web.sendevent:{[dict:eventfilter]
   (eventtitle;eventtext;priority;tags;alerttype):dict[`eventtitle`eventtext`priority`tags`alerttype];
+  if[first baseurlversion=`v2;
+    (eventtitle;eventtext;priority;tags;alerttype;category):dict[`eventtitle`eventtext`priority`tags`alerttype`category]
+  ];
   / sends events via https post to datadog api
   url:baseurl,"events?api_key=",apikey;
   json:.j.j `title`text`priority`tags`alert_type!(eventtitle;eventtext;priority;tags;alerttype);
+  if[first baseurlversion=`v2;
+    json:.j.j `title`text`priority`tags`alert_type`category!(eventtitle;eventtext;priority;tags;alerttype;category)
+  ];
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
   eventlog,:(.z.p;.z.h;json;eventtitle;eventtext;1b; response);
   };

@@ -8,12 +8,6 @@ eventlog:([]time:`timestamp$();host:`$();message:();title:();text:();https:`bool
 / pre-define operating system to help with testing
 opsys:.z.o;
 
-change_dict:([category:"change";cr_name:"testn";cr_type:"testt";eventtitle:"testtitle";eventtext:"testtexts";authorname:"name";authortype:"type";impacted_resource_name:"irname";impacted_resource_type:"irtype"]);
-alert_dict:([category:"alert";eventtitle:"testtitle";eventtext:"testtexts";linkcategory:"tc";linkurl:"turl";eventstatus:"status"]);
-
-useweb:1b;
-baseurlversion:`v2;
-
 / Filter for sending events
 eventfilter:{[dict]
   if[not ((`$"alert")=`$dict`category) or (`$"change")=`$dict`category; '"category only change or alert"];
@@ -55,6 +49,13 @@ eventfilter:{[dict]
 metfilter:{[dict]
   requiredpars:`metricname`metricvalue;
   optionalpars: `metrictype`samplerate`tags;
+
+  / Filters to check web and url version to filter required params
+  if[useweb;(requiredpars:`metric`points;optionalpars:`interval`tags`type)];
+  if[useweb;( 
+    if[baseurlversion=`v1;optionalpars,:`host];
+    if[baseurlversion=`v2;optionalpars,:`unit`source_typename`resource_name`resource_type`origin_metric_type`origin_product`origin_service])];
+
   validpars: requiredpars,optionalpars;
   / Checks
   if[not 99h=type dict; '"input must be a dictionary"];

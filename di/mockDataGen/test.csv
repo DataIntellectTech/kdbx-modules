@@ -1,0 +1,43 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+run,0,0,q,md:use`di.mockDataGen,1,,Load in mockDataGen module
+
+run,0,0,q,md.mockDataOne[`AAPL;2024.01.10;09:30;16:00;300;22.35;2],1,,Generate mock data for single sym on a given date
+true,0,0,q,300= count select from .m.di.0mockDataGen.trades where sym=`AAPL,1,,check for the row counts of sym AAPL to be 300
+true,0,0,q,300= count select from .m.di.0mockDataGen.trades,1,,check for the row counts of trades table to be 300
+true,0,0,q,1500= count select from .m.di.0mockDataGen.quotes,1,,check for the row counts of quotes table to be 1500
+true,0,0,q,7500= count select from .m.di.0mockDataGen.depth,1,,check for the row counts of depth table to be 7500
+run,0,0,q,md.clearTables[],1,,clear the tables
+
+run,0,0,q,md.mockData[`AAPL`MSFT`META;2025.01.10;09:30:00;16:00:00;`AAPL`MSFT`META!300 500 200;`AAPL`MSFT`META!22.33 38.34 29.43;2],1,,Generate mock data for multiple sym on a given date
+true,0,0,q,300= count select from .m.di.0mockDataGen.trades where sym=`AAPL,1,,check for the row counts of sym AAPL to be 300
+true,0,0,q,500= count select from .m.di.0mockDataGen.trades where sym=`MSFT,1,,check for the row counts of sym MSFT to be 500
+true,0,0,q,200= count select from .m.di.0mockDataGen.trades where sym=`META,1,,check for the row counts of sym META to be 200
+true,0,0,q,1000= count select from .m.di.0mockDataGen.trades,1,,check for the row counts of trades table to be 1000
+true,0,0,q,5000= count select from .m.di.0mockDataGen.quotes,1,,check for the row counts of quotes table to be 5000
+true,0,0,q,25000= count select from .m.di.0mockDataGen.depth,1,,check for the row counts of depth table to be 25000
+run,0,0,q,md.clearTables[],1,,clear the tables
+
+run,0,0,q,md.mockDataR[`AAPL`MSFT`META;2025.01.10 2025.01.11 2025.01.12;09:30:00;16:00:00;`AAPL`MSFT`META!700 500 900;`AAPL`MSFT`META!27.33 38.34 29.43;2],1,,Generate mock data for multiple sym for a given date range
+true,0,0,q,2100= count select from .m.di.0mockDataGen.trades where time.date=2025.01.10,1,,check for the row counts of the given syms on 2025.01.10 to be 2100 in trades table
+true,0,0,q,2100= count select from .m.di.0mockDataGen.trades where time.date=2025.01.11,1,,check for the row counts of the given syms on 2025.01.11 to be 2100 in trades table
+true,0,0,q,2100= count select from .m.di.0mockDataGen.trades where time.date=2025.01.12,1,,check for the row counts of the given syms on 2025.01.12 to be 2100 in trades table
+true,0,0,q,10500= count select from .m.di.0mockDataGen.quotes where time.date=2025.01.10,1,,check for the row counts of the given syms on 2025.01.10 to be 10500 in quotes table
+true,0,0,q,10500= count select from .m.di.0mockDataGen.quotes where time.date=2025.01.11,1,,check for the row counts of the given syms on 2025.01.11 to be 10500 in quotes table
+true,0,0,q,10500= count select from .m.di.0mockDataGen.quotes where time.date=2025.01.12,1,,check for the row counts of the given syms on 2025.01.12 to be 10500 in quotes table
+true,0,0,q,52500= count select from .m.di.0mockDataGen.depth where time.date=2025.01.10,1,,check for the row counts of the given syms on 2025.01.10 to be 10500 in depth table
+true,0,0,q,52500= count select from .m.di.0mockDataGen.depth where time.date=2025.01.11,1,,check for the row counts of the given syms on 2025.01.11 to be 10500 in depth table
+true,0,0,q,52500= count select from .m.di.0mockDataGen.depth where time.date=2025.01.12,1,,check for the row counts of the given syms on 2025.01.12 to be 10500 in depth table
+run,0,0,q,md.clearTables[],1,,clear the tables
+
+run,0,0,q,md.mockHdb[`:hdb;`AAPL`MSFT`META;2025.01.10 2025.01.11 2025.01.12;09:30:00;16:00:00;`AAPL`MSFT`META!700 500 900;`AAPL`MSFT`META!27.33 38.34 29.43;2],1,,Writing down the data to a specified HDB directory for a given date list
+run,0,0,q,\l hdb,1,,load the hdb directory
+true,0,0,q,2100= count select from trades where date=2025.01.10,1,,check for the row counts of the given syms on 2025.01.10 to be 2100 in trades table
+true,0,0,q,2100= count select from trades where date=2025.01.11,1,,check for the row counts of the given syms on 2025.01.11 to be 2100 in trades table
+true,0,0,q,2100= count select from trades where date=2025.01.12,1,,check for the row counts of the given syms on 2025.01.12 to be 2100 in trades table
+true,0,0,q,10500= count select from quotes where date=2025.01.10,1,,check for the row counts of the given syms on 2025.01.10 to be 10500 in quotes table
+true,0,0,q,10500= count select from quotes where date=2025.01.11,1,,check for the row counts of the given syms on 2025.01.11 to be 10500 in quotes table
+true,0,0,q,10500= count select from quotes where date=2025.01.12,1,,check for the row counts of the given syms on 2025.01.12 to be 10500 in quotes table
+true,0,0,q,52500= count select from depth where date=2025.01.10,1,,check for the row counts of the given syms on 2025.01.10 to be 10500 in depth table
+true,0,0,q,52500= count select from depth where date=2025.01.11,1,,check for the row counts of the given syms on 2025.01.11 to be 10500 in depth table
+true,0,0,q,52500= count select from depth where date=2025.01.12,1,,check for the row counts of the given syms on 2025.01.12 to be 10500 in depth table
+

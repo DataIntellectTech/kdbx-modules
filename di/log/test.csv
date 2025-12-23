@@ -1,0 +1,18 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,.l:use`di.log,1,,Load in log module
+before,0,0,q,.log:.l.createLog[],1,,Create the log functions
+before,0,0,q,.log.remove[1;`info`warn],1,,Remove stdout logging for testing
+before,0,0,q,.log.remove[2;`error],1,,Remove stderr logging for testing
+before,0,0,q,n:hsym `$"test_info_log.txt",1,,Set temp log file for stdout
+before,0,0,q,m:hsym `$"test_error_log.txt",1,,Set temp log file for stderr
+before,0,0,q,hout:hopen n,1,,Open handle to temp log file for stdout
+before,0,0,q,herr:hopen m,1,,Open handle to temp log file for stderr
+before,0,0,q,.log.add[hout;`info`warn],1,,Add handle to info and warn levels
+before,0,0,q,.log.add[herr;`error],1,,Add handle to error level
+run,0,0,q,.log.info"Hello World!",1,,Log info level
+run,0,0,q,.log.warn"Hello Warning!",1,,Log warn level
+run,0,0,q,.log.error"This is an error!",1,,Log error level
+true,0,0,q,2~count read0 n,1,,Check count of info+warn logs
+true,0,0,q,1~count read0 m,1,,Check count of error logs
+after,0,0,q,hdel n,1,,Delete info log
+after,0,0,q,hdel m,1,,Delete err log

@@ -1,2 +1,39 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,([printf]):use`di.printf,1,,Load in printf module
+
+/- Integers
+true,0,0,q,printf[("%d"; 42)]~"42",1,,Simple integer
+true,0,0,q,printf[("%5d"; 42)]~"   42",1,,width > length
+true,0,0,q,printf[("%05d"; 42)]~"00042",1,,zero-padding
+true,0,0,q,printf[("%-5d"; 42)]~"42   ",1,,left-align
+true,0,0,q,printf[("%+5d"; 42)]~"  +42",1,,plus sign
+true,0,0,q,printf[("% 5d"; 42)]~"   42",1,,space sign
+
+/- Floats
+true,0,0,q,printf[("%f"; 3.14159)]~"3.141590",1,,Simple float
+true,0,0,q,printf[("%8.2f"; 3.14159)]~"    3.14",1,,Width and precision
+true,0,0,q,printf[("%08.2f"; 3.14159)]~"00003.14",1,,zero padding
+true,0,0,q,printf[("%-8.2f"; 3.14159)]~"3.14    ",1,,left-align float
+true,0,0,q,printf[("%+8.2f"; 3.14159)]~"   +3.14",1,,plus sign with float
+
+/- Strings
+true,0,0,q,printf[("%s"; "hello world")]~"hello world",1,,string width
+true,0,0,q,printf[("%8s"; "hi")]~"      hi",1,,string width
+true,0,0,q,printf[("%-8s"; "hi")]~"hi      ",1,,left-align string
+true,0,0,q,printf[("%r"; 1+2)]~enlist "3",1,,repr
+
+/- Literal percent
+true,0,0,q,printf[("%%")]~enlist "%",1,,Test percent character escape
+
+/- Hex
+true,0,0,q,printf[("%x";255)]~"ff",1,,hex lowercase
+true,0,0,q,printf[("%X";255)]~"FF",1,,hex uppercase
+true,0,0,q,printf[("%5x";255)]~"   ff",1,,width with hex lowercase
+true,0,0,q,printf[("%05x";255)]~"000ff",1,,padding hex lowercase
+true,0,0,q,printf[("%5X";255)]~"   FF",1,,width with hex uppercase
+true,0,0,q,printf[("%05X";255)]~"000FF",1,,padding hex uppercase
+
+/- Octal
+true,0,0,q,printf[("%o"; 255)]~"377",1,,octal
+true,0,0,q,printf[("%5o"; 255)]~"  377",1,,width octal
+true,0,0,q,printf[("%05o"; 255)]~"00377",1,,padding with octal

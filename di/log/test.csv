@@ -9,10 +9,29 @@ before,0,0,q,hout:hopen n,1,,Open handle to temp log file for stdout
 before,0,0,q,herr:hopen m,1,,Open handle to temp log file for stderr
 before,0,0,q,.log.add[hout;`info`warn],1,,Add handle to info and warn levels
 before,0,0,q,.log.add[herr;`error],1,,Add handle to error level
+before,0,0,q,.log.addfmt[`testfmt;"$l: $m\n"],1,,Add new log format for testing
+before,0,0,q,.log.setfmt`testfmt,1,,Set new format for testing
+run,0,0,q,.log.setlvl`error,1,,Set logging level to error
+run,0,0,q,.log.info"Hi",1,,Info logging-should not return anything
+true,0,0,q,0~count read0 n,1,,Check that lower level logs don't publish
+run,0,0,q,.log.setlvl`info,1,,Set logging level back to info
 run,0,0,q,.log.info"Hello World!",1,,Log info level
+run,0,0,q,.log.info[("This is one var %s";`foo)],1,,Log info level
+run,0,0,q,.log.info[("These are two vars %s and %r";`bar;12.75)],1,,Log info level
 run,0,0,q,.log.warn"Hello Warning!",1,,Log warn level
 run,0,0,q,.log.error"This is an error!",1,,Log error level
-true,0,0,q,2~count read0 n,1,,Check count of info+warn logs
-true,0,0,q,1~count read0 m,1,,Check count of error logs
+run,0,0,q,.test.infologs:read0 n,1,,Read in info logs
+run,0,0,q,.test.errlogs:read0 m,1,,Read in error logs
+true,0,0,q,.test.infologs[0]~"info: Hello World!",1,,Info Log Test 1 Result
+true,0,0,q,.test.infologs[1]~"info: This is one var foo",1,,Info Log Test 2 Result
+true,0,0,q,.test.infologs[2]~"info: These are two vars bar and 12.75",1,,Info Log Test 3 Result
+true,0,0,q,.test.infologs[3]~"warn: Hello Warning!",1,,Warn Log Test 1 Result
+true,0,0,q,.test.errlogs[0]~"error: This is an error!",1,,Error Log Test 1 Result
+true,0,0,q,4~count .test.infologs,1,,Check count of info+warn logs
+true,0,0,q,1~count .test.errlogs,1,,Check count of error logs
+run,0,0,q,.log.setfmt`raw,1,,Set log format to raw
+run,0,0,q,.log.info .j.j `time`message!(2025.12.30D12;"A message in json format"),1,,Log a json
+run,0,0,q,.test.infologs:read0 n,1,,Read in info logs
+true,0,0,q,(`time`message!("2025-12-30T12:00:00.000000000";"A message in json format"))~.j.k .test.infologs[4],1,,Json log Test Result
 after,0,0,q,hdel n,1,,Delete info log
 after,0,0,q,hdel m,1,,Delete err log

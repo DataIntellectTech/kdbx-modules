@@ -1,0 +1,20 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,os:tplogsutil:use`di.tplogsutil,1,,Initialize module
+before,0,0,q,os:use`di.os,1,,Initialize module
+before,0,0,q,"system ""l "", os.abspath[""test.q""]",1,1,load additional testing functions / dependencies
+run,0,0,q,test_repair_and_replay[],1,1,
+run,0,0,q,test_repair_recovers_messages[],1,1,
+run,0,0,q,test_repair_creates_good_file[],1,1,
+run,0,0,q,test_check_valid_log[],1,1,
+run,0,0,q,test_check_corrupt_sufficient_messages[],1,1,
+run,0,0,q,test_repair_creates_good_file[],1,1,
+run,0,0,q,test_repair_recovers_messages[],1,1,
+run,0,0,q,test_check_triggers_repair[],1,1,
+run,0,0,q,test_repair_garbage_at_end[],1,1,
+run,0,0,q,test_multiple_corrupt_sections[],1,1,
+run,0,0,q,test_completely_corrupt_log[],1,1,
+run,0,0,q,test_empty_log[],1,1,
+run,0,0,q,test_repair_and_replay[],1,1,
+run,0,0,q,test_large_file_handling[],1,1,
+run,0,0,q,test_repair_creates_good_file[],1,1,
+run,0,0,q,test_sequential_operations[],1,1,

@@ -8,25 +8,27 @@ eventlog:([]time:`timestamp$();host:`$();message:();title:();text:();https:`bool
 / pre-define operating system to help with testing
 opsys:.z.o;
 
+
+/eventtitle,eventtext,eventdate,hostname,priority,alerttype,tags,aggregation_key,source_type_name,related_event_id,device,category,cr_name,cr_type,integration_id,message,timestamp,change_metadata,new_value,prev_value
+
 / Filter for sending events
 eventfilter:{[dict]
-  if[not ((`$"alert")=`$dict`category) or (`$"change")=`$dict`category; '"category only change or alert"];
+
+  if[(` ~ `$dict`category) and useweb and `v2=first baseurlversion; '"category is required"];
+  if[useweb and (`v2=first baseurlversion) and (not ((`$"alert")=`$dict`category) or (`$"change")=`$dict`category); '"category only change or alert"];
 
   requiredpars:`eventtitle`eventtext;
   optionalpars: `eventdate`hostname`priority`alerttype`tags;
 
-  $[useweb;$[baseurlversion=`v1;
+  if[useweb;$[(first baseurlversion)=`v1;
   (optionalpars,:`aggregation_key`source_type_name`related_event_id`device);
-  baseurlversion=`v2;$[(`$dict`category)=`$"alert";
+  (first baseurlversion)=`v2;$[(`$dict`category)=`$"alert";
                       (requiredpars,:`category`eventstatus;optionalpars:`aggregation_key`integration_id`message`tags`timestamp`priority`custom;
                       if[any (string key dict) like "*link*";(requiredpars,:`linkcategory`linkurl;optionalpars,:`linktitle)]);
                       (`$dict`category)=`$"change";(requiredpars,:`category`cr_name`cr_type;optionalpars:`aggregation_key`integration_id`message`tags`timestamp`change_metadata`new_value`prev_value;
                       if[any (string key dict) like "*author*"; (requiredpars,:`authorname`authortype)];
                       if[any (string key dict) like "*impacted_resource*"; (requiredpars,:`impacted_resource_name`impacted_resource_type)])]
-  ];
-    (requiredpars:`eventtitle`eventtext;
-    optionalpars: `eventdate`hostname`priority`alerttype`tags)
-    ];
+  ]];
   
   validpars: requiredpars,optionalpars;
   / Checks
@@ -35,7 +37,7 @@ eventfilter:{[dict]
   if[(count validpars)<count dict; '"rank"];
   if[not (count pars)=count distinct pars; '"keys must be unique"];
   if[any not pars in validpars; '"valid argument names: ", csv sv string each validpars];
-  if[not all requiredpars in pars; '"required arguments: ", csv sv string each requiredpars];
+  if[not all requiredpars in pars; '"required arguments: ", csv sv string each requiredpars]; 
 
   / Conversions
   if[`eventdate in pars;dict[`eventdate]:string dict[`eventdate]];
@@ -53,8 +55,8 @@ metfilter:{[dict]
   / Filters to check web and url version to filter required params
   if[useweb;(requiredpars:`metric`points;optionalpars:`interval`tags`type)];
   if[useweb;( 
-    if[baseurlversion=`v1;optionalpars,:`host];
-    if[baseurlversion=`v2;optionalpars,:`unit`source_typename`resource_name`resource_type`origin_metric_type`origin_product`origin_service])];
+    if[(first baseurlversion)=`v1;optionalpars,:`host];
+    if[(first baseurlversion)=`v2;optionalpars,:`unit`source_typename`resource_name`resource_type`origin_metric_type`origin_product`origin_service])];
 
   validpars: requiredpars,optionalpars;
   / Checks
@@ -127,20 +129,23 @@ win.sendevent:{[(pars!args):eventfilter]
   eventlog,:(.z.p;.z.h;ddmsg;eventtitle;eventtext;0b;response);
   };
 
-/ the following two functions are used to push data to datadog through https post using .Q.hp
+/ the following two functions are used to push data to datadog through https post usSingSS .Q.hp
 
 / TODO: Handle variety of web requests (different post requests, different versions)
 web.sendevent:{[dict:eventfilter]
-  (eventtitle;eventtext;priority;tags;alerttype):dict[`eventtitle`eventtext`priority`tags`alerttype];
-  if[first baseurlversion=`v2;
-    (eventtitle;eventtext;priority;tags;alerttype;category):dict[`eventtitle`eventtext`priority`tags`alerttype`category]
-  ];
+  (eventtitle;eventtext;eventdate;hostname;priority;alerttype;tags;aggregation_key;source_type_name;related_event_id;device;category;cr_name;cr_type;integration_id;message;timestamp;change_metadata;new_value;prev_value;linkcategory;linkurl;linktitle):dict[`eventtitle`eventtext`eventdate`hostname`priority`alerttype`tags`aggregation_key`source_type_name`related_event_id`device`category`cr_name`cr_type`integration_id`message`timestamp`change_metadata`new_value`prev_value`linkcategory`linkurl`linktitle];
   / sends events via https post to datadog api
   url:baseurl,"events?api_key=",apikey;
-  json:.j.j `title`text`priority`tags`alert_type!(eventtitle;eventtext;priority;tags;alerttype);
-  if[first baseurlversion=`v2;
-    json:.j.j `title`text`priority`tags`alert_type`category!(eventtitle;eventtext;priority;tags;alerttype;category)
-  ];
+  if[(first baseurlversion)=`v1;
+  json:.j.j `title`text`priority`tags`alert_type`aggregation_key`date_happened`device_name`host`related_event_id`source_type_name!(eventtitle;eventtext;priority;tags;alerttype;aggregation_key;eventdate;device;hostname;related_event_id;source_type_name)];
+  if[(first baseurlversion)=`v2;(
+  if[(`$category)=`$"alert";
+  json:.j.j(enlist`data)!enlist(`attributes`type!(enlist(`aggregation_key`attributes`category`integration_id`message`tags`timestamp`title!(aggregation_key;enlist(`custom`links`priority`status!(custom;enlist(`category`title`url!(linkcategory;linktitle;linkurl));priority;status));category;integration_id;message;tags;timestamp;title);alerttype)))];
+  / if[(`$category)=`$"change";
+  / json:.j.j(enlist`data)!enlist(`attributes`type!(enlist(`aggregation_key`attributes`category`integration_id`message`tags`timestamp`title!(aggregation_key;enlist(`custom`links`priority`status!(custom;enlist(`category`title`url!(linkcategory;linktitle;linkurl));priority;status);category;integration_id;message;tags;timestamp;title));alerttype))]
+  
+  )];
+
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
   eventlog,:(.z.p;.z.h;json;eventtitle;eventtext;1b; response);
   };
@@ -173,7 +178,7 @@ init:{[configs]
   / define datadog api key - default value is empty string, so no need to check
   .z.m.apikey:getenv`DOGSTATSD_APIKEY;
   / define base api url
-  .z.m.baseurl:envcheck[getenv `DOGSTATSD_URL;":https://api.datadoghq.eu/api/v1/"];
+  .z.m.baseurl:envcheck[getenv `DOGSTATSD_URL;":https://api.datadoghq.eu/api/v2/"];
   / default - don't use web
   .z.m.useweb:0b;
 
@@ -183,7 +188,7 @@ init:{[configs]
     (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs]
     ];
   
-  .z.m.baseurlversion:`$l where (l:"/" vs baseurl) like "v*";
+  .z.m.baseurlversion:`$l where (l:"/" vs .z.m.baseurl) like "v*";
 
   / initialisation function
   if[not`printf in key .z.m;([.z.m.printf]):@[use;`kx.printf;{'"printf module not found, please install"}]];

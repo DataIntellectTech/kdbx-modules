@@ -50,10 +50,6 @@ The minimum block size for compression on windows is 16.
 
 \
 
-/inputcsv:@[value;`inputcsv;first .proc.getconfigfile["compressionconfig.csv"]];
-
-/if[-11h=type inputcsv;inputcsv:string inputcsv];
-
 checkcsv:{[csvtab;path]
     // include snappy (3) for version 3.4 or after
     allowedalgos:0 1 2,$[.z.K>=3.4;3;()];
@@ -71,10 +67,16 @@ checkcsv:{[csvtab;path]
         .log.error[err:path,": Compression config has empty cells in column(s): ", (" " sv string `column`table`minage`clevel where nulls)];'err];
   }
 
+compressioncsv:([] table:`$();minage:`int$();column:`$();calgo:`int$();cblocksize:`int$();clevel:`int$())
+
 loadcsv:{[inputcsv]
-    .cmp.compressioncsv::@[{.log.info["Opening ", x];("SISIII"; enlist ",") 0:"S"$x}; (string inputcsv); {.log.error["failed to open ", (x)," : ",y];'y}[string inputcsv]];
-    .[checkcsv;(.cmp.compressioncsv;string inputcsv);{.log.error["failed to load csv due to error: ",x];delete compressioncsv from `.cmp}];
+    loadedcsv:@[{.log.info["Opening ", x];("SISIII"; enlist ",") 0:"S"$x}; (string inputcsv); {.log.error["failed to open ", (x)," : ",y];'y}[string inputcsv]];
+    res:.[checkcsv;(loadedcsv;string inputcsv);{.log.error["failed to load csv due to error: ",x];:0b}];
+    if[res~0b;:(::)];
+    compressioncsv::loadedcsv;
   }
+
+getcompressioncsv:{[] .z.m.compressioncsv}
 
 traverse:{$[(0=count k)or x~k:key x; x; .z.s each ` sv' x,/:k where not any k like/:(".d";"*.q";"*.k";"*#")]}
 
@@ -109,7 +111,7 @@ showcomp:{[hdbpath;csvpath;maxage]
     /-delete anything which isn't a table
     pathstab:delete from pathstab where table in `;
     /-tables that are in the hdb but not specified in the csv - compress with `default params
-    comptab:2!delete minage from update compressage:minage from .cmp.compressioncsv;
+    comptab:2!delete minage from update compressage:minage from .z.m.compressioncsv;
     /-specified columns and tables
     a:select from comptab where not table=`default, not column=`default;
     /-default columns, specified tables
@@ -128,7 +130,7 @@ showcomp:{[hdbpath;csvpath;maxage]
     update currentsize:hcount each fullpath from select from t where age within (compressage;maxage) }
 
 compressfromtable:{[table]
-    .cmp.statstab::([] file:`$(); algo:`int$(); compressedLength:`long$();uncompressedLength:`long$());
+    statstab::([] file:`$(); algo:`int$(); compressedLength:`long$();uncompressedLength:`long$());
     / Check if process is single threaded - if multi then compress in parallel then clean up after
     // Add metrics on any files due to be compressed to be used afterwards for comparison 
     table:update compressionvaluepre:{(-21!x)`compressedLength}'[fullpath] from table;
@@ -140,7 +142,7 @@ compressfromtable:{[table]
 
 statstabupdate:{[file;algo;sizeuncomp;compressionvaluepre]
         if[not compressionvaluepre ~ (-21!file)`compressedLength;
-            .cmp.statstab,:$[not 0=algo;(file;algo;(-21!file)`compressedLength;sizeuncomp);(file;algo;compressionvaluepre;sizeuncomp)]]}
+            statstab,:$[not 0=algo;(file;algo;(-21!file)`compressedLength;sizeuncomp);(file;algo;compressionvaluepre;sizeuncomp)]]}
 
 singlethreadcompress:{[table]
         .log.info["compression: Single threaded process, compress applied sequentially"];
@@ -162,11 +164,13 @@ compressmaxage:{[hdbpath;csvpath;maxage]
 
 docompression:compressmaxage[;;0W];
 
+getstatstab:{[] .z.m.statstab}
+
 summarystats:{
     /- table with compressionratio for each file
-    .cmp.statstab::`compressionratio xdesc (update compressionratio:?[algo=0; neg uncompressedLength%compressedLength; uncompressedLength%compressedLength] from .cmp.statstab);
-    compressedfiles: select from .cmp.statstab where not algo = 0;
-    uncompressedfiles:select from .cmp.statstab where algo = 0;
+    statstab::`compressionratio xdesc (update compressionratio:?[algo=0; neg uncompressedLength%compressedLength; uncompressedLength%compressedLength] from statstab);
+    compressedfiles: select from statstab where not algo = 0;
+    uncompressedfiles:select from statstab where algo = 0;
     /- summarytable
     memorysavings: ((sum compressedfiles`uncompressedLength) - sum compressedfiles`compressedLength) % 2 xexp 20;
     totalcompratio: (sum compressedfiles`uncompressedLength) % sum compressedfiles`compressedLength;
@@ -174,7 +178,7 @@ summarystats:{
     totaldecompratio: neg (sum uncompressedfiles`compressedLength) % sum uncompressedfiles`uncompressedLength;
     .log.info["compression: Memory savings from compression: ", .Q.f[2;memorysavings], "MB. Total compression ratio: ", .Q.f[2;totalcompratio],"."];
     .log.info["compression: Additional memory used from de-compression: ",.Q.f[2;memoryusage], "MB. Total de-compression ratio: ", .Q.f[2;totaldecompratio],"."];
-    .log.info["compression: Check .cmp.statstab for info on each file."];}
+    .log.info["compression: Check getstatstab[] for info on each file."];}
 
 compress:{[filetoCompress;algo;blocksize;level;sizeuncomp]
     compressedFile: hsym `$(string filetoCompress),"_kdbtempzip";

@@ -1,25 +1,16 @@
 / Load core functionality into root module namespace
 \l ::compression.q
 
-/ Load KX log module
+/ Load KX log module - needed for .log.info and .log.error
 .logger:use`kx.log
 .log:.logger.createLog[]
-.log.addfmt[`custom;"$l: $p PID[$i] $m\n"]; / Simplified logging - DELETE
+.log.addfmt[`custom;"$l: $p PID[$i] $m\n"];
 .log.setfmt[`custom]
 
 export:([
-        checkcsv:checkcsv;
-        loadcsv:loadcsv;
-        hdbstructure:hdbstructure;
         showcomp:showcomp;
-        compressfromtable:compressfromtable;
-        statstabupdate:statstabupdate;
-        singlethreadcompress:singlethreadcompress;
-        multithreadcompress:multithreadcompress;
+        getcompressioncsv:getcompressioncsv;
         compressmaxage:compressmaxage;
         docompression:docompression;
-        summarystats:summarystats;
-        compress:compress;
-        cleancompressed:cleancompressed;
-        hashfilecheck:hashfilecheck
+        getstatstab:getstatstab
         ])

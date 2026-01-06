@@ -40,11 +40,13 @@ loadcsv or showcomp functions accept `:/path/to/csv argument to specify driver c
 
 ## :label: Example Config
 
+```
 table,minage,column,calgo,cblocksize,clevel
 default,10,default, 2, 17,6
 quotes, 10,time, 2, 17, 5
 quotes,10,src,2,17,4
 depth, 10,default, 1, 17, 8
+```
 
 - tables in the db but not in the config tab are automatically compressed using default params
 - tabs with cols specified will have other columns compressed with default (if default specified for cols of tab, all cols are comp in that tab)

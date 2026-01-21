@@ -39,17 +39,20 @@ fail,0,0,q,cmp.getstatstab[],1,,statstab created by compression functions
 run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:cmpMockParams.csv;2],1,,Compress files according to config up to the specified max age
 true,0,0,q,98h~type cmp.getstatstab[],1,,statstab is created as a table
 true,0,0,q,60~count a:cmp.getstatstab[],1,,Checking files have been compressed up to maxage
-true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo  (decompression) required here
+true,0,0,q,60i~sum 0< (cmp.getstatstab[])`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo 0 (decompression) required here
 true,0,0,q,15 45~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
 
 run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:cmpMockParams.csv;7],1,,Compress files according to config up to the higher specified max age
 true,0,0,q,104~count b:cmp.getstatstab[],1,,Checking latest files have been compressed up to maxage and statstab updates
-true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo  (decompression) required here
+true,0,0,q,104i~sum 0< (cmp.getstatstab[])`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo 0 (decompression) required here
 true,0,0,q,29 75~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
 
 run,0,0,q,cmp.docompression[`:cmpTestHDB;`cmpMockParams.csv],1,,Compress files according to config up to infinite age
 true,0,0,q,42~count c:cmp.getstatstab[],1,,Checking rest of files have been compressed and statstab updates
-true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo  (decompression) required here
+true,0,0,q,42i~sum 0< (cmp.getstatstab[])`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo 0 (decompression) required here
 true,0,0,q,12 30~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
 
 run,0,0,q,cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9],1,,Run showcomp with decompression CSV
@@ -70,14 +73,14 @@ true,0,0,q,1 15 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockPara
 run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:decompMockParams.csv;2],1,,(de)compress files according to config up to the specified max age
 true,0,0,q,46~count x:cmp.getstatstab[],1,,Checking files have been (de)compressed up to maxage
 true,0,0,q,0i~sum 0<(select from cmp.getstatstab[] where algo=0)`compressionratio,1,,Negative compression ratio for decompression
-true,0,0,q,0i~sum 0>(select from cmp.getstatstab[] where algo>0)`compressionratio,1,,Positive compression ratio for compression (gzip>kdb+ ipc)
+true,0,0,q,0i~sum 0>(select from cmp.getstatstab[] where algo>0)`compressionratio,1,,Positive compression ratio for compression
 true,0,0,q,2 0i~exec distinct algo from cmp.getstatstab[],1,,No algo 1 required here
 true,0,0,q,45 1~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
 
 run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:decompMockParams.csv;7],1,,(de)compress files according to config up to the higher specified max age
 true,0,0,q,76~count y:cmp.getstatstab[],1,,Checking latest files have been (de)compressed up to maxage and statstab updates
 true,0,0,q,0i~sum 0<(select from cmp.getstatstab[] where algo=0)`compressionratio,1,,Negative compression ratio for decompression
-true,0,0,q,0i~sum 0>(select from cmp.getstatstab[] where algo>0)`compressionratio,1,,Positive compression ratio for compression (gzip>kdb+ ipc)
+true,0,0,q,0i~sum 0>(select from cmp.getstatstab[] where algo>0)`compressionratio,1,,Positive compression ratio for compression
 true,0,0,q,2 0i~exec distinct algo from cmp.getstatstab[],1,,No algo 1 required here
 true,0,0,q,75 1~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
 

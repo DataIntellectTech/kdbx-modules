@@ -1,0 +1,6 @@
+name,tradingdate,openingtime,closingtime,startprice,seed,rngmodel,drift,vol,tradingdays,pricemodel,jumpintensity,jumpmean,jumpvol,baseintensity,alpha,beta,transitionpoint,openmult,midmult,closemult,qtymodel,avgqty,qtyvol,generatequotes,basespread,spreadopenmult,spreadmidmult,spreadclosemult,pretradeoffset,quoteupdaterate,avgquotesize
+default,2026.01.20,09:30,16:00,100.0,0,pseudo,0.05,0.2,252,gbm,0.0,-0.01,0.03,0.5,0.3,1.0,0.3,1.5,0.5,3.0,lognormal,100,0.8,0,0.001,1.5,1.0,2.0,50,2.0,500
+liquid,2026.01.20,09:30,16:00,100.0,0,pseudo,0.05,0.2,252,gbm,0.0,-0.01,0.03,2.0,0.5,1.0,0.3,1.5,0.5,3.0,lognormal,200,0.8,0,0.001,1.5,1.0,2.0,50,2.0,500
+illiquid,2026.01.20,09:30,16:00,100.0,0,pseudo,0.05,0.2,252,gbm,0.0,-0.01,0.03,0.1,0.2,1.0,0.3,1.5,0.5,3.0,lognormal,50,0.8,0,0.001,1.5,1.0,2.0,50,2.0,500
+volatile,2026.01.20,09:30,16:00,100.0,0,pseudo,0.05,0.4,252,gbm,0.0,-0.01,0.03,0.5,0.6,1.5,0.3,1.5,0.5,3.0,lognormal,100,0.8,0,0.001,1.5,1.0,2.0,50,2.0,500
+jumpy,2026.01.20,09:30,16:00,100.0,0,pseudo,0.05,0.2,252,jump,2.0,-0.005,0.02,0.5,0.3,1.0,0.3,1.5,0.5,3.0,lognormal,100,0.8,0,0.001,1.5,1.0,2.0,50,2.0,500

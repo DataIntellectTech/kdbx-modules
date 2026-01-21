@@ -1,0 +1,5 @@
+pykx==4.0.0b4
+jupyterlab
+matplotlib
+pandas
+ipywidgets

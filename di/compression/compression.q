@@ -133,12 +133,12 @@ summarystats:{
   /- table with compressionratio for each file
   statstab::`compressionratio xdesc (update compressionratio:?[algo=0; neg uncompressedLength%compressedLength; uncompressedLength%compressedLength] from statstab);
   compressedfiles: select from statstab where not algo = 0;
-  uncompressedfiles:select from statstab where algo = 0;
+  decompressedfiles:select from statstab where algo = 0;
   /- summarytable
   memorysavings: ((sum compressedfiles`uncompressedLength) - sum compressedfiles`compressedLength) % 2 xexp 20;
   totalcompratio: (sum compressedfiles`uncompressedLength) % sum compressedfiles`compressedLength;
-  memoryusage:((sum uncompressedfiles`uncompressedLength) - sum uncompressedfiles`compressedLength) % 2 xexp 20;
-  totaldecompratio: neg (sum uncompressedfiles`compressedLength) % sum uncompressedfiles`uncompressedLength;
+  memoryusage:((sum decompressedfiles`uncompressedLength) - sum decompressedfiles`compressedLength) % 2 xexp 20;
+  totaldecompratio: neg (sum decompressedfiles`compressedLength) % sum decompressedfiles`uncompressedLength;
   .log.info["compression: Memory savings from compression: ", .Q.f[2;memorysavings], "MB. Total compression ratio: ", .Q.f[2;totalcompratio],"."];
   .log.info["compression: Additional memory used from de-compression: ",.Q.f[2;memoryusage], "MB. Total de-compression ratio: ", .Q.f[2;totaldecompratio],"."];
   .log.info["compression: Check getstatstab[] for info on each file."];

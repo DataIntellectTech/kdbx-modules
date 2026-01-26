@@ -71,7 +71,7 @@ depth, 10,default, 1, 17, 8
 
 ```q
 // Include compression module in a process
-.cmp: use `di.compression
+cmp:use`di.compression
 
 // View dictionary of functions
 .cmp

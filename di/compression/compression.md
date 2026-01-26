@@ -74,18 +74,18 @@ depth, 10,default, 1, 17, 8
 cmp:use`di.compression
 
 // View dictionary of functions
-.cmp
+cmp
 
 // Show table of files to be compressed and how before execution
-.cmp.showcomp[`:/path/to/hdb;`:/path/to/csv; maxagefilestocompress]
+cmp.showcomp[`:/path/to/hdb;`:/path/to/csv; maxagefilestocompress]
 
 // COMPRESS all files up to a max age:
-.cmp.compressmaxage[`:/path/to/hdb;`:/path/to/csv; maxagefilestocompress]
+cmp.compressmaxage[`:/path/to/hdb;`:/path/to/csv; maxagefilestocompress]
  
 // COMPRESS up to the oldest files in the db:
-.cmp.docompression[`:/path/to/hdb;`:/path/to/csv]
+cmp.docompression[`:/path/to/hdb;`:/path/to/csv]
 
 // Retrieve summary statistics for compression
-.cmp.getstatstab[]
+cmp.getstatstab[]
 
 ```

@@ -5,33 +5,33 @@
 upd:{[t;x] t upsert x};
 trade:([] time:`timestamp$(); sym:`symbol$(); price:`float$(); size:`long$());
 
-/ @function createValidLog
+/ @function createvalidlog
 / @description Create a valid tickerplant log file for testing
 / @param filepath {symbol} Path where to create the log file
 / @param msgcount {long} Number of messages to write
-createvalidlog: {[filepath;msgcount]
-  / Create test table
+createvalidlog:{[filepath;msgcount]
+  / create test table
   trade:([] time:.z.p + til msgcount; sym:msgcount?`AAPL`GOOGL`MSFT`AMZN`TSLA; price:100+msgcount?100.0; size:100+msgcount?1000);
-  / Create log file and write messages
+  / create log file and write messages
   h:hopen filepath set ();
   {[h;i;t] h enlist (`upd;`trade;value t[i])} [h;;trade] each til msgcount;
   hclose h;
  };
 
-/ @function createCorruptLog
+/ @function createcorruptlog
 / @description Create a log file with valid messages followed by corruption
 / @param filepath {symbol} Path where to create the log file
 / @param msgcount {long} Number of messages in log file
 / @param corruptpos {long} Message position where to insert corruption
-createcorruptlog: {[filepath;msgcount;corruptpos]
-  / Create test table
+createcorruptlog:{[filepath;msgcount;corruptpos]
+  / create test table
   trade:([] time:.z.p + til msgcount; sym:msgcount?`AAPL`GOOGL`MSFT`AMZN`TSLA; price:100+msgcount?100.0; size:100+msgcount?1000);
-  / Create log file and write messages
+  / create log file and write messages
   h:hopen filepath set ();
   {[h;i;t;corruptpos] 
     if[=[i;corruptpos]; 
       data:enlist (`upd;`trade;value t[i]);
-      data_bytes:-18!data;
+      databytes:-18!data;
       data_bytes[10+til 20]:`byte$(20?50);
       :h data_bytes;
       ]
@@ -51,7 +51,7 @@ countlogmessages:{[filepath]
 / @function cleanup  
 / @description Delete test files
 / @param filepaths {symbol[]} List of file paths to delete
-cleanup: {[filepaths]
+cleanup:{[filepaths]
   {[fp] @[hdel;fp;{}]} each filepaths;
  };
 
@@ -59,114 +59,114 @@ cleanup: {[filepaths]
 / BASIC FUNCTIONALITY TESTS
 / =============================================================================
 
-/ @test Valid log file tplogsutil.check returns original filepath
+/ @test Valid log file tplogsutils.check returns original filepath
 testcheckvalidlog: {
   testfile:`:test_valid.log;
   msgcount:10;
   
-  / Setup
-  createValidLog[testfile;msgcount];
+  / setup
+  createvalidlog[testfile;msgcount];
   
-  / Test
-  result:tplogsutil.check[testfile;msgcount-1];
+  / test
+  result:tplogsutils.check[testfile;msgcount-1];
   
-  / Assert
+  / assert
   passes:result~testfile;
   
-  / Cleanup
+  / cleanup
   cleanup enlist testfile;
   
   / Return
   passes
  };
 
-/ @test tplogsutil.check returns original when enough good messages exist
-testcheckcorruptsufficientmessages: {
+/ @test tplogsutils.check returns original when enough good messages exist
+testcheckcorruptsufficientmessages:{
   testfile:`:test_corrupt_sufficient.log;
   validmsgcount:20;
   lastmsgtoreplay:10j;
     
-  / Setup: corrupt after position where we have enough good messages
-  createCorruptLog[testfile;validmsgcount;500];
+  / setup: corrupt after position where we have enough good messages
+  createcorruptlog[testfile;validmsgcount;500];
   
-  / Test
-  result:tplogsutil.check[testfile;lastmsgtoreplay];
+  / test
+  result:tplogsutils.check[testfile;lastmsgtoreplay];
   
-  / Assert - should return original since we have enough good messages
+  / assert - should return original since we have enough good messages
   goodmsgcount:first -11!(-2;testfile);
   passes:(result~testfile) and (goodmsgcount > lastmsgtoreplay);
   
-  / Cleanup
+  / cleanup
   cleanup enlist testfile;
   
   passes
  };
 
-/ @test tplogsutil.repair creates .good file with correct name
+/ @test tplogsutils.repair creates .good file with correct name
 testrepaircreatesgoodfile: {
-  testfile:`:test_tplogsutil.repair.log;
+  testfile:`:test_tplogsutils.repair.log;
   expectedgoodfile:`$string[testfile],".good";
     
-  / Setup
-  createCorruptLog[testfile;15;150];
+  / setup
+  createcorruptlog[testfile;15;150];
     
-  / Test
-  result:tplogsutil.repair[testfile];
+  / test
+  result:tplogsutils.repair[testfile];
   
-  / Assert
-  nameCorrect:result~expectedgoodfile;
-  fileExists:not ()~key expectedgoodfile;
-  passes:nameCorrect and fileExists;
+  / assert
+  namecorrect:result~expectedgoodfile;
+  fileexists:not ()~key expectedgoodfile;
+  passes:namecorrect and fileexists;
     
-  / Cleanup  
+  / cleanup  
   cleanup (testfile;expectedgoodfile);
   
   passes
  };
 
-/ @test tplogsutil.repair recovers valid messages from corrupt log
+/ @test tplogsutils.repair recovers valid messages from corrupt log
 testrepairrecoversmessages: {
   testfile:`:test_recover.log;
   goodfile:`$string[testfile],".good";
   validmsgcount:20;
     
-  / Setup
-  createCorruptLog[testfile;validmsgcount;250];
+  / setup
+  createcorruptlog[testfile;validmsgcount;250];
     
-  / Test
-  tplogsutil.repair[testfile];
+  / test
+  tplogsutils.repair[testfile];
     
   / Count messages in good file
-  recoveredcount:countLogMessages[goodfile];
+  recoveredcount:countlogmessages[goodfile];
     
-  / Assert - should recover at least some messages
+  / assert - should recover at least some messages
   passes:(recoveredcount>0) and (recoveredcount<=validmsgcount);
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   passes
  };
 
-/ @test tplogsutil.check triggers tplogsutil.repair when insufficient good messages
+/ @test tplogsutils.check triggers tplogsutils.repair when insufficient good messages
 testchecktriggersrepair: {
-  testfile:`:test_tplogsutil.check_tplogsutil.repair.log;
+  testfile:`:test_tplogsutils.check_tplogsutils.repair.log;
   goodfile:`$string[testfile],".good";
   validmsgcount:10;
   lastmsgtoreplay:15j;  / Need more messages than available good ones
     
-  / Setup - corrupt early so not enough good messages
-  createCorruptLog[testfile;validmsgcount;100];
+  / setup - corrupt early so not enough good messages
+  createcorruptlog[testfile;validmsgcount;100];
     
-  / Test
-  result:tplogsutil.check[testfile;lastmsgtoreplay];
+  / test
+  result:tplogsutils.check[testfile;lastmsgtoreplay];
     
-  / Assert
-  triggerstplogsutil.repair:result~goodfile;
-  fileCreated:not ()~key goodfile;
-  passes:triggerstplogsutil.repair and fileCreated;
+  / assert
+  triggerstplogsutils.repair:result~goodfile;
+  filecreated:not ()~key goodfile;
+  passes:triggerstplogsutils.repair and filecreated;
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   passes
@@ -176,25 +176,25 @@ testchecktriggersrepair: {
 / EDGE CASE TESTS
 / =============================================================================
 
-/ @test tplogsutil.repair handles garbage at end of file
+/ @test tplogsutils.repair handles garbage at end of file
 testrepairgarbageatend: {
   testfile:`:test_garbage_end.log;
   goodfile:`$string[testfile],".good";
     
-  / Setup - create log and append garbage at end
-  createValidLog[testfile;10];
+  / setup - create log and append garbage at end
+  createvalidlog[testfile;10];
   bytes:read1 testfile;
   testfile set bytes,100#0x00;
     
-  / Test
-  result:tplogsutil.repair[testfile];
+  / test
+  result:tplogsutils.repair[testfile];
     
-  / Assert
+  / assert
   nameCorrect:result~goodfile;
-  hasMessages:countLogMessages[goodfile]>0;
+  hasMessages:countlogmessages[goodfile]>0;
   passes:nameCorrect and hasMessages;
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   passes
@@ -205,25 +205,25 @@ testmultiplecorruptsections: {
   testfile:`:test_multi_corrupt.log;
   goodfile:`$string[testfile],".good";
     
-  / Setup - create log with corruption in middle
-  createValidLog[testfile;30];
+  / setup - create log with corruption in middle
+  createvalidlog[testfile;30];
   bytes:read1 testfile;
     
-  / Insert corruption at position (should have valid messages before and after)
+  / insert corruption at position (should have valid messages before and after)
   if[200 < count bytes;
     corrupted:bytes[til 200],10#0xFF,bytes[210+til count[bytes]-210];
     testfile set corrupted;
   ];
     
-  / Test
-  result:tplogsutil.repair[testfile];
+  / test
+  result:tplogsutils.repair[testfile];
     
-  / Assert - should create file and recover something
+  / assert - should create file and recover something
   fileCorrect:result~goodfile;
   fileExists:not ()~key goodfile;
   passes:fileCorrect and fileExists;
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   passes
@@ -234,18 +234,18 @@ testcompletelycorruptlog: {
   testfile:`:test_all_corrupt.log;
   goodfile:`$string[testfile],".good";
     
-  / Setup - create completely corrupt file
+  / setup - create completely corrupt file
   testfile set 1000#0x00;
     
-  / Test
-  result:tplogsutil.repair[testfile];
+  / test
+  result:tplogsutils.repair[testfile];
     
-  / Assert - should create .good file even if empty/minimal
+  / assert - should create .good file even if empty/minimal
   nameCorrect:result~goodfile;
   fileExists:not ()~key goodfile;
   passes:nameCorrect and fileExists;
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   passes
@@ -255,14 +255,14 @@ testcompletelycorruptlog: {
 testemptylog: {
   testfile:`:test_empty.log;
    
-  / Setup - create empty file
+  / setup - create empty file
   testfile set 0#0x00;
     
-  / Test - should not crash
-  result:tplogsutil.check[testfile;0j];
+  / test - should not crash
+  result:tplogsutils.check[testfile;0j];
   passes:1b;  / If we got here without error, test passes
     
-  / Cleanup
+  / cleanup
   cleanup enlist testfile;
     
   passes
@@ -274,16 +274,16 @@ testemptylog: {
 
 / @test Verify module constants are set correctly
 testconstantsset: {
-  chunkOk:CHUNK=10*1024*1024;
-  maxchunkOk:MAXCHUNK=8*CHUNK;
-  updmsgOk:10=count UPDMSG;
-  headerOk:8=count HEADER;
+  chunkOk:chunk=10*1024*1024;
+  maxchunkOk:maxchunk=8*chunk;
+  updmsgOk:10=count updmsg;
+  headerOk:8=count header;
     
   chunkOk and maxchunkOk and updmsgOk and headerOk
  };
 
 / @test Module metadata is present
-test_module_info: {
+testmoduleinfo: {
   hasName:`name in key info;
   hasVersion:`version in key info;
   hasDesc:`description in key info;
@@ -295,21 +295,21 @@ test_module_info: {
 / INTEGRATION TESTS
 / =============================================================================
 
-/ @test tplogsutil.repair then replay workflow
+/ @test tplogsutils.repair then replay workflow
 testrepairandreplay: {
   testfile:`:test_replay.log;
   goodfile:`$string[testfile],".good";
     
-  / Setup
-  createCorruptLog[testfile;20;200];
+  / setup
+  createcorruptlog[testfile;20;200];
     
-  / Test - tplogsutil.repair and try to replay
-  tplogsutil.repair[testfile];
+  / test - tplogsutils.repair and try to replay
+  tplogsutils.repair[testfile];
     
   / This should not throw an error if the .good file is valid
   replayOk:@[{-11!(1;x);1b};goodfile;{0b}];
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   replayOk
@@ -321,46 +321,46 @@ testlargefilehandling: {
   goodfile:`$string[testfile],".good";
   msgcount:500;  / Reasonable size for testing
     
-  / Setup
-  createCorruptLog[testfile;msgcount;5000];
+  / setup
+  createcorruptlog[testfile;msgcount;5000];
     
-  / Test - measure time
+  / test - measure time
   start:.z.p;
-  result:tplogsutil.repair[testfile];
+  result:tplogsutils.repair[testfile];
   elapsed:`second$.z.p-start;
     
-  / Assert - should complete and create file
+  / assert - should complete and create file
   completed:result~goodfile;
   reasonable:elapsed<30;  / Should complete in under 30 seconds
   passes:completed and reasonable;
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   passes
  };
 
-/ @test Sequential tplogsutil.check and tplogsutil.repair calls
+/ @test Sequential tplogsutils.check and tplogsutils.repair calls
 testsequentialoperations: {
   testfile:`:test_sequential.log;
   goodfile:`$string[testfile],".good";
     
-  / Setup
-  createCorruptLog[testfile;15;150];
+  / setup
+  createcorruptlog[testfile;15;150];
     
-  / Test - tplogsutil.check then tplogsutil.repair
-  tplogsutil.checkResult:tplogsutil.check[testfile;20j];
+  / test - tplogsutils.check then tplogsutils.repair
+  tplogsutils.checkresult:tplogsutils.check[testfile;20j];
     
-  / If tplogsutil.check triggered tplogsutil.repair, goodfile should exist
-  / If not, manually tplogsutil.repair
-  if[not tplogsutil.checkResult~goodfile;
-     tplogsutil.repair[testfile];
+  / if tplogsutils.check triggered tplogsutils.repair, goodfile should exist
+  / if not, manually tplogsutils.repair
+  if[not tplogsutils.checkresult~goodfile;
+     tplogsutils.repair[testfile];
     ];
     
-  / Assert - .good file should exist in either case
+  / assert - .good file should exist in either case
   passes:not ()~key goodfile;
     
-  / Cleanup
+  / cleanup
   cleanup (testfile;goodfile);
     
   passes

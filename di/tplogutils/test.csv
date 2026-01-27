@@ -1,5 +1,5 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,os:tplogsutil:use`di.tplogsutil,1,,Initialize module
+before,0,0,q,tplogsutil:use`di.tplogsutil,1,,Initialize module
 before,0,0,q,os:use`di.os,1,,Initialize module
 before,0,0,q,"system ""l "", os.abspath[""test.q""]",1,1,load additional testing functions / dependencies
 run,0,0,q,test_repair_and_replay[],1,1,

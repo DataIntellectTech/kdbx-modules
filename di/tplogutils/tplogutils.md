@@ -26,24 +26,6 @@ A small utility module for **checking** and **best‑effort repairing** tickerpl
 
 ---
 
-## :label: Naming note (important)
-
-The folder name is `tplogutils`, and `init.q` exports:
-
-```q
-export:([check;repair;repairover])
-```
-
-However, the included tests reference the name `tplogsutil` in a few places (e.g. `tplogsutil.check`, `tplogsutil.repair`).
-
-Depending on your package loader conventions, you may want to:
-- load the module into a variable named `tplogsutil`, **or**
-- update the tests to use `tplogutils` consistently.
-
-This README uses **`tplogutils`** when referring to the module variable.
-
----
-
 ## :inbox_tray: Loading
 
 ### KDB-X (supports `use`)
@@ -53,13 +35,6 @@ If your `QPATH` includes the `di` directory (e.g. `~/kdbx-modules/di`), a common
 
 ```q
 tplogutils:use`tplogutils
-```
-
-### Plain q (no `use`)
-If your session does not support `use`, load directly from the file:
-
-```q
-\l /path/to/kdbx-modules/di/tplogutils/init.q
 ```
 
 ---

@@ -1,13 +1,6 @@
 / library for sending async messages from a client process
 
-send:{[w;h;q]
-  / build the query to send
-  tosend:$[w; ({[q] @[neg .z.w;@[{[q] (1b;value q)};q;{(0b;"error: server fail:",x)}];()]};q);
-              ({[q] @[neg .z.w;@[{[q] value q};q;{"error: server fail:",x}];()]};q)];
-  / error trapping sending the query down the handle followed by an async flush
-  .[{x@y; x(::);1b};(h;tosend);0b]}
-
-broadcastdeferred:{[handles;query]
+deferred:{[handles;query]
   / for sending deferred synchronous message to a list of handles via async broadcast
   tosend:({[q] @[neg .z.w;@[{[q] (1b;value q)};q;{(0b;"error: server fail:",x)}];()]};query);
   sent:.[{-25!(x;y); x(::);1b};(handles;tosend);{(0b;"error: ",x)}];
@@ -17,7 +10,7 @@ broadcastdeferred:{[handles;query]
   / return results
   (res[;0];res[;1])}
 
-broadcastpostback:{[handles;query;postback]
+postback:{[handles;query;postback]
   / for sending asynchronous postback message to a list of handles via async broadcast where the message is wrapped in the function postback
   q:({[q;p] (p;@[value;q;{"error: server fail: ",x}])};query;postback);
   tosend:({[q] @[neg .z.w;@[{[q] value q};q;{"error: server fail: ",x}];()]};q);

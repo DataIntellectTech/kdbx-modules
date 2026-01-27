@@ -1,6 +1,6 @@
 ## KDB+/Q Asynchronous Communication Library
 
-This library provides kdb+/q functions for sending either deferred synchronous or asynchronous postback requests from a client  process over a handle or list of handles, with error trapping at various points. Either type of request can be sent via conventional kdb+/q IPC or asynchronous broadcast.
+This library provides kdb+/q functions for sending either deferred synchronous or asynchronous postback requests from a client process over a handle or list of handles, with error trapping at various points.
 
 Each of the library functions have no dependencies on the server-side code.
 
@@ -23,8 +23,10 @@ If either of these are carried out via asynchronous broadcast, the request will 
 Note, in each of the examples below handles is a list of two handles to different server processes
 
 ##### async.deferred
-Can be used to make deferred synchronous calls via conventional kdb+/q IPC. It will send the query down each of the handles, then block and wait on the handles
+Can be used to make deferred synchronous calls via asynchronous broadcast. It will send the query down each of the handles, then block and wait on the handles
 The result set is of the form (successvector each handle; result vector)
+Note, that if there is an issue with any of the handles, the query won't be sent down any handle
+
 ```q
 // async.deferred[handles;query]
 q)async.deferred[handles;"2+2"]
@@ -32,37 +34,16 @@ q)async.deferred[handles;"2+2"]
 4 4
 ```
 
-##### async.broadcastdeferred
-As above, except the query will be sent via asynchronous broadcast. 
-Note, that if there is an issue with any of the handles, the query won't be sent down any handle
-```q
-// async.broadcastdeferred[handles;query]
-q)async.broadcastdeferred[handles;"2+2"]
-1 1
-4 4
-
-```
-
 ##### async.postback
-Can be used to make asynchronous postback calls via conventional kdb+/q IPC. 
+Can be used to make asynchronous postback calls via asynchronous broadcast. 
 Wrap the supplied query in a postback function
 Don't block the handle when waiting
 Success vector is returned that it has been sent correctly
 The result is then returned once executed by the server, although it is not wrapped in the status
+Similar to async.deferred, if there is an issue with any of the handles, the query won't be sent down any handle
 ```q
 // async.postback[handles;query;postback]
 q)async.postback[handles;"2+2";{show x}]
-11b
-4
-4
-```
-
-##### async.broadcastpostback
-As above, except the query will be sent via asynchronous broadcast. 
-Similar to async.broadcast_deferred, if there is an issue with any of the handles, the query won't be sent down any handle
-```q
-// async.broadcastpostback[handles;query;postback]
-q)async.broadcastpostback[handles;"2+2";{show x}]
 11b
 4
 4

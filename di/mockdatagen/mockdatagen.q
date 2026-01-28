@@ -17,36 +17,36 @@ cleartables:{[]
 / funtion to generate mock data for a single symbol/instrument
 mockdataone:{[sym;date;starttime;endtime;rowCnt;startPx;level]
   -1"Generating data for ",string[sym]," for date: ",string[date];
-  dateRnd:2+date mod  7;
-  tradeCnt:floor(100+dateRnd)*rowCnt%100;
-  quoteCnt:(19+dateRnd)*tradeCnt;
-  depthCnt:(97+dateRnd)*tradeCnt;
-  -1"Trade rows: ",string[tradeCnt],"\t Quote rows: ",string[quoteCnt],"\t Depth Rows: ",string[depthCnt];
+  daternd:2+date mod  7;
+  tradecnt:floor(100+daternd)*rowCnt%100;
+  quotecnt:(19+daternd)*tradecnt;
+  depthcnt:(97+daternd)*tradecnt;
+  -1"Trade rows: ",string[tradecnt],"\t Quote rows: ",string[quotecnt],"\t Depth Rows: ",string[depthcnt];
   hoursinday:endtime-starttime;
   t0:date+starttime;
   t1:date+endtime;
-  ttimes:date+ `#asc starttime+tradeCnt?hoursinday;
-  qtimes:date+ `#asc starttime+quoteCnt?hoursinday;
-  mids:startPx* exp sums 0.0005*-1+quoteCnt?2f;
+  ttimes:date+ `#asc starttime+tradecnt?hoursinday;
+  qtimes:date+ `#asc starttime+quotecnt?hoursinday;
+  mids:startPx* exp sums 0.0005*-1+quotecnt?2f;
   mids:0.01*floor 100*mids;
-  bid:rnd mids-quoteCnt?0.03;
-  ask:rnd mids+quoteCnt?0.03;
-  bsize:`int$(600*1+quoteCnt?20);
-  asize:`int$(600*1+quoteCnt?20);
-  tradeIdx:til tradeCnt;
-  quoteIdx:5*tradeIdx;
-  side:tradeCnt?`buy`sell;
-  price:0.01*floor 100*?[side=`buy; ask[quoteIdx]; bid[quoteIdx]];
-  tsize:`int$((tradeCnt?1f)*?[side=`buy; asize[quoteIdx]; bsize[quoteIdx]]);
-  .z.m.trades,:flip `time`sym`src`price`size!(ttimes;tradeCnt#sym;tradeCnt?`N`O`L;price;tsize);
-  .z.m.quotes,:flip `time`sym`src`bid`ask`bsize`asize!(qtimes;quoteCnt#sym;quoteCnt?`N`O`L;bid;ask;bsize;asize);
+  bid:rnd mids-quotecnt?0.03;
+  ask:rnd mids+quotecnt?0.03;
+  bsize:`int$(600*1+quotecnt?20);
+  asize:`int$(600*1+quotecnt?20);
+  tradeidx:til tradecnt;
+  quoteidx:5*tradeidx;
+  side:tradecnt?`buy`sell;
+  price:0.01*floor 100*?[side=`buy; ask[quoteidx]; bid[quoteidx]];
+  tsize:`int$((tradecnt?1f)*?[side=`buy; asize[quoteidx]; bsize[quoteidx]]);
+  .z.m.trades,:flip `time`sym`src`price`size!(ttimes;tradecnt#sym;tradecnt?`N`O`L;price;tsize);
+  .z.m.quotes,:flip `time`sym`src`bid`ask`bsize`asize!(qtimes;quotecnt#sym;quotecnt?`N`O`L;bid;ask;bsize;asize);
   if[level=2;
-  dtimes:date+ `#asc starttime+depthCnt?hoursinday;
-  dIdx:(til depthCnt) mod quoteCnt;
-  dBid:bid[dIdx];dAsk:ask[dIdx];
-  b1:`int$(600*1+depthCnt?20);b2:b1+`int$(600*1+depthCnt?5);b3:b1+`int$(600*1+depthCnt?10);b4:b1+`int$(600*1+depthCnt?15);b5:b1+`int$(600*1+depthCnt?20);
-  a1:`int$(600*1+depthCnt?20);a2:a1+`int$(600*1+depthCnt?5);a3:a1+`int$(600*1+depthCnt?5);a4:a1+`int$(600*1+depthCnt?5);a5:a1+`int$(600*1+depthCnt?5);
-  .z.m.depth,:flip `time`sym`bid1`bsize1`bid2`bsize2`bid3`bsize3`bid4`bsize4`bid5`bsize5`ask1`asize1`ask2`asize2`ask3`asize3`ask4`asize4`ask5`asize5!(dtimes;depthCnt#sym;dBid;b1;dBid-0.01;b2;dBid-0.02;b3;dBid-0.03;b4;dBid-0.04;b5;dAsk;a1;dAsk+0.01;a2;dAsk+0.02;a3;dAsk+0.03;a4;dAsk+0.04;a5);
+  dtimes:date+ `#asc starttime+depthcnt?hoursinday;
+  dIdx:(til depthcnt) mod quotecnt;
+  dbid:bid[dIdx];dask:ask[dIdx];
+  b1:`int$(600*1+depthcnt?20);b2:b1+`int$(600*1+depthcnt?5);b3:b1+`int$(600*1+depthcnt?10);b4:b1+`int$(600*1+depthcnt?15);b5:b1+`int$(600*1+depthcnt?20);
+  a1:`int$(600*1+depthcnt?20);a2:a1+`int$(600*1+depthcnt?5);a3:a1+`int$(600*1+depthcnt?5);a4:a1+`int$(600*1+depthcnt?5);a5:a1+`int$(600*1+depthcnt?5);
+  .z.m.depth,:flip `time`sym`bid1`bsize1`bid2`bsize2`bid3`bsize3`bid4`bsize4`bid5`bsize5`ask1`asize1`ask2`asize2`ask3`asize3`ask4`asize4`ask5`asize5!(dtimes;depthcnt#sym;dbid;b1;dbid-0.01;b2;dbid-0.02;b3;dbid-0.03;b4;dbid-0.04;b5;dask;a1;dask+0.01;a2;dask+0.02;a3;dask+0.03;a4;dask+0.04;a5);
   ];
   };
 
@@ -65,7 +65,7 @@ mockdata:{[syms;date;starttime;endtime;rowcnts;startpxs;level]
 / function to write the data down to HDB for the given date list
 mockhdb:{[dir;syms;dates;starttime;endtime;rowcnts;startpxs;level]
   -1"Generating mock data for the following syms:";
-  -1 " "sv string symList;
+  -1 " "sv string symlist;
   -1"And for the following dates";
   -1 " "sv string dates;
   cleartables[]; 

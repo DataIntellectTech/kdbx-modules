@@ -10,23 +10,23 @@ initschema:{[]
 / utility Functions
 rnd:{0.01*floor 100*x};
 
-clearTables:{[]
+cleartables:{[]
    initschema[];
  };
 
 / funtion to generate mock data for a single symbol/instrument
-mockDataOne:{[sym;date;startTime;endTime;rowCnt;startPx;level]
+mockdataone:{[sym;date;starttime;endtime;rowCnt;startPx;level]
   -1"Generating data for ",string[sym]," for date: ",string[date];
   dateRnd:2+date mod  7;
   tradeCnt:floor(100+dateRnd)*rowCnt%100;
   quoteCnt:(19+dateRnd)*tradeCnt;
   depthCnt:(97+dateRnd)*tradeCnt;
   -1"Trade rows: ",string[tradeCnt],"\t Quote rows: ",string[quoteCnt],"\t Depth Rows: ",string[depthCnt];
-  hoursinday:endTime-startTime;
-  t0:date+startTime;
-  t1:date+endTime;
-  ttimes:date+ `#asc startTime+tradeCnt?hoursinday;
-  qtimes:date+ `#asc startTime+quoteCnt?hoursinday;
+  hoursinday:endtime-starttime;
+  t0:date+starttime;
+  t1:date+endtime;
+  ttimes:date+ `#asc starttime+tradeCnt?hoursinday;
+  qtimes:date+ `#asc starttime+quoteCnt?hoursinday;
   mids:startPx* exp sums 0.0005*-1+quoteCnt?2f;
   mids:0.01*floor 100*mids;
   bid:rnd mids-quoteCnt?0.03;
@@ -41,7 +41,7 @@ mockDataOne:{[sym;date;startTime;endTime;rowCnt;startPx;level]
   .z.m.trades,:flip `time`sym`src`price`size!(ttimes;tradeCnt#sym;tradeCnt?`N`O`L;price;tsize);
   .z.m.quotes,:flip `time`sym`src`bid`ask`bsize`asize!(qtimes;quoteCnt#sym;quoteCnt?`N`O`L;bid;ask;bsize;asize);
   if[level=2;
-  dtimes:date+ `#asc startTime+depthCnt?hoursinday;
+  dtimes:date+ `#asc starttime+depthCnt?hoursinday;
   dIdx:(til depthCnt) mod quoteCnt;
   dBid:bid[dIdx];dAsk:ask[dIdx];
   b1:`int$(600*1+depthCnt?20);b2:b1+`int$(600*1+depthCnt?5);b3:b1+`int$(600*1+depthCnt?10);b4:b1+`int$(600*1+depthCnt?15);b5:b1+`int$(600*1+depthCnt?20);
@@ -51,30 +51,30 @@ mockDataOne:{[sym;date;startTime;endTime;rowCnt;startPx;level]
   };
 
 / function to generate the mock data for multiple syms on a given date
-mockData:{[syms;date;startTime;endTime;rowCnts;startPxs;level]
+mockdata:{[syms;date;starttime;endtime;rowcnts;startpxs;level]
   -1"Verifying inputs";
   if[not 11h=abs[type syms];-1"ERROR: Input tickers should be sym type";:()];
   syms:$[11h=type syms; syms; enlist syms];
-  rc:$[99h=type rowCnts; rowCnts; (enlist syms)!enlist rowCnts];
-  spx:$[99h=type startPxs; startPxs; (enlist syms)!enlist startPxs];
-  {[s;rc;spx;date;startTime;endTime;level] 
+  rc:$[99h=type rowcnts; rowcnts; (enlist syms)!enlist rowcnts];
+  spx:$[99h=type startpxs; startpxs; (enlist syms)!enlist startpxs];
+  {[s;rc;spx;date;starttime;endtime;level] 
    sp:$[`sp in key .z.m; $[null .z.m.sp[s]; spx[s]; .z.m.sp[s]]; spx[s]];
-   mockDataOne[s;date;startTime;endTime;rc[s];sp;level]}[;rc;spx;date;startTime;endTime;level] each syms;
+   mockdataone[s;date;starttime;endtime;rc[s];sp;level]}[;rc;spx;date;starttime;endtime;level] each syms;
    };
 
 / function to write the data down to HDB for the given date list
-mockHdb:{[dir;syms;dates;startTime;endTime;rowCnts;startPxs;level]
+mockhdb:{[dir;syms;dates;starttime;endtime;rowcnts;startpxs;level]
   -1"Generating mock data for the following syms:";
   -1 " "sv string symList;
   -1"And for the following dates";
   -1 " "sv string dates;
-  clearTables[]; 
-  {[dir;syms;d;startTime;endTime;rowCnts;startPxs;level]
-   mockData[syms;d;startTime;endTime;rowCnts;startPxs;level]; 
+  cleartables[]; 
+  {[dir;syms;d;starttime;endtime;rowcnts;startpxs;level]
+   mockdata[syms;d;starttime;endtime;rowcnts;startpxs;level]; 
    .z.m.sp:syms!{last exec price from .z.m.trades where sym = x} each syms;
    `trades set .z.m.trades;
    `quotes set .z.m.quotes;
    `depth set .z.m.depth;
-   .Q.hdpf[`:;dir;d;`sym]; clearTables[] }[dir;syms;;startTime;endTime;rowCnts;startPxs;level] each dates;
+   .Q.hdpf[`:;dir;d;`sym]; cleartables[] }[dir;syms;;starttime;endtime;rowcnts;startpxs;level] each dates;
    .z.m.sp:syms!(count syms)#0nf;
   };

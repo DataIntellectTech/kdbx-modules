@@ -1,11 +1,11 @@
 / header to build deserialisable msg
-header: 8 # -8!(`upd;`trade;());			
+header:8#-8!(`upd;`trade;());			
 / first part of tp update msg
-updmsg: `char$10 # 8 _ -8!(`upd;`trade;());	
+updmsg:`char$10#8_-8!(`upd;`trade;());	
 / size of default chunk to read (10MB)
-chunk: 10 * 1024 * 1024;					
+chunk:10*1024*1024;					
 / don't let single read exceed this
-maxchunk: 8 * chunk;						
+maxchunk:8*chunk;						
 
 check:{[logfile;lastmsgtoreplay]
   / logfile (symbol) is the handle to the logsfile

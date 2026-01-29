@@ -19,7 +19,7 @@ A small utility module for **checking** and **best‑effort repairing** tickerpl
 
 ## :file_folder: Directory contents
 
-- `init.q` – module implementation (constants + `check`, `repair`, `repairover`)
+- `init.q` – module implementation (constants + `check`, `repair`)
 - `tplogutils.md` – documentation (you can replace/rename to `README.md` if desired)
 - `test.q` – tests + helpers for creating valid/corrupted logs
 - `test.csv` – test manifest for your project’s test harness
@@ -72,8 +72,6 @@ This means:
 |----------|-------------|
 | `check[logfile;lastmsgtoreplay]` | Returns `logfile` if it should be used as-is per `check` logic, otherwise triggers `repair` and returns `<logfile>.good`. |
 | `repair[logfile]` | Creates `<logfile>.good` and writes any recoverable messages into it. Returns the new filename. |
-| `repairover[logfile;goodlogh;d]` | Internal chunk worker called repeatedly by `repair` (exported for testing/advanced use). |
-
 ---
 
 ### `check`
@@ -121,26 +119,6 @@ Create a “good” logfile containing only recoverable messages.
 
 **Returns**
 - symbol path of the repaired logfile (e.g. ```:tp.log.good```)
-
----
-
-### `repairover`
-
-```q
-tplogutils.repairover[logfile; goodlogh; d]
-```
-
-**Parameters**
-
-| Parameter | Type | Description |
-|----------:|------|-------------|
-| `logfile` | symbol | Source logfile |
-| `goodlogh` | int | Handle to the output `.good` logfile (opened via `hopen`) |
-| `d` | dict | State dictionary with keys `start` and `size` (byte offset and chunk length) |
-
-**Notes**
-- `repair` calls `repairover` repeatedly using `over` and a `(start;size)` state dictionary.
-- This is exported for transparency/testing; most users should call `check` or `repair`.
 
 ---
 
@@ -227,6 +205,6 @@ test_repair_garbage_at_end[]
 The module exports:
 
 ```q
-export:([check;repair;repairover])
+export:([check;repair])
 ```
 

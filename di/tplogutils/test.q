@@ -190,9 +190,9 @@ testrepairgarbageatend: {
   result:tplogsutils.repair[testfile];
     
   / assert
-  nameCorrect:result~goodfile;
+  namecorrect:result~goodfile;
   hasMessages:countlogmessages[goodfile]>0;
-  passes:nameCorrect and hasMessages;
+  passes:namecorrect and hasMessages;
     
   / cleanup
   cleanup (testfile;goodfile);
@@ -241,9 +241,9 @@ testcompletelycorruptlog: {
   result:tplogsutils.repair[testfile];
     
   / assert - should create .good file even if empty/minimal
-  nameCorrect:result~goodfile;
+  namecorrect:result~goodfile;
   fileExists:not ()~key goodfile;
-  passes:nameCorrect and fileExists;
+  passes:namecorrect and fileExists;
     
   / cleanup
   cleanup (testfile;goodfile);

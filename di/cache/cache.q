@@ -10,10 +10,10 @@ maxsize:10;
 maxindividual:50;
 
 / function to change default max individual value
-setmaxindiv:{.z.m.maxindividual:x}
+setmaxindiv:{.z.m.maxindividual:x;.z.m.maxindividual:.z.m.maxsize&.z.m.maxindividual}
 
 / function to change default max size value
-setmaxsize:{.z.m.maxsize:x}
+setmaxsize:{.z.m.maxsize:x;.z.m.maxindividual:.z.m.maxsize&.z.m.maxindividual}
 
 / make sure the maxindividual isn't bigger than maxsize
 maxindividual:maxsize&maxindividual;
@@ -60,7 +60,7 @@ add:{[function;id;status]
   / return the result
   res};
 
-// Drop some ids from the cache
+/ drop some ids from the cache
 drop:{[ids]
   ids,:();
   delete from .z.M.cache where id in ids;
@@ -88,7 +88,7 @@ execute:{[func;age]
   $[count r:select id,lastrun from cache where .z.M.funcs[id]~\:enlist func;
     / There is a value in the cache.
     [r:first r;
-    / We need to check the age - if the specified age is greater than the actual age, return it
+    / we need to check the age - if the specified age is greater than the actual age, return it
     / else delete it
     $[age > (now:.z.p) - r`lastrun;
       / update the cache stats, return the cached result

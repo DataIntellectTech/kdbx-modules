@@ -1,6 +1,12 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,cac:use`di.cache,1,1,load package into session
 
+/ Test 0: max variable config checks
+run,0,0,q,cac.setmaxindiv[200],1,1, run setmaxindiv
+run,0,0,q,cac.setmaxsize[100],1,1, run setmaxsize 
+true,0,0,q,100~ cac.maxindividual,1,1, Check maxindividual configed correctly by function
+true,0,0,q,100~ cac.maxsize,1,1, Check maxindividual configed correctly by function
+
 / Test 1: Baseline Addition with Sleep
 run,0,0,q,system "t cac.execute[({system\"sleep 1\"; x+y};10;20);0D00:01]",1,1,Initial run with 1s sleep
 true,0,0,q,0~ system "t cac.execute[({system\"sleep 1\"; x+y};10;20);0D00:01]",1,1,Speedup: Cached result returns in <1ms
@@ -36,5 +42,6 @@ true,0,0,q,res ~ cac.execute[({x};res);0D00:01],1,1,Check: Table retrieved from 
 / Test 9: Complex Dictionary Result
 run,0,0,q,dict::`stats`data!((avg;med);til 10);cac.execute[({x};dict);0D00:01],1,1,Initial run: cache a dictionary of functions and lists
 true,0,0,q,dict ~ cac.execute[({x};dict);0D00:01],1,1,Check: Dictionary retrieved from cache matches original
+
 
 

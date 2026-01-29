@@ -8,6 +8,10 @@
 - **`.cache.maxindividual`** — Maximum size in MB allowed for a single cache entry; capped at `maxsize`.
 - **`MB`** — Defines one megabyte as `2 * xexp 20`.
 
+- Use setmaxindiv and setmaxsize functions to change the default values.
+- Change the maxsize variable first if both maxsize and maxindividual are changing so that if maxindividual increases past the old
+  max size it doesn't get capped at old maxsize. 
+
 - Default values for maxsize and maxindividual are set as 10 and 50 respectively
 - These can be changed using setmaxsize and setmaxindiv functions by using a single input in each with desired values.
 

@@ -40,23 +40,23 @@ getid:{:id+::1};
 add:{[function;id;status]
   / don't trap the error here - if it throws an error, we want it to be propagated out
   res:value function;
-  if[(maxindividual*MB)<=size:-22!res;
-    / log it as an addfail - the result set is too big
-    trackperf[id;`fail;cp[]];
-    :res;
-  ];
+    if[(maxindividual*MB)<=size:-22!res;
+     / log it as an addfail - the result set is too big
+     trackperf[id;`fail;cp[]];
+     :res;
+   ];
   / check if we need more space to store this item
-  now:cp[];
+  now:cp;
   if[0>requiredsize:(maxsize*MB) - size+sum exec size from cache;
     evict[neg requiredsize;now];
   ];
-  / insert to the cache table
+  / Insert to the cache table
   .z.M.cache upsert (id;now;now;size);
   / and insert to the function and results dictionary
   funcs[id]:enlist function;
   results[id]:enlist res;
-  / update the performance
-  trackperf[id;status;now];;
+  / Update the performance
+  trackperf[id;status;now];
   / return the result
   res};
 

@@ -2,12 +2,10 @@ action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,cac:use`di.cache,1,1,load package into session
 
 / Test 0: max variable config checks
-run,0,0,q,maxindividual:10,1,, 
-run,0,0,q,maxsize:10,1,,
 run,0,0,q,cac.setmaxindiv[200],1,, run setmaxindiv
 run,0,0,q,cac.setmaxsize[100],1,, run setmaxsize 
-true,0,0,q,100~ maxindividual,1,, Check maxindividual configed correctly by function
-true,0,0,q,100~ maxsize,1,, Check maxindividual configed correctly by function
+true,0,0,q,100~ cac.maxindividual,1,, Check maxindividual configed correctly by function
+true,0,0,q,100~ cac.maxsize,1,, Check maxindividual configed correctly by function
 
 / Test 1: Baseline Addition with Sleep
 run,0,0,q,system "t cac.execute[({system\"sleep 1\"; x+y};10;20);0D00:01]",1,1,Initial run with 1s sleep

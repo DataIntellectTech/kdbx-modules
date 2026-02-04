@@ -27,7 +27,6 @@ mockdata
 
 - **`mockdataone`** – Generates mock data for single instrument on a given date.
 - **`mockdata`** – Generates mock data for multiple instruments on a given date.
-- **`mockdatarange`** – Generates mock data for multiple instruments in a given date range.
 - **`mockhdb`** – writes the data down to a specified HDB directory and sets the attribute to the date partitions.
 
 
@@ -138,46 +137,6 @@ md.mockdata[`AAPL`MSFT`META; 2025.01.10; 09:30:00; 16:00:00;
          2]
 ```
 
-### ⚙️`mockdatarange`
-
-Generates mock data for the given multiple instruments in the given date range along with the following given parameters.
-
-**Parameters**
-- `syms`: Instruments/symbols for which the data is generated.
-- `datelist`: List of dates for which the data is generated.
-- `starttime`: Market open time or the starting time from which data generation begins.
-- `endtime`: Market close time or the ending time up to which data is generated.
-- `rowcnts`: Number of rows to generate the data for each syms. This should be passed as a dictionary, for example: `AAPL`MSFT`META!300 500 200 
-- `startpxs`: Starting price of the given instruments of type float. Should be passed as a dictionary, for example: `AAPL`MSFT`META!22.33 38.34 29.43
-- `level`: Controls the depth of data generation:
-  - `1`: Generates trades and quotes tables.
-  - `2`: Generates trades, quotes, and depth tables.
-
-// Note
-- For multi-day data generation, price continuity is maintained by using the previous day’s last traded price as the opening price for the following day.
-
-**Examples**
-
-```q
-// Function signature:
-mockdatarange[syms; datelist; starttime; endtime; rowcnts; startpxs; level]
-
-// Loading the module into a session
-md:use `di.mockdatagen
-
-// Level 1: Generate trades and quotes for multiple instruments
-md.mockdatarange[`AAPL`MSFT`META; 2025.01.10 2025.01.11 2025.01.12; 09:30:00; 16:00:00;
-         `AAPL`MSFT`META!300 500 200;
-         `AAPL`MSFT`META!22.33 38.34 29.43;
-         1]
-
-// Level 2: Generate trades, quotes, and depth for multiple instruments
-md.mockdatarange[`AAPL`MSFT`META; 2025.01.10 2025.01.11 2025.01.12; 09:30:00; 16:00:00;
-         `AAPL`MSFT`META!300 500 200;
-         `AAPL`MSFT`META!22.33 38.34 29.43;
-         2]
-```
-     
 
 ### ⚙️`mockhdb`
 

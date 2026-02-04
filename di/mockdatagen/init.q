@@ -2,4 +2,4 @@
 \l ::mockdatagen.q
 
 / expose public function
-export:([initschema;mockdataone;mockdata;mockhdb;mockdatarange;cleartables])
+export:([initschema;mockdataone;mockdata;mockhdb;cleartables])

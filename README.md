@@ -43,7 +43,7 @@ Each module consists of:
 Tests are run using k4unit (which is also a module). To run the tests for a module: 
 
 ```q
-q)k4unit:use`k4unit
+q)k4unit:use`di.k4unit
 q)k4unit.moduletest`module_to_test
 ```
 

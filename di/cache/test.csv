@@ -45,5 +45,11 @@ true,0,0,q,res ~ cac.execute[({x};res);0D00:01],1,1,Check: Table retrieved from 
 run,0,0,q,dict::`stats`data!((avg;med);til 10);cac.execute[({x};dict);0D00:01],1,1,Initial run: cache a dictionary of functions and lists
 true,0,0,q,dict ~ cac.execute[({x};dict);0D00:01],1,1,Check: Dictionary retrieved from cache matches original
 
+/ Test 10: Oversized results
 
+run,0,0,q,oversizeddata:(1000000?1f),1,, Create ~8MB dataset (exceeds 5MB maxindividual)
+run,0,0,q,beforecount:count cac.cache,1,, Count cache entries before
+run,0,0,q,result1:cac.execute[({x};oversizeddata);0D01:00],1,, Execute with oversized data
+true,0,0,q,oversizeddata~result1,1,, Oversized result is still returned correctly
+true,0,0,q,beforecount=count cac.cache,1,, Cache count unchanged (not cached)
 

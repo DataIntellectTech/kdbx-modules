@@ -8,6 +8,22 @@ mechanism depending on host operating system.
 > 
 > **Note:** To send metrics and events to DataDog via https you must either have TLS certificates set up on your machine or set the environment variable `SSL_VERIFY_SERVER=NO`. 
 
+- Note: Example events and metrics for v1 and v2 usage are given in the module folder
+
+---
+## Submitting data
+
+Consult the following websites for required event and metric paramaters for web submission:
+https://docs.datadoghq.com/api/latest/metrics/#submit-metrics-v2 - metric(scroll to submit metric section)
+https://docs.datadoghq.com/api/latest/events/#post-an-event - event (scroll to post event section)
+
+- Ensure correct version is selected
+
+- Submit data in a dictionary format, example:
+
+    datadog.sendmetric[([metricname:"test";metricvalue:123])]
+
+---
 ---
 
 ## :sparkles: Features

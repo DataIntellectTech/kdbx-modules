@@ -31,8 +31,8 @@ run,0,0,q,reseteventlog[],1,,Reset event log table for next test
 
 comment,,,,,,,Test web
 run,0,0,q,k4unit.mock[`.m.di.0datadog.opsys;`l64],1,,Mock linux operating system
-run,0,0,q,datadog.init([useweb:1b]),1,,Init the package with linux os with useweb
-run,0,0,q,datadog.sendmetric[([metricname:"test";metricvalue:123;metrictype:"test_type";samplerate:0.5;tags:"tag test"])],1,,Send a dummy metric
+run,0,0,q,datadog.init([useweb:1b;baseurl:"https://api.datadoghq.eu/api/v1/"]),1,,Init the package with linux os with useweb
+run,0,0,q,datadog.sendmetric[([metricname:"test";metricvalue:123;metrictype:"test_type";tags:"tag test"])],1,,Send a dummy metric
 run,0,0,q,datadog.sendevent[([eventtitle:"Test_Event";eventtext:"This is a test";priority:"high";tags:"testtag";alerttype:"test_type"])],1,,Send a dummy event
 run,0,0,q,"@[`.m.di.0datadog.metriclog;`message;{raze@[""[[""vs x;1;""[["",(10#""0""),10_]}']",1,,Update the unixtime in the table to be 0s
 true,0,0,q,sm_web~``time _datadog.getmetriclog[],1,,Check it is as expected

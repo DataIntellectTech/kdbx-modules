@@ -9,8 +9,6 @@ eventlog:([]time:`timestamp$();host:`$();message:();title:();text:();https:`bool
 opsys:.z.o;
 
 
-/eventtitle,eventtext,eventdate,hostname,priority,alerttype,tags,aggregation_key,source_type_name,related_event_id,device,category,cr_name,cr_type,integration_id,message,timestamp,change_metadata,new_value,prev_value
-
 / Filter for sending events
 eventfilter:{[dict]
 
@@ -53,10 +51,10 @@ metfilter:{[dict]
   optionalpars: `metrictype`samplerate`tags;
 
   / Filters to check web and url version to filter required params
-  if[useweb;(requiredpars:`metric`points;optionalpars:`interval`tags`type)];
-  if[useweb;( 
+  if[useweb;requiredpars:`metricname`metricvalue;optionalpars:`interval`tags`metrictype;
     if[(first baseurlversion)=`v1;optionalpars,:`host];
-    if[(first baseurlversion)=`v2;optionalpars,:`unit`source_typename`resource_name`resource_type`origin_metric_type`origin_product`origin_service])];
+    if[(first baseurlversion)=`v2;optionalpars,:`unit`source_typename`resource_name`resource_type`origin_metric_type`origin_product`origin_service`points_ts`points_value]
+  ];
 
   validpars: requiredpars,optionalpars;
   / Checks
@@ -112,16 +110,16 @@ pushtodogagent:{[message]
   response
   };
 
-win.sendmetric:{[(pars!args):metfilter]
+win.sendmetric:{[dict:metfilter]
   leaders:([metricname:"";metricvalue:":";metrictype:"|";samplerate:"|@";tags:"|#"]);
-  (metricname;metricvalue):args 0 1;
+  (metricname;metricvalue):dict[`metricname`metricvalue];
   ddmsg:raze (leaders[pars]),'(args);
   response:raze@[pushtodogagent;ddmsg;{'"Error pushing data to agent: ",x}];
   metriclog,:(.z.p;.z.h;ddmsg;metricname;`float$metricvalue;0b;response);
   };
 
-win.sendevent:{[(pars!args):eventfilter]
-  (eventtitle;eventtext):args 0 1;
+win.sendevent:{[dict:eventfilter]
+  (eventtitle;eventtext):dict[`eventtitle;`eventtext];
   leaders:([eventtitle:printf("_e{%d,%d}:";count eventtitle;count eventtext);
     eventtext:"|";eventdate:"|d:";hostname:"|h:";priority:"|p:";alerttype:"|t:";tags:"|#"]);
   ddmsg:raze (leaders[pars]),'(args);
@@ -129,21 +127,20 @@ win.sendevent:{[(pars!args):eventfilter]
   eventlog,:(.z.p;.z.h;ddmsg;eventtitle;eventtext;0b;response);
   };
 
-/ the following two functions are used to push data to datadog through https post usSingSS .Q.hp
+/ the following two functions are used to push data to datadog through https post using .Q.hp
 
 / TODO: Handle variety of web requests (different post requests, different versions)
 web.sendevent:{[dict:eventfilter]
-  (eventtitle;eventtext;eventdate;hostname;priority;alerttype;tags;aggregation_key;source_type_name;related_event_id;device;category;cr_name;cr_type;integration_id;message;timestamp;change_metadata;new_value;prev_value;linkcategory;linkurl;linktitle):dict[`eventtitle`eventtext`eventdate`hostname`priority`alerttype`tags`aggregation_key`source_type_name`related_event_id`device`category`cr_name`cr_type`integration_id`message`timestamp`change_metadata`new_value`prev_value`linkcategory`linkurl`linktitle];
+  (eventtitle;eventtext;eventdate;hostname;priority;alerttype;tags;aggregation_key;source_type_name;related_event_id;device;category;cr_name;cr_type;integration_id;message;timestamp;change_metadata;new_value;prev_value;linkcategory;linkurl;linktitle;authorname;authortype;ir_name;ir_type):dict[`eventtitle`eventtext`eventdate`hostname`priority`alerttype`tags`aggregation_key`source_type_name`related_event_id`device`category`cr_name`cr_type`integration_id`message`timestamp`change_metadata`new_value`prev_value`linkcategory`linkurl`linktitle`authorname`authortype`impacted_resource_name`impacted_resource_type];
   / sends events via https post to datadog api
   url:baseurl,"events?api_key=",apikey;
   if[(first baseurlversion)=`v1;
-  json:.j.j `title`text`priority`tags`alert_type`aggregation_key`date_happened`device_name`host`related_event_id`source_type_name!(eventtitle;eventtext;priority;tags;alerttype;aggregation_key;eventdate;device;hostname;related_event_id;source_type_name)];
+    json:.j.j `title`text`priority`tags`alert_type`aggregation_key`date_happened`device_name`host`related_event_id`source_type_name!(eventtitle;eventtext;priority;tags;alerttype;aggregation_key;eventdate;device;hostname;related_event_id;source_type_name)];
   if[(first baseurlversion)=`v2;(
-  if[(`$category)=`$"alert";
-  json:.j.j(enlist`data)!enlist(`attributes`type!(enlist(`aggregation_key`attributes`category`integration_id`message`tags`timestamp`title!(aggregation_key;enlist(`custom`links`priority`status!(custom;enlist(`category`title`url!(linkcategory;linktitle;linkurl));priority;status));category;integration_id;message;tags;timestamp;title);alerttype)))];
-  / if[(`$category)=`$"change";
-  / json:.j.j(enlist`data)!enlist(`attributes`type!(enlist(`aggregation_key`attributes`category`integration_id`message`tags`timestamp`title!(aggregation_key;enlist(`custom`links`priority`status!(custom;enlist(`category`title`url!(linkcategory;linktitle;linkurl));priority;status);category;integration_id;message;tags;timestamp;title));alerttype))]
-  
+    if[(`$category)=`$"alert";
+      json:.j.j(enlist`data)!enlist(`attributes`type!(enlist(`aggregation_key`attributes`category`integration_id`message`tags`timestamp`title!(aggregation_key;enlist(`custom`links`priority`status!(custom;enlist(`category`title`url!(linkcategory;linktitle;linkurl));priority;status));category;integration_id;message;tags;timestamp;title);alerttype)))];
+    if[(`$category)=`$"change";
+       json:.j.j(enlist`data)!enlist(`attributes`type!(enlist(`aggregation_key`attributes`category`integration_id`message`tags`timestamp`title!(aggregation_key;enlist(`author`change_metadata`changed_resource`impacted_resource`new_value`prev_value!(enlist(`name`type!(authorname;authortype));change_metadata;enlist(`name`type!(cr_name;cr_type));enlist(`name`type!(ir_name;ir_type));new_value;prev_value));category;integration_id;message;tags;timestamp;title));alerttype))]
   )];
 
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
@@ -151,11 +148,14 @@ web.sendevent:{[dict:eventfilter]
   };
 
 web.sendmetric:{[dict:metfilter]
-  (metricname;metricvalue;metrictype;samplerate;tags):dict[`metricname`metricvalue`metrictype`samplerate`tags];
+  (metricname;metricvalue;metrictype;samplerate;tags;interval;unit;source_type_name;resources_name;resources_type;origin_metric_type;origin_product;origin_service;points_ts;points_value):dict[`metricname`metricvalue`metrictype`interval`tags`host`unit`source_typename`resource_name`resource_type`origin_metric_type`origin_product`origin_service`points_ts`points_value];
   / sends metrics via https post to datadog api
   url:baseurl,"series?api_key=",apikey;
   unixtime:floor((`long$.z.p)-1970.01.01D00:00)%1e9;
   json:.j.j(enlist`series)!enlist(enlist(`metric`points`host`tags!(metricname;enlist(unixtime;"F"$metricvalue);upper string .z.h;tags)));
+  if[(first baseurlversion) =`v2;
+    json:.j.j (enlist `series)!enlist(`interval`metadata`metric`points`resources`source_type_name`tags`type`unit!(interval;enlist(`origin!enlist(`metric_type`product`service!enlist(origin_metric_type;origin_product;origin_service)));metricname;enlist(`timestamp`value!enlist(points_ts;points_value));enlist(`name`type!enlist(resources_name;resources_type));source_type_name;tags;metrictype;unit))
+    ];
   response:.[.Q.hp;(url;.h.ty`json;json);{'"error with https request: ",x}];
   metriclog,:(.z.p;.z.h;json;metricname;"F"$metricvalue;1b;response);
   };

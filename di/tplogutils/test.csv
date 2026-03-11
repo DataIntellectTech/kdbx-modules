@@ -1,0 +1,21 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tplogutils:use`di.tplogutils,1,,Initialize module
+before,0,0,q,os:use`di.os,1,,Initialize module
+/ note location of the test.q file might be different, built under assumption using di module file system
+before,0,0,q,"system ""l "", os.abspath[""di/tplogutils/test.q""]",1,1,load additional testing functions / dependencies
+run,0,0,q,testrepairandreplay[],1,1,
+run,0,0,q,testrepairrecoversmessages[],1,1,
+run,0,0,q,testrepaircreatesgoodfile[],1,1,
+run,0,0,q,testcheckvalidlog[],1,1,
+run,0,0,q,testcheckcorruptsufficientmessages[],1,1,
+run,0,0,q,testrepaircreatesgoodfile[],1,1,
+run,0,0,q,testrepairrecoversmessages[],1,1,
+run,0,0,q,testchecktriggersrepair[],1,1,
+run,0,0,q,testrepairgarbageatend[],1,1,
+run,0,0,q,testmultiplecorruptsections[],1,1,
+run,0,0,q,testcompletelycorruptlog[],1,1,
+run,0,0,q,testemptylog[],1,1,
+run,0,0,q,testrepairandreplay[],1,1,
+run,0,0,q,testlargefilehandling[],1,1,
+run,0,0,q,testrepaircreatesgoodfile[],1,1,
+run,0,0,q,testsequentialoperations[],1,1,

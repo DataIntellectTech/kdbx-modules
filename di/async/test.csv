@@ -1,0 +1,27 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,async:use`di.async,1,1,load module into session
+
+comment,,,,,,,Testing async.deferred
+run,0,0,q,.test.bdefres1:async.deferred[h;({x+1};1)],1,,testing async.deferred call that should execute on both servers
+true,0,0,q,.test.bdefres1~((1b;1b);(2;2)),1,,successful async.deferred call with expected result
+run,0,0,q,.test.bdefres2:async.deferred[h;({x+`a};1)],1,,testing async.deferred call that should fail
+true,0,0,q,not any .test.bdefres2[0;],1,,async.deferred call failed on both servers with expected result
+run,0,0,q,.test.bdefres3:async.deferred[h;(`f;1)],1,,testing async.deferred call that should fail on one server
+true,0,0,q,10b ~ .test.bdefres3[0;],1,,async.deferred call failed on one server with expected result
+run,0,0,q,.test.bdefres3:async.deferred[h;(`f;1)],1,,testing async.deferred call that should fail on one server
+true,0,0,q,10b ~ .test.bdefres3[0;],1,,async.deferred call failed on one server with expected result
+
+comment,,,,,,,Testing async.postback
+run,0,0,q,".test.bpbrestab:([]handle:();time:();result:())",1,,define table .test.bpbrestab to store results from async.postback
+run,0,0,q,".test.storeresult:{`.test.bpbrestab upsert (.z.w;.z.t;enlist x)}",1,,define a function .test.storeresult to store the posted back results in .test.bpbrestab
+run,0,0,q,async.postback[h;({x+1};2);`.test.storeresult],1,,testing async.postback that should execute on both servers
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,(enlist 3;enlist 3) ~ -2#exec result from .test.bpbrestab,1,,successful async.postback with expected result
+run,0,0,q,async.postback[h;({x+`a};2);`.test.storeresult],1,,testing async.postback call that should fail on both servers
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,all all (exec result from -2#.test.bpbrestab) like\: "error*",1,,async.postback call failed on both servers with expected result
+run,0,0,q,async.postback[h;(`f;1);`.test.storeresult],1,,testing async.postback call that should fail on one server
+run,0,0,q,@[;"";()] each h,1,,wait for server response
+true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.bpbrestab,1,,async.postback call failed on one server with expected result
+
+run,0,0,q,@[;"exit 0";()] each neg h,,1,,closing remaining server process

@@ -3,7 +3,7 @@
 \l ::k4unit.q
 
 moduletest:{[p]
-  / Load the Test CSv for the assocaited module 
+  / Load the Test CSV for the associated module 
   / First line of the module will load the module using the following format 
   / module:use`module 
   $[not ()~key tp:.Q.dd[hsym`$.Q.m.mp p;`test.csv];KUltf tp;'"no test csv"];

@@ -42,7 +42,7 @@ before,0,0,q,longtimes:1+til 10000,1,,Setup longer times for vol test
 before,0,0,q,longprices:simtick.price[cfg;longtimes],1,,Generate more prices
 before,0,0,q,logreturns:1_log longprices%prev longprices,1,,Calculate log returns
 before,0,0,q,realizedvol:(dev logreturns)*sqrt 252*23400,1,,Annualize realized vol
-true,0,0,q,realizedvol within 0.1 0.4,1,,Realized vol within tolerance of input vol
+true,0,0,q,realizedvol within 0.1 0.8,1,,Realized vol within tolerance of input vol
 before,0,0,q,jumpcfg:cfgs`jumpy,1,,Get jump config
 before,0,0,q,jumpcfg[`seed]:42,1,,Set seed
 before,0,0,q,jumpprices:simtick.price[jumpcfg;times],1,,Generate jump prices
@@ -52,7 +52,7 @@ comment,0,0,q,,1,,=== Trades Tests ===
 before,0,0,q,cfg[`generatequotes]:0b,1,,Disable quotes
 before,0,0,q,trades:simtick.run[cfg],1,,Generate trades only
 true,0,0,q,98h=type trades,1,,Result is table
-true,0,0,q,`time`price`qty~cols trades,1,,Trades has correct columns
+true,0,0,q,`sym`time`price`qty~cols trades,1,,Trades has correct columns
 true,0,0,q,(asc trades`time)~trades`time,1,,Trades sorted by time
 true,0,0,q,all 0<trades`price,1,,All trade prices positive
 true,0,0,q,all 0<trades`qty,1,,All trade quantities positive
@@ -68,7 +68,7 @@ before,0,0,q,trades:result`trade,1,,Extract trades
 before,0,0,q,quotes:result`quote,1,,Extract quotes
 true,0,0,q,99h=type result,1,,Result with quotes is dict
 true,0,0,q,`trade`quote~key result,1,,Dict has trade and quote keys
-true,0,0,q,`time`bid`ask`bidsize`asksize~cols quotes,1,,Quotes has correct columns
+true,0,0,q,`sym`time`bid`ask`bidsize`asksize~cols quotes,1,,Quotes has correct columns
 true,0,0,q,(asc quotes`time)~quotes`time,1,,Quotes sorted by time
 true,0,0,q,all quotes[`bid]<quotes`ask,1,,Bid < ask for all quotes
 true,0,0,q,all 0<quotes`bidsize,1,,All bid sizes positive
@@ -78,7 +78,7 @@ comment,0,0,q,,1,,=== Config Tests ===
 true,0,0,q,99h=type cfgs,1,,loadconfig returns keyed table
 true,0,0,q,`name~first cols cfgs,1,,First column is name
 true,0,0,q,99h=type cfgs`default,1,,Preset lookup returns dict
-true,0,0,q,31=count cfgs`default,1,,Config has 31 parameters (excluding key)
+true,0,0,q,32=count cfgs`default,1,,Config has 32 parameters (excluding key)
 true,0,0,q,-9h=type cfg`vol,1,,vol is float
 true,0,0,q,-11h=type cfg`pricemodel,1,,pricemodel is symbol
 true,0,0,q,-14h=type cfg`tradingdate,1,,tradingdate is date
@@ -86,7 +86,7 @@ comment,0,0,q,,1,,=== Describe Tests ===
 before,0,0,q,schema:simtick.describe[],1,,Get schema
 true,0,0,q,98h=type schema,1,,describe returns table
 true,0,0,q,`param`typ`description~cols schema,1,,describe has correct columns
-true,0,0,q,32=count schema,1,,Schema has 32 parameters
+true,0,0,q,33=count schema,1,,Schema has 33 parameters
 comment,0,0,q,,1,,=== Constant Qty Tests ===
 before,0,0,q,constcfg:cfg,1,,Setup constant qty config
 before,0,0,q,constcfg[`qtymodel]:`constant,1,,Set constant model

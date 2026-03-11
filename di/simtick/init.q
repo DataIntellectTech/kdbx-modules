@@ -455,9 +455,9 @@ run:{[cfg]
   n:count arrs;
 
   if[n=0;
-    trades:([]time:`timestamp$();price:`float$();qty:`long$());
+    trades:([]sym:`symbol$();time:`timestamp$();price:`float$();qty:`long$());
     :$[cfg`generatequotes;
-      `trade`quote!(trades;([]time:`timestamp$();bid:`float$();ask:`float$();bidsize:`long$();asksize:`long$()));
+      `trade`quote!(trades;([]sym:`symbol$();time:`timestamp$();bid:`float$();ask:`float$();bidsize:`long$();asksize:`long$()));
       trades]
   ];
 
@@ -472,17 +472,20 @@ run:{[cfg]
   qtys:.z.m.qty.gen[n;cfg];
 
   trades:([]time:times;price:prices;qty:qtys);
+  trades:`sym`time xcols update sym:cfg`sym from trades;
+  trades:update `p#sym from trades;
 
-  / return trades only or dictionary with quotes
   $[cfg`generatequotes;
-    `trade`quote!(trades;.z.m.quote.generate[cfg;trades]);
+    `trade`quote!(trades; 
+      {[s;t] update `p#sym from `sym`time xcols update sym:s from t}[cfg`sym;.z.m.quote.generate[cfg;trades]]);
     trades]
-  };
+  }; 
 
 / configuration schema: column name -> (type; description)
 / type codes: S=symbol, D=date, U=minute, F=float, J=long, B=boolean
 schema:()!()
 schema[`name]:("S";"preset name (key)")
+schema[`sym]:("S";"ticker symbol")
 schema[`tradingdate]:("D";"simulation date")
 schema[`openingtime]:("U";"market open time")
 schema[`closingtime]:("U";"market close time")

@@ -13,6 +13,18 @@ fail,0,0,q,simtick.run[badcfg2],1,,Negative baseintensity throws error
 before,0,0,q,badcfg3:cfg,1,,Setup bad config for zero multiplier
 before,0,0,q,badcfg3[`openmult]:0.0,1,,Set zero openmult
 fail,0,0,q,simtick.run[badcfg3],1,,Zero multiplier throws error
+before,0,0,q,badcfg4:cfg,1,,Setup bad config for zero vol
+before,0,0,q,badcfg4[`vol]:0.0,1,,Set zero vol
+fail,0,0,q,simtick.run[badcfg4],1,,Zero vol throws error
+before,0,0,q,badcfg5:cfg,1,,Setup bad config for negative vol
+before,0,0,q,badcfg5[`vol]:-0.1,1,,Set negative vol
+fail,0,0,q,simtick.run[badcfg5],1,,Negative vol throws error
+before,0,0,q,badcfg6:cfg,1,,Setup bad config for zero startprice
+before,0,0,q,badcfg6[`startprice]:0.0,1,,Set zero startprice
+fail,0,0,q,simtick.run[badcfg6],1,,Zero startprice throws error
+before,0,0,q,badcfg7:cfg,1,,Setup bad config for negative startprice
+before,0,0,q,badcfg7[`startprice]:-1.0,1,,Set negative startprice
+fail,0,0,q,simtick.run[badcfg7],1,,Negative startprice throws error
 comment,0,0,q,,1,,=== Arrivals Tests ===
 before,0,0,q,cfg[`seed]:42,1,,Set seed for reproducibility
 before,0,0,q,arr:simtick.arrivals[cfg],1,,Generate arrivals

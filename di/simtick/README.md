@@ -24,6 +24,7 @@ This flexibility allows the same module to serve quick prototypes and sophistica
 - **Intraday seasonality** — trading activity is high at open and close, low at midday. Configurable U-shape or J-shape patterns.
 - **Price dynamics** — GBM with optional jump-diffusion captures continuous price movement and occasional discontinuities.
 - **Microstructure** — bid-ask spreads that widen at open/close, quote updates between trades.
+- **Realistic pricing** — trade prices and quote bid/ask rounded to the nearest cent (US equity tick size).
 
 ### Market Focus
 
@@ -201,6 +202,7 @@ Presets are calibrated for NVDA (NASDAQ large-cap tech):
 | `pricemodel` | `gbm` or `jump` | `gbm` |
 | `qtymodel` | `lognormal` or `constant` | `lognormal` |
 | `avgqty` | Average trade size | 100 |
+| `seed` | Random seed (`0N` = no seed) | `42` |
 | `basespread` | Base bid-ask spread (fraction) | 0.0001 |
 | `generatequotes` | Generate quotes flag | 0b |
 | `openmult` | Opening intensity multiplier | 1.5 |
@@ -218,7 +220,7 @@ q)k4unit.moduletest`di.simtick
 
 | Group | Tests | Description |
 |-------|-------|-------------|
-| Validation | 3 | Bad configs throw correct errors (alpha >= beta, negative intensity, zero multipliers) |
+| Validation | 7 | Bad configs throw correct errors (alpha >= beta, negative intensity, zero multipliers, zero/negative vol, zero/negative startprice) |
 | Arrivals | 5 | Output properties: non-empty, sorted, positive, within duration, correct type |
 | Shape | 3 | Intraday pattern: open > mid, close > mid, J-shape verification |
 | Price | 6 | Positive prices, startprice correct, realized vol within tolerance, jump model works |
@@ -228,7 +230,7 @@ q)k4unit.moduletest`di.simtick
 | Describe | 3 | Returns table, correct columns, correct parameter count |
 | Constant Qty | 2 | All quantities equal, quantity equals avgqty |
 | Reproducibility | 1 | Same seed produces same output |
-| **Total** | **46** | |
+| **Total** | **50** | |
 
 ## Documentation
 

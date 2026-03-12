@@ -92,8 +92,12 @@ shape:{[cfg;progress]
 hawkes.step:{[params;state]
   / single step of Ogata thinning algorithm
   / params: dict with `duration`lambdamax`baseintensity`alpha`beta`cfg
-  / state: dict with `t`excitation`times`done
+  / state: dict with `t`excitation`accept`done
   / returns: updated state dict
+  /
+  / `accept` records whether this candidate was accepted (1b) or rejected (0b).
+  / arrivals[] uses scan (\) to collect all states, then filters t where accept.
+  / this avoids O(n^2) list copies from appending to a growing times list each step.
   duration:params`duration;
   lambdamax:params`lambdamax;
   baseintensity:params`baseintensity;
@@ -105,8 +109,8 @@ hawkes.step:{[params;state]
   wait:neg log[first 1?1.0]%lambdamax;
   t:state[`t]+wait;
 
-  / check if past duration
-  if[t>=duration; :state,enlist[`done]!enlist 1b];
+  / check if past duration - mark accept:0b so scan filter excludes this state
+  if[t>=duration; :`t`excitation`accept`done!(t;state`excitation;0b;1b)];
 
   / decay excitation
   excitation:state[`excitation]*exp neg beta*wait;
@@ -118,10 +122,9 @@ hawkes.step:{[params;state]
 
   / accept/reject
   accept:(first 1?1.0)<lambda%lambdamax;
-  times:$[accept; state[`times],t; state`times];
   excitation:$[accept; excitation+alpha; excitation];
 
-  `t`excitation`times`done!(t;excitation;times;0b)
+  `t`excitation`accept`done!(t;excitation;accept;0b)
   };
 
 arrivals:{[cfg]
@@ -158,12 +161,13 @@ arrivals:{[cfg]
     duration;lambdamax;baseintensity;alpha;beta;cfg);
 
   / initial state
-  init:`t`excitation`times`done!(0f;0f;`float$();0b);
+  init:`t`excitation`accept`done!(0f;0f;0b;0b);
 
-  / run until done
-  final:.z.m.hawkes.step[params]/[{not x`done};init];
-
-  final`times
+  / scan all candidate steps (\ returns every intermediate state as a table)
+  / then extract t values where the candidate was accepted
+  / this avoids the O(n^2) list append of the previous fold-with-accumulator approach
+  states:.z.m.hawkes.step[params]\[{not x`done};init];
+  states[`t] where states[`accept]
   };
 
 gbm:{[s;r;eps;t]
@@ -297,14 +301,16 @@ quote.generate:{[cfg;trades]
   pretimes:tradetimes-`timespan$`long$(pretradeoffset+randoffsets)*nsperms;
 
   / spreads based on time of day (vectorized)
-  prespreadmults:.z.m.quote.spreadmults[cfg;tradetimes];
+  / use pretimes (actual quote timestamps) not tradetimes - spread is evaluated
+  / when the quote is posted, which is pretradeoffset ms before the trade
+  prespreadmults:.z.m.quote.spreadmults[cfg;pretimes];
   prespreads:basespread*tradeprices*prespreadmults;
   prebids:tradeprices-prespreads%2;
   preasks:tradeprices+prespreads%2;
 
   / sizes (vectorized)
-  prebidsizes:avgquotesize+`long$100*.z.m.rng.boxmuller[n];
-  preasksizes:avgquotesize+`long$100*.z.m.rng.boxmuller[n];
+  prebidsizes:avgquotesize+`long$100*.z.m.rng.normal[n;cfg];
+  preasksizes:avgquotesize+`long$100*.z.m.rng.normal[n;cfg];
 
   / === 3. intermediate quotes (vectorized) ===
   / only if we have at least 2 trades
@@ -321,8 +327,13 @@ quote.generate:{[cfg;trades]
   allasksizes:(enlist avgquotesize),intresult[`asksizes],preasksizes;
 
   / build table, enforce minimum size of 1, sort by time
+  / round bid/ask to nearest cent consistent with trade price rounding
+  / enforce bid < ask after rounding - tight spreads can collapse to bid=ask
   quotes:([]time:alltimes;bid:allbids;ask:allasks;bidsize:allbidsizes;asksize:allasksizes);
-  quotes:update bidsize:1|bidsize,asksize:1|asksize from quotes;
+  quotes:update bidsize:1|bidsize,asksize:1|asksize,
+    bid:0.01*`long$0.5+bid%0.01,
+    ask:0.01*`long$0.5+ask%0.01 from quotes;
+  quotes:update ask:bid+0.01 from quotes where bid>=ask;
   `time xasc quotes
   };
 
@@ -371,19 +382,19 @@ quote.intermediates:{[cfg;tradetimes;tradeprices;basespread;pretradeoffset;quote
 
   / prices: interpolate from prev toward next trade price, plus noise
   midprices:gapprevprices+fractions*(gapnextprices-gapprevprices);
-  noise:quoteticksize*midprices*.z.m.rng.boxmuller[totint];
+  noise:quoteticksize*midprices*.z.m.rng.normal[totint;cfg];
   midprices+:noise;
 
   / spreads (vectorized across all intermediate quotes)
   intspreadmults:.z.m.quote.spreadmults[cfg;inttimes];
-  spreadvar:1+0.1*abs .z.m.rng.boxmuller[totint];
+  spreadvar:1+0.1*abs .z.m.rng.normal[totint;cfg];
   intspreads:basespread*midprices*intspreadmults*spreadvar;
   intbids:midprices-intspreads%2;
   intasks:midprices+intspreads%2;
 
   / sizes
-  intbidsizes:avgquotesize+`long$100*.z.m.rng.boxmuller[totint];
-  intasksizes:avgquotesize+`long$100*.z.m.rng.boxmuller[totint];
+  intbidsizes:avgquotesize+`long$100*.z.m.rng.normal[totint;cfg];
+  intasksizes:avgquotesize+`long$100*.z.m.rng.normal[totint;cfg];
 
   `times`bids`asks`bidsizes`asksizes!(inttimes;intbids;intasks;intbidsizes;intasksizes)
   };
@@ -421,6 +432,8 @@ validate:{[cfg]
   /   - Positive multipliers: openmult, midmult, closemult > 0
   /   - Positive base intensity
   /   - Transitionpoint in valid range (prevents division by zero)
+  /   - Positive volatility (zero vol produces degenerate flat price path)
+  /   - Positive start price (negative/zero price is economically invalid)
 
   / check Hawkes stability condition
   if[cfg[`alpha]>=cfg`beta; '"validate: Hawkes unstable - alpha must be < beta"];
@@ -431,6 +444,10 @@ validate:{[cfg]
   / check transitionpoint bounds (prevents division by zero in shape function)
   if[not cfg[`transitionpoint] within 0.01 0.99;
     '"validate: transitionpoint must be between 0.01 and 0.99"];
+  / check vol positive (zero produces NaN in log, flat path with no signal)
+  if[0>=cfg`vol; '"validate: vol must be positive"];
+  / check startprice positive (GBM/jump models require positive initial price)
+  if[0>=cfg`startprice; '"validate: startprice must be positive"];
   cfg
   };
 
@@ -447,8 +464,8 @@ run:{[cfg]
   /   result:run[cfg]  / result`trade, result`quote
   cfg:.z.m.validate[cfg];
 
-  / set seed for reproducibility
-  if[cfg[`seed]>0; system "S ",string cfg`seed];
+  / set seed for reproducibility (0N = no seed)
+  if[not null cfg`seed; system "S ",string cfg`seed];
 
   / generate arrival times (seconds from open)
   arrs:.z.m.arrivals[cfg];
@@ -465,8 +482,9 @@ run:{[cfg]
   basetime:cfg[`tradingdate]+`timespan$cfg`openingtime;
   times:basetime+`timespan$`long$arrs*nspersec;
 
-  / generate prices
+  / generate prices and round to nearest cent (US equity tick size)
   prices:.z.m.price[cfg;arrs];
+  prices:0.01*`long$0.5+prices%0.01;
 
   / generate quantities
   qtys:.z.m.qty.gen[n;cfg];
@@ -490,7 +508,7 @@ schema[`tradingdate]:("D";"simulation date")
 schema[`openingtime]:("U";"market open time")
 schema[`closingtime]:("U";"market close time")
 schema[`startprice]:("F";"initial price")
-schema[`seed]:("J";"random seed (0 = no seed)")
+schema[`seed]:("J";"random seed (0N = no seed, use null long)")
 schema[`rngmodel]:("S";"RNG model (`pseudo)")
 schema[`drift]:("F";"annualized drift")
 schema[`vol]:("F";"annualized volatility")

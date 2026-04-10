@@ -166,11 +166,22 @@ These functions are exported and can be used to build rich HTML email bodies bef
 
 ## Usage Examples
 
+Every example requires a logger. Define one before calling `init`:
+
+```q
+logdep:`info`warn`error!(
+  {[c;m] -1 "INFO  [",string[c],"] ",m;};
+  {[c;m] -1 "WARN  [",string[c],"] ",m;};
+  {[c;m] -2 "ERROR [",string[c],"] ",m;});
+```
+
 ### 1. Send a plain email via sendmail
 
 ```q
 email:use`di.email
-email.init[`mailfrom`enabled!("me@example.com";1b);(::)]
+email.init[
+  `mailfrom`enabled!("me@example.com";1b);
+  `log`send!(logdep;::)]
 email.senddefault`to`subject`body!(`$"ops@example.com";"Deployed";enlist"Build 42 deployed.")
 ```
 
@@ -184,14 +195,18 @@ email.init[
     1b;
     "smtp://smtp.gmail.com:587";
     "me@example.com";
-    "mypassword");
-  (::)]
+    "myapppassword");
+  `log`send!(logdep;::)]
 email.senddefault`to`subject`body!(`$"ops@example.com";"Deployed";enlist"Build 42 deployed.")
 ```
 
 ### 3. Send an HTML table
 
 ```q
+email:use`di.email
+email.init[
+  `mailfrom`enabled!("me@example.com";1b);
+  `log`send!(logdep;::)]
 results:([]sym:`AAPL`GOOG;price:182.5 141.3)
 body:email.ztable[results]
 email.senddefault`to`subject`body!(`$"ops@example.com";"EOD Prices";body)
@@ -200,36 +215,33 @@ email.senddefault`to`subject`body!(`$"ops@example.com";"EOD Prices";body)
 ### 4. Test transport connectivity
 
 ```q
+email:use`di.email
+email.init[
+  `mailfrom`enabled!("me@example.com";1b);
+  `log`send!(logdep;::)]
 email.test[`$"me@example.com"]
-1b
 ```
 
-### 5. Inject a logger
-
-```q
-log:use`di.log
-log.init[logconfig]
-logdep:`info`warn`error!(log.info;log.warn;log.error)
-email.init[emailconfig;`log`send!(logdep;::)]
-```
-
-### 6. Use as a reporter alert handler
+### 5. Use as a reporter alert handler
 
 ```
 rdbmemorycheck|.checks.memorycheck[1500000000]|email.alert[00:02;getenv`DEMOEMAILRECEIVER]|||rdb|rdb1|00:00:00|23:59:59|00:05:00|00:00:20|0 1 2 3 4 5 6
 ```
 
-### 7. Use as a reporter report handler
+### 6. Use as a reporter report handler
 
 ```
 eodreport|hloc[.proc.cd[];.proc.cd[];0D01]|email.report[getenv[`TORQHOME];getenv`DEMOEMAILRECEIVER;"eodreport";"csv"]|||rdb||18:00|18:00|00:00|00:05|2 3 4 5 6
 ```
 
-### 8. Testing with a mock send function
+### 7. Testing with a mock send function
 
 ```q
+mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
 mocksend:{[frm;to;sub;body;att]}
-email.init[`enabled!(enlist 1b);`log`send!(::;mocksend)]
+email:use`di.email
+email.init[
+  `mailfrom`enabled!("me@example.com";1b);
+  `log`send!(mocklog;mocksend)]
 email.senddefault`to`subject`body!(`$"a@b.com";"test";enlist"hello")
-1b
 ```

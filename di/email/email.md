@@ -8,8 +8,71 @@ Alert and report result handlers compatible with the TorQ reporter process are i
 
 One of the following must be installed and configured:
 
-- **sendmail** — `sudo apt install sendmail` or equivalent. Used when no `smtpurl` is configured.
+- **sendmail via msmtp** — lightweight sendmail replacement. Used when no `smtpurl` is configured. See [Sendmail setup (msmtp)](#sendmail-setup-msmtp) below.
 - **curl** — used when `smtpurl` is set in config. Most systems have this by default.
+
+## Sendmail setup (msmtp)
+
+`msmtp` is the recommended sendmail transport. It acts as a drop-in `sendmail` replacement and routes mail through an SMTP relay.
+
+### 1. Install
+
+```bash
+sudo apt install msmtp msmtp-mta
+```
+
+`msmtp-mta` creates the `/usr/sbin/sendmail` symlink that the module uses.
+
+### 2. Configure
+
+Create `~/.msmtprc`:
+
+```
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        ~/.msmtp.log
+
+account        default
+host           smtp.gmail.com
+port           587
+from           me@example.com
+user           me@example.com
+password       myapppassword
+```
+
+Set permissions (msmtp refuses to run if the file is world-readable):
+
+```bash
+chmod 600 ~/.msmtprc
+```
+
+For Gmail, `password` must be an [App Password](https://myaccount.google.com/apppasswords) — not your account password. App Passwords require 2-Step Verification to be enabled on the account.
+
+### 3. Test outside q
+
+```bash
+echo -e "To: me@example.com\nSubject: test\n\ntest body" | sendmail me@example.com
+cat ~/.msmtp.log
+```
+
+A successful send logs `exitcode=EX_OK`. If it fails, the log contains the SMTP error.
+
+### 4. Test from q
+
+```q
+email:use`di.email
+log:use`di.log
+log.init[logconfig]
+logdep:`info`warn`error!(log.info;log.warn;log.error)
+
+email.init[
+  `mailfrom`enabled!("me@example.com";1b);
+  `log`send!(logdep;::)]
+
+email.test[`$"me@example.com"]
+```
 
 ## Configuration
 

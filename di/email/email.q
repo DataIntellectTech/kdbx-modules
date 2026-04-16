@@ -1,13 +1,13 @@
-/ module for sending html emails via the system sendmail utility
-/ ported from torq code/common/email.q and code/processes/reporter.q
-/ html construction and sendmail transport ported from qmail (github.com/BestiaPL/qmail)
-/ no c library or smtp server required
+// module for sending html emails via the system sendmail utility
+// ported from torq code/common/email.q and code/processes/reporter.q
+// html construction and sendmail transport ported from qmail (github.com/BestiaPL/qmail)
+// no c library or smtp server required
 
-/ ============================================================
-/ sendmail utilities (ported from qmail)
-/ ============================================================
+// ============================================================
+// sendmail utilities (ported from qmail)
+// ============================================================
 
-utilityexists:{not 0b~@[system;"which ",x," 2>/dev/null";{0b}]};
+utilityexists:{@[system;"which ",x," 2>/dev/null";0b]};
 
 hsym2str:{[x] $[":"=first s:string x;1_s;s]};
 
@@ -25,7 +25,7 @@ encodefile:{
   };
 
 mimetype:{[a]
-  if[not utilityexists "file"; :"text/plain"];
+  if[0b~utilityexists "file"; :"text/plain"];
   checkfile a;
   trim last ":" vs first @[system;"file --mime-type ",hsym2str a;{enlist ": text/plain"}];
   };
@@ -77,13 +77,13 @@ mailtemplate:{[frm;to;sub;body;att]
   };
 
 mailsend:{[frm;to;sub;body;att]
-  / send an html email via the system sendmail utility
-  / frm  - string from address
-  / to   - string, comma-delimited recipient addresses
-  / sub  - string subject
-  / body - list of strings (html content)
-  / att  - "" for no attachment, or list of hsym file paths
-  if[not utilityexists "sendmail";'"sendmail not found on this system"];
+  // send an html email via the system sendmail utility
+  // frm  - string from address
+  // to   - string, comma-delimited recipient addresses
+  // sub  - string subject
+  // body - list of strings (html content)
+  // att  - "" for no attachment, or list of hsym file paths
+  if[0b~utilityexists "sendmail";'"sendmail not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
   fn:hsym`$first system"mktemp /tmp/qmail.XXXXXXXXXX";
   fn 0: mailtemplate[frm;to;sub;body;att];
@@ -91,9 +91,9 @@ mailsend:{[frm;to;sub;body;att]
   hdel fn;
   };
 
-/ ============================================================
-/ html construction helpers (ported from qmail)
-/ ============================================================
+// ============================================================
+// html construction helpers (ported from qmail)
+// ============================================================
 
 mailstring:{$[10h=abs type x;x;(type[x] in 0 98 99h) or (100h<type x) or 0h<type x;.Q.s1 x;string x]};
 
@@ -213,42 +213,42 @@ colorizestereo:{[color_min;color_max;min_val;max_val;pivot_val;x]
   @[;where not low;:;high_colors] @[;where low;:;low_colors] count[x]#enlist 0x000000
   };
 
-/ ============================================================
-/ module state and defaults
-/ ============================================================
+// ============================================================
+// module state and defaults
+// ============================================================
 
-/ from address used in all outgoing emails - overwritten by init
+// from address used in all outgoing emails - overwritten by init
 mailfrom:"torq@localhost";
 
-/ email gate - overwritten by init
+// email gate - overwritten by init
 enabled:0b;
 
-/ append-only table recording every send attempt
+// append-only table recording every send attempt
 history:([]time:`timestamp$();recipients:`symbol$();subject:();status:`symbol$();bytes:`long$());
 
-/ keyed table tracking last alert send time per procname+alertname pair (for cooldown)
+// keyed table tracking last alert send time per procname+alertname pair (for cooldown)
 alertstats:([procname:`symbol$();alertname:`symbol$()] lastsent:`timestamp$());
 
-/ default send wraps mailsend - can be overridden in deps for testing
+// default send wraps mailsend - can be overridden in deps for testing
 defaultsend:{[frm;to;sub;body;att]mailsend[frm;to;sub;body;att]};
 send:defaultsend;
 
-/ smtp config - set by init when smtpurl is provided; used by smtpsend_
+// smtp config - set by init when smtpurl is provided; used by smtpsend_
 smtpurl:"";
 smtpuser:"";
 smtppassword:"";
 smtpssl:1b;
 
-/ ============================================================
-/ internal helpers
-/ ============================================================
+// ============================================================
+// internal helpers
+// ============================================================
 
 smtpsend_:{[frm;to;sub;body;att]
-  / send via curl smtp transport using module smtp config (smtpurl/smtpuser/smtppassword/smtpssl)
-  / signature matches mailsend: frm to sub body att
-  if[not utilityexists "curl";'"curl not found on this system"];
+  // send via curl smtp transport using module smtp config (smtpurl/smtpuser/smtppassword/smtpssl)
+  // signature matches mailsend: frm to sub body att
+  if[0b~utilityexists "curl";'"curl not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
-  / keep tmpfile as a plain string to avoid type issues when building cmd
+  // keep tmpfile as a plain string to avoid type issues when building cmd
   tmpfile:first system"mktemp /tmp/qmail.XXXXXXXXXX";
   fn:hsym`$tmpfile;
   .[{[a;b]a 0: b};(fn;mailtemplate[frm;to;sub;body;att]);{[fn;e]hdel fn;'"smtp write error: ",e}[fn]];
@@ -260,8 +260,8 @@ smtpsend_:{[frm;to;sub;body;att]
   };
 
 stringnestedlists:{[res]
-  / convert any nested int/float list columns to space-delimited strings for serialisation
-  / ported from torq reporter.q stringnestedlists
+  // convert any nested int/float list columns to space-delimited strings for serialisation
+  // ported from torq reporter.q stringnestedlists
   nestedtypes:upper .Q.t except " c";
   $[count select from meta[res] where t in nestedtypes;
     {[t;c] ![t;();0b;(enlist c)!enlist((';{" " sv string x});c)]}/[res;exec c from meta[res] where t in nestedtypes];
@@ -269,8 +269,8 @@ stringnestedlists:{[res]
   };
 
 writetofile:{[temppath;reportname;filetype;data]
-  / write data`result to disk as csv or txt and return the file path hsym
-  / ported from torq reporter.q writetofile
+  // write data`result to disk as csv or txt and return the file path hsym
+  // ported from torq reporter.q writetofile
   ty:`$filetype;
   if[not ty in key .h.tx;
     .z.m.logerr[`email;"writetofile: filetype not supported: ",filetype];
@@ -283,19 +283,19 @@ writetofile:{[temppath;reportname;filetype;data]
   };
 
 loghistory:{[recipients;subject;status;bytes]
-  / append one row to the persistent send history table
+  // append one row to the persistent send history table
   .z.M.history insert (.z.p;recipients;subject;status;`long$bytes);
   };
 
-/ ============================================================
-/ public api
-/ ============================================================
+// ============================================================
+// public api
+// ============================================================
 
 senddefault:{[msgdict]
-  / send an html email via the system sendmail utility
-  / msgdict keys: to (symbol or symbol list), subject (string), body (list of strings)
-  /               optionally: attachment (file path hsym)
-  / returns 1b on success, 0b on send failure, -1 if disabled
+  // send an html email via the system sendmail utility
+  // msgdict keys: to (symbol or symbol list), subject (string), body (list of strings)
+  //               optionally: attachment (file path hsym)
+  // returns 1b on success, 0b on send failure, -1 if disabled
   if[not enabled;
     .z.m.logerr[`email;"email sending is not enabled"];
     loghistory[msgdict`to;msgdict`subject;`disabled;-1];
@@ -314,18 +314,18 @@ senddefault:{[msgdict]
   };
 
 test:{[to]
-  / send a test email to verify sendmail connectivity
-  / to - symbol e.g. `$"user@example.com"
-  / returns 1b on success, 0b on failure
+  // send a test email to verify sendmail connectivity
+  // to - symbol e.g. `$"user@example.com"
+  // returns 1b on success, 0b on failure
   :senddefault`to`subject`body!(to;"test email";enlist"this is a test email to verify sendmail is configured correctly");
   };
 
 alerthandler:{[period;recipients;data]
-  / result handler for the torq reporter alert - invoked via the alert[] projection
-  / ported from torq reporter.q emailalert
-  / period     - timespan cooldown e.g. 00:02:00
-  / recipients - string or list of strings (email addresses)
-  / data       - reporter data dict: result (table with messages col), name, procname, queryid
+  // result handler for the torq reporter alert - invoked via the alert[] projection
+  // ported from torq reporter.q emailalert
+  // period     - timespan cooldown e.g. 00:02:00
+  // recipients - string or list of strings (email addresses)
+  // data       - reporter data dict: result (table with messages col), name, procname, queryid
   lasttime:0p^exec first lastsent from alertstats where procname=(data`procname),alertname=(data`name);
   result:data`result;
   if[not count result;
@@ -346,21 +346,21 @@ alerthandler:{[period;recipients;data]
   };
 
 alert:{[period;recipients]
-  / create a reporter result handler that sends an alert email with cooldown
-  / period     - timespan cooldown between successive alerts e.g. 00:02:00
-  / recipients - string or list of strings (email addresses)
-  / returns a projection {[data]} compatible with the torq reporter resulthandler column
+  // create a reporter result handler that sends an alert email with cooldown
+  // period     - timespan cooldown between successive alerts e.g. 00:02:00
+  // recipients - string or list of strings (email addresses)
+  // returns a projection {[data]} compatible with the torq reporter resulthandler column
   :alerthandler[period;recipients;];
   };
 
 reporthandler:{[temppath;recipients;filename;filetype;data]
-  / result handler for the torq reporter report - invoked via the report[] projection
-  / ported from torq reporter.q emailreport
-  / temppath   - string path for temporary report files e.g. getenv[`TORQHOME]
-  / recipients - string or list of strings (email addresses)
-  / filename   - string output filename stem and email subject label
-  / filetype   - string file format e.g. "csv" or "txt"
-  / data       - reporter data dict: result (table), name, queryid
+  // result handler for the torq reporter report - invoked via the report[] projection
+  // ported from torq reporter.q emailreport
+  // temppath   - string path for temporary report files e.g. getenv[`TORQHOME]
+  // recipients - string or list of strings (email addresses)
+  // filename   - string output filename stem and email subject label
+  // filetype   - string file format e.g. "csv" or "txt"
+  // data       - reporter data dict: result (table), name, queryid
   filepath:writetofile[temppath;filename;filetype;data];
   subject:"Report '",(string data`name),"' has been generated [",(string .z.d),"]";
   body:"A report has been generated. Please see the attached file for the results.";
@@ -372,36 +372,36 @@ reporthandler:{[temppath;recipients;filename;filetype;data]
   };
 
 report:{[temppath;recipients;filename;filetype]
-  / create a reporter result handler that writes the result to file and emails it as an attachment
-  / temppath   - string path for temporary report files e.g. getenv[`TORQHOME]
-  / recipients - string or list of strings (email addresses)
-  / filename   - string output filename stem and email subject label
-  / filetype   - string file format e.g. "csv" or "txt"
-  / returns a projection {[data]} compatible with the torq reporter resulthandler column
+  // create a reporter result handler that writes the result to file and emails it as an attachment
+  // temppath   - string path for temporary report files e.g. getenv[`TORQHOME]
+  // recipients - string or list of strings (email addresses)
+  // filename   - string output filename stem and email subject label
+  // filetype   - string file format e.g. "csv" or "txt"
+  // returns a projection {[data]} compatible with the torq reporter resulthandler column
   :reporthandler[temppath;recipients;filename;filetype;];
   };
 
 getstatus:{[]
-  / return the full send history table
+  // return the full send history table
   :history;
   };
 
 init:{[config;deps]
-  / initialise module with email config and optional injected dependencies
-  / config - dict with any of:
-  /   mailfrom (string or symbol) - from address
-  /   enabled  (boolean)          - gate for sending
-  /   smtpurl  (string or symbol) - e.g. "smtp://smtp.gmail.com:587"
-  /   smtpuser (string or symbol) - smtp username
-  /   smtppassword (string)       - smtp password
-  /   smtpssl  (boolean)          - require tls (default 1b)
-  / pass (::) for config to use defaults (email disabled, sendmail transport)
-  / deps - `log`send!(logdict;sendfunc)
-  /   `log:  `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required; init throws if absent
-  /   `send: {[frm;to;sub;body;att]}                    - optional, (::) = use smtp or sendmail
-  / examples:
-  /   email.init[config; `log`send!(logdep; ::)]     / inject log, default send
-  /   email.init[config; `log`send!(logdep; mysend)] / inject both
+  // initialise module with email config and optional injected dependencies
+  // config - dict with any of:
+  //   mailfrom (string or symbol) - from address
+  //   enabled  (boolean)          - gate for sending
+  //   smtpurl  (string or symbol) - e.g. "smtp://smtp.gmail.com:587"
+  //   smtpuser (string or symbol) - smtp username
+  //   smtppassword (string)       - smtp password
+  //   smtpssl  (boolean)          - require tls (default 1b)
+  // pass (::) for config to use defaults (email disabled, sendmail transport)
+  // deps - `log`send!(logdict;sendfunc)
+  //   `log:  `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required; init throws if absent
+  //   `send: {[frm;to;sub;body;att]}                    - optional, (::) = use smtp or sendmail
+  // examples:
+  //   email.init[config; `log`send!(logdep; ::)]     / inject log, default send
+  //   email.init[config; `log`send!(logdep; mysend)] / inject both
   .z.m.mailfrom:"torq@localhost";
   .z.m.enabled:0b;
   .z.m.smtpurl:"";
@@ -423,6 +423,6 @@ init:{[config;deps]
     if[`smtppassword in key config;.z.m.smtppassword:$[10h=type config`smtppassword;config`smtppassword;string config`smtppassword]];
     if[`smtpssl in key config;.z.m.smtpssl:config`smtpssl];
   ];
-  / if smtp url is configured and send was not explicitly injected, use curl smtp transport
+  // if smtp url is configured and send was not explicitly injected, use curl smtp transport
   if[count smtpurl;if[not sendinjected;.z.m.send:smtpsend_]];
   };

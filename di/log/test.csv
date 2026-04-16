@@ -107,3 +107,37 @@ run,0,0,q,log1.info "plain string message",1,,instance info with plain string
 run,0,0,q,log1.info ("message with %s";`symbol),1,,instance info with %s substitution
 run,0,0,q,log1.info ("message with %r";"raw repr"),1,,instance info with %r substitution
 run,0,0,q,log1.info "literal 100%% complete",1,,instance info with %% escape
+
+/ Test 20: trace, debug and fatal accept any symbol ctx
+run,0,0,q,lg.trace[`mymodule;"trace custom ctx"],1,,trace with custom module ctx
+run,0,0,q,lg.debug[`mymodule;"debug custom ctx"],1,,debug with custom module ctx
+run,0,0,q,lg.fatal[`mymodule;"fatal custom ctx"],1,,fatal with custom module ctx
+
+/ Test 21: instance trace, debug and fatal do not throw
+run,0,0,q,log1.setlvl `trace,1,,lower level to trace so trace and debug are not suppressed
+run,0,0,q,log1.trace "test trace",1,,instance trace accepts plain string
+run,0,0,q,log1.debug "test debug",1,,instance debug accepts plain string
+run,0,0,q,log1.fatal "test fatal",1,,instance fatal accepts plain string
+run,0,0,q,log1.setlvl `info,1,,restore level to info
+
+/ Test 22: function sink captures formatted output
+before,0,0,q,log3:lg.createLog[],1,,create logger for sink capture test
+before,0,0,q,captured:(),1,,initialise capture buffer
+before,0,0,q,"capfn:{captured::captured,enlist x}",1,,define capture function that appends to global
+run,0,0,q,log3.add[capfn;`info],1,,add function sink to info level
+run,0,0,q,log3.info "sink test message",1,,send message through function sink
+true,0,0,q,0<count captured,1,,function sink received output
+true,0,0,q,"any {0<count x ss ""sink test message""} each captured",1,,captured output contains the message text
+
+/ Test 23: setlvl `fatal suppresses all levels below fatal
+before,0,0,q,log4:lg.createLog[],1,,create logger for fatal-level filter test
+before,0,0,q,fcaptured:(),1,,initialise fatal capture buffer
+before,0,0,q,"ffn:{fcaptured::fcaptured,enlist x}",1,,define fatal capture function
+run,0,0,q,"log4.add[ffn;`trace`debug`info`warn`error`fatal]",1,,add sink to all levels
+run,0,0,q,log4.setlvl `fatal,1,,set level to fatal
+true,0,0,q,"()~log4.info ""suppressed""",1,,info suppressed at fatal level
+true,0,0,q,"()~log4.warn ""suppressed""",1,,warn suppressed at fatal level
+true,0,0,q,"()~log4.error ""suppressed""",1,,error suppressed at fatal level
+true,0,0,q,0=count fcaptured,1,,no messages captured below fatal level
+run,0,0,q,"log4.fatal ""fatal passes through""",1,,fatal level passes through
+true,0,0,q,0<count fcaptured,1,,fatal level message was captured

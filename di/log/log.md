@@ -6,17 +6,23 @@
 
 ```q
 log:use`di.log
+log.trace[`mymodule;"entering function"]
+log.debug[`mymodule;"value is 42"]
 log.info[`mymodule;"starting up"]
 log.warn[`mymodule;"disk usage above 80%"]
 log.error[`mymodule;"connection failed"]
+log.fatal[`mymodule;"unrecoverable error, shutting down"]
 ```
 
 Output format:
 
 ```
-2026-04-09T12:00:00.000000000 [INFO] [mymodule] starting up
-2026-04-09T12:00:00.001000000 [WARN] [mymodule] disk usage above 80%
-2026-04-09T12:00:00.002000000 [ERROR] [mymodule] connection failed
+2026-04-09T12:00:00.000000000 [TRACE] [mymodule] entering function
+2026-04-09T12:00:00.001000000 [DEBUG] [mymodule] value is 42
+2026-04-09T12:00:00.002000000 [INFO] [mymodule] starting up
+2026-04-09T12:00:00.003000000 [WARN] [mymodule] disk usage above 80%
+2026-04-09T12:00:00.004000000 [ERROR] [mymodule] connection failed
+2026-04-09T12:00:00.005000000 [FATAL] [mymodule] unrecoverable error, shutting down
 ```
 
 ## Injecting into other modules
@@ -31,15 +37,76 @@ email:use`di.email
 email.init[emailconfig;`log`send!(logdep;::)]
 ```
 
+You can extend the injected dictionary with `trace`, `debug`, and `fatal` for modules that support them:
+
+```q
+logdep:`trace`debug`info`warn`error`fatal!(log.trace;log.debug;log.info;log.warn;log.error;log.fatal)
+```
+
+## createLog
+
+`createLog` is a factory that returns an independent logger instance with level filtering, multiple output sinks, and configurable format templates. Each call to `createLog` produces a separate instance with its own state.
+
+```q
+log:use`di.log
+mylog:log.createLog[]
+
+mylog.setlvl `warn                        / suppress trace, debug, info
+mylog.info "this is suppressed"           / returns () silently
+mylog.warn "this appears"
+
+mylog.setfmt `syslog                      / switch to syslog format
+mylog.addfmt[`compact;"$l $m"]           / add a custom format
+mylog.setfmt `compact
+
+mylog.add[2i;`error`fatal]               / add stderr sink for error and fatal
+mylog.remove[1i;`trace]                  / remove stdout from trace level
+```
+
+### Sinks
+
+A sink is a handle (integer file descriptor or function) passed to `add`. If a function is provided it is called with the formatted line string. Built-in handles follow standard q conventions: `1i` is stdout, `2i` is stderr.
+
+```q
+buf:();
+capture:{[msg] buf,:enlist msg};         / function sink - captures output
+mylog.add[capture;`info`warn`error]
+mylog.info "captured"
+buf                                      / ("2026-...captured\n")
+mylog.remove[capture;`info]
+```
+
+### Format templates
+
+Three built-in formats are available:
+
+| Name | Template | Example output |
+|---|---|---|
+| `basic` (default) | `$p $l PID[$i] HOST[$h] $m` | `2026-04-09T12:00:00.000000000 INFO PID[1234] HOST[myhost] message` |
+| `syslog` | `<$s> $m` | `<6> message` |
+| `raw` | `$m` | `message` |
+
+Template variables: `$p` timestamp, `$l` level, `$i` PID, `$h` hostname, `$m` message, `$s` syslog severity number.
+
 ## API
+
+### `trace`
+Parameters: `[ctx; msg]`
+
+Write a trace-level message to stdout.
+
+- `ctx` — symbol context tag (e.g. `` `mymodule ``)
+- `msg` — string message
+
+### `debug`
+Parameters: `[ctx; msg]`
+
+Write a debug-level message to stdout.
 
 ### `info`
 Parameters: `[ctx; msg]`
 
 Write an info-level message to stdout.
-
-- `ctx` — symbol context tag (e.g. `` `mymodule ``)
-- `msg` — string message
 
 ### `warn`
 Parameters: `[ctx; msg]`
@@ -50,6 +117,29 @@ Write a warning-level message to stdout.
 Parameters: `[ctx; msg]`
 
 Write an error-level message to stdout.
+
+### `fatal`
+Parameters: `[ctx; msg]`
+
+Write a fatal-level message to stdout.
+
+### `createLog`
+Parameters: none
+
+Returns an independent logger instance as a dictionary of functions. Each call returns a new instance with isolated state.
+
+Returned keys: `` `trace`debug`info`warn`error`fatal`add`remove`setfmt`getfmt`addfmt`setlvl`getlvl ``
+
+| Function | Parameters | Description |
+|---|---|---|
+| `trace`..`fatal` | `[msg]` | Write a message at the given level (filtered by active level) |
+| `setlvl` | `[lvl]` | Set minimum level; one of `` `trace`debug`info`warn`error`fatal `` |
+| `getlvl` | `[_]` | Return current minimum level |
+| `setfmt` | `[name]` | Switch to a named format template |
+| `getfmt` | `[_]` | Return current format name |
+| `addfmt` | `[name;template]` | Register a new named format template |
+| `add` | `[handle;lvls]` | Add a sink for one or more levels; returns the handle |
+| `remove` | `[handle;lvl]` | Remove a sink from a level |
 
 ## Log dependency contract
 

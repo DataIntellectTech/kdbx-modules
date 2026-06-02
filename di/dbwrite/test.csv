@@ -1,0 +1,101 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+/ Pre-test set-up: load module and mock loggers, and initialise module with mocks
+before,0,0,q,dbwrite:use`di.dbwrite,1,,load di.dbwrite module
+before,0,0,q,logcount:0,1,,initialise log call counter
+before,0,0,q,loginfo:{[c;m] logcount::logcount+1},1,,mock info logger
+before,0,0,q,logwarn:{[c;m] logcount::logcount+1},1,,mock warn logger
+before,0,0,q,logerr:{[c;m] logcount::logcount+1},1,,mock error logger
+before,0,0,q,"logdep:`info`warn`error!(loginfo;logwarn;logerr)",1,,build log dep dict
+before,0,0,q,"deps:(enlist`log)!enlist logdep",1,,wrap in deps dict
+before,0,0,q,dbwrite.init[(::);deps],1,,initialise module with mock loggers
+
+/ Test 1: init wires injected logger into individual loginfo/logwarn/logerr slots
+true,0,0,q,logdep[`info]~.m.di.0dbwrite.loginfo,1,1,injected info function stored
+true,0,0,q,logdep[`warn]~.m.di.0dbwrite.logwarn,1,1,injected warn function stored
+true,0,0,q,logdep[`error]~.m.di.0dbwrite.logerr,1,1,injected error function stored
+
+/ Test 2: init errors when log dep not provided
+fail,0,0,q,dbwrite.init[(::);(::)],1,1,init without log dep throws an error
+fail,0,0,q,dbwrite.init[(::);`log!(::)],1,1,init with log set to (::) throws an error
+
+/ Test 3: manipulate: error cases
+run,0,0,q,"tbl:([]sym:`AAPL`IBM;price:100 200f)",1,,sample table
+true,0,0,q,"tbl~dbwrite.manipulate[`trade;tbl]",1,,unregistered table name
+true,0,0,q,"tbl~dbwrite.manipulate[`;tbl]",1,,null table name
+true,0,0,q,"(0#tbl)~dbwrite.manipulate[`other;0#tbl]",1,,empty table
+
+/ Test 4 postreplay: returns generic null
+true,0,0,q,(::)~dbwrite.postreplay[`:hdb;2024.01.01],1,,stub returns generic null
+
+/ Test 5: sort uses defaultparams (sort by time) when params is empty and defaultfile is null
+run,0,0,q,`:dbwrite_defp_tp/.d set `time`sym,1,,write column order file
+run,0,0,q,`:dbwrite_defp_tp/time set 2024.01.01D09:00:00.000000000 2024.01.01D08:00:00.000000000,1,,write unsorted time column
+run,0,0,q,`:dbwrite_defp_tp/sym set `IBM`AAPL,1,,write sym column
+run,0,0,q,"dbwrite.sort[(`anytable;`:dbwrite_defp_tp/)]",1,,sort using defaultparams (empty params + null defaultfile)
+true,0,0,q,(asc exec time from get `:dbwrite_defp_tp/)~exec time from get `:dbwrite_defp_tp/,1,,time column sorted ascending by defaultparams
+run,0,0,q,@[hdel;`:dbwrite_defp_tp/;{}],1,,cleanup test partition
+
+/ Test 6: loadconfig: valid config file is loaded and parsed correctly
+run,0,0,q,cfgfile:`:dbwrite_test.csv,1,,temp sort config path
+run,0,0,q,"cfgfile 0:(""tabname,att,column,sort"";""trade,p,sym,1"";""trade,,price,0"")",1,,write test sort config
+run,0,0,q,dbwrite.loadconfig[cfgfile],1,,loadconfig with valid csv succeeds
+
+/ Test 6 loadconfig - invalid config files
+true,0,0,q,@[dbwrite.loadconfig;`:nonexistent_file_xyz;{1b}],1,,nonexistent file throws
+run,0,0,q,badcols:`:dbwrite_badcols.csv,1,,
+run,0,0,q,"badcols 0:(""wrongcol,att,column,sort"";""trade,p,sym,1"")",1,,csv with unrecognised column name
+true,0,0,q,@[dbwrite.loadconfig;badcols;{1b}],1,,unrecognised column throws
+run,0,0,q,badatt:`:dbwrite_badatt.csv,1,,
+run,0,0,q,"badatt 0:(""tabname,att,column,sort"";""trade,z,sym,1"")",1,,csv with unrecognised attribute
+true,0,0,q,@[dbwrite.loadconfig;badatt;{1b}],1,,unrecognised attribute throws
+
+/ Clean-up config files after loadconfig tests
+run,0,0,q,@[hdel;cfgfile;{}],1,,remove temp sort config
+run,0,0,q,@[hdel;badcols;{}],1,,remove temp bad columns file
+run,0,0,q,@[hdel;badatt;{}],1,,remove temp bad attribute file
+comment,,,,,,,--- manipulate: registered function path not testable (savedownmanipulation in .z.M is module-bound and not settable from test scope) ---
+
+/ Test 7: Applyattr - error cases
+run,0,0,q,logcount:0,1,,reset counter
+run,0,0,q,"dbwrite.applyattr[`:nonexist_attr_dir/;`sym;`p]",1,,apply to non-existent path
+true,0,0,q,2=logcount,1,,loginfo (before attempt) and logerr (on failure) each called once
+
+/ Test 8 - Applyattr - attribute application and logging when config entry exists for table
+run,0,0,q,`:dbwrite_attr_tp/.d set `sym`price,1,,write column order file
+run,0,0,q,`:dbwrite_attr_tp/sym set `IBM`AAPL`MSFT,1,,write sym column
+run,0,0,q,`:dbwrite_attr_tp/price set 200 100 300f,1,,write price column
+run,0,0,q,logcount:0,1,,reset counter
+run,0,0,q,"dbwrite.applyattr[`:dbwrite_attr_tp/;`sym;`p]",1,,apply p attr to sym column
+true,0,0,q,1=logcount,1,,loginfo called once (no error)
+true,0,0,q,`p=attr get `:dbwrite_attr_tp/sym,1,,p attribute applied on disk
+run,0,0,q,@[hdel;`:dbwrite_attr_tp/;{}],1,,cleanup test partition
+
+/ Test 9 - sort: error cases
+run,0,0,q,logcount:0,1,,reset counter
+true,0,0,q,()~dbwrite.sort[`no_params_table_xyz],1,,returns () when table not in config
+true,0,0,q,2=logcount,1,,loginfo (sorting start) and logwarn (skip) both called
+
+/ Test 10 - sort: sorting and logging when config entry exists for table
+run,0,0,q,`:dbwrite_sort_tp/.d set `sym`price,1,,write column order file
+run,0,0,q,`:dbwrite_sort_tp/sym set `IBM`AAPL`MSFT,1,,write unsorted sym column
+run,0,0,q,`:dbwrite_sort_tp/price set 200 100 300f,1,,write price column
+run,0,0,q,"dbwrite.sort[(`trade;`:dbwrite_sort_tp/)]",1,,sort trade table in test partition
+true,0,0,q,`AAPL`IBM`MSFT~exec sym from get `:dbwrite_sort_tp/,1,,sorted ascending by sym
+true,0,0,q,`p=attr get `:dbwrite_sort_tp/sym,1,,p attribute applied to sym on disk
+run,0,0,q,@[hdel;`:dbwrite_sort_tp/;{}],1,,cleanup sort test partition
+
+/ Test 11 - sort: sorting with default config entry when no specific entry for table
+run,0,0,q,defcfg:`:dbwrite_defcfg.csv,1,,
+run,0,0,q,"defcfg 0:(""tabname,att,column,sort"";""default,,sym,1"")",1,,config with default entry only
+run,0,0,q,dbwrite.loadconfig[defcfg],1,,load default-only config
+run,0,0,q,`:dbwrite_def_tp/.d set `sym`price,1,,write column order file
+run,0,0,q,`:dbwrite_def_tp/sym set `IBM`AAPL,1,,write unsorted sym column
+run,0,0,q,`:dbwrite_def_tp/price set 200 100f,1,,write price column
+run,0,0,q,logcount:0,1,,reset counter
+run,0,0,q,"dbwrite.sort[(`othertable;`:dbwrite_def_tp/)]",1,,sort using default fallback
+true,0,0,q,`AAPL`IBM~exec sym from get `:dbwrite_def_tp/,1,,sorted ascending by sym via default params
+true,0,0,q,4=logcount,1,,loginfo x2 (sorting start + sort-by) + logwarn x1 (using defaults) + loginfo x1 (finished)
+
+/ Clean-up default config and test partition
+after,0,0,q,@[hdel;`:dbwrite_def_tp/;{}],1,,cleanup test partition
+after,0,0,q,@[hdel;defcfg;{}],1,,remove default config csv

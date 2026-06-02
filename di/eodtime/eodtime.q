@@ -51,6 +51,7 @@ getroll:{[p]
   / mod[z,1D] normalises the roll time to [0D,1D) to handle timezone offsets crossing midnight
   z:rolltimeoffset-adjtime[p];
   z:`timespan$(mod) . "j"$z,1D;
+  / kdb-x 5.0: comparing timespan to timestamp checks against p's time-of-day component - true means roll has already passed
   ("d"$p)+$[z<=p;z+1D;z]
   };
 
@@ -72,9 +73,9 @@ setd:{.z.m.d:x};
 init:{[config]
   / normalise config to dict and apply keys, falling back to defaults where not provided
   cfg:$[99h=type config;config;()!()];
-  .z.m.rolltimezone:$[`rolltimezone in key cfg;cfg`rolltimezone;rolltimezone];
-  .z.m.datatimezone:$[`datatimezone in key cfg;cfg`datatimezone;datatimezone];
-  .z.m.rolltimeoffset:$[`rolltimeoffset in key cfg;cfg`rolltimeoffset;rolltimeoffset];
+  .z.m.rolltimezone:$[`rolltimezone in key cfg;cfg`rolltimezone;`$"GMT"];
+  .z.m.datatimezone:$[`datatimezone in key cfg;cfg`datatimezone;`$"GMT"];
+  .z.m.rolltimeoffset:$[`rolltimeoffset in key cfg;cfg`rolltimeoffset;0D00:00:00.000];
   .z.m.dailyadj:getdailyadjustment[];
   .z.m.d:getday[.z.p];
   .z.m.nextroll:getroll[.z.p];

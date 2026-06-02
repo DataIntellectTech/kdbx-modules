@@ -1,7 +1,7 @@
 / end-of-day time management - date resolution, roll scheduling and data timestamp adjustment
 
 / utc-equivalent timezone names - zero offset from utc so no timezone lookup required
-utczones:`$("GMT";"UTC";"Etc/GMT";"Etc/UTC");
+utczones:`$("GMT";"UTC";"Etc/GMT");
 
 / ============================================================
 / module state and defaults

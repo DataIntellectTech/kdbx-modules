@@ -1,6 +1,6 @@
 / end-of-day time management - date resolution, roll scheduling and data timestamp adjustment
 
-tz:use`di.timezone
+tz:use`di.tz
 
 \l ::eodtime.q
 

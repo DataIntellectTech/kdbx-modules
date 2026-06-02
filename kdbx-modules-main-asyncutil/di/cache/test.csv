@@ -1,0 +1,55 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,cac:use`di.cache,1,1,load package into session
+
+/ Test 0: max variable config checks
+run,0,0,q,maxindividual:10,1,, set maxindiv
+run,0,0,q,maxsize:10,1,, set maxsize
+run,0,0,q,cac.setmaxindiv[200],1,, run setmaxindiv
+run,0,0,q,cac.setmaxsize[100],1,, run setmaxsize 
+true,0,0,q,100~ maxindividual,1,, Check maxindividual configed correctly by function
+true,0,0,q,100~ maxsize,1,, Check maxindividual configed correctly by function
+
+/ Test 1: Baseline Addition with Sleep
+run,0,0,q,system "t cac.execute[({system\"sleep 1\"; x+y};10;20);0D00:01]",1,1,Initial run with 1s sleep
+true,0,0,q,0~ system "t cac.execute[({system\"sleep 1\"; x+y};10;20);0D00:01]",1,1,Speedup: Cached result returns in <1ms
+
+/ Test 2: String Manipulation Speed
+run,0,0,q,system "t cac.execute[({system\"sleep 1\"; upper x};\"hello world\");0D00:01]",1,1,Initial run with string conversion
+true,0,0,q,0~ system "t cac.execute[({system\"sleep 1\"; upper x};\"hello world\");0D00:01]",1,1,Speedup: String conversion cached
+
+/ Test 3: Matrix Multiplication (Mock)
+run,0,0,q,system "t cac.execute[({system\"sleep 1\"; (reverse x) * y};500;1000);0D00:01]",1,1,Initial run with numeric calc
+true,0,0,q,0~ system "t cac.execute[({system\"sleep 1\"; (reverse x) * y};500;1000);0D00:01]",1,1,Speedup: Numeric calc cached
+
+/ Test 4: Join Operations
+run,0,0,q,system "t cac.execute[({system\"sleep 1\"; x uj y};([]a:1 2);([]a:3 4));0D00:01]",1,1,Initial run with table join
+true,0,0,q,0~ system "t cac.execute[({system\"sleep 1\"; x uj y};([]a:1 2);([]a:3 4));0D00:01]",1,1,Speedup: Table join cached
+
+/ Test 5: Type Checking & Casting
+run,0,0,q,system "t cac.execute[({system\"sleep 1\"; `int$x};123.456);0D00:01]",1,1,Initial run with casting
+true,0,0,q,0~ system "t cac.execute[({system\"sleep 1\"; `int$x};123.456);0D00:01]",1,1,Speedup: Casting cached
+
+/ Test 6: Nested List Flattening
+run,0,0,q,system "t cac.execute[({system\"sleep 1\"; raze x};(1 2;3 4;5 6));0D00:01]",1,1,Initial run with raze
+true,0,0,q,0~ system "t cac.execute[({system\"sleep 1\"; raze x};(1 2;3 4;5 6));0D00:01]",1,1,Speedup: Raze cached
+
+/Test 7: Check if output is correct
+run,0,0,q,cac.execute[({x+1};1);0D00:01],1,1,cache sleep functionality
+true,0,0,q,2~cac.execute[({x+1};1);0D00:01],1,1,cached sleep functionality
+
+/ Test 8: Table Result Correctness
+run,0,0,q,res::([]a:1 2 3;b:`x`y`z);cac.execute[({x};res);0D00:01],1,1,Initial run: cache a table
+true,0,0,q,res ~ cac.execute[({x};res);0D00:01],1,1,Check: Table retrieved from cache matches original
+
+/ Test 9: Complex Dictionary Result
+run,0,0,q,dict::`stats`data!((avg;med);til 10);cac.execute[({x};dict);0D00:01],1,1,Initial run: cache a dictionary of functions and lists
+true,0,0,q,dict ~ cac.execute[({x};dict);0D00:01],1,1,Check: Dictionary retrieved from cache matches original
+
+/ Test 10: Oversized results
+
+run,0,0,q,oversizeddata:(1000000?1f),1,, Create ~8MB dataset (exceeds 5MB maxindividual)
+run,0,0,q,beforecount:count cac.cache,1,, Count cache entries before
+run,0,0,q,result1:cac.execute[({x};oversizeddata);0D01:00],1,, Execute with oversized data
+true,0,0,q,oversizeddata~result1,1,, Oversized result is still returned correctly
+true,0,0,q,beforecount=count cac.cache,1,, Cache count unchanged (not cached)
+

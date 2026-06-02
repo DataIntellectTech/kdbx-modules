@@ -1,0 +1,103 @@
+action,ms,bytes,lang,code,repeat,comment
+before,0,0,q,simtick:use`di.simtick,1,,Initialize module
+before,0,0,q,cfgs:simtick.loadconfig`:di/simtick/presets.csv,1,,Load presets
+before,0,0,q,cfg:cfgs`default,1,,Get default config
+before,0,0,q,duration:23400,1,,Session duration in seconds (6.5 hours)
+comment,0,0,q,,1,,=== Validation Tests ===
+before,0,0,q,badcfg1:cfg,1,,Setup bad config for alpha >= beta
+before,0,0,q,badcfg1[`alpha]:2.0,1,,Set alpha > beta
+fail,0,0,q,simtick.run[badcfg1],1,,alpha >= beta throws error
+before,0,0,q,badcfg2:cfg,1,,Setup bad config for negative baseintensity
+before,0,0,q,badcfg2[`baseintensity]:-1.0,1,,Set negative baseintensity
+fail,0,0,q,simtick.run[badcfg2],1,,Negative baseintensity throws error
+before,0,0,q,badcfg3:cfg,1,,Setup bad config for zero multiplier
+before,0,0,q,badcfg3[`openmult]:0.0,1,,Set zero openmult
+fail,0,0,q,simtick.run[badcfg3],1,,Zero multiplier throws error
+comment,0,0,q,,1,,=== Arrivals Tests ===
+before,0,0,q,cfg[`seed]:42,1,,Set seed for reproducibility
+before,0,0,q,arr:simtick.arrivals[cfg],1,,Generate arrivals
+true,0,0,q,0<count arr,1,,Arrivals non-empty
+true,0,0,q,(asc arr)~arr,1,,Arrivals sorted
+true,0,0,q,all 0<=arr,1,,All arrivals positive
+true,0,0,q,all arr<duration,1,,All arrivals within duration
+true,0,0,q,9h=type arr,1,,Arrivals type is float list
+comment,0,0,q,,1,,=== Shape Tests ===
+before,0,0,q,shapecfg:cfg,1,,Setup config for shape test
+before,0,0,q,shapecfg[`baseintensity]:5.0,1,,Higher intensity for clearer pattern
+before,0,0,q,shapecfg[`seed]:123,1,,Set seed
+before,0,0,q,sharr:simtick.arrivals[shapecfg],1,,Generate arrivals for shape test
+before,0,0,q,firsthour:count sharr where sharr<3600,1,,Count first hour arrivals
+before,0,0,q,midhour:count sharr where sharr within 5400 9000,1,,Count arrivals around minimum (hours 1.5-2.5)
+before,0,0,q,lasthour:count sharr where sharr>duration-3600,1,,Count last hour arrivals
+true,0,0,q,firsthour>midhour,1,,Open activity > mid activity
+true,0,0,q,lasthour>midhour,1,,Close activity > mid activity
+true,0,0,q,lasthour>firsthour,1,,J-shape: close > open (transitionpoint 0.3)
+comment,0,0,q,,1,,=== Price Tests ===
+before,0,0,q,times:1+til 100,1,,Setup times
+before,0,0,q,prices:simtick.price[cfg;times],1,,Generate prices
+true,0,0,q,(count times)=count prices,1,,Price count matches input
+true,0,0,q,all 0<prices,1,,All prices positive
+true,0,0,q,cfg[`startprice]=first prices,1,,First price equals startprice
+before,0,0,q,longtimes:1+til 10000,1,,Setup longer times for vol test
+before,0,0,q,longprices:simtick.price[cfg;longtimes],1,,Generate more prices
+before,0,0,q,logreturns:1_log longprices%prev longprices,1,,Calculate log returns
+before,0,0,q,realizedvol:(dev logreturns)*sqrt 252*23400,1,,Annualize realized vol
+true,0,0,q,realizedvol within 0.1 0.4,1,,Realized vol within tolerance of input vol
+before,0,0,q,jumpcfg:cfgs`jumpy,1,,Get jump config
+before,0,0,q,jumpcfg[`seed]:42,1,,Set seed
+before,0,0,q,jumpprices:simtick.price[jumpcfg;times],1,,Generate jump prices
+true,0,0,q,(count times)=count jumpprices,1,,Jump model returns correct count
+true,0,0,q,all 0<jumpprices,1,,Jump model prices positive
+comment,0,0,q,,1,,=== Trades Tests ===
+before,0,0,q,cfg[`generatequotes]:0b,1,,Disable quotes
+before,0,0,q,trades:simtick.run[cfg],1,,Generate trades only
+true,0,0,q,98h=type trades,1,,Result is table
+true,0,0,q,`time`price`qty~cols trades,1,,Trades has correct columns
+true,0,0,q,(asc trades`time)~trades`time,1,,Trades sorted by time
+true,0,0,q,all 0<trades`price,1,,All trade prices positive
+true,0,0,q,all 0<trades`qty,1,,All trade quantities positive
+true,0,0,q,7h=type trades`qty,1,,Quantities are longs
+before,0,0,q,opentime:`timestamp$cfg[`tradingdate]+`timespan$cfg`openingtime,1,,Calculate open timestamp
+before,0,0,q,closetime:`timestamp$cfg[`tradingdate]+`timespan$cfg`closingtime,1,,Calculate close timestamp
+true,0,0,q,all trades[`time]>=opentime,1,,All trades at or after open
+true,0,0,q,all trades[`time]<=closetime,1,,All trades at or before close
+comment,0,0,q,,1,,=== Quotes Tests ===
+before,0,0,q,cfg[`generatequotes]:1b,1,,Enable quotes
+before,0,0,q,result:simtick.run[cfg],1,,Generate trades and quotes
+before,0,0,q,trades:result`trade,1,,Extract trades
+before,0,0,q,quotes:result`quote,1,,Extract quotes
+true,0,0,q,99h=type result,1,,Result with quotes is dict
+true,0,0,q,`trade`quote~key result,1,,Dict has trade and quote keys
+true,0,0,q,`time`bid`ask`bidsize`asksize~cols quotes,1,,Quotes has correct columns
+true,0,0,q,(asc quotes`time)~quotes`time,1,,Quotes sorted by time
+true,0,0,q,all quotes[`bid]<quotes`ask,1,,Bid < ask for all quotes
+true,0,0,q,all 0<quotes`bidsize,1,,All bid sizes positive
+true,0,0,q,all 0<quotes`asksize,1,,All ask sizes positive
+true,0,0,q,(first quotes`time)<first trades`time,1,,Quote exists before first trade
+comment,0,0,q,,1,,=== Config Tests ===
+true,0,0,q,99h=type cfgs,1,,loadconfig returns keyed table
+true,0,0,q,`name~first cols cfgs,1,,First column is name
+true,0,0,q,99h=type cfgs`default,1,,Preset lookup returns dict
+true,0,0,q,31=count cfgs`default,1,,Config has 31 parameters (excluding key)
+true,0,0,q,-9h=type cfg`vol,1,,vol is float
+true,0,0,q,-11h=type cfg`pricemodel,1,,pricemodel is symbol
+true,0,0,q,-14h=type cfg`tradingdate,1,,tradingdate is date
+comment,0,0,q,,1,,=== Describe Tests ===
+before,0,0,q,schema:simtick.describe[],1,,Get schema
+true,0,0,q,98h=type schema,1,,describe returns table
+true,0,0,q,`param`typ`description~cols schema,1,,describe has correct columns
+true,0,0,q,32=count schema,1,,Schema has 32 parameters
+comment,0,0,q,,1,,=== Constant Qty Tests ===
+before,0,0,q,constcfg:cfg,1,,Setup constant qty config
+before,0,0,q,constcfg[`qtymodel]:`constant,1,,Set constant model
+before,0,0,q,constcfg[`generatequotes]:0b,1,,Disable quotes
+before,0,0,q,consttrades:simtick.run[constcfg],1,,Generate trades
+true,0,0,q,1=count distinct consttrades`qty,1,,All quantities equal
+true,0,0,q,constcfg[`avgqty]=first consttrades`qty,1,,Quantity equals avgqty
+comment,0,0,q,,1,,=== Reproducibility Tests ===
+before,0,0,q,seedcfg:cfg,1,,Setup seeded config
+before,0,0,q,seedcfg[`seed]:999,1,,Set seed
+before,0,0,q,seedcfg[`generatequotes]:0b,1,,Disable quotes
+before,0,0,q,run1:simtick.run[seedcfg],1,,First run
+before,0,0,q,run2:simtick.run[seedcfg],1,,Second run
+true,0,0,q,run1~run2,1,,Same seed produces same output

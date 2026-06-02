@@ -1,0 +1,92 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+
+before,0,0,q,cmp:use`di.compression,1,,Initialize module
+
+before,0,0,q,trade:([]date:asc 100#.z.d - til 10;time:100#asc 09:30+10?00:10:00;sym:100?`AAPL`GOOGL`MSFT`TSLA`NVDA`AMD;price:(5*100?10000)%100;size:5*100?100;side:100?`B`S;src:100?`NYSE`NASDAQ),1,,Create mock trade table
+before,0,0,q,quote:([]date:asc 100#.z.d - til 10;time:100#asc 09:30+10?00:10:00;sym:100?`AAPL`GOOGL`MSFT`TSLA`NVDA`AMD;bid:(5*100?10000)%100;ask:(5*100?10000)%100;bsize:5*100?100;asize:5*100?100;src:100?`NYSE`NASDAQ),1,,Create mock quote table
+before,0,0,q,taq:aj[`date;trade;quote],1,,Create mock trade and quote table
+before,0,0,q,"{[t;d] (` sv .Q.par[`:cmpTestHDB/;d;`trade],`) upsert .Q.en[`:cmpTestHDB/;] delete date from select from t where date = d}[trade;] each exec distinct date from trade",1,,Create and populate mock HDB
+before,0,0,q,"{[t;d] (` sv .Q.par[`:cmpTestHDB/;d;`quote],`) upsert .Q.en[`:cmpTestHDB/;] delete date from select from t where date = d}[quote;] each exec distinct date from quote",1,,Further populating mock HDB
+before,0,0,q,"{[t;d] (` sv .Q.par[`:cmpTestHDB/;d;`taq],`) upsert .Q.en[`:cmpTestHDB/;] delete date from select from t where date = d}[taq;] each exec distinct date from taq",1,,Further populating mock HDB
+
+before,0,0,q,cmpMockParams:([] table:`default`quote`quote`trade`trade;minage:0 0 4 0 3i;column:`default`time`src`default`size;calgo:2 0 1 1 0i;cblocksize:`int$18 - til 5;clevel:6 0 0 0 0i),1,,Set compression parameters
+before,0,0,q,save `:cmpMockParams.csv,1,,Persist compression config csv
+before,0,0,q,cmpMockBadConfig:([] table:`default`quote`quote`trade`trade;column:string each `default`time`src`default`size;calgo:2 0 1 1 0i;cblocksize:5#17i;clevel:6 0 0 0 0i),1,,Set incompatible compression parameters
+before,0,0,q,save `:cmpMockBadConfig.csv,1,,Persist incompatible compression config csv
+before,0,0,q,decompMockParams:([] table:`default`quote`quote`trade`trade;minage:0 0 2 0 3i;column:`default`time`src`default`size;calgo:0 0 2 1 0i;cblocksize:`int$18 - til 5;clevel:0 0 6 0 0i),1,,Set decompression parameters
+before,0,0,q,save `:decompMockParams.csv,1,,Persist decompression config csv
+
+run,0,0,q,cmp.showcomp[`:cmpTestHDB;`:cmpMockBadConfig.csv;9],1,,Run showcomp with inappropriate CSV
+true,0,0,q,cmp.getcompressioncsv[] ~ ([] table:`$();minage:`int$();column:`$();calgo:`int$();cblocksize:`int$();clevel:`int$()),1,,Empty compressioncsv table defined for edge case where a bad config is loaded first attempt
+fail,0,0,q,cmp.showcomp[`:cmpTestHDB;`:cmpFake.csv;9],1,,Function fails if 2nd arg is not an existing file
+run,0,0,q,cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9],1,,Run showcomp with proper CSV
+true,0,0,q,cmp.getcompressioncsv[] ~ ([] table:`default`quote`quote`trade`trade;minage:0 0 4 0 3i;column:`default`time`src`default`size;calgo:2 0 1 1 0i;cblocksize:`int$18 - til 5;clevel:6 0 0 0 0i),1,,Check compression params correctly loaded
+
+true,0,0,q,223~count cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9],1,,223 rows expected with given parameters
+true,0,0,q,98h~type cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9],1,,Table output
+true,0,0,q,0~count select from cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;5] where not age within 0 5,1,,Only loads within age limits
+
+true,0,0,q,2 18 6i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];enlist (=;`table;enlist `taq);();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking default params are applied to unspecified table
+true,0,0,q,0 17 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];((=;`table;enlist `quote);(=;`column;enlist `time));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking correct params are applied to specified table and column
+true,0,0,q,1 16 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];((=;`table;enlist `quote);(=;`column;enlist `src);((';~:;<);`age;4));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking correct params are applied to specified table and column above and on minage
+true,0,0,q,0~count raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];((=;`table;enlist `quote);(=;`column;enlist `src);(<;`age;4));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking no compression applied to specified table and column below minage
+true,0,0,q,2 18 6i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];((=;`table;enlist `quote);(~:;(in;`column;enlist `src`time)));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking default params are applied to unspecified columns in table
+true,0,0,q,0 14 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];((=;`table;enlist `trade);(=;`column;enlist `size);((';~:;<);`age;3));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking correct params are applied to specified table and column above and on minage
+true,0,0,q,0~count raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];((=;`table;enlist `trade);(=;`column;enlist `size);(<;`age;3));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking no compression applied to specified table and column below minage
+true,0,0,q,1 15 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:cmpMockParams.csv;9];((=;`table;enlist `trade);(~:;(in;`column;enlist `size)));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking default table params are applied to unspecified columns in table
+
+fail,0,0,q,cmp.getstatstab[],1,,statstab created by compression functions
+run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:cmpMockParams.csv;2],1,,Compress files according to config up to the specified max age
+true,0,0,q,98h~type cmp.getstatstab[],1,,statstab is created as a table
+true,0,0,q,60~count a:cmp.getstatstab[],1,,Checking files have been compressed up to maxage
+true,0,0,q,60i~sum 0< (cmp.getstatstab[])`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo 0 (decompression) required here
+true,0,0,q,15 45~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
+
+run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:cmpMockParams.csv;7],1,,Compress files according to config up to the higher specified max age
+true,0,0,q,104~count b:cmp.getstatstab[],1,,Checking latest files have been compressed up to maxage and statstab updates
+true,0,0,q,104i~sum 0< (cmp.getstatstab[])`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo 0 (decompression) required here
+true,0,0,q,29 75~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
+
+run,0,0,q,cmp.docompression[`:cmpTestHDB;`cmpMockParams.csv],1,,Compress files according to config up to infinite age
+true,0,0,q,42~count c:cmp.getstatstab[],1,,Checking rest of files have been compressed and statstab updates
+true,0,0,q,42i~sum 0< (cmp.getstatstab[])`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 1i~exec distinct algo from cmp.getstatstab[],1,,No algo 0 (decompression) required here
+true,0,0,q,12 30~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
+
+run,0,0,q,cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9],1,,Run showcomp with decompression CSV
+true,0,0,q,cmp.getcompressioncsv[] ~ ([] table:`default`quote`quote`trade`trade;minage:0 0 2 0 3i;column:`default`time`src`default`size;calgo:0 0 2 1 0i;cblocksize:`int$18 - til 5;clevel:0 0 6 0 0i),1,,Check compression params correctly loaded
+true,0,0,q,225~count cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9],1,,225 rows expected with given parameters
+true,0,0,q,98h~type cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9],1,,Table output
+true,0,0,q,0~count select from cmp.showcomp[`:decompTestHDB;`:cmpMockParams.csv;5] where not age within 0 5,1,,Only loads within age limits
+
+true,0,0,q,0 18 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];enlist (=;`table;enlist `taq);();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking default params are applied to unspecified table
+true,0,0,q,0 17 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];((=;`table;enlist `quote);(=;`column;enlist `time));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking correct params are applied to specified table and column
+true,0,0,q,2 16 6i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];((=;`table;enlist `quote);(=;`column;enlist `src);((';~:;<);`age;2));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking correct params are applied to specified table and column above and on minage
+true,0,0,q,0~count raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];((=;`table;enlist `quote);(=;`column;enlist `src);(<;`age;2));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking no compression applied to specified table and column below minage
+true,0,0,q,0 18 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];((=;`table;enlist `quote);(~:;(in;`column;enlist `src`time)));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking default params are applied to unspecified columns in table
+true,0,0,q,0 14 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];((=;`table;enlist `trade);(=;`column;enlist `size);((';~:;<);`age;3));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking correct params are applied to specified table and column above and on minage
+true,0,0,q,0~count raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];((=;`table;enlist `trade);(=;`column;enlist `size);(<;`age;3));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking no compression applied to specified table and column below minage
+true,0,0,q,1 15 0i~raze raze {value ?[cmp.showcomp[`:cmpTestHDB;`:decompMockParams.csv;9];((=;`table;enlist `trade);(~:;(in;`column;enlist `size)));();(enlist x)!enlist (?:;x)]}each `calgo`cblocksize`clevel,1,,Checking default table params are applied to unspecified columns in table
+
+run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:decompMockParams.csv;2],1,,(de)compress files according to config up to the specified max age
+true,0,0,q,46~count x:cmp.getstatstab[],1,,Checking files have been (de)compressed up to maxage
+true,0,0,q,0i~sum 0<(select from cmp.getstatstab[] where algo=0)`compressionratio,1,,Negative compression ratio for decompression
+true,0,0,q,0i~sum 0>(select from cmp.getstatstab[] where algo>0)`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 0i~exec distinct algo from cmp.getstatstab[],1,,No algo 1 required here
+true,0,0,q,45 1~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
+
+run,0,0,q,cmp.compressmaxage[`:cmpTestHDB;`:decompMockParams.csv;7],1,,(de)compress files according to config up to the higher specified max age
+true,0,0,q,76~count y:cmp.getstatstab[],1,,Checking latest files have been (de)compressed up to maxage and statstab updates
+true,0,0,q,0i~sum 0<(select from cmp.getstatstab[] where algo=0)`compressionratio,1,,Negative compression ratio for decompression
+true,0,0,q,0i~sum 0>(select from cmp.getstatstab[] where algo>0)`compressionratio,1,,Positive compression ratio for compression
+true,0,0,q,2 0i~exec distinct algo from cmp.getstatstab[],1,,No algo 1 required here
+true,0,0,q,75 1~value exec count i by algo from cmp.getstatstab[],1,,Number of each algo
+
+run,0,0,q,cmp.docompression[`:cmpTestHDB;`decompMockParams.csv],1,,decompress files according to config up to infinite age
+true,0,0,q,30~count z:cmp.getstatstab[],1,,Checking rest of files have been decompressed and statstab updates
+true,0,0,q,0i~sum 0<(select from cmp.getstatstab[] where algo=0)`compressionratio,1,,Negative compression ratio for decompression
+true,0,0,q,0i~sum exec distinct algo from cmp.getstatstab[],1,,Only algo 0 (decompression) required here
+
+after,0,0,q,system"rm cmpMockBadConfig.csv;rm cmpMockParams.csv;rm decompMockParams.csv;rm -r cmpTestHDB",1,,Clearing up on-disk mock data

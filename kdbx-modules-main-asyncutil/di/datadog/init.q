@@ -1,0 +1,10 @@
+\l ::datadog.q
+
+/ export functions to be accessible outside private
+export:([
+  init:init;
+  getmetriclog:{.z.m.metriclog}; / metric table
+  geteventlog:{.z.m.eventlog}; / event table
+  sendmetric:{[dict].z.m.sendmetric[dict]};
+  sendevent:{[dict].z.m.sendevent[dict]}
+  ])

@@ -12,11 +12,6 @@ defaultparams:([] tabname:enlist`default; att:enlist`; column:enlist`time; sort:
 loadconfig:{[file]
   file:hsym file;
   if[null file;file:.z.M.defaultfile];
-  if[null file;
-    dp:.z.M.defaultparams;
-    .z.m.loginfo[`dbwrite;"no sort config file set; using defaultparams"];
-    @[.z.M;`params;:;dp];
-    :[]];
   p:@[
     {.z.m.loginfo[`dbwrite;"retrieving sort settings from ",string x];("SSSB";enlist",")0:x};
     file;
@@ -42,7 +37,11 @@ applyattr:{[dloc;colname;att]
 / sort an on-disk table partition and apply attributes per sort.csv config
 / d: tabname | (tabname;dir) | (tabname;list of dirs)
 sort:{[d]
-  if[0=count .z.M.params;.z.M.loadconfig .z.M.defaultfile];
+  if[0=count select from .z.M.params;
+    @[{.z.M.loadconfig .z.M.defaultfile};`;{[e]:}]];
+  if[0=count select from .z.M.params;
+    dp:select from .z.M.defaultparams;
+    @[.z.M;`params;:;dp]];
   .z.m.loginfo[`dbwrite;"sorting ",(st:string t:first d)," table"];
   sp:$[count tabsp:select from .z.M.params where tabname=t;
       [.z.m.loginfo[`dbwrite;"sort params found for: ",st];tabsp];

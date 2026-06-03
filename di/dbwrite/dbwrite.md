@@ -111,7 +111,7 @@ Validation checks that all four required columns (`tabname`, `att`, `column`, `s
 dbwrite.loadconfig[`:config/sort.csv]
 ```
 
-> **Note:** `defaultfile` is a module-level variable (default: null symbol). Set it in `init.q` to configure a default sort config path, or always pass the path explicitly. When `params` is empty and `defaultfile` is null, `sort` falls back to the built-in `defaultparams` rather than erroring.
+> **Note:** `defaultfile` is a module-level variable (default: null symbol). Set it in `init.q` to configure a path that `sort` will auto-load on first use. If no explicit `loadconfig` call is made and `defaultfile` is not set, `sort` falls back to `defaultparams` automatically.
 
 ---
 
@@ -135,9 +135,9 @@ Sorts an on-disk table partition and applies configured attributes.
 
 **Returns** — generic null on success; `()` if no sort config is found for the table.
 
-If `params` is empty when `sort` is called:
-- `defaultfile` is set → `loadconfig[defaultfile]` is called to populate `params`.
-- `defaultfile` is null → `params` is populated from the built-in `defaultparams` (sort by `time` ascending, no attribute).
+If `params` is empty when `sort` is called, it is auto-populated before the lookup:
+1. If `defaultfile` is set, `loadconfig[defaultfile]` is attempted (errors are swallowed).
+2. If `params` is still empty after that, the built-in `defaultparams` is used — a single `default` row that sorts by `time` ascending with no attribute.
 
 Config lookup order within `params`:
 1. Rows where `tabname` matches — used directly.
@@ -237,7 +237,7 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.dbwrite
 ```
 
-Tests cover: dependency injection, `loadconfig` validation, `applyattr` on valid and missing paths, `sort` with explicit config / default fallback / no-config skip, `manipulate` pass-through, and `postreplay` stub.
+Tests cover: dependency injection, `loadconfig` validation, `applyattr` on valid and missing paths, `sort` with explicit config / `defaultparams` fallback when no config is loaded / `default` row fallback / no-config skip, `manipulate` pass-through, and `postreplay` stub.
 
 ---
 

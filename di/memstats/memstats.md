@@ -1,7 +1,7 @@
-# Memory Usage
+# Memstats
 This module can be used to calculate the approximate size of an object in memory, or for generating a table containing the approximate size of each object in memory.
 
-## Main funtions
+## Main functions
 The module contains two methods for calculating memory usage. 
 
 The `memusage` functions generate a table containing the approximate memoryusage of each object in the kdb session in bytes / megabytes using -22!. This can be useful quick approximations. 
@@ -16,26 +16,26 @@ The `objsize` function is more computationally expensive, it tries to calculate 
 
 `objsize[]`:Returns the approximate size of an individual kdb object including nested types and attributes.
 
-## memstats table schema
+## Memstats table schema
 The memusage table is returned from either the `memusagevars` or `memusageall` functions.
 
 | Column   | Type        | Description                                 |
 |----------|-------------|---------------------------------------------|
 | variable | `symbol`    | Namespace and name of variable              |
 | size     | `long`      | The approximate size of the object in bytes |
-| sizeMB   | `int`       | The approximatee size of the object in MB   | 
+| sizeMB   | `int`       | The approximate size of the object in MB   | 
 
 ## Example
 Below is an example of loading the module into a session and viewing the size of different objects.
 
 ```q
-\\ Loading the module into a session
+// Loading the module into a session
 memstats: use `di.memstats
 
-\\ View dictionary of functions
+// View dictionary of functions
 memstats
 
-\\ Calculating the memory usage of an object
+// Calculating the memory usage of an object
 
 a:1 / - an atom should return 16
 

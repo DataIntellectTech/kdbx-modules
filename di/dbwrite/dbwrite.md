@@ -61,7 +61,7 @@ Sorts `trade` by `sym`, applies `p` to `sym`. Tables not listed fall back to `de
 | `loadconfig[file]` | Load and validate the sort config CSV into module state |
 | `sort[d]` | Sort an on-disk partition and apply attributes per config |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
-| `savedownmanipulation` | Dict mapping table name → unary function; populate before EOD to register pre-write transformations |
+| `savedownmanipulation` | Dict mapping table name → unary function; amend to register pre-write transformations |
 | `manipulate[t;x]` | Apply a registered pre-write manipulation to a table |
 | `postreplay[d;p]` | Post-EOD stub; override to add custom logic |
 | `gc[]` | Run `.Q.gc[]` and log before/after memory stats |
@@ -175,14 +175,13 @@ dbwrite.applyattr[`:hdb/2024.01.02/trade/;`sym;`p]
 
 ### `savedownmanipulation`
 
-A dictionary mapping table name (symbol) to a unary manipulation function. Populate this before EOD to register per-table pre-write transformations.
+A dictionary mapping table name (symbol) to a unary manipulation function. Amend this before EOD to register per-table pre-write transformations.
 
 ```q
-/ register a manipulation for the trade table
 dbwrite.savedownmanipulation[`trade]:{[x] update sym:`p#sym from x}
 ```
 
-Manipulations are called by `manipulate[t;x]`. An empty dict (the default) means no manipulation is applied to any table.
+Manipulations are applied by `manipulate[t;x]`. An empty dict (the default) means no manipulation is applied to any table.
 
 ---
 
@@ -250,7 +249,7 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.dbwrite
 ```
 
-Tests cover: dependency injection, `init` error on missing log dep, `manipulate` pass-through and registered function application and error recovery via `savedownmanipulation`, `postreplay` stub, `sort` with `defaultparams` fallback / explicit config / `default` row fallback / no-match skip, `loadconfig` with null file (warns and loads `defaultparams`) / valid file / unrecognised columns / unrecognised attributes / missing file, `applyattr` on missing and valid paths.
+Tests cover: dependency injection, `init` error on missing log dep, `manipulate` pass-through and registered function application and error recovery via `savedownmanipulation`, visibility of registrations, `postreplay` stub, `sort` with `defaultparams` fallback / explicit config / `default` row fallback / no-match skip, `loadconfig` with null file (warns and loads `defaultparams`) / valid file / unrecognised columns / unrecognised attributes / missing file, `applyattr` on missing and valid paths.
 
 ---
 

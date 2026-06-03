@@ -11,7 +11,7 @@ Sort, attribute application, save-down manipulation, and garbage-collection util
 - Register per-table pre-write manipulation functions applied before save-down
 - Run `.Q.gc[]` with before/after memory logging
 - Sort and attribute behaviour driven by a CSV config file; a `default` row acts as a fallback
-- Built-in `defaultparams` provides an out-of-the-box fallback (sort by `time` ascending) when no config file is loaded
+- A built-in `default` row in `params` provides an out-of-the-box fallback (sort by `time` ascending) when no config file is loaded
 - All errors from sort, attribute application, and manipulation are caught and logged — they do not propagate
 
 ---
@@ -102,13 +102,13 @@ Loads and validates the sort configuration CSV, storing the result in module sta
 
 | Parameter | Type | Description |
 |---|---|---|
-| `file` | hsym | Path to the sort config CSV; pass null (`` ` ``) to warn and load `defaultparams` instead |
+| `file` | hsym | Path to the sort config CSV; pass null (`` ` ``) to warn and reset `params` to the default row |
 
 **Returns** — generic null on success; throws on file/validation failure.
 
 Validation checks that all four required columns (`tabname`, `att`, `column`, `sort`) are present and that all `att` values are within `` ``p`s`g`u ``. Throws a descriptive error for invalid files or unreadable paths.
 
-Passing null warns at `warn` level and loads `defaultparams` — it does not throw.
+Passing null warns at `warn` level and resets `params` to the default row — it does not throw.
 
 ```q
 dbwrite.loadconfig[`:config/sort.csv]
@@ -136,7 +136,7 @@ Sorts an on-disk table partition and applies configured attributes.
 
 **Returns** — generic null on success; `()` if no sort config is found for the table.
 
-If `loadconfig` has not been called before `sort` is first invoked, `sort` automatically uses `defaultparams` — a single `default` row that sorts by `time` ascending with no attribute.
+If `loadconfig` has not been called before `sort` is first invoked, `sort` automatically uses the built-in `default` row in `params` — sorts by `time` ascending with no attribute.
 
 Config lookup order within the loaded params:
 1. Rows where `tabname` matches — used directly.
@@ -249,7 +249,20 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.dbwrite
 ```
 
-Tests cover: dependency injection, `init` error on missing log dep, `manipulate` pass-through and registered function application and error recovery via `savedownmanipulation`, visibility of registrations, `postreplay` stub, `sort` with `defaultparams` fallback / explicit config / `default` row fallback / no-match skip, `loadconfig` with null file (warns and loads `defaultparams`) / valid file / unrecognised columns / unrecognised attributes / missing file, `applyattr` on missing and valid paths.
+The test suite uses mock logging (no `di.log` dependency required). The mock wires up three no-op counters so log call counts can be asserted:
+
+```q
+dbwrite:use`di.dbwrite
+logcount:0
+loginfo:{[c;m] logcount::logcount+1}
+logwarn:{[c;m] logcount::logcount+1}
+logerr:{[c;m] logcount::logcount+1}
+logdep:`info`warn`error!(loginfo;logwarn;logerr)
+deps:(enlist`log)!enlist logdep
+dbwrite.init[(::);deps]
+```
+
+Tests cover: dependency injection, `init` error on missing log dep, `manipulate` pass-through and registered function application and error recovery via `savedownmanipulation`, `postreplay` stub, `sort` with default row fallback / explicit config / `default` row fallback / no-match skip / empty input / wrong type, `loadconfig` with null file (warns and resets to default row) / valid file / unrecognised columns / unrecognised attributes / missing file / header-only file, `applyattr` on missing path / null column / invalid attribute / valid path, `gc` log count.
 
 ---
 

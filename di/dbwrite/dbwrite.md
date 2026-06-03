@@ -61,6 +61,7 @@ Sorts `trade` by `sym`, applies `p` to `sym`. Tables not listed fall back to `de
 | `loadconfig[file]` | Load and validate the sort config CSV into module state |
 | `sort[d]` | Sort an on-disk partition and apply attributes per config |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
+| `savedownmanipulation` | Dict mapping table name → unary function; populate before EOD to register pre-write transformations |
 | `manipulate[t;x]` | Apply a registered pre-write manipulation to a table |
 | `postreplay[d;p]` | Post-EOD stub; override to add custom logic |
 | `gc[]` | Run `.Q.gc[]` and log before/after memory stats |
@@ -101,17 +102,17 @@ Loads and validates the sort configuration CSV, storing the result in module sta
 
 | Parameter | Type | Description |
 |---|---|---|
-| `file` | hsym | Path to the sort config CSV. Passing a null symbol (`` ` ``) uses the module-level `defaultfile` value |
+| `file` | hsym | Path to the sort config CSV; pass null (`` ` ``) to warn and load `defaultparams` instead |
 
-**Returns** — generic null on success; throws on failure.
+**Returns** — generic null on success; throws on file/validation failure.
 
 Validation checks that all four required columns (`tabname`, `att`, `column`, `sort`) are present and that all `att` values are within `` ``p`s`g`u ``. Throws a descriptive error for invalid files or unreadable paths.
+
+Passing null warns at `warn` level and loads `defaultparams` — it does not throw.
 
 ```q
 dbwrite.loadconfig[`:config/sort.csv]
 ```
-
-> **Note:** `defaultfile` is a module-level variable (default: null symbol). Set it in `init.q` to configure a path that `sort` will auto-load on first use. If no explicit `loadconfig` call is made and `defaultfile` is not set, `sort` falls back to `defaultparams` automatically.
 
 ---
 
@@ -135,11 +136,9 @@ Sorts an on-disk table partition and applies configured attributes.
 
 **Returns** — generic null on success; `()` if no sort config is found for the table.
 
-If `params` is empty when `sort` is called, it is auto-populated before the lookup:
-1. If `defaultfile` is set, `loadconfig[defaultfile]` is attempted (errors are swallowed).
-2. If `params` is still empty after that, the built-in `defaultparams` is used — a single `default` row that sorts by `time` ascending with no attribute.
+If `loadconfig` has not been called before `sort` is first invoked, `sort` automatically uses `defaultparams` — a single `default` row that sorts by `time` ascending with no attribute.
 
-Config lookup order within `params`:
+Config lookup order within the loaded params:
 1. Rows where `tabname` matches — used directly.
 2. Rows where `tabname = \`default` — used with a `warn` log.
 3. No match — warns and returns `()`.
@@ -174,6 +173,19 @@ dbwrite.applyattr[`:hdb/2024.01.02/trade/;`sym;`p]
 
 ---
 
+### `savedownmanipulation`
+
+A dictionary mapping table name (symbol) to a unary manipulation function. Populate this before EOD to register per-table pre-write transformations.
+
+```q
+/ register a manipulation for the trade table
+dbwrite.savedownmanipulation[`trade]:{[x] update sym:`p#sym from x}
+```
+
+Manipulations are called by `manipulate[t;x]`. An empty dict (the default) means no manipulation is applied to any table.
+
+---
+
 ### `manipulate[t;x]`
 
 Applies a registered pre-write manipulation to table `x` of type `t`.
@@ -185,11 +197,12 @@ Applies a registered pre-write manipulation to table `x` of type `t`.
 | `t` | symbol | Table name used to look up the registered manipulation function |
 | `x` | table | Table data to transform |
 
-**Returns** — modified table, or original table unmodified if no manipulation is registered or the function throws.
+**Returns** — modified table, or original table unmodified if no manipulation is registered for `t` or the registered function throws.
 
-Manipulations are registered in the module-internal `savedownmanipulation` dictionary (`` tabname → unary function ``). This dictionary is module-bound and populated by process initialisation code before EOD.
+On error the original table is returned unchanged and the error is logged at `error` level. Register functions in `savedownmanipulation` before calling.
 
 ```q
+dbwrite.savedownmanipulation[`trade]:{[x] update sym:`p#sym from x}
 data:dbwrite.manipulate[`trade;data]
 ```
 
@@ -237,12 +250,12 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.dbwrite
 ```
 
-Tests cover: dependency injection, `loadconfig` validation, `applyattr` on valid and missing paths, `sort` with explicit config / `defaultparams` fallback when no config is loaded / `default` row fallback / no-config skip, `manipulate` pass-through, and `postreplay` stub.
+Tests cover: dependency injection, `init` error on missing log dep, `manipulate` pass-through and registered function application and error recovery via `savedownmanipulation`, `postreplay` stub, `sort` with `defaultparams` fallback / explicit config / `default` row fallback / no-match skip, `loadconfig` with null file (warns and loads `defaultparams`) / valid file / unrecognised columns / unrecognised attributes / missing file, `applyattr` on missing and valid paths.
 
 ---
 
 ## Exported symbols
 
 ```q
-export:([init;sort;applyattr;loadconfig;manipulate;postreplay;gc])
+export:([init;sort;applyattr;loadconfig;manipulate;savedownmanipulation;postreplay;gc])
 ```

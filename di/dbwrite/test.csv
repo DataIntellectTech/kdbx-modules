@@ -18,29 +18,40 @@ true,0,0,q,logdep[`error]~.m.di.0dbwrite.logerr,1,1,injected error function stor
 fail,0,0,q,dbwrite.init[(::);(::)],1,1,init without log dep throws an error
 fail,0,0,q,dbwrite.init[(::);`log!(::)],1,1,init with log set to (::) throws an error
 
-/ Test 3: manipulate: error cases
+/ Test 3: manipulate - pass-through when no function registered
 run,0,0,q,"tbl:([]sym:`AAPL`IBM;price:100 200f)",1,,sample table
-true,0,0,q,"tbl~dbwrite.manipulate[`trade;tbl]",1,,unregistered table name
-true,0,0,q,"tbl~dbwrite.manipulate[`;tbl]",1,,null table name
-true,0,0,q,"(0#tbl)~dbwrite.manipulate[`other;0#tbl]",1,,empty table
+true,0,0,q,"tbl~dbwrite.manipulate[`trade;tbl]",1,,unregistered table name returns original
+true,0,0,q,"tbl~dbwrite.manipulate[`;tbl]",1,,null table name returns original
+true,0,0,q,"(0#tbl)~dbwrite.manipulate[`other;0#tbl]",1,,empty table returned unchanged
 
-/ Test 4 postreplay: returns generic null
+/ Test 4: manipulate - registered function is applied via savedownmanipulation
+run,0,0,q,"dbwrite.savedownmanipulation[`trade]:{[x] update price:price*2 from x}",1,,register manipulation function for trade
+true,0,0,q,"(update price:price*2 from tbl)~dbwrite.manipulate[`trade;tbl]",1,,registered function applied to table
+run,0,0,q,"dbwrite.savedownmanipulation[`errortable]:{[x] '`testfail}",1,,register function that throws
+true,0,0,q,"tbl~dbwrite.manipulate[`errortable;tbl]",1,,returns original table when registered function throws
+run,0,0,q,"dbwrite.savedownmanipulation:()!()",1,,clear registered manipulation functions
+
+/ Test 5: postreplay returns generic null
 true,0,0,q,(::)~dbwrite.postreplay[`:hdb;2024.01.01],1,,stub returns generic null
 
-/ Test 5: sort uses defaultparams (sort by time) when params is empty and defaultfile is null
+/ Test 6: sort uses defaultparams (sort by time) when no loadconfig has been called
 run,0,0,q,`:dbwrite_defp_tp/.d set `time`sym,1,,write column order file
 run,0,0,q,`:dbwrite_defp_tp/time set 2024.01.01D09:00:00.000000000 2024.01.01D08:00:00.000000000,1,,write unsorted time column
 run,0,0,q,`:dbwrite_defp_tp/sym set `IBM`AAPL,1,,write sym column
 run,0,0,q,"dbwrite.sort[(`anytable;`:dbwrite_defp_tp/)]",1,,sort using defaultparams (empty params + null defaultfile)
 true,0,0,q,(asc exec time from get `:dbwrite_defp_tp/)~exec time from get `:dbwrite_defp_tp/,1,,time column sorted ascending by defaultparams
-run,0,0,q,@[hdel;`:dbwrite_defp_tp/;{}],1,,cleanup test partition
 
-/ Test 6: loadconfig: valid config file is loaded and parsed correctly
+/ Test 7: loadconfig - null file warns and loads defaultparams
+run,0,0,q,logcount:0,1,,reset counter
+run,0,0,q,dbwrite.loadconfig[`],1,,loadconfig with null file
+true,0,0,q,1=logcount,1,,logwarn called once
+
+/ Test 8: loadconfig - valid config file is loaded and parsed correctly
 run,0,0,q,cfgfile:`:dbwrite_test.csv,1,,temp sort config path
 run,0,0,q,"cfgfile 0:(""tabname,att,column,sort"";""trade,p,sym,1"";""trade,,price,0"")",1,,write test sort config
 run,0,0,q,dbwrite.loadconfig[cfgfile],1,,loadconfig with valid csv succeeds
 
-/ Test 6 loadconfig - invalid config files
+/ Test 7 cont: loadconfig - invalid config files
 true,0,0,q,@[dbwrite.loadconfig;`:nonexistent_file_xyz;{1b}],1,,nonexistent file throws
 run,0,0,q,badcols:`:dbwrite_badcols.csv,1,,
 run,0,0,q,"badcols 0:(""wrongcol,att,column,sort"";""trade,p,sym,1"")",1,,csv with unrecognised column name
@@ -49,18 +60,12 @@ run,0,0,q,badatt:`:dbwrite_badatt.csv,1,,
 run,0,0,q,"badatt 0:(""tabname,att,column,sort"";""trade,z,sym,1"")",1,,csv with unrecognised attribute
 true,0,0,q,@[dbwrite.loadconfig;badatt;{1b}],1,,unrecognised attribute throws
 
-/ Clean-up config files after loadconfig tests
-run,0,0,q,@[hdel;cfgfile;{}],1,,remove temp sort config
-run,0,0,q,@[hdel;badcols;{}],1,,remove temp bad columns file
-run,0,0,q,@[hdel;badatt;{}],1,,remove temp bad attribute file
-comment,,,,,,,--- manipulate: registered function path not testable (savedownmanipulation in .z.M is module-bound and not settable from test scope) ---
-
-/ Test 7: Applyattr - error cases
+/ Test 9: applyattr - error cases
 run,0,0,q,logcount:0,1,,reset counter
 run,0,0,q,"dbwrite.applyattr[`:nonexist_attr_dir/;`sym;`p]",1,,apply to non-existent path
 true,0,0,q,2=logcount,1,,loginfo (before attempt) and logerr (on failure) each called once
 
-/ Test 8 - Applyattr - attribute application and logging when config entry exists for table
+/ Test 10: applyattr - attribute application and logging when path exists
 run,0,0,q,`:dbwrite_attr_tp/.d set `sym`price,1,,write column order file
 run,0,0,q,`:dbwrite_attr_tp/sym set `IBM`AAPL`MSFT,1,,write sym column
 run,0,0,q,`:dbwrite_attr_tp/price set 200 100 300f,1,,write price column
@@ -68,23 +73,21 @@ run,0,0,q,logcount:0,1,,reset counter
 run,0,0,q,"dbwrite.applyattr[`:dbwrite_attr_tp/;`sym;`p]",1,,apply p attr to sym column
 true,0,0,q,1=logcount,1,,loginfo called once (no error)
 true,0,0,q,`p=attr get `:dbwrite_attr_tp/sym,1,,p attribute applied on disk
-run,0,0,q,@[hdel;`:dbwrite_attr_tp/;{}],1,,cleanup test partition
 
-/ Test 9 - sort: error cases
+/ Test 11: sort - skip when table not in config
 run,0,0,q,logcount:0,1,,reset counter
 true,0,0,q,()~dbwrite.sort[`no_params_table_xyz],1,,returns () when table not in config
 true,0,0,q,2=logcount,1,,loginfo (sorting start) and logwarn (skip) both called
 
-/ Test 10 - sort: sorting and logging when config entry exists for table
+/ Test 12: sort - sorting and attribute application when config entry exists for table
 run,0,0,q,`:dbwrite_sort_tp/.d set `sym`price,1,,write column order file
 run,0,0,q,`:dbwrite_sort_tp/sym set `IBM`AAPL`MSFT,1,,write unsorted sym column
 run,0,0,q,`:dbwrite_sort_tp/price set 200 100 300f,1,,write price column
 run,0,0,q,"dbwrite.sort[(`trade;`:dbwrite_sort_tp/)]",1,,sort trade table in test partition
 true,0,0,q,`AAPL`IBM`MSFT~exec sym from get `:dbwrite_sort_tp/,1,,sorted ascending by sym
 true,0,0,q,`p=attr get `:dbwrite_sort_tp/sym,1,,p attribute applied to sym on disk
-run,0,0,q,@[hdel;`:dbwrite_sort_tp/;{}],1,,cleanup sort test partition
 
-/ Test 11 - sort: sorting with default config entry when no specific entry for table
+/ Test 13: sort - default config row used as fallback when no specific entry for table
 run,0,0,q,defcfg:`:dbwrite_defcfg.csv,1,,
 run,0,0,q,"defcfg 0:(""tabname,att,column,sort"";""default,,sym,1"")",1,,config with default entry only
 run,0,0,q,dbwrite.loadconfig[defcfg],1,,load default-only config
@@ -96,6 +99,12 @@ run,0,0,q,"dbwrite.sort[(`othertable;`:dbwrite_def_tp/)]",1,,sort using default 
 true,0,0,q,`AAPL`IBM~exec sym from get `:dbwrite_def_tp/,1,,sorted ascending by sym via default params
 true,0,0,q,4=logcount,1,,loginfo x2 (sorting start + sort-by) + logwarn x1 (using defaults) + loginfo x1 (finished)
 
-/ Clean-up default config and test partition
-after,0,0,q,@[hdel;`:dbwrite_def_tp/;{}],1,,cleanup test partition
+/ Clean up all created on-disk files and directories
+after,0,0,q,@[hdel;`:dbwrite_defp_tp/;{}],1,,cleanup defaultparams test partition
+after,0,0,q,@[hdel;cfgfile;{}],1,,remove temp sort config
+after,0,0,q,@[hdel;badcols;{}],1,,remove temp bad columns file
+after,0,0,q,@[hdel;badatt;{}],1,,remove temp bad attribute file
+after,0,0,q,@[hdel;`:dbwrite_attr_tp/;{}],1,,cleanup attr test partition
+after,0,0,q,@[hdel;`:dbwrite_sort_tp/;{}],1,,cleanup sort test partition
+after,0,0,q,@[hdel;`:dbwrite_def_tp/;{}],1,,cleanup default config test partition
 after,0,0,q,@[hdel;defcfg;{}],1,,remove default config csv

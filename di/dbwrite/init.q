@@ -3,7 +3,4 @@
 
 \l ::dbwrite.q
 
-/ default sort config file - set directly or extend init with a config dep
-defaultfile:`;
-
-export:([init;sort;applyattr;loadconfig;manipulate;postreplay;gc])
+export:([init;sort;applyattr;loadconfig;manipulate;savedownmanipulation;postreplay;gc])

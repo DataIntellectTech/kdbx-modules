@@ -1,0 +1,56 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,Setup - load module and inject mock dependencies
+before,0,0,q,heartbeat:use`di.heartbeat,1,1,load the heartbeat module
+before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent log mock
+before,0,0,q,.test.now:2025.01.01D00:00:00.000,1,1,controllable current time for the timer mock
+before,0,0,q,timerdep:`addjob`deletejobs`enablejobs`disablejobs`getactivejobs`cp!({[id;func;params;period;mode;opts]};{[ids]};{[ids]};{[ids]};{[]([]id:`$())};{[].test.now}),1,1,timer mock with controllable cp
+before,0,0,q,psdep:`publish`subscribe!({[t;x] .test.pubt:t;.test.pubx:x;.test.pubcount:.test.pubcount+1};{[h] .test.subh:h}),1,1,pubsub mock capturing publish and subscribe
+before,0,0,q,.test.pubcount:0,1,1,initialise publish counter
+before,0,0,q,deps:`log`timer`pubsub!(logdep;timerdep;psdep),1,1,assemble dependency dictionary
+before,0,0,q,heartbeat.init[`proctype`procname!(`rdb;`rdb1);deps],1,1,initialise with identity config and mocks
+
+comment,,,,,,,publishheartbeat publishes a row and bumps the counter
+run,0,0,q,.test.pubcount:0,1,1,reset publish counter
+run,0,0,q,heartbeat.publishheartbeat[],1,1,publish a heartbeat
+true,0,0,q,1=.test.pubcount,1,1,publish dependency was called once
+true,0,0,q,`heartbeat~.test.pubt,1,1,published to the heartbeat table
+true,0,0,q,`rdb~(first .test.pubx)`sym,1,1,published row carries the process type
+true,0,0,q,1=.m.di.0heartbeat.hbcounter,1,1,counter incremented
+
+comment,,,,,,,disabled publishing is a no-op
+run,0,0,q,.m.di.0heartbeat.enabled:0b,1,1,disable heartbeating
+run,0,0,q,.test.pubcount:0,1,1,reset publish counter
+run,0,0,q,heartbeat.publishheartbeat[],1,1,attempt to publish while disabled
+true,0,0,q,0=.test.pubcount,1,1,nothing published when disabled
+run,0,0,q,.m.di.0heartbeat.enabled:1b,1,1,re-enable heartbeating
+
+comment,,,,,,,storeheartbeat records incoming beats with cleared state
+run,0,0,q,.m.di.0heartbeat.hb:0#.m.di.0heartbeat.hb,1,1,clear the store
+run,0,0,q,.test.batch:([]time:enlist .test.now;sym:enlist`rdb;procname:enlist`rdb1;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 5000i),1,1,build an incoming heartbeat
+run,0,0,q,heartbeat.storeheartbeat[.test.batch],1,1,store the heartbeat
+true,0,0,q,1=count heartbeat.gethb[],1,1,one process recorded
+true,0,0,q,not first exec warning from heartbeat.gethb[],1,1,stored beat has warning cleared
+
+comment,,,,,,,addprocs seeds an expected process
+run,0,0,q,heartbeat.addprocs[`rdb;`rdb2],1,1,seed an expected process
+true,0,0,q,`rdb2 in exec procname from heartbeat.gethb[],1,1,seeded process present
+
+comment,,,,,,,checkheartbeat flags warning then error as time passes
+run,0,0,q,.m.di.0heartbeat.hb:0#.m.di.0heartbeat.hb,1,1,clear the store
+run,0,0,q,.test.now:2025.01.01D00:00:00.000,1,1,reset time to t0
+run,0,0,q,heartbeat.addprocs[`rdb;`stale],1,1,seed a process that will go stale
+run,0,0,q,.test.now:2025.01.01D00:00:50.000,1,1,advance 50s past the 45s warning period
+run,0,0,q,heartbeat.checkheartbeat[],1,1,run the check
+true,0,0,q,first exec warning from heartbeat.gethb[] where procname=`stale,1,1,process moved to warning
+true,0,0,q,not first exec error from heartbeat.gethb[] where procname=`stale,1,1,not yet in error
+run,0,0,q,.test.now:2025.01.01D00:02:00.000,1,1,advance past the 60s error period
+run,0,0,q,heartbeat.checkheartbeat[],1,1,run the check again
+true,0,0,q,first exec error from heartbeat.gethb[] where procname=`stale,1,1,process moved to error
+
+comment,,,,,,,subscribe tracks handles and closeconnection removes them
+run,0,0,q,.m.di.0heartbeat.subscribedhandles:`int$(),1,1,clear tracked handles
+run,0,0,q,heartbeat.subscribe[5i],1,1,subscribe to a remote handle
+true,0,0,q,5i in .m.di.0heartbeat.subscribedhandles,1,1,handle tracked after subscribe
+true,0,0,q,5i~.test.subh,1,1,subscribe dependency was invoked with the handle
+run,0,0,q,.m.di.0heartbeat.closeconnection[5i],1,1,simulate connection close
+true,0,0,q,not 5i in .m.di.0heartbeat.subscribedhandles,1,1,handle removed on close

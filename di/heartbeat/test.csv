@@ -54,3 +54,9 @@ true,0,0,q,5i in .m.di.0heartbeat.subscribedhandles,1,1,handle tracked after sub
 true,0,0,q,5i~.test.subh,1,1,subscribe dependency was invoked with the handle
 run,0,0,q,.m.di.0heartbeat.closeconnection[5i],1,1,simulate connection close
 true,0,0,q,not 5i in .m.di.0heartbeat.subscribedhandles,1,1,handle removed on close
+
+comment,,,,,,,init errors immediately when a required dependency is missing
+fail,0,0,q,heartbeat.init[()!();()!()],1,1,errors when log dependency missing
+fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist logdep],1,1,errors when timer dependency missing
+fail,0,0,q,heartbeat.init[()!();`log`timer!(logdep;timerdep)],1,1,errors when pubsub dependency missing
+fail,0,0,q,heartbeat.init[enlist[`subenabled]!enlist 1b;`log`timer`pubsub!(logdep;timerdep;psdep)],1,1,monitor errors when servers dependency missing

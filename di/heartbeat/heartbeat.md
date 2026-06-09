@@ -13,21 +13,28 @@ It covers both sides:
 
 ## Dependencies
 
-All runtime dependencies are **injected** via `init` as dictionaries of functions,
-so the module has no hard dependencies on any other module and runs standalone with
-minimal built-in fallbacks (logging to stdout, no-op timer/handlers/pubsub). Inject
-real implementations to get full functionality.
+All runtime dependencies are **injected** via `init` as dictionaries of functions
+(`` `dependency!(dict of functions) ``). They are **required** - `init` errors
+immediately with a clear message if a required dependency is missing. There is no
+hard dependency on any other module: any module exporting the contracted function
+signatures can be supplied.
 
-| Dependency | Keys | Default fallback | Purpose |
-|------------|------|------------------|---------|
-| `log` | `info` `warn` `error` (each `{[ctx;msg]}`) | writes to stdout | logging |
-| `timer` | `addjob` `deletejobs` `enablejobs` `disablejobs` `getactivejobs` `cp` | no-op (`cp` returns `.z.p`) | scheduling publish/check/subscribe and the current-time source |
-| `handlers` | `register` `remove` `list` | no-op | registering the connection-close (`.z.pc`) cleanup |
-| `pubsub` | `publish` (`{[table;data]}`) `subscribe` (`{[handle]}`) | no-op | publishing heartbeats / subscribing to publishers |
-| `servers` | `getservers` (`{[proctype]}` returning handles) | returns empty | discovering heartbeat publishers by process type |
+| Dependency | Keys | Required | Purpose |
+|------------|------|----------|---------|
+| `log` | `info` `warn` `error` (each `{[ctx;msg]}`) | always | logging |
+| `timer` | `addjob` `deletejobs` `enablejobs` `disablejobs` `getactivejobs` `cp` | always | scheduling publish/check/subscribe and the current-time source (`cp`) |
+| `pubsub` | `publish` (`{[table;data]}`) `subscribe` (`{[handle]}`) | always | publishing heartbeats / subscribing to publishers |
+| `servers` | `getservers` (`{[proctype]}` returning handles) | when `subenabled` | discovering heartbeat publishers by process type |
+| `handlers` | `register` `remove` `list` | when `subenabled` | registering the connection-close (`.z.pc`) cleanup |
 
 `log`, `timer` and `handlers` follow the standard kdb-x core dependency contracts;
-`pubsub` and `servers` are heartbeat-specific.
+`pubsub` and `servers` are heartbeat-specific. `servers` and `handlers` are only
+required when `subenabled` is set (i.e. this process monitors other heartbeats);
+a pure publisher needs only `log`, `timer` and `pubsub`.
+
+Only the functions the module actually calls are accessed (`timer`'s `addjob`/`cp`,
+`handlers`' `register`), but supplying the full contracted dictionary keeps the
+dependency interchangeable with the real `di.*` modules.
 
 ## Configuration
 
@@ -85,18 +92,23 @@ recognised key may be supplied; unset keys keep their defaults.
 // load the module
 heartbeat: use `di.heartbeat
 
-// build dependency dictionaries (here using di.log and di.timer)
-log: use `di.log
-log.init[()!()]
-logdep: `info`warn`error!(log.info;log.warn;log.error)
+// build dependency dictionaries (here from di.log and di.timer)
+// note: bound as logmod, not log, since log is a reserved q word
+logmod: use `di.log
+logmod.init[()!()]
+logdep: `info`warn`error!(logmod.info;logmod.warn;logmod.error)
 
 timer: use `di.timer
 timer.init[()!()]
 timerdep: `addjob`deletejobs`enablejobs`disablejobs`getactivejobs`cp!(
   timer.addjob;timer.deletejobs;timer.enablejobs;timer.disablejobs;timer.getactivejobs;timer.cp)
 
-// initialise as a publishing RDB
-heartbeat.init[`proctype`procname!(`rdb;`rdb1); `log`timer!(logdep;timerdep)]
+// a pubsub dependency must provide publish[table;data] and subscribe[handle]
+pubsub: use `di.pubsub
+psdep: `publish`subscribe!(pubsub.publish; {[h] h(`.m.di.0pubsub.subscribe;`heartbeat;`)})
+
+// initialise as a publishing RDB (log, timer and pubsub are all required)
+heartbeat.init[`proctype`procname!(`rdb;`rdb1); `log`timer`pubsub!(logdep;timerdep;psdep)]
 
 // publish a heartbeat immediately (normally the timer does this)
 heartbeat.publishheartbeat[]

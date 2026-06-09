@@ -2,7 +2,12 @@
 / every process can publish a periodic heartbeat over pub/sub so that downstream
 / monitors can detect when a process has stopped beating - i.e. it is stalled or
 / blocked - even when the underlying connection is still valid
-/ module-local state convention: read via .z.M, mutate via .z.m
+/ the module handles both publishing heartbeats and, on the monitoring side,
+/ storing received heartbeats and raising warnings / errors when they stop
+/ runtime dependencies are injected via init and are required - the module errors
+/ immediately if a required dependency is missing - see heartbeat.md
+/ module-local state convention: read config bare, mutate via .z.m, and access
+/ injected dependencies via .z.m at every call site
 
 / table used to publish heartbeats - sym holds the publishing process type
 heartbeat:([] time:`timestamp$(); sym:`symbol$(); procname:`symbol$(); counter:`long$(); pid:`int$(); host:`symbol$(); port:`int$());
@@ -36,52 +41,43 @@ onerror:{[procs]};      / callback fired with the rows entering error state
 / recognised configuration keys - anything else passed via config is ignored
 configkeys:`enabled`subenabled`debug`publishinterval`checkinterval`warningtolerance`errortolerance`proctype`procname`pid`host`port`connections`onwarning`onerror;
 
-/ minimal default dependencies so the module works standalone (with less functionality)
-/ injected real implementations replace these in init, matched key-for-key
-defaultlog:`info`warn`error!(
-  {[ctx;msg] -1 "INFO  ",(string ctx),": ",msg;};
-  {[ctx;msg] -1 "WARN  ",(string ctx),": ",msg;};
-  {[ctx;msg] -2 "ERROR ",(string ctx),": ",msg;});
+/ warning / error grace periods - vary by process type if required
+warningperiod:{[processtype] `timespan$warningtolerance*publishinterval};
+errorperiod:{[processtype] `timespan$errortolerance*publishinterval};
 
-defaulttimer:`addjob`deletejobs`enablejobs`disablejobs`getactivejobs`cp!(
-  {[id;func;params;period;mode;opts]};
-  {[ids]};
-  {[ids]};
-  {[ids]};
-  {[] 0#`id`func`params`period!(`$();();();`int$())};
-  {[] .z.p});
-
-defaulthandlers:`register`remove`list!(
-  {[event;name;func]};
-  {[event;name]};
-  {[event] ()});
-
-defaultpubsub:`publish`subscribe!(
-  {[tbl;data]};
-  {[handle]});
-
-defaultservers:enlist[`getservers]!enlist {[proctype] `int$()};
-
-extractdep:{[deps;name]
-  / pull a named dependency dictionary out of deps, empty dict when absent or null
-  $[(name in key deps) and not (::)~deps name;deps name;()!()]
+requiredep:{[deps;name]
+  / extract a required dependency dictionary, erroring immediately if absent or null
+  d:$[99h=type deps;$[(name in key deps) and not (::)~deps name;deps name;()!()];()!()];
+  if[not count d;
+    '"di.heartbeat: ",(string name)," dependency is required; pass it via init deps - see di.",string name];
+  d
   };
 
 setdeps:{[deps]
-  / store injected dependencies, merging over the minimal defaults per key
-  if[not 99h=type deps;deps:()!()];
-  .z.m.log:defaultlog,extractdep[deps;`log];
-  .z.m.timer:defaulttimer,extractdep[deps;`timer];
-  .z.m.handlers:defaulthandlers,extractdep[deps;`handlers];
-  .z.m.pubsub:defaultpubsub,extractdep[deps;`pubsub];
-  .z.m.servers:defaultservers,extractdep[deps;`servers];
+  / extract and store the required dependencies, flattened for access via .z.m
+  / log, timer and pubsub are always required; servers and handlers only when monitoring
+  logdict:requiredep[deps;`log];
+  .z.m.loginfo:logdict`info;
+  .z.m.logwarn:logdict`warn;
+  .z.m.logerr:logdict`error;
+  timerdict:requiredep[deps;`timer];
+  .z.m.timeraddjob:timerdict`addjob;
+  .z.m.timercp:timerdict`cp;
+  pubsubdict:requiredep[deps;`pubsub];
+  .z.m.pubsubpublish:pubsubdict`publish;
+  .z.m.pubsubsubscribe:pubsubdict`subscribe;
+  if[subenabled;
+    serversdict:requiredep[deps;`servers];
+    .z.m.serversgetservers:serversdict`getservers;
+    handlersdict:requiredep[deps;`handlers];
+    .z.m.handlersregister:handlersdict`register];
   };
 
 setconfig:{[config]
   / apply recognised configuration overrides (a dictionary) on top of current values
-  if[not 99h=type config;:()];
-  ks:configkeys inter key config;
-  {[k;v] (` sv `.z.m,k) set v}'[ks;config ks];
+  cfg:$[99h=type config;config;()!()];
+  ks:configkeys inter key cfg;
+  (.Q.dd[.z.M] each ks) set' cfg ks;
   };
 
 tosecs:{[span]
@@ -92,83 +88,89 @@ tosecs:{[span]
 registertimers:{
   / schedule the periodic heartbeat jobs via the injected timer (mode 1 = fixed interval)
   if[enabled;
-    .z.M.timer[`addjob][`hbpublish;publishheartbeat;();tosecs publishinterval;1;()!()];
-    .z.M.timer[`addjob][`hbcheck;checkheartbeat;();tosecs checkinterval;1;()!()]];
+    .z.m.timeraddjob[`hbpublish;publishheartbeat;();tosecs publishinterval;1;()!()];
+    .z.m.timeraddjob[`hbcheck;checkheartbeat;();tosecs checkinterval;1;()!()]];
   if[subenabled;
-    .z.M.timer[`addjob][`hbsubscribe;hbsubscriptions;();60;1;()!()]];
+    .z.m.timeraddjob[`hbsubscribe;hbsubscriptions;();60;1;()!()]];
   };
 
 registerhandlers:{
   / wire the connection-close cleanup through the injected handler manager
   if[subenabled;
-    .z.M.handlers[`register][`.z.pc;`heartbeat;closeconnection]];
+    .z.m.handlersregister[`.z.pc;`heartbeat;closeconnection]];
   };
 
 init:{[config;deps]
   / initialise the module with configuration and injected dependencies - see heartbeat.md
   / config - dictionary of configuration overrides (see configkeys), or (::) for defaults
-  / deps   - dictionary of injected dependencies keyed by name, each a dictionary of functions
-  setdeps deps;
+  / deps   - dictionary of injected dependencies keyed by name, each a dictionary of functions:
+  /   `log      - `info`warn`error                                          - required
+  /   `timer    - `addjob`deletejobs`enablejobs`disablejobs`getactivejobs`cp - required
+  /   `pubsub   - `publish`subscribe                                        - required
+  /   `servers  - `getservers                                              - required when subenabled
+  /   `handlers - `register`remove`list                                     - required when subenabled
+  / example:
+  /   heartbeat.init[`proctype`procname!(`rdb;`rdb1); `log`timer`pubsub!(logdep;timerdep;psdep)]
   setconfig config;
+  setdeps deps;
   registertimers[];
   registerhandlers[];
-  .z.M.log[`info][`heartbeat;"di.heartbeat initialised"];
+  .z.m.loginfo[`heartbeat;"di.heartbeat initialised"];
   };
 
 publishheartbeat:{
   / publish a single heartbeat row over pub/sub and bump the counter
   if[not enabled;:()];
-  .z.M.pubsub[`publish][`heartbeat;enlist `time`sym`procname`counter`pid`host`port!(.z.M.timer[`cp][];proctype;procname;.z.M.hbcounter;pid;host;port)];
-  .z.m.hbcounter:.z.M.hbcounter+1;
+  .z.m.pubsubpublish[`heartbeat;enlist `time`sym`procname`counter`pid`host`port!(.z.m.timercp[];proctype;procname;hbcounter;pid;host;port)];
+  .z.m.hbcounter:hbcounter+1;
   };
 
 storeheartbeat:{[batch]
   / store one or more incoming heartbeats, keeping the latest per process and
   / clearing warning / error state - call this from upd when a heartbeat arrives
-  .z.m.hb:.z.M.hb upsert update warning:0b,error:0b from select by sym,procname from batch;
+  .z.m.hb:hb upsert update warning:0b,error:0b from select by sym,procname from batch;
   };
 
 addprocs:{[proctypes;procnames]
   / seed the store with expected processes so a never-seen process is flagged
   / real heartbeats arriving later override these seeded rows
-  seed:2!([]sym:proctypes,();procname:procnames,();time:.z.M.timer[`cp][];counter:0N;pid:0Ni;host:`;port:0Ni;warning:0b;error:0b);
-  .z.m.hb:seed,.z.M.hb;
+  seed:2!([]sym:proctypes,();procname:procnames,();time:.z.m.timercp[];counter:0N;pid:0Ni;host:`;port:0Ni;warning:0b;error:0b);
+  .z.m.hb:seed,hb;
   };
 
 logwarnproc:{[r]
   / log a single process moving into warning state
-  .z.M.log[`warn][`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
+  .z.m.logwarn[`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
   };
 
 logerrproc:{[r]
   / log a single process moving into error state
-  .z.M.log[`error][`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
+  .z.m.logerr[`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
   };
 
 warn:{[procs]
   / move processes into warning state, log and fire the warning callback
   if[debug;logwarnproc each 0!procs];
-  .z.m.hb:.z.M.hb upsert select sym,procname,warning:1b from procs;
-  .z.M.onwarning procs;
+  .z.m.hb:hb upsert select sym,procname,warning:1b from procs;
+  onwarning procs;
   };
 
 err:{[procs]
   / move processes into error state, log and fire the error callback
   if[debug;logerrproc each 0!procs];
-  .z.m.hb:.z.M.hb upsert select sym,procname,error:1b from procs;
-  .z.M.onerror procs;
+  .z.m.hb:hb upsert select sym,procname,error:1b from procs;
+  onerror procs;
   };
-
-warningperiod:{[processtype] `timespan$warningtolerance*publishinterval};
-errorperiod:{[processtype] `timespan$errortolerance*publishinterval};
 
 checkheartbeat:{
   / flag processes that have not heartbeated within the warning / error grace periods
   / status: 0 healthy, 1 warning, 2+ error
-  now:.z.M.timer[`cp][];
-  stats:0!update
-    status:(`short$now>time+warningperiod each sym)+`short$2*now>time+errorperiod each sym
-    from .z.M.hb;
+  / grace periods are computed as locals first - module functions do not resolve inside qsql
+  now:.z.m.timercp[];
+  t:0!hb;
+  wp:warningperiod each t`sym;
+  ep:errorperiod each t`sym;
+  stats:update status:(`short$now>time+wp)+`short$2*now>time+ep from t;
   newwarn:select sym,procname,time from stats where status=1,not warning;
   newerr:select sym,procname,time from stats where status>1,not error;
   if[count newwarn;warn newwarn];
@@ -177,8 +179,8 @@ checkheartbeat:{
 
 subscribeone:{[h]
   / subscribe to a single remote heartbeat publisher, logging and skipping on failure
-  ok:.[{.z.M.pubsub[`subscribe] x;1b};h;{[h;e] .z.M.log[`error][`heartbeat;"failed to subscribe to heartbeats on handle ",(string h),": ",e];0b}[h]];
-  if[ok;.z.m.subscribedhandles:distinct .z.M.subscribedhandles,h];
+  ok:@[{.z.m.pubsubsubscribe x;1b};h;{[h;e] .z.m.logerr[`heartbeat;"failed to subscribe to heartbeats on handle ",(string h),": ",e];0b}[h]];
+  if[ok;.z.m.subscribedhandles:distinct subscribedhandles,h];
   };
 
 subscribe:{[handles]
@@ -188,9 +190,9 @@ subscribe:{[handles]
 
 getheartbeats:{[proctype]
   / subscribe to publishers of the given process type(s) that are not yet subscribed
-  handles:(.z.M.servers[`getservers] proctype) except .z.M.subscribedhandles;
+  handles:(.z.m.serversgetservers proctype) except subscribedhandles;
   if[count handles;
-    .z.M.log[`info][`heartbeat;"subscribing to new heartbeat handle(s) ",", " sv string handles];
+    .z.m.loginfo[`heartbeat;"subscribing to new heartbeat handle(s) ",", " sv string handles];
     subscribe handles];
   };
 
@@ -201,10 +203,10 @@ hbsubscriptions:{
 
 closeconnection:{[h]
   / drop a closed handle from the tracked subscriptions - registered against .z.pc
-  .z.m.subscribedhandles:.z.M.subscribedhandles except h;
+  .z.m.subscribedhandles:subscribedhandles except h;
   };
 
 gethb:{
   / return the current heartbeat store for inspection
-  .z.M.hb
+  hb
   };

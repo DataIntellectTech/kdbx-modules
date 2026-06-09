@@ -1,0 +1,40 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,html:use`di.html,1,,load di.html module
+before,0,0,q,"mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,mock log dep that discards all messages
+before,0,0,q,"html.init[(enlist `homedir)!enlist ""/tmp"";enlist[`log]!enlist[mocklog]]",1,,initialise module with /tmp as html home directory
+before,0,0,q,"(`:/tmp/di_html_test.html) 1: ""<html>test</html>""",1,,write test html file using q file io
+before,0,0,q,"(`:/tmp/di_html_hp_test.html) 1: ""MYKDBSERVER:MYKDBPORT""",1,,write test file containing server and port tokens
+before,0,0,q,htmltestfn:{x-y},1,,helper function for multi-arg evaluate test
+before,0,0,q,"trades:([]sym:`g#`symbol$();px:`float$())",1,,real global table so sub success path can read its contents
+before,0,0,q,"quotes:([]sym:`g#`symbol$();bid:`float$())",1,,real global table so subscribing to all tables can read its contents
+before,0,0,q,"hns:` sv `.m.di,first (key `.m.di) where (key `.m.di) like ""*html""",1,,resolve the html module's internal namespace (avoids hardcoding the load-order prefix)
+before,0,0,q,"jsf:get ` sv hns,`jsformat",1,,grab the internal jsformat converter so its date logic can be tested directly
+before,0,0,q,"convtest:([]ts:enlist 2024.01.02D12:00:00.000000000;d:enlist 2024.01.02;tm:enlist 12:00:00.000;sym:enlist `AAPL)",1,,sample table with one column of each time type plus an untyped sym column
+
+run,0,0,q,"html.addtables[`trades`quotes]",1,,register two tables for pub/sub
+run,0,0,q,"html.addtables[`trades]",1,,re-registering an existing table does not error
+run,0,0,q,"html.pub[`trades;([]a:enlist 1i)]",1,,pub with no subscribers completes without error
+
+fail,0,0,q,"html.sub[`notregistered;`]",1,,subscribing to an unregistered table throws an error
+run,0,0,q,"html.end[`eod]",1,,end is a clean no-op when there are no subscribers (tested before any console sub)
+true,0,0,q,"`trades~first html.sub[`trades;`]",1,,sub success path returns the table name as first element
+true,0,0,q,"0=count last html.sub[`trades;`]",1,,sub success path returns the current (empty) table contents
+run,0,0,q,"html.wssub[`trades]",1,,wssub delegates to sub without error
+run,0,0,q,"html.sub[`;`]",1,,subscribing with backtick subscribes to all registered tables
+
+true,0,0,q,"-42~html.evaluate[`func`arg1!(""neg"";42)]",1,,evaluate calls a function with one arg correctly
+true,0,0,q,"-1~html.evaluate[`func`arg1`arg2!(""htmltestfn"";1;2)]",1,,evaluate calls a function with multiple args correctly
+true,0,0,q,"-1~html.evaluate[(enlist `func)!enlist ""neg""]",1,,evaluate with only func key calls f@1 - preserving TorQ behaviour
+fail,0,0,q,"html.evaluate[(enlist `arg1)!enlist 1]",1,,evaluate throws when the func key is missing
+
+true,0,0,q,"""<html>test</html>""~html.readpage[""di_html_test.html""]",1,,readpage returns file contents as a string
+true,0,0,q,"""/tmp/di_html_notfound.html: not found""~html.readpage[""di_html_notfound.html""]",1,,readpage returns a not-found message string for a missing file
+true,0,0,q,"0=count html.readpagereplaceHP[""di_html_hp_test.html""] ss ""MYKDBSERVER""",1,,readpagereplaceHP replaces the MYKDBSERVER token
+true,0,0,q,"0=count html.readpagereplaceHP[""di_html_hp_test.html""] ss ""MYKDBPORT""",1,,readpagereplaceHP replaces the MYKDBPORT token
+
+true,0,0,q,"""2024-01-02T12:00:00Z""~first (jsf convtest)`ts",1,,jsformat converts a timestamp column to an iso 8601 string
+true,0,0,q,"1704153600000~first (jsf convtest)`d",1,,jsformat converts a date column to javascript epoch milliseconds
+true,0,0,q,"43200000~first (jsf convtest)`tm",1,,jsformat converts a time column to milliseconds since midnight
+true,0,0,q,"`AAPL~first (jsf convtest)`sym",1,,jsformat leaves columns whose type is not in the typemap unchanged
+
+after,0,0,q,"system ""rm /tmp/di_html_test.html /tmp/di_html_hp_test.html""",1,,remove test html files created during setup

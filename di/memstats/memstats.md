@@ -17,7 +17,7 @@ The `objsize` function is more computationally expensive, it tries to calculate 
 `objsize[]`:Returns the approximate size of an individual kdb object including nested types and attributes.
 
 ## Memstats table schema
-The memusage table is returned from either the `memusagevars` or `memusageall` functions.
+The memstats table is returned from either the `memusagevars` or `memusageall` functions.
 
 | Column   | Type        | Description                                 |
 |----------|-------------|---------------------------------------------|

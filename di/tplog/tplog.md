@@ -185,9 +185,9 @@ test_repair_recovers_messages[]
 test_repair_garbage_at_end[]
 ```
 
-> **Note:** If the tests refer to `tplog` but you loaded the module as `tplog`, either:
-> - load the module into a `tplog` variable as well, or
-> - update the test references to `tplog`.
+> **Note:** If the tests reference the module under a different name than the one used when loading it, either:
+> - load the module under the expected name as well, or
+> - update the test references to use the loaded module name.
 
 ---
 

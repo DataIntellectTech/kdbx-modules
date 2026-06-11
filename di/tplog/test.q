@@ -59,7 +59,7 @@ cleanup:{[filepaths]
 / BASIC FUNCTIONALITY TESTS
 / =============================================================================
 
-/ @test Valid log file tplogutils.check returns original filepath
+/ @test Valid log file tplog.check returns original filepath
 testcheckvalidlog: {
   testfile:`:test_valid.log;
   msgcount:10;
@@ -68,7 +68,7 @@ testcheckvalidlog: {
   createvalidlog[testfile;msgcount];
   
   / test
-  result:tplogutils.check[testfile;msgcount-1];
+  result:tplog.check[testfile;msgcount-1];
   
   / assert
   passes:result~testfile;
@@ -80,7 +80,7 @@ testcheckvalidlog: {
   passes
  };
 
-/ @test tplogutils.check returns original when enough good messages exist
+/ @test tplog.check returns original when enough good messages exist
 testcheckcorruptsufficientmessages:{
   testfile:`:test_corrupt_sufficient.log;
   validmsgcount:20;
@@ -90,7 +90,7 @@ testcheckcorruptsufficientmessages:{
   createcorruptlog[testfile;validmsgcount;500];
   
   / test
-  result:tplogutils.check[testfile;lastmsgtoreplay];
+  result:tplog.check[testfile;lastmsgtoreplay];
   
   / assert - should return original since we have enough good messages
   goodmsgcount:first -11!(-2;testfile);
@@ -102,16 +102,16 @@ testcheckcorruptsufficientmessages:{
   passes
  };
 
-/ @test tplogutils.repair creates .good file with correct name
+/ @test tplog.repair creates .good file with correct name
 testrepaircreatesgoodfile: {
-  testfile:`:test_tplogutils.repair.log;
+  testfile:`:test_tplog.repair.log;
   expectedgoodfile:`$string[testfile],".good";
     
   / setup
   createcorruptlog[testfile;15;150];
     
   / test
-  result:tplogutils.repair[testfile];
+  result:tplog.repair[testfile];
   
   / assert
   namecorrect:result~expectedgoodfile;
@@ -124,7 +124,7 @@ testrepaircreatesgoodfile: {
   passes
  };
 
-/ @test tplogutils.repair recovers valid messages from corrupt log
+/ @test tplog.repair recovers valid messages from corrupt log
 testrepairrecoversmessages: {
   testfile:`:test_recover.log;
   goodfile:`$string[testfile],".good";
@@ -134,7 +134,7 @@ testrepairrecoversmessages: {
   createcorruptlog[testfile;validmsgcount;250];
     
   / test
-  tplogutils.repair[testfile];
+  tplog.repair[testfile];
     
   / Count messages in good file
   recoveredcount:countlogmessages[goodfile];
@@ -148,9 +148,9 @@ testrepairrecoversmessages: {
   passes
  };
 
-/ @test tplogutils.check triggers tplogutils.repair when insufficient good messages
+/ @test tplog.check triggers tplog.repair when insufficient good messages
 testchecktriggersrepair: {
-  testfile:`:test_tplogutils.check_tplogutils.repair.log;
+  testfile:`:test_tplog.check_tplog.repair.log;
   goodfile:`$string[testfile],".good";
   validmsgcount:10;
   lastmsgtoreplay:15j;  / Need more messages than available good ones
@@ -159,12 +159,12 @@ testchecktriggersrepair: {
   createcorruptlog[testfile;validmsgcount;100];
     
   / test
-  result:tplogutils.check[testfile;lastmsgtoreplay];
+  result:tplog.check[testfile;lastmsgtoreplay];
     
   / assert
-  triggerstplogutils.repair:result~goodfile;
+  triggerstplog.repair:result~goodfile;
   filecreated:not ()~key goodfile;
-  passes:triggerstplogutils.repair and filecreated;
+  passes:triggerstplog.repair and filecreated;
     
   / cleanup
   cleanup (testfile;goodfile);
@@ -176,7 +176,7 @@ testchecktriggersrepair: {
 / EDGE CASE TESTS
 / =============================================================================
 
-/ @test tplogutils.repair handles garbage at end of file
+/ @test tplog.repair handles garbage at end of file
 testrepairgarbageatend: {
   testfile:`:test_garbage_end.log;
   goodfile:`$string[testfile],".good";
@@ -187,7 +187,7 @@ testrepairgarbageatend: {
   testfile set bytes,100#0x00;
     
   / test
-  result:tplogutils.repair[testfile];
+  result:tplog.repair[testfile];
     
   / assert
   namecorrect:result~goodfile;
@@ -216,7 +216,7 @@ testmultiplecorruptsections: {
   ];
     
   / test
-  result:tplogutils.repair[testfile];
+  result:tplog.repair[testfile];
     
   / assert - should create file and recover something
   fileCorrect:result~goodfile;
@@ -238,7 +238,7 @@ testcompletelycorruptlog: {
   testfile set 1000#0x00;
     
   / test
-  result:tplogutils.repair[testfile];
+  result:tplog.repair[testfile];
     
   / assert - should create .good file even if empty/minimal
   namecorrect:result~goodfile;
@@ -255,11 +255,11 @@ testcompletelycorruptlog: {
 testemptylog: {
   testfile:`:test_empty.log;
    
-  / setup - create empty file
-  testfile set 0#0x00;
+  / setup - create empty log 
+  testfile set ();
     
   / test - should not crash
-  result:tplogutils.check[testfile;0j];
+  result:tplog.check[testfile;0j];
   
   / If we got here without error, test passes
   passes:1b;  
@@ -287,7 +287,7 @@ testmoduleinfo: {
 / INTEGRATION TESTS
 / =============================================================================
 
-/ @test tplogutils.repair then replay workflow
+/ @test tplog.repair then replay workflow
 testrepairandreplay: {
   testfile:`:test_replay.log;
   goodfile:`$string[testfile],".good";
@@ -295,8 +295,8 @@ testrepairandreplay: {
   / setup
   createcorruptlog[testfile;20;200];
     
-  / test - tplogutils.repair and try to replay
-  tplogutils.repair[testfile];
+  / test - tplog.repair and try to replay
+  tplog.repair[testfile];
     
   / This should not throw an error if the .good file is valid
   replayOk:@[{-11!(1;x);1b};goodfile;{0b}];
@@ -318,7 +318,7 @@ testlargefilehandling: {
     
   / test - measure time
   start:.z.p;
-  result:tplogutils.repair[testfile];
+  result:tplog.repair[testfile];
   elapsed:`second$.z.p-start;
     
   / assert - should complete and create file
@@ -332,7 +332,7 @@ testlargefilehandling: {
   passes
  };
 
-/ @test Sequential tplogutils.check and tplogutils.repair calls
+/ @test Sequential tplog.check and tplog.repair calls
 testsequentialoperations: {
   testfile:`:test_sequential.log;
   goodfile:`$string[testfile],".good";
@@ -340,13 +340,13 @@ testsequentialoperations: {
   / setup
   createcorruptlog[testfile;15;150];
     
-  / test - tplogutils.check then tplogutils.repair
-  tplogutils.checkresult:tplogutils.check[testfile;20j];
+  / test - tplog.check then tplog.repair
+  tplog.checkresult:tplog.check[testfile;20j];
     
-  / if tplogutils.check triggered tplogutils.repair, goodfile should exist
-  / if not, manually tplogutils.repair
-  if[not tplogutils.checkresult~goodfile;
-     tplogutils.repair[testfile];
+  / if tplog.check triggered tplog.repair, goodfile should exist
+  / if not, manually tplog.repair
+  if[not tplog.checkresult~goodfile;
+     tplog.repair[testfile];
     ];
     
   / assert - .good file should exist in either case

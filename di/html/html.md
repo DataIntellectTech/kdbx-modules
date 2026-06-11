@@ -14,12 +14,9 @@ This module does two things:
 ```q
 html:use`di.html
 
-/ minimal setup - log dep is required, handlers dep is optional
-logdep:`info`warn`error!(
-  {[c;m] -1 "INFO  ",(string c)," ",m;};
-  {[c;m] -1 "WARN  ",(string c)," ",m;};
-  {[c;m] -2 "ERROR ",(string c)," ",m;})
-html.init[(enlist `homedir)!enlist "/opt/app/html";enlist[`log]!enlist logdep]
+/ minimal setup - all config is optional
+/ homedir defaults to the KDBHTML env var (else "html"), logging defaults to the console
+html.init[]
 
 / register tables for pub/sub
 html.addtables[`trades`quotes]
@@ -28,24 +25,29 @@ html.addtables[`trades`quotes]
 html.pub[`trades;newdata]
 ```
 
+This mirrors the original TorQ deployment: set `KDBHTML`, initialise, register tables.
+
 ## init
 
 ```q
-html.init[config;deps]
+html.init[]
+html.init[configs]
 ```
 
-### config keys
+`configs` is an optional dictionary — call `init[]` to use the defaults. Only recognised keys are picked up:
 
-| Key | Type | Description | Required |
+| Key | Type | Description | Default |
 |---|---|---|---|
-| `homedir` | string | Path to the directory containing HTML files | Yes |
+| `homedir` | string | Path to the directory containing HTML files | `KDBHTML` env var, else `"html"` (TorQ behaviour) |
+| `` `log `` | dict | Logging functions with keys `` `info`warn`error ``, each called as `(ctx;msg)` | Console loggers — info/warn to stdout, error to stderr |
+| `` `handlers `` | dict | Handler registry with key `` `register `` | Assigns `.z.ws`, `.z.wc` and `.z.pc` directly |
 
-### deps keys
+```q
+/ override config explicitly
+html.init[`homedir`log!("/opt/app/html";logdict)]
+```
 
-| Key | Description | If absent |
-|---|---|---|
-| `` `log `` | Logging function dict with keys `` `info`warn`error `` | **Required** — `init` signals an error |
-| `` `handlers `` | Handler registration dict with key `` `register `` | Assigns `.z.wc` and `.z.ws` directly |
+`init` also sets `.h.HOME` to `homedir` (protected, skipped if `.h` is unavailable) so the default HTTP handler serves static assets (css/js/img) from the same directory — the equivalent of TorQ's `KDBHTML` behaviour.
 
 ## Exported functions
 
@@ -89,6 +91,14 @@ html.end[eodval]
 
 Broadcasts an end-of-day message to all subscriber handles.
 
+### dataformat
+
+```q
+html.dataformat[msgtype;msgdata]
+```
+
+Wraps a message into a `` `name`data `` dictionary, javascript-formatting each table in `msgdata` (a list or dictionary of tables). Used by host data functions that the front end requests over the websocket, e.g. TorQ's monitor `start` call returning several tables at once.
+
 ### readpage
 
 ```q
@@ -115,7 +125,7 @@ Takes a q dictionary (already deserialised from JSON), extracts the `func` key, 
 
 ## WebSocket handler
 
-The module registers a `.z.ws` handler that receives bytes from the browser, deserialises them to a q dict, calls `evaluate`, JSON-encodes the result, and sends it back. A `.z.wc` handler cleans up subscriptions when a connection closes.
+The module registers a `.z.ws` handler that receives bytes from the browser, deserialises them to a q dict, calls `evaluate`, JSON-encodes the result, and sends it back. Subscriptions are cleaned up when a connection closes via both `.z.wc` (websocket) and `.z.pc` (IPC), as in TorQ — `sub` can also be called over a plain IPC handle. In the direct-assignment path (no `handlers` config) any existing `.z.wc`/`.z.pc` handlers are preserved by wrapping, and the wiring happens only once across repeated `init` calls.
 
 ## Logging
 
@@ -125,12 +135,11 @@ The module logs at three points:
 - On `readpage`: warns if a requested file is not found
 - On `evaluate`: logs at error level when a WebSocket-invoked function fails (the error is also re-thrown to the caller)
 
-The `log` dependency is required — `init` signals an error if it is absent. Internally the loggers are stored on `.z.m` as `lginfo`/`lgwarn`/`lgerr` (not `log`, which is a q built-in) and every call site invokes them through `.z.m`.
+Logging defaults to the console (info/warn to stdout, error to stderr); pass a `log` dict to `init` to integrate with a real logging module. Internally the loggers are stored on `.z.m` as `lginfo`/`lgwarn`/`lgerr` (not `log`, which is a q built-in) and every call site invokes them through `.z.m`.
 
-## Example with injected dependencies
+## Example with custom log and handlers config
 
-The `log` dep is required and the `handlers` dep is optional; both are supplied by
-the host application. The `log` functions are called as `(ctx;msg)` and the
+Both keys are optional overrides. The `log` functions are called as `(ctx;msg)` and the
 `handlers` registry's `register` is called as `(.z event name; label; handler)`.
 
 ```q
@@ -138,19 +147,19 @@ the host application. The `log` functions are called as `(ctx;msg)` and the
 / kx.log loggers take a single message, so wrap them to the (ctx;msg) shape
 logger:use`kx.log
 kxlog:logger.createLog[]
-logdep:`info`warn`error!(
+logdict:`info`warn`error!(
   {[c;m] kxlog.info[(string c),": ",m]};
   {[c;m] kxlog.warn[(string c),": ",m]};
   {[c;m] kxlog.error[(string c),": ",m]})
 
 / wire up handlers via a host-provided registry
-/ a real registry composes handlers so several modules can share .z.ws / .z.wc
-/ omit this dep entirely to have the module assign .z.ws / .z.wc directly
-hnddep:enlist[`register]!enlist {[zname;label;fn] zname set fn}
+/ a real registry composes handlers so several modules can share .z.ws / .z.wc / .z.pc
+/ omit this key entirely to have the module assign .z.ws / .z.wc / .z.pc directly
+hnddict:enlist[`register]!enlist {[zname;label;fn] zname set fn}
 
 / initialise html module
 html:use`di.html
-html.init[(enlist `homedir)!enlist "/opt/app/html";`log`handlers!(logdep;hnddep)]
+html.init[`homedir`log`handlers!("/opt/app/html";logdict;hnddict)]
 ```
 
 ## Testing

@@ -1,7 +1,7 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,html:use`di.html,1,,load di.html module
-before,0,0,q,"mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,mock log dep that discards all messages
-before,0,0,q,"html.init[(enlist `homedir)!enlist ""/tmp"";enlist[`log]!enlist[mocklog]]",1,,initialise module with /tmp as html home directory
+before,0,0,q,"mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,mock log config that discards all messages
+before,0,0,q,"html.init[`homedir`log!(""/tmp"";mocklog)]",1,,initialise module with /tmp as html home directory
 before,0,0,q,"(`:/tmp/di_html_test.html) 1: ""<html>test</html>""",1,,write test html file using q file io
 before,0,0,q,"(`:/tmp/di_html_hp_test.html) 1: ""MYKDBSERVER:MYKDBPORT""",1,,write test file containing server and port tokens
 before,0,0,q,htmltestfn:{x-y},1,,helper function for multi-arg evaluate test
@@ -32,9 +32,19 @@ true,0,0,q,"""/tmp/di_html_notfound.html: not found""~html.readpage[""di_html_no
 true,0,0,q,"0=count html.readpagereplaceHP[""di_html_hp_test.html""] ss ""MYKDBSERVER""",1,,readpagereplaceHP replaces the MYKDBSERVER token
 true,0,0,q,"0=count html.readpagereplaceHP[""di_html_hp_test.html""] ss ""MYKDBPORT""",1,,readpagereplaceHP replaces the MYKDBPORT token
 
+true,0,0,q,"""/tmp""~.h.HOME",1,,init sets .h.HOME to homedir so the default http handler serves static assets
+true,0,0,q,"""start""~html.dataformat[""start"";enlist convtest][`name]",1,,dataformat returns the message type as name
+true,0,0,q,"1704153600000~first (first html.dataformat[""start"";enlist convtest][`data])[`d]",1,,dataformat javascript-formats each table in a list
+true,0,0,q,"`t1`t2~key html.dataformat[""start"";`t1`t2!(convtest;convtest)][`data]",1,,dataformat preserves table names when given a dictionary of tables
+true,0,0,q,"""2024-01-02T12:00:00Z""~first html.dataformat[""start"";`t1`t2!(convtest;convtest)][`data][`t1][`ts]",1,,dataformat javascript-formats each table in a dictionary
 true,0,0,q,"""2024-01-02T12:00:00Z""~first (jsf convtest)`ts",1,,jsformat converts a timestamp column to an iso 8601 string
 true,0,0,q,"1704153600000~first (jsf convtest)`d",1,,jsformat converts a date column to javascript epoch milliseconds
 true,0,0,q,"43200000~first (jsf convtest)`tm",1,,jsformat converts a time column to milliseconds since midnight
 true,0,0,q,"`AAPL~first (jsf convtest)`sym",1,,jsformat leaves columns whose type is not in the typemap unchanged
+
+run,0,0,q,"setenv[`KDBHTML;""/tmp""]",1,,set KDBHTML so default init picks up the TorQ env var
+run,0,0,q,"html.init[enlist[`log]!enlist mocklog]",1,,init without homedir config applies defaults without error
+true,0,0,q,"""/tmp""~.h.HOME",1,,default init takes homedir from the KDBHTML env var like TorQ
+true,0,0,q,"""<html>test</html>""~html.readpage[""di_html_test.html""]",1,,readpage works against the env var derived homedir
 
 after,0,0,q,"system ""rm /tmp/di_html_test.html /tmp/di_html_hp_test.html""",1,,remove test html files created during setup

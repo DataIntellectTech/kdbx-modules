@@ -15,7 +15,16 @@ ipacache:(`int$())!`symbol$();
 / home directory for html files - set by init
 homedir:"";
 
-/ logging functions - required injected deps, wired by init via .z.m
+/ flag so direct .z handler wiring happens only once across repeated init calls
+zwired:0b;
+
+/ logging functions - default to the console, overridable via the log config key on init
+
+/ default console loggers, called as (ctx;msg)
+deflog:`info`warn`error!(
+  {[c;m] -1 "INFO  ",(string c)," ",m;};
+  {[c;m] -1 "WARN  ",(string c)," ",m;};
+  {[c;m] -2 "ERROR ",(string c)," ",m;});
 
 / converts a list of timestamps or dates to iso 8601 strings e.g. "2024-01-02T12:00:00Z"
 jstsiso8601:{[x] {("-" sv "." vs string `date$x),"T",string[`second$x],"Z"} each x};
@@ -32,7 +41,7 @@ jstsfromm:{[x] jstsfromd `date$x};
 
 / maps kdb type shorts to their javascript converter function
 / types not listed here are left unchanged by jsformat
-typemap:12 13 14 16 17 18 19h!(jstsiso8601;jstsfromm;jstsfromd;jstsfromt;jstsfromt;jstsfromt;jstsfromt);
+typemap:12 13 14 15 16 17 18 19h!(jstsiso8601;jstsfromm;jstsfromd;jstsiso8601;jstsfromt;jstsfromt;jstsfromt;jstsfromt);
 
 jsformat:{[tbl]
   / applies the correct javascript converter to each column of a table that needs it
@@ -48,6 +57,12 @@ updformat:{[msgtype;msgdata]
   / wraps an upd message into a name/data dictionary with javascript-formatted table data
   formatteddata:(key msgdata)!(msgdata`tablename;jsformat msgdata`tabledata);
   :(`name`data)!(msgtype;formatteddata);
+  };
+
+dataformat:{[msgtype;msgdata]
+  / wraps a message into a name/data dictionary, javascript-formatting each table in msgdata
+  / msgdata is a list or dictionary of tables - used by host data functions requested from the front end
+  :(`name`data)!(msgtype;jsformat each msgdata);
   };
 
 / filter applied before sending data to a subscriber - returns full table (no filtering)
@@ -167,35 +182,46 @@ evaluate:{[inputdict]
   :@[execdict;inputdict;{[d;e] m:"failed to execute ",(-3!d)," : ",e;.z.m.lgerr[`html;m];'m}[inputdict]];
   };
 
-init:{[config;deps]
-  / sets up module state from config and registers websocket handlers
-  / log dep is required; handlers dep is optional
+init:{[configs]
+  / sets up module state and registers websocket handlers
+  / configs is an optional dict - recognised keys are homedir, log and handlers
+  / defaults: homedir from the KDBHTML env var (else "html"), console logging, direct .z handler assignment
 
-  / log dependency is required - guard that deps is a dict, log key is present and not (::)
-  logdict:$[99h=type deps;$[(`log in key deps)and not(::)~deps`log;deps`log;()!()];()!()];
-  if[not count logdict;
-    '"di.html: log dependency is required; pass `info`warn`error functions - see di.log for a default implementation";
-    ];
+  / default configuration values
+  hd:$[count e:getenv`KDBHTML;e;"html"];
+  logdict:deflog;
+  hnd:(::);
+
+  / set custom config values - only recognised keys are picked up
+  if[not configs~(::);
+    if[`homedir in key configs;hd:configs`homedir];
+    if[`log in key configs;logdict:configs`log];
+    if[`handlers in key configs;hnd:configs`handlers]];
+
   .z.m.lginfo:logdict`info;
   .z.m.lgwarn:logdict`warn;
   .z.m.lgerr:logdict`error;
+  .z.m.homedir:hd;
 
-  / store config
-  .z.m.homedir:config`homedir;
-
-  / register .h content type handlers - protected in case not available in kdb-x
-  @[{.h.tx[`non]:{enlist x};.h.ty[`non]:"text/html"};`;{[e]}];
-
-  / register handlers via dep if provided
-  if[`handlers in key deps;
-    deps[`handlers][`register][`.z.ws;`html.ws;wshandler];
-    deps[`handlers][`register][`.z.wc;`html.close;closehandle];
-    :()];
-
-  / no handlers dep: assign directly, wrapping any existing .z.wc to preserve it
-  .z.ws:wshandler;
-  .z.wc:@[value;`.z.wc;{{}}];
-  .z.wc:{[existing;h] closehandle h; existing h}[.z.wc;];
+  / register .h content type handlers and static file root - protected in case not available in kdb-x
+  / .h.HOME lets the default http handler serve static assets (css/js/img) from homedir, as TorQ does via KDBHTML
+  @[{.h.HOME:x;.h.tx[`non]:{enlist x};.h.ty[`non]:"text/html"};homedir;{[e]}];
 
   .z.m.lginfo[`html;"initialised with homedir: ",homedir];
+
+  / register handlers via the handlers config if provided
+  / closehandle is registered for both websocket (.z.wc) and ipc (.z.pc) closes, as in TorQ
+  if[not hnd~(::);
+    hnd[`register][`.z.ws;`html.ws;wshandler];
+    hnd[`register][`.z.wc;`html.close;closehandle];
+    hnd[`register][`.z.pc;`html.close;closehandle];
+    :()];
+
+  / no handlers config: assign directly, wrapping any existing handlers to preserve them
+  / wire only once so repeated init calls do not stack the wrappers
+  if[zwired;:()];
+  .z.ws:wshandler;
+  .z.wc:{[existing;h] closehandle h; existing h}[@[value;`.z.wc;{{[x]}}];];
+  .z.pc:{[existing;h] closehandle h; existing h}[@[value;`.z.pc;{{[x]}}];];
+  .z.m.zwired:1b;
   };

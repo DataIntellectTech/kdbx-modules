@@ -1,4 +1,4 @@
 //Load core functionality into root module namespace
-\l ::usage.q
+\l ::querylog.q
 
 export:([init;getusage;readlog;flushusage;setextension;clearextension])

@@ -1,4 +1,4 @@
-# `usage.q` – External Usage Logging for kdb+
+# `querylog.q` – External Usage Logging for kdb+
 
 A utility library for logging external queries and connections to a kdb+ session. It captures metadata such as execution time, memory usage, user information, command content, and errors.
 
@@ -19,7 +19,7 @@ A utility library for logging external queries and connections to a kdb+ session
 
 ## :label: Usage Table Schema
 
-Logs are stored in a table `usage` with the following columns:
+Logs are stored in a table `querylog` with the following columns:
 
 | Column | Type      | Description                               |
 |--------|-----------|-------------------------------------------|
@@ -46,7 +46,7 @@ by providing a dictionary of the variable name and desired value (default values
 ```q
 localtime    : 1b                   // Log using local time or UTC (default: 1b, local)
 logdir       : "/path/to/logs";     // Path to log directory
-logname      : "rdb";               // Identifier used in log file name: usage_{logname}_{timestamp}.log
+logname      : "rdb";               // Identifier used in log file name: querylog_{logname}_{timestamp}.log
 logtimestamp : {.z.Z};              // Function to give log name timestamp suffix (default: {[] :.z.D;})
 logtodisk    : 1b;                  // Log to disk (default: 0b)
 logtomemory  : 1b;                  // Log to memory table (default: 1b)
@@ -98,13 +98,13 @@ handlers and initiates the in memory logs/ on disk logs if enabled.
 
 ## :memo: Log File Output
 
-- Log files are created as: `usage_{logname}_{timestamp}.log`
-- Format: pipe-delimited strings with same columns as `usage`
+- Log files are created as: `querylog_{logname}_{timestamp}.log`
+- Format: pipe-delimited strings with same columns as `querylog`
 
 Use `readlog` to parse logs from disk:
 
 ```q
-usage.readlog["logs/usage_rdb_2025.06.25.log"]
+querylog.readlog["logs/querylog_rdb_2025.06.25.log"]
 ```
 
 ---
@@ -114,7 +114,7 @@ usage.readlog["logs/usage_rdb_2025.06.25.log"]
 | Function               | Description                                                                                       |
 |------------------------|---------------------------------------------------------------------------------------------------|
 | `flushusage[t]` | Remove records older than `t` (timespan) ago from memory                                          |
-| `ext[x]`        | Optional extension hook for each record written (`x` is a list of column data for `usage`) |
+| `ext[x]`        | Optional extension hook for each record written (`x` is a list of column data for `querylog`) |
 | `nextid[]`      | Generate next usage ID                                                                            |
 | `meminfo[]`     | Get partial system memory stats                                                                   |
 | `formatarg`     | Format incoming `.z` argument for logging                                                         |
@@ -146,17 +146,17 @@ Default handlers will be defined if not previously set.
 ## :test_tube: Example
 
 ```q
-// Include usage module in a process
-usage: use `di.usage
+// Include querylog module in a process
+querylog: use `di.querylog
 
 // View dictionary of functions
-usage
+querylog
 
-// Initialise usage and set up logging to disk and memory by passing a dictionary to init function
-usage.init[`localtime`logdir`logname`logtodisk`logtomemory`ignorelist!(1b;"logs";"rdb";1b;1b;(`upd; ".hb.checkheartbeat[]"))]
+// Initialise querylog and set up logging to disk and memory by passing a dictionary to init function
+querylog.init[`localtime`logdir`logname`logtodisk`logtomemory`ignorelist!(1b;"logs";"rdb";1b;1b;(`upd; ".hb.checkheartbeat[]"))]
 
-// Check usage table for synchronous user queries
-select from usage.getusage[] where zcmd=`pg
+// Check querylog table for synchronous user queries
+select from querylog.getusage[] where zcmd=`pg
 time                          id  extime               zcmd status a          u     w  cmd                                                                   mem                           sz  error
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 2025.07.04D11:57:59.474947647 194                      pg   b      2130706433 kdbNoob 14 "tables[]"                                                            8273600 67108864 67108864 0 0     ""

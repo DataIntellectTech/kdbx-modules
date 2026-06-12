@@ -107,7 +107,8 @@ logdep: `info`warn`error!(logmod.info;logmod.warn;logmod.error)
 timer: use `di.timer
 timer.init[()!()]
 // heartbeat only needs addjob from the timer - it keeps its own clock (see setcp)
-timerdep: enlist[`addjob]!enlist timer.addjob
+// note: di.timer's addjob is a namespace; addjob.custom has the [id;func;params;period;mode;opts] signature heartbeat calls
+timerdep: enlist[`addjob]!enlist timer.addjob.custom
 
 // a pubsub dependency must provide publish[table;data] and subscribe[handle]
 pubsub: use `di.pubsub

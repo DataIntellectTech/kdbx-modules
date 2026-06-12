@@ -93,12 +93,14 @@ tosecs:{[span]
   };
 
 registertimers:{
-  / schedule the periodic heartbeat jobs via the injected timer (mode 1 = fixed interval)
+  / schedule the periodic heartbeat jobs via the injected timer
+  / mode 2 = period after previous actual start - a heartbeat says "alive now", so
+  / missed beats must not be replayed as a catch-up storm (which mode 1 would do)
   if[enabled;
-    .z.m.timeraddjob[`hbpublish;publishheartbeat;();tosecs publishinterval;1;()!()];
-    .z.m.timeraddjob[`hbcheck;checkheartbeat;();tosecs checkinterval;1;()!()]];
+    .z.m.timeraddjob[`hbpublish;publishheartbeat;();tosecs publishinterval;2;()!()];
+    .z.m.timeraddjob[`hbcheck;checkheartbeat;();tosecs checkinterval;2;()!()]];
   if[subenabled;
-    .z.m.timeraddjob[`hbsubscribe;hbsubscriptions;();60;1;()!()]];
+    .z.m.timeraddjob[`hbsubscribe;hbsubscriptions;();60;2;()!()]];
   };
 
 registerhandlers:{

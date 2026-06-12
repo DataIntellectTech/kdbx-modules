@@ -22,7 +22,7 @@ signatures can be supplied.
 | Dependency | Keys | Required | Purpose |
 |------------|------|----------|---------|
 | `log` | `info` `warn` `error` (each `{[ctx;msg]}`) | always | logging |
-| `timer` | `addjob` `deletejobs` `enablejobs` `disablejobs` `getactivejobs` `cp` | always | scheduling publish/check/subscribe and the current-time source (`cp`) |
+| `timer` | `addjob` (the full `di.timer` dict may be passed) | always | scheduling the publish / check / subscribe jobs |
 | `pubsub` | `publish` (`{[table;data]}`) `subscribe` (`{[handle]}`) | always | publishing heartbeats / subscribing to publishers |
 | `servers` | `getservers` (`{[proctype]}` returning handles) | when `subenabled` | discovering heartbeat publishers by process type |
 | `handlers` | `register` `remove` `list` | when `subenabled` | registering the connection-close (`.z.pc`) cleanup |
@@ -32,9 +32,14 @@ signatures can be supplied.
 required when `subenabled` is set (i.e. this process monitors other heartbeats);
 a pure publisher needs only `log`, `timer` and `pubsub`.
 
-Only the functions the module actually calls are accessed (`timer`'s `addjob`/`cp`,
+Only the functions the module actually calls are accessed (`timer`'s `addjob`,
 `handlers`' `register`), but supplying the full contracted dictionary keeps the
 dependency interchangeable with the real `di.*` modules.
+
+The module keeps its **own** current-time function rather than taking it from the
+timer dependency (so it doesn't rely on the timer exporting a clock getter). It
+defaults to `.z.p`; override it with `setcp` for deterministic tests or simulation,
+e.g. `heartbeat.setcp[{2025.01.01D00:00:00.000}]`.
 
 ## Configuration
 
@@ -69,6 +74,7 @@ recognised key may be supplied; unset keys keep their defaults.
 | `subscribe[handles]` | subscribe to heartbeats on the given remote handle(s) |
 | `hbsubscriptions[]` | subscribe to all configured publishers (by `connections` process type) |
 | `gethb[]` | return the heartbeat store |
+| `setcp[f]` | replace the current-time function (for tests / simulation) |
 
 ## Heartbeat store schema
 
@@ -100,8 +106,8 @@ logdep: `info`warn`error!(logmod.info;logmod.warn;logmod.error)
 
 timer: use `di.timer
 timer.init[()!()]
-timerdep: `addjob`deletejobs`enablejobs`disablejobs`getactivejobs`cp!(
-  timer.addjob;timer.deletejobs;timer.enablejobs;timer.disablejobs;timer.getactivejobs;timer.cp)
+// heartbeat only needs addjob from the timer - it keeps its own clock (see setcp)
+timerdep: enlist[`addjob]!enlist timer.addjob
 
 // a pubsub dependency must provide publish[table;data] and subscribe[handle]
 pubsub: use `di.pubsub

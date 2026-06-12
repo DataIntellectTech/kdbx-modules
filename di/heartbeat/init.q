@@ -5,4 +5,4 @@
 version:"0.1.0";
 
 / public api - only the functions intended to be called externally are exported
-export:([init;publishheartbeat;checkheartbeat;storeheartbeat;addprocs;subscribe;hbsubscriptions;gethb;version])
+export:([init;publishheartbeat;checkheartbeat;storeheartbeat;addprocs;subscribe;hbsubscriptions;gethb;setcp;version])

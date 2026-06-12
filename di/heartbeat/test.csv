@@ -3,11 +3,12 @@ comment,,,,,,,Setup - load module and inject mock dependencies
 before,0,0,q,heartbeat:use`di.heartbeat,1,1,load the heartbeat module
 before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent log mock
 before,0,0,q,.test.now:2025.01.01D00:00:00.000,1,1,controllable current time for the timer mock
-before,0,0,q,timerdep:`addjob`deletejobs`enablejobs`disablejobs`getactivejobs`cp!({[id;func;params;period;mode;opts]};{[ids]};{[ids]};{[ids]};{[]([]id:`$())};{[].test.now}),1,1,timer mock with controllable cp
+before,0,0,q,timerdep:enlist[`addjob]!enlist {[id;func;params;period;mode;opts]},1,1,timer mock - heartbeat only requires addjob
 before,0,0,q,psdep:`publish`subscribe!({[t;x] .test.pubt:t;.test.pubx:x;.test.pubcount:.test.pubcount+1};{[h] .test.subh:h}),1,1,pubsub mock capturing publish and subscribe
 before,0,0,q,.test.pubcount:0,1,1,initialise publish counter
 before,0,0,q,deps:`log`timer`pubsub!(logdep;timerdep;psdep),1,1,assemble dependency dictionary
 before,0,0,q,heartbeat.init[`proctype`procname!(`rdb;`rdb1);deps],1,1,initialise with identity config and mocks
+before,0,0,q,heartbeat.setcp[{[].test.now}],1,1,point heartbeat clock at the controllable test time
 
 comment,,,,,,,publishheartbeat publishes a row and bumps the counter
 run,0,0,q,.test.pubcount:0,1,1,reset publish counter

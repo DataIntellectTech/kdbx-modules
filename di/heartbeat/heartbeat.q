@@ -21,6 +21,14 @@ subscribedhandles:`int$();
 / heartbeat counter
 hbcounter:0;
 
+/ current-time function - heartbeat owns its clock; override via setcp for testing / simulation
+cp:{.z.p};
+
+setcp:{[f]
+  / replace the current-time function (used by tests and simulation)
+  .z.m.cp:f;
+  };
+
 / configuration defaults - overridden by the config dictionary passed to init
 enabled:1b;             / whether heartbeat publishing / checking is enabled
 subenabled:0b;          / whether this process monitors (subscribes to) other heartbeats
@@ -62,7 +70,6 @@ setdeps:{[deps]
   .z.m.logerr:logdict`error;
   timerdict:requiredep[deps;`timer];
   .z.m.timeraddjob:timerdict`addjob;
-  .z.m.timercp:timerdict`cp;
   pubsubdict:requiredep[deps;`pubsub];
   .z.m.pubsubpublish:pubsubdict`publish;
   .z.m.pubsubsubscribe:pubsubdict`subscribe;
@@ -104,11 +111,12 @@ init:{[config;deps]
   / initialise the module with configuration and injected dependencies - see heartbeat.md
   / config - dictionary of configuration overrides (see configkeys), or (::) for defaults
   / deps   - dictionary of injected dependencies keyed by name, each a dictionary of functions:
-  /   `log      - `info`warn`error                                          - required
-  /   `timer    - `addjob`deletejobs`enablejobs`disablejobs`getactivejobs`cp - required
-  /   `pubsub   - `publish`subscribe                                        - required
-  /   `servers  - `getservers                                              - required when subenabled
-  /   `handlers - `register`remove`list                                     - required when subenabled
+  /   `log      - `info`warn`error            - required
+  /   `timer    - `addjob (full di.timer dict may be passed) - required
+  /   `pubsub   - `publish`subscribe          - required
+  /   `servers  - `getservers                 - required when subenabled
+  /   `handlers - `register`remove`list       - required when subenabled
+  / note: the module keeps its own clock (cp, default .z.p) - override via setcp
   / example:
   /   heartbeat.init[`proctype`procname!(`rdb;`rdb1); `log`timer`pubsub!(logdep;timerdep;psdep)]
   setconfig config;
@@ -121,7 +129,7 @@ init:{[config;deps]
 publishheartbeat:{
   / publish a single heartbeat row over pub/sub and bump the counter
   if[not enabled;:()];
-  .z.m.pubsubpublish[`heartbeat;enlist `time`sym`procname`counter`pid`host`port!(.z.m.timercp[];proctype;procname;hbcounter;pid;host;port)];
+  .z.m.pubsubpublish[`heartbeat;enlist `time`sym`procname`counter`pid`host`port!(cp[];proctype;procname;hbcounter;pid;host;port)];
   .z.m.hbcounter:hbcounter+1;
   };
 
@@ -134,7 +142,7 @@ storeheartbeat:{[batch]
 addprocs:{[proctypes;procnames]
   / seed the store with expected processes so a never-seen process is flagged
   / real heartbeats arriving later override these seeded rows
-  seed:2!([]sym:proctypes,();procname:procnames,();time:.z.m.timercp[];counter:0N;pid:0Ni;host:`;port:0Ni;warning:0b;error:0b);
+  seed:2!([]sym:proctypes,();procname:procnames,();time:cp[];counter:0N;pid:0Ni;host:`;port:0Ni;warning:0b;error:0b);
   .z.m.hb:seed,hb;
   };
 
@@ -166,7 +174,7 @@ checkheartbeat:{
   / flag processes that have not heartbeated within the warning / error grace periods
   / status: 0 healthy, 1 warning, 2+ error
   / grace periods are computed as locals first - module functions do not resolve inside qsql
-  now:.z.m.timercp[];
+  now:cp[];
   t:0!hb;
   wp:warningperiod each t`sym;
   ep:errorperiod each t`sym;

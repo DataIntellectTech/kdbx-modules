@@ -13,10 +13,12 @@ This module does two things:
 
 ```q
 html:use`di.html
+log:use`di.log
 
-/ minimal setup - all config is optional
-/ homedir defaults to the KDBHTML env var (else "html"), logging defaults to the console
-html.init[]
+/ minimal setup - the log dependency is required
+/ homedir defaults to the KDBHTML env var (else "html")
+logdep:`info`warn`error!(log.info;log.warn;log.error)
+html.init[enlist[`log]!enlist logdep]
 
 / register tables for pub/sub
 html.addtables[`trades`quotes]
@@ -30,16 +32,15 @@ This mirrors the original TorQ deployment: set `KDBHTML`, initialise, register t
 ## init
 
 ```q
-html.init[]
 html.init[configs]
 ```
 
-`configs` is an optional dictionary — call `init[]` to use the defaults. Only recognised keys are picked up:
+`configs` is a dictionary. The `` `log `` key is required — `init` signals an error if it is missing or does not contain `` `info`warn`error `` functions. Only recognised keys are picked up:
 
 | Key | Type | Description | Default |
 |---|---|---|---|
+| `` `log `` | dict | **Required.** Logging functions with keys `` `info`warn`error ``, each called as `(ctx;msg)` — e.g. from `di.log` | — |
 | `homedir` | string | Path to the directory containing HTML files | `KDBHTML` env var, else `"html"` (TorQ behaviour) |
-| `` `log `` | dict | Logging functions with keys `` `info`warn`error ``, each called as `(ctx;msg)` | Console loggers — info/warn to stdout, error to stderr |
 | `` `handlers `` | dict | Handler registry with key `` `register `` | Assigns `.z.ws`, `.z.wc` and `.z.pc` directly |
 
 ```q
@@ -135,12 +136,12 @@ The module logs at three points:
 - On `readpage`: warns if a requested file is not found
 - On `evaluate`: logs at error level when a WebSocket-invoked function fails (the error is also re-thrown to the caller)
 
-Logging defaults to the console (info/warn to stdout, error to stderr); pass a `log` dict to `init` to integrate with a real logging module. Internally the loggers are stored on `.z.m` as `lginfo`/`lgwarn`/`lgerr` (not `log`, which is a q built-in) and every call site invokes them through `.z.m`.
+There is no built-in default logger — the `log` dict must be injected via `init`, typically from `di.log`. Internally the loggers are stored on `.z.m` as `lginfo`/`lgwarn`/`lgerr` (not `log`, which is a q built-in) and every call site invokes them through `.z.m`.
 
 ## Example with custom log and handlers config
 
-Both keys are optional overrides. The `log` functions are called as `(ctx;msg)` and the
-`handlers` registry's `register` is called as `(.z event name; label; handler)`.
+The `log` functions are called as `(ctx;msg)` and the `handlers` registry's `register`
+is called as `(.z event name; label; handler)`.
 
 ```q
 / wire up logging on top of the kx.log module

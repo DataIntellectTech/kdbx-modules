@@ -41,10 +41,18 @@ true,0,0,q,"""2024-01-02T12:00:00Z""~first (jsf convtest)`ts",1,,jsformat conver
 true,0,0,q,"1704153600000~first (jsf convtest)`d",1,,jsformat converts a date column to javascript epoch milliseconds
 true,0,0,q,"43200000~first (jsf convtest)`tm",1,,jsformat converts a time column to milliseconds since midnight
 true,0,0,q,"`AAPL~first (jsf convtest)`sym",1,,jsformat leaves columns whose type is not in the typemap unchanged
+true,0,0,q,"""""~first (jsf ([]ts:enlist 0Np))`ts",1,,jsformat converts null timestamps to empty strings
+true,0,0,q,"0=count (jsf 0#convtest)`ts",1,,jsformat handles empty tables
 
 run,0,0,q,"setenv[`KDBHTML;""/tmp""]",1,,set KDBHTML so default init picks up the TorQ env var
 run,0,0,q,"html.init[enlist[`log]!enlist mocklog]",1,,init without homedir config applies defaults without error
 true,0,0,q,"""/tmp""~.h.HOME",1,,default init takes homedir from the KDBHTML env var like TorQ
 true,0,0,q,"""<html>test</html>""~html.readpage[""di_html_test.html""]",1,,readpage works against the env var derived homedir
+
+fail,0,0,q,"html.init[(::)]",1,,init without a configs dict throws - the log dependency is required
+fail,0,0,q,"html.init[enlist[`homedir]!enlist ""/tmp""]",1,,init with a configs dict missing the log key throws
+fail,0,0,q,"html.init[enlist[`log]!enlist 42]",1,,init throws when the log value is not a dict
+fail,0,0,q,"html.init[enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,,init throws when the log dict is missing the warn and error keys
+true,0,0,q,"(@[html.init;(::);{x}]) like ""*log*""",1,,the missing log dependency error message names the log key
 
 after,0,0,q,"system ""rm /tmp/di_html_test.html /tmp/di_html_hp_test.html""",1,,remove test html files created during setup

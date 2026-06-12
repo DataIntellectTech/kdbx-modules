@@ -18,16 +18,17 @@ homedir:"";
 / flag so direct .z handler wiring happens only once across repeated init calls
 zwired:0b;
 
-/ logging functions - default to the console, overridable via the log config key on init
-
-/ default console loggers, called as (ctx;msg)
-deflog:`info`warn`error!(
-  {[c;m] -1 "INFO  ",(string c)," ",m;};
-  {[c;m] -1 "WARN  ",(string c)," ",m;};
-  {[c;m] -2 "ERROR ",(string c)," ",m;});
-
-/ converts a list of timestamps or dates to iso 8601 strings e.g. "2024-01-02T12:00:00Z"
-jstsiso8601:{[x] {("-" sv "." vs string `date$x),"T",string[`second$x],"Z"} each x};
+jstsiso8601:{[x]
+  / converts a list of timestamps or datetimes to iso 8601 strings e.g. "2024-01-02T12:00:00Z"
+  / vectorised: stringifies the date and time parts in bulk rather than per element; nulls return ""
+  i:where 10=count each d:string `date$x;
+  r:(count d)#enlist "";
+  if[not count i;:r];
+  dd:d i;
+  dd[;4 7]:"-";
+  r[i]:dd,'("T",/:string `second$x i),\:"Z";
+  :r;
+  };
 
 / converts a list of dates to javascript epoch milliseconds
 / kdb dates are days since 2000-01-01; 10957 is the day offset from 1970-01-01 to 2000-01-01
@@ -184,19 +185,25 @@ evaluate:{[inputdict]
 
 init:{[configs]
   / sets up module state and registers websocket handlers
-  / configs is an optional dict - recognised keys are homedir, log and handlers
-  / defaults: homedir from the KDBHTML env var (else "html"), console logging, direct .z handler assignment
+  / configs is a dict - recognised keys are homedir, log and handlers
+  / log is required: `info`warn`error!(...) where each is a {[ctx;msg]} function, e.g. from di.log
+  / defaults: homedir from the KDBHTML env var (else "html"), direct .z handler assignment
+
+  / log dependency is required - fail loudly rather than falling back to a default logger
+  logdict:$[99h=type configs;$[(`log in key configs) and not (::)~configs`log;configs`log;()!()];()!()];
+  if[not count logdict;
+    '"di.html: log dependency is required; pass `info`warn`error functions - see di.log or refer to confluence documentation"];
+  if[not 99h=type logdict;'"di.html: log must be a dict of `info`warn`error!(logging functions)"];
+  if[count missing:`info`warn`error except key logdict;
+    '"di.html: log dict missing key(s): ",", " sv string missing];
 
   / default configuration values
   hd:$[count e:getenv`KDBHTML;e;"html"];
-  logdict:deflog;
   hnd:(::);
 
   / set custom config values - only recognised keys are picked up
-  if[not configs~(::);
-    if[`homedir in key configs;hd:configs`homedir];
-    if[`log in key configs;logdict:configs`log];
-    if[`handlers in key configs;hnd:configs`handlers]];
+  if[`homedir in key configs;hd:configs`homedir];
+  if[`handlers in key configs;hnd:configs`handlers];
 
   .z.m.lginfo:logdict`info;
   .z.m.lgwarn:logdict`warn;

@@ -3,7 +3,7 @@
 / handlers with usage-logging wrappers of their current definitions
 
 / table to store usage info
-usage:([]
+querylog:([]
   time:`timestamp$();
   id:`long$();
   extime:`timespan$();
@@ -35,7 +35,7 @@ logh:0;
 / write a query log message
 write:{[x]
   if[logtodisk;@[neg logh;"|"sv .Q.s1 each x;()]];
-  if[logtomemory;.z.M.usage upsert x];
+  if[logtomemory;.z.M.querylog upsert x];
   ext x;
   };
 
@@ -49,24 +49,24 @@ setextension:{[fn].z.m.ext:fn};
 clearextension:{.z.m.ext:{[x]}};
 
 // Flush out in-memory usage records older than flushtime
-flushusage:{[flushtime] delete from .z.M.usage where time<.z.m.currenttime[.z.m.localtime]-flushtime;}
+flushusage:{[flushtime] delete from .z.M.querylog where time<.z.m.currenttime[.z.m.localtime]-flushtime;}
 
 // Create usage log on disk
 createlog:{[logdir;logname;timestamp]
-  basename:"usage_",logname,"_",string[timestamp],".log";
+  basename:"querylog_",logname,"_",string[timestamp],".log";
   / close the current log handle if there is one
   @[hclose;logh;()];
   / open the file
   .z.m.logh:hopen hsym`$logdir,"/",basename;
   };
 
-/ parse a usage log file and return as a usage table
+/ parse a querylog log file and return as a querylog table
 readlog:{[filename]
   / remove leading backtick from symbol columns, drop "i" suffix from a and w columns and cast back to integers
   :update
     zcmd:`$1_'string zcmd,u:`$1_'string u,a:"I"$-1_'a,w:"I"$-1_'w
     from
-    @[{update "J"$'" "vs'mem from flip(cols usage)!("PJNSC*S***J*";"|")0: x};
+    @[{update "J"$'" "vs'mem from flip(cols querylog)!("PJNSC*S***J*";"|")0: x};
       hsym`$filename;
       {'"failed to read log file : ",x}];
   };
@@ -126,7 +126,7 @@ logquery:{[zcmd;handler;arg]
   :logafter[id;zcmd;currenttime localtime;@[handler;arg;logerror[id;zcmd;currenttime localtime;arg;start;]];arg;start:currenttime localtime];
   };
 
-/ log before and after query execution is attempted, filtering with .usage.ignoreList
+/ log before and after query execution is attempted, filtering with querylog.ignorelist
 logqueryfiltered:{[zcmd;handler;arg]
   if[ignore;
     if[0h=type arg;
@@ -172,18 +172,18 @@ initlog:{[]
       '"logname and logdir must be set to enable on disk usage logging. logToDisk disabled"];
     .[createlog;
       (logdir;logname;logtimestamp localtime);
-      {.z.m.logtodisk:0b;'"Error creating log file: ",logdir,"/usage_",logname,"_",string[logtimestamp localtime]," | Error: ",x}]];
+      {.z.m.logtodisk:0b;'"Error creating log file: ",logdir,"/querylog_",logname,"_",string[logtimestamp localtime]," | Error: ",x}]];
   };
 
-/ exportable function to get usage table
-getusage:{usage};
+/ exportable function to get querylog table
+getusage:{querylog};
 
 init:{[configs]
   / default configuration values and flags
   .z.m.logtodisk:0b;    / whether to log to disk
   .z.m.logtomemory:1b;  / whether to log to memory
   .z.m.logdir:"";       / should be set before loading library to initialise on disk logging
-  .z.m.logname:"";      / log file will take the form "usage_{logname}_{date/time}.log"
+  .z.m.logname:"";      / log file will take the form "querylog_{logname}_{date/time}.log"
   .z.m.ignore:1b;       / whether to check the ignore list for function calls to not log
   .z.m.ignorelist:();   / list of function to not log usage of
   .z.m.level:3;         / log level,	0 = nothing, 1 = errors only, 2 = + open, close, queries, 3 = + log queries before execution

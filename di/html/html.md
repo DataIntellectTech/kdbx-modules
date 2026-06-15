@@ -108,10 +108,10 @@ html.readpage[filename]
 
 Reads the file at `homedir/filename` and returns its contents as a string. Returns an error message string if the file is not found.
 
-### readpagereplaceHP
+### readpagereplacehostport
 
 ```q
-html.readpagereplaceHP[filename]
+html.readpagereplacehostport[filename]
 ```
 
 Reads the file at `homedir/filename` and replaces `MYKDBSERVER` and `MYKDBPORT` tokens with the process's current IP address and port. Used to serve self-referencing HTML pages over HTTP.

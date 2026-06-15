@@ -173,7 +173,7 @@ readpage:{[filename]
   :$[count r;"c"$r;p,": not found"];
   };
 
-readpagereplaceHP:{[filename]
+readpagereplacehostport:{[filename]
   / reads a page and replaces MYKDBSERVER and MYKDBPORT tokens with live server values
   :replace[readpage filename;`MYKDBSERVER`MYKDBPORT!("\"",(string ipa .z.a),"\"";getport[])];
   };

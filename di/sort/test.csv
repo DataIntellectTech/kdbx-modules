@@ -18,6 +18,7 @@ fail,0,0,q,srt.init[enlist[`log]!enlist(::)],1,1,init rejects null log dep
 fail,0,0,q,srt.init[()!()],1,1,init rejects empty dict
 fail,0,0,q,srt.init[enlist[`other]!enlist mylog],1,1,init rejects dict missing log key
 fail,0,0,q,srt.init[enlist[`log]!enlist 42],1,1,init rejects non-dict log value
+fail,0,0,q,srt.init[enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects log dict missing required key
 true,0,0,q,"(7#@[srt.init;(::);{x}])~""di.sort""",1,1,error message is prefixed di.sort
 
 comment,,,,,,,getparams - initial state before getsortcsv

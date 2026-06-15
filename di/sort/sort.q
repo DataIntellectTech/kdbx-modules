@@ -18,6 +18,9 @@ init:{[deps]
     '"di.sort: log dependency is required; pass `info`warn`error functions - ",
      "see di.log for a default implementation or refer to confluence documentation";
   ];
+  if[not all (`info`warn`error) in key logdict;
+    '"di.sort: log dict must have `info`warn`error keys; got: ",(", " sv string key logdict);
+  ];
   .z.m.loginfo:logdict`info;
   .z.m.logwarn:logdict`warn;
   .z.m.logerr:logdict`error;

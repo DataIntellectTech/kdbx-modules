@@ -9,10 +9,6 @@ before,0,0,q,res:{.m.di.0asyncdispatch.results},1,,live results dict
 run,0,0,q,ad.addserver[0i;`mock],1,,register a mock server
 true,0,0,q,(enlist 0i)~exec handle from srv[] where active,1,,server is active
 true,0,0,q,(enlist 0i)~exec handle from ad.availableservers 1b,1,,idle server is available
-run,0,0,q,ad.setserverstate[0i;1b],1,,mark server busy
-true,0,0,q,1b~first exec inuse from srv[] where handle=0i,1,,server marked in use
-run,0,0,q,ad.setserverstate[0i;0b],1,,mark server free
-true,0,0,q,0b~first exec inuse from srv[] where handle=0i,1,,server marked free
 
 / Test 1: queueing and FIFO scheduling
 run,0,0,q,ad.addquery["2+2";enlist`mock;raze;();0Wn;0b],1,,queue a query for the mock servertype

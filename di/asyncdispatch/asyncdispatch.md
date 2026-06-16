@@ -17,7 +17,7 @@
 ad:use`di.asyncdispatch
 ```
 
-Returns a handle (`ad`) exposing the exported API, e.g. `ad.asyncexec[...]`.
+Returns a handle (`ad`) exposing the exported API, e.g. `ad.execquery[...]`.
 
 ---
 
@@ -28,7 +28,7 @@ Returns a handle (`ad`) exposing the exported API, e.g. `ad.asyncexec[...]`.
 | `errorprefix` | `"error: "` | — | Prefix added to error strings sent back to clients |
 | `querykeeptime` | `0D00:30` | — | How long `removequeries` keeps finished queries in `queryqueue` |
 | `clearinactivetime` | `0D01:00` | — | How long `removeinactive` keeps records for disconnected servers |
-| `synccallsallowed` | `0b` | — | Whether `syncexec`/`syncexecj` are permitted |
+| `synccallsallowed` | `0b` | — | Whether `execquery[...;1b]` (sync mode) is permitted |
 | `cp` | `{.z.p}` | `setcp` | Current-time function. Override for simulation/backtesting |
 | `formatresponse` | see below | `setformatresponse` | Final transform applied to a result/error before it is sent to the client |
 | `availableservers` | built-in | `setavailableservers` | How "which servers are free" is computed |
@@ -37,7 +37,7 @@ Returns a handle (`ad`) exposing the exported API, e.g. `ad.asyncexec[...]`.
 
 ### `formatresponse[status;sync;result]`
 - `status` — `1b` success, `0b` error.
-- `sync` — `1b` if the client used a deferred-sync call (`syncexec`/`syncexecj`), `0b` for async.
+- `sync` — `1b` if the client used a deferred-sync call (`execquery[...;1b]`), `0b` for async.
 - Default: on a synchronous error (`not status` and `sync`), **signals** `result` as an error back up the `-30!` deferred response so the client's sync call raises. Otherwise passes `result` through unchanged.
 
 ### `availableservers[excludeinuse]`
@@ -103,7 +103,7 @@ ad.setcallbacks[`.gw.dispatch.addserverresult;`.gw.dispatch.addservererror]
 - Keys are the servertype symbols passed to `addquery`.
 - Each value is a 3-list: `(handle assigned; result once it arrives; received flag)`.
 - A query is complete once every `received` flag is `1b`.
-- Entries are removed by `deleteresult` / `finishquery` once the query completes.
+- Entries are removed by `finishquery` once the query completes.
 
 ---
 
@@ -111,7 +111,6 @@ ad.setcallbacks[`.gw.dispatch.addserverresult;`.gw.dispatch.addservererror]
 
 ### Server registry
 - **`addserver[handle;servertype]`** — register a backend connection.
-- **`setserverstate[serverh;busy]`** — mark server handle(s) busy (`1b`) or free (`0b`).
 - **`availableservers[excludeinuse]`** — query which servers can take work now (see Pluggable hooks).
 
 ### Client tracking
@@ -119,24 +118,19 @@ ad.setcallbacks[`.gw.dispatch.addserverresult;`.gw.dispatch.addservererror]
 - **`removeclienthandle[h]`** — call from `.z.pc`. Stamps any of that client's unfinished queries as returned/errored and drops their `results` entries.
 
 ### Queueing
-- **`addquery[query;servertype;join;postback;timeout;sync]`** — low-level: insert a row into `queryqueue`. Does **not** dispatch — call `runnextquery[]` afterwards (or use `dispatch`/`asyncexec*`/`syncexec*` which do both).
+- **`addquery[query;servertype;join;postback;timeout;sync]`** — low-level: insert a row into `queryqueue`. Does **not** dispatch — call `runnextquery[]` afterwards (or use `execquery` which does both).
 - **`removequeries[age]`** — purge `queryqueue` rows with `returntime` older than `age`.
 
 ### Scheduling
 - **`getnextqueryid[]`** — returns the next runnable query (FIFO by default: oldest query for which all required servertypes have an idle server). Override via `setgetnextqueryid` for priority queues.
 
 ### Result collection & joining
-- **`addserverresult[qid;data]`** — called when a backend posts back success. Fills slot, frees server, tries to run the next query, and calls `checkresults`.
+- **`addserverresult[qid;data]`** — called when a backend posts back success. Fills slot, frees server, tries to run the next query; once all slots are received applies `join`, sends the reply, and finishes the query.
 - **`addservererror[qid;err]`** — called when a backend posts back an error. Sends the error to the client and finishes the query.
-- **`checkresults[qid]`** — once every slot has `received=1b`, applies `join` to the collected results, sends the reply, and finishes the query.
-- **`sendclientreply[qid;result;status]`** — sends `result` to the client, honouring `postback` wrapping, `sync` vs async delivery, and `formatresponse`.
-- **`finishquery[qid;err;serverh]`** — `deleteresult[qid]`, stamp `error`/`returntime` on `queryqueue`, and free `serverh`.
-- **`deleteresult[qids]`** — drop one or more entries from `results`.
 
 ### Dispatch
 - **`serverexecute[qid;query]`** — **runs on the backend**. Executes `value query`, trapping errors, and posts the outcome back to the dispatcher via `resultcallback`/`errorcallback`.
-- **`sendquerytoserver[qid;query;handles]`** — sends `(serverexecute;qid;query)` async to each handle and marks them busy.
-- **`runquery[]`** / **`runnextquery[]`** — picks the next runnable query via `getnextquery`, resolves idle servers, and dispatches.
+- **`runnextquery[]`** — picks the next runnable query via `getnextqueryid`, resolves idle servers, and dispatches.
 
 ### Timeouts & disconnects
 - **`checktimeout[]`** — finds queries past their `timeout` with no `returntime`, sends a timeout error, and finishes them.

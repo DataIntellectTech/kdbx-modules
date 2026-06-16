@@ -5,7 +5,7 @@ export:([servers;queryqueue;clients;results;
         errorprefix;querykeeptime;clearinactivetime;synccallsallowed;
         cp;setcp;formatresponse;setformatresponse;
         setcallbacks;setavailableservers;setgetnextqueryid;
-        addserver;setserverstate;availableservers;
+        addserver;availableservers;
         addclientdetails;removeclienthandle;addquery;
         addserverresult;addservererror;runnextquery;
         getnextqueryid;execquery;

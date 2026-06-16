@@ -36,10 +36,6 @@ queryid:0;
 
 addserver:{[h;st].z.M.servers upsert (h;st;0b;1b;0Np)};
 
-setserverstate:{[h;busy]
-  / mark server handle(s) busy (1b) or free (0b)
-  update inuse:busy from .z.M.servers where handle in h};
-
 / returns a table of available servers; excludeinuse=1b returns only idle servers
 availableservers:{[excludeinuse]
   $[excludeinuse;
@@ -50,7 +46,6 @@ setavailableservers:{.z.m.availableservers:x};
 addclientdetails:{[h].z.M.clients insert (cp[];h;.z.u;.z.a;.z.h)};
 
 removeclienthandle:{[h]
-  / stamp error/returntime on unfinished queries, drop their result accumulators
   update error:1b,returntime:.z.m.cp[] from .z.M.queryqueue where clienth=h, null returntime;
   .z.m.results:(exec queryid from .z.m.queryqueue where clienth=h)_results};
 
@@ -76,7 +71,7 @@ addserverresult:{[qid;data]
   slots:results[qid;1];
   slots[st]:(.z.w;data;1b);
   results[qid]:(results[qid;0];slots);
-  setserverstate[.z.w;0b];
+  update inuse:0b from .z.M.servers where handle in .z.w;
   runnextquery[];
   if[not qid in key results;:()];
   vals:value results[qid;1];
@@ -88,7 +83,7 @@ addserverresult:{[qid;data]
 
 addservererror:{[qid;err]
   sendclientreply[qid;errorprefix,err;0b];
-  setserverstate[.z.w;0b];
+  update inuse:0b from .z.M.servers where handle in .z.w;
   runnextquery[];
   finishquery[qid;1b]};
 
@@ -112,7 +107,7 @@ serverexecute:{[qid;query]
 
 sendquerytoserver:{[qid;query;handles]
   (neg handles,:())@\:(serverexecute;qid;query);
-  setserverstate[handles;1b]};
+  update inuse:1b from .z.M.servers where handle in handles};
 
 runnextquery:{
   / pick next runnable query and dispatch to one idle server per required servertype

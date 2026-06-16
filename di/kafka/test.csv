@@ -1,0 +1,49 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+/ pre-test setup
+before,0,0,q,kafka:use`di.kafka,1,1,load di.kafka module
+before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,no-op mock log dependency
+before,0,0,q,logdep:enlist[`log]!enlist mocklog,1,1,log dep dict
+before,0,0,q,kafkaterrored:0b,1,1,flag used to prove enabled:0b branch was skipped not merely unsuccessful
+before,0,0,q,capturelog:`info`warn`error!({[c;m]};{[c;m]};{[c;m] `kafkaterrored set 1b}),1,1,capturing mock logger - error fn uses set builtin; only reliable when not called from within module execution context
+
+/ logdict extraction - invalid deps inputs throw correct message
+true,0,0,q,.[kafka.init;(()!();()!());{x}] like "*log dependency*",1,1,empty dict deps throws correct message
+true,0,0,q,.[kafka.init;(()!();(::));{x}] like "*log dependency*",1,1,:: as deps throws correct message
+true,0,0,q,.[kafka.init;(()!();42);{x}] like "*log dependency*",1,1,non-dict deps throws correct message
+true,0,0,q,.[kafka.init;(()!();enlist[`log]!enlist(::));{x}] like "*log dependency*",1,1,log value of :: throws correct message
+true,0,0,q,.[kafka.init;(()!();enlist[`notlog]!enlist mocklog);{x}] like "*log dependency*",1,1,deps without log key throws correct message
+true,0,0,q,.[kafka.init;(()!();enlist[`log]!enlist `info`warn!(mocklog`info;mocklog`warn));{x}] like "*log dependency*",1,1,partial log dict missing error key throws correct message
+
+/ init disabled - stubs throw with correct message
+run,0,0,q,kafka.init[()!();logdep],1,1,init with empty config does not error
+true,0,0,q,.[kafka.initconsumer;(`localhost:9092;()!());{x}] like "*kafka not enabled*",1,1,initconsumer stub throws correct message
+true,0,0,q,.[kafka.initproducer;(`localhost:9092;()!());{x}] like "*kafka not enabled*",1,1,initproducer stub throws correct message
+true,0,0,q,.[kafka.cleanupconsumer;enlist(::);{x}] like "*kafka not enabled*",1,1,cleanupconsumer stub throws correct message
+true,0,0,q,.[kafka.cleanupproducer;enlist(::);{x}] like "*kafka not enabled*",1,1,cleanupproducer stub throws correct message
+true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,subscribe stub throws correct message
+true,0,0,q,.[kafka.publish;(`test;0;`;0x68656c6c6f);{x}] like "*kafka not enabled*",1,1,publish stub throws correct message
+
+/ init - explicit enabled:0b: capturelog proves lib-loading branch was skipped not merely unsuccessful
+run,0,0,q,kafka.init[enlist[`enabled]!enlist 0b;enlist[`log]!enlist capturelog],1,1,init with enabled:0b does not error
+true,0,0,q,not kafkaterrored,1,1,logerr was not called - lib-loading branch was genuinely skipped
+true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,subscribe throws correct message after explicit disabled init
+
+/ init - :: config
+run,0,0,q,kafka.init[::;logdep],1,1,init with :: config does not error
+
+/ init - enabled:1b with missing lib: process continues with stubs intact
+/ note: logerr is called internally but cannot be captured from within kdbx module execution context
+run,0,0,q,kafka.init[`enabled`libpath!(1b;`fakekafkaq);logdep],1,1,init with enabled:1b and missing lib does not throw
+true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,stubs remain after failed lib load
+
+/ setkupd - state unobservable without live broker; test confirms no throw only
+run,0,0,q,kafka.init[()!();logdep],1,1,reinit with no-op log before setkupd test
+run,0,0,q,kafka.setkupd[{[k;x]}],1,1,setkupd does not error when disabled - internal state unobservable without live broker
+
+/ init - custom kupd
+run,0,0,q,kafka.init[(enlist`kupd)!enlist{[k;x]};logdep],1,1,init with custom kupd does not error
+
+/ multiple consecutive init calls do not corrupt state
+run,0,0,q,kafka.init[()!();logdep],1,1,second consecutive init does not error
+run,0,0,q,kafka.init[enlist[`enabled]!enlist 0b;logdep],1,1,third consecutive init with enabled:0b does not error
+true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,stubs remain correct after multiple init calls

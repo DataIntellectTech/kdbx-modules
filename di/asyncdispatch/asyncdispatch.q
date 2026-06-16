@@ -19,16 +19,12 @@ setformatresponse:{.z.m.formatresponse:x};
 resultcallback:`addserverresult;
 errorcallback:`addservererror;
 setcallbacks:{[resfn;errfn].z.m.resultcallback:resfn;.z.m.errorcallback:errfn};
-
 / registered backend servers
 servers:([handle:`u#`int$()] servertype:`symbol$(); inuse:`boolean$(); active:`boolean$(); disconnecttime:`timestamp$())
-
 / pending and in-flight client queries
 queryqueue:([queryid:`u#`long$()] time:`timestamp$(); clienth:`int$(); query:(); servertype:(); join:(); postback:(); timeout:`timespan$(); returntime:`timestamp$(); error:`boolean$(); sync:`boolean$())
-
 / connected client tracking
 clients:([] time:`timestamp$(); clienth:`int$(); user:`symbol$(); ip:`int$(); host:`symbol$())
-
 / per-query result accumulator: queryid -> (clienth; servertype!(handle;result;done))
 results:()!()
 

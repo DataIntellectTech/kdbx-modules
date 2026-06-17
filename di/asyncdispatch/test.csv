@@ -34,7 +34,7 @@ true,0,0,q,not null first exec returntime from qq[] where queryid=qid2,1,,timed-
 / Test 4: removequeries purges completed queries
 run,0,0,q,ad.setcp[{.z.p+2D}],1,,fast-forward the clock by 2 days
 run,0,0,q,ad.removequeries ad.querykeeptime,1,,purge queries older than querykeeptime
-true,0,0,q,0~count select from qq[] where queryid in qid1,qid2,1,,both completed queries purged
+true,0,0,q,0~count select from qq[] where queryid in qid1,qid2,1,both completed queries purged
 run,0,0,q,ad.setcp[{.z.p}],1,,restore the real clock
 
 / Test 5: removeserverhandle errors queued queries when the only server disconnects
@@ -55,7 +55,7 @@ run,0,0,q,ad.setcp[{.z.p}],1,,restore real clock
 run,0,0,q,ad.addclientdetails[2i],1,,record a connected client
 true,0,0,q,1~count select from cl[] where clienth=2i,1,,client connection is tracked
 run,0,0,q,ad.removeclienthandle[2i],1,,disconnect the client
-true,0,0,q,0~count select from qq[] where clienth=2i, null returntime,1,,client unfinished queries cleared
+true,0,0,q,0~count select from qq[] where clienth=2i,null returntime,1,client unfinished queries cleared
 
 / Test 8: pluggable hooks
 run,0,0,q,ad.setformatresponse[{[status;sync;result]result}],1,,override formatresponse to pass result through

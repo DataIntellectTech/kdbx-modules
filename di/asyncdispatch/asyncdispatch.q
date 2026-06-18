@@ -154,6 +154,6 @@ execquery:{[query;servertype;join;postback;timeout;sync] / public entry point; v
 / wire housekeeping into a timer - pass (::) to skip
 init:{[timerrepeat] / wire recurring housekeeping (timeout scan, query purge, server purge) into a provided timer; pass (::) to skip registration
   if[not timerrepeat~(::);
-    timerrepeat[cp[];0Wp;0D00:05:00;(`removequeries;querykeeptime);"asyncdispatch: remove old queries"];
-    timerrepeat[cp[];0Wp;0D00:00:05;(`checktimeout;`);"asyncdispatch: timeout expired queries"];
-    timerrepeat[cp[];0Wp;0D00:05:00;(`removeinactive;clearinactivetime);"asyncdispatch: remove inactive servers"]]};
+    timerrepeat[cp[];0Wp;0D00:05:00;(.z.m.removequeries;querykeeptime);"asyncdispatch: remove old queries"];
+    timerrepeat[cp[];0Wp;0D00:00:05;(.z.m.checktimeout;`);"asyncdispatch: timeout expired queries"];
+    timerrepeat[cp[];0Wp;0D00:05:00;(.z.m.removeinactive;clearinactivetime);"asyncdispatch: remove inactive servers"]]};

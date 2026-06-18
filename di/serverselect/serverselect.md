@@ -64,7 +64,7 @@ Wire injectable dependencies. Must be called before any other function.
 |---|---|---|---|
 | `` `log `` | yes | dict | Functions keyed `` `info`warn`error ``, each with signature `{[ctx;msg]}` |
 
-Errors with prefix `di.serverselect:` if `log` is missing or does not contain all three required keys.
+Errors with prefix `di.serverselect:` if `configs` is not a dict, `log` key is missing, or `log` value is not a dict with all three required keys.
 
 ---
 
@@ -170,12 +170,12 @@ srvsel.addserversfromtable[`ALL; conntab]
 
 ---
 
-### `getservers[]`
+### `getserverstable[]`
 
 Return the current registered server table.
 
 ```q
-srvsel.getservers[]
+srvsel.getserverstable[]
 ```
 
 Schema:

@@ -1,28 +1,22 @@
 / library for selecting backend servers from a registered pool based on servertype or attribute requirements
 
-/ registered server pool - populated by addserverattr
-servers:([serverid:`u#`int$()] handle:`int$(); servertype:`symbol$(); active:`boolean$(); attributes:());
+/ registered server pool - populated by addserverfull / addserverattr / addserver
+servers:([serverid:`u#`int$()] handle:`int$(); procname:`symbol$(); servertype:`symbol$(); hpup:`symbol$(); active:`boolean$(); lastp:`timestamp$(); hits:`int$(); attributes:());
 
 / autoincrement counter for server IDs
 serverid:0i;
 
-init:{[deps]
-  / wire injectable log dependency (required)
-  logdict:$[99h=type deps;
-    $[`log in key deps;
-      $[99h=type deps`log; deps`log; ()!()];
-      ()!()];
-    ()!()];
-  if[not count logdict;
-    '"di.serverselect: log dependency is required; pass `info`warn`error functions - ",
-     "see di.log for a default implementation or refer to confluence documentation";
-  ];
-  if[not all (`info`warn`error) in key logdict;
-    '"di.serverselect: log dict must have `info`warn`error keys; got: ",(", " sv string key logdict);
-  ];
-  .z.m.loginfo:logdict`info;
-  .z.m.logwarn:logdict`warn;
-  .z.m.logerr:logdict`error;
+init:{[configs]
+  / wire log dependency - required; configs must be a dict with `log key
+  if[99h<>type configs;
+    '"di.serverselect: configs must be a dict with `log key"];
+  if[not `log in key configs;
+    '"di.serverselect: log dependency is required; pass `info`warn`error functions keyed on `log"];
+  if[99h<>type configs`log;
+    '"di.serverselect: log value must be a dict; pass `info`warn`error functions"];
+  if[not all (`info`warn`error) in key configs`log;
+    '"di.serverselect: log dict must have `info`warn`error keys; got: ",(", " sv string key configs`log)];
+  .z.m.log:configs`log;
   };
 
 / internal - increment and return the next unique server ID
@@ -31,24 +25,34 @@ nextserverid:{
   :.z.m.serverid;
   };
 
+/ internal - update last-access timestamp and hit count for a server handle
+updatestats:{[h]
+  .z.m.servers:update lastp:.z.p,hits:hits+1i from servers where handle=h;
+  };
+
+addserverfull:{[h;pname;st;hp;att]
+  / register a server with full details: handle, procname, servertype, hpup and attribute dictionary
+  .z.m.log[`info][`addserverfull;"registering server: handle=",(string h),", procname=",string[pname],", type=",string st];
+  .z.m.servers:servers upsert (nextserverid[];h;pname;st;hp;1b;0Np;0i;att);
+  };
+
 addserverattr:{[h;st;att]
-  / register a server handle with a servertype and attribute dictionary
-  .z.m.loginfo[`addserverattr;"registering server: handle=",(string h),", type=",string st];
-  .z.m.servers:servers upsert (nextserverid[];h;st;1b;att);
+  / register a server with servertype and attributes; procname and hpup default to null
+  addserverfull[h;`;st;`;att];
   };
 
 addserver:{[h;st]
-  / register a server with no attributes; convenience wrapper over addserverattr
-  addserverattr[h;st;()!()];
+  / register a server with no attributes; procname and hpup default to null
+  addserverfull[h;`;st;`;()!()];
   };
 
 setserveractive:{[h;a]
   / mark a registered server active (1b) or inactive (0b); called on connect and disconnect
-  .z.m.loginfo[`setserveractive;"marking handle=",(string h)," active=",string a];
+  .z.m.log[`info][`setserveractive;"marking handle=",(string h)," active=",string a];
   .z.m.servers:update active:a from servers where handle=h;
   };
 
-getservers:{[]
+getserverstable:{[]
   / return the current registered server table
   :servers;
   };
@@ -56,14 +60,63 @@ getservers:{[]
 addserversfromtable:{[proctypes;conntable]
   / register active servers from a connection table filtered by proctype
   / conntable must have columns: w (int handle), proctype (symbol), attributes (dict per row)
+  / optional columns: procname (symbol), hpup (symbol) - populated from conntable if present
   / pass proctypes:`ALL to register all process types
   activehandles:(0i;0Ni),exec handle from servers where active;
-  rows:select w,proctype,attributes from conntable where
+  rows:select from conntable where
     ((proctype in proctypes) or proctypes~`ALL),
     not w in activehandles;
-  .z.m.loginfo[`addserversfromtable;"registering ",(string count rows)," servers from connection table"];
-  addserverattr'[rows`w;rows`proctype;rows`attributes];
+  .z.m.log[`info][`addserversfromtable;"registering ",(string count rows)," servers from connection table"];
+  pnames:$[`procname in cols rows; rows`procname; count[rows]#`];
+  hpups:$[`hpup in cols rows; rows`hpup; count[rows]#`];
+  addserverfull'[rows`w;pnames;rows`proctype;hpups;rows`attributes];
   };
+
+attributematch:{[req;avail]
+  / compute match result for each key in req against what avail advertises
+  / returns dict of attrname!(complete_match_bool;matched_values) for each required attribute key
+  / keys present in req but absent in avail return (0b;())
+  vals:key[req] inter key avail;
+  notpresent:noval!(count noval:key[req] except key avail)#enlist(0b;());
+  :notpresent,vals!{($[0>type y;x~y;all x in y];(x,()) inter y,())}'[req vals;avail vals];
+  };
+
+getservers:{[nameortype;lookups;req]
+  / look up active servers by servertype or procname with per-attribute match scoring
+  / nameortype: `servertype or `procname; pass ` as lookups to return all active servers
+  / req: attribute requirements dict - use ()!() for no attribute filtering
+  / returns table with attribmatch column showing (complete_bool;matched_values) per attribute key
+  r:$[`~lookups;
+    select serverid,procname,servertype,hpup,handle,lastp,attributes from servers where active;
+    nameortype~`servertype;
+    select serverid,procname,servertype,hpup,handle,lastp,attributes from servers where active,servertype in lookups;
+    select serverid,procname,servertype,hpup,handle,lastp,attributes from servers where active,procname in lookups];
+  if[0=count r;:update attribmatch:attributes from r];
+  am:attributematch[req] each r`attributes;
+  :update attribmatch:am from r;
+  };
+
+selector:{[servertable;selection]
+  / pick one row from servertable using the given strategy
+  / selection: `roundrobin (least recently used), `any (random), `last (most recently used)
+  :$[selection=`roundrobin; first `lastp xasc servertable;
+     selection=`any;        rand servertable;
+     selection=`last;       last `lastp xasc servertable;
+     '"di.serverselect: unknown selection strategy: ",string selection];
+  };
+
+getserverbytype:{[ptype;serverval;selection]
+  / return a single server attribute value for a servertype using the given selection strategy
+  / ptype: servertype symbol; serverval: column to return e.g. `handle or `hpup; selection: `roundrobin`any`last
+  r:getservers[`servertype;ptype;()!()];
+  if[not count r;:()];
+  r:selector[r;selection];
+  updatestats[r`handle];
+  :r serverval;
+  };
+
+gethandlebytype:getserverbytype[;`handle;];
+gethpbytype:getserverbytype[;`hpup;];
 
 getserverids:{[att]
   / return server IDs matching a servertype list or attribute requirement dictionary

@@ -7,37 +7,71 @@ before,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,init with no-op logger f
 
 / ---- init: dependency injection validation ----
 comment,,,,,,,init - dependency injection validation
-fail,0,0,q,srvsel.init[(::)],1,1,init rejects :: as deps
-fail,0,0,q,srvsel.init[enlist[`log]!enlist(::)],1,1,init rejects null log dep
-fail,0,0,q,srvsel.init[()!()],1,1,init rejects empty dict
-fail,0,0,q,srvsel.init[enlist[`other]!enlist mylog],1,1,init rejects dict missing log key
+run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,init accepts valid log dependency
+fail,0,0,q,srvsel.init[(::)],1,1,init rejects :: (not a dict)
+fail,0,0,q,srvsel.init[()!()],1,1,init rejects empty config (missing log key)
+fail,0,0,q,srvsel.init[enlist[`other]!enlist mylog],1,1,init rejects config without log key
+fail,0,0,q,srvsel.init[enlist[`log]!enlist(::)],1,1,init rejects log dep that is not a dict
 fail,0,0,q,srvsel.init[enlist[`log]!enlist 42],1,1,init rejects non-dict log value
 fail,0,0,q,srvsel.init[enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects log dict missing required key
-true,0,0,q,"(7#@[srvsel.init;(::);{x}])~""di.serverselect""",1,1,error message is prefixed di.serverselect
+true,0,0,q,"(15#@[srvsel.init;enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn));{x}])~""di.serverselect""",1,1,error message is prefixed di.serverselect
 
-/ ---- getservers: initial state ----
-comment,,,,,,,getservers - initial state before any addserverattr
-true,0,0,q,0=count srvsel.getservers[],1,1,servers empty on fresh module load
-true,0,0,q,`serverid`handle`servertype`active`attributes~cols srvsel.getservers[],1,1,servers has correct schema
+/ ---- getserverstable: initial state ----
+comment,,,,,,,getserverstable - initial state before any addserverattr
+true,0,0,q,0=count srvsel.getserverstable[],1,1,servers empty on fresh module load
+true,0,0,q,`serverid`handle`procname`servertype`hpup`active`lastp`hits`attributes~cols srvsel.getserverstable[],1,1,servers has correct schema
 
-/ ---- addserverattr / addserver: registration ----
+/ ---- addserverattr / addserver / addserverfull: registration ----
 comment,,,,,,,addserverattr and addserver - server registration
 run,0,0,q,srvsel.addserver[1i;`rdb],1,1,register rdb server with no attributes
 run,0,0,q,srvsel.addserver[2i;`rdb],1,1,register second rdb server
 run,0,0,q,"srvsel.addserverattr[3i;`hdb;`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,register hdb server with date and sym attributes
-true,0,0,q,3=count srvsel.getservers[],1,1,three servers registered
-true,0,0,q,all srvsel.getservers[][`active],1,1,all registered servers are active by default
-true,0,0,q,`rdb`rdb`hdb~exec servertype from srvsel.getservers[],1,1,servertypes match registered order
-true,0,0,q,(1i;2i;3i)~exec handle from srvsel.getservers[],1,1,handles match registered order
-true,0,0,q,1 2 3i~exec serverid from srvsel.getservers[],1,1,server IDs autoincrement from 1
+true,0,0,q,3=count srvsel.getserverstable[],1,1,three servers registered
+true,0,0,q,all exec active from srvsel.getserverstable[],1,1,all registered servers are active by default
+true,0,0,q,`rdb`rdb`hdb~exec servertype from srvsel.getserverstable[],1,1,servertypes match registered order
+true,0,0,q,(1i;2i;3i)~exec handle from srvsel.getserverstable[],1,1,handles match registered order
+true,0,0,q,1 2 3i~exec serverid from srvsel.getserverstable[],1,1,server IDs autoincrement from 1
+true,0,0,q,all null exec procname from srvsel.getserverstable[],1,1,procname is null when registered via addserverattr
+true,0,0,q,all null exec hpup from srvsel.getserverstable[],1,1,hpup is null when registered via addserverattr
+run,0,0,q,"srvsel.addserverfull[4i;`myproc;`hdb;`:localhost:5555;(enlist`date)!enlist 2024.12.01]",1,1,register server with full details via addserverfull
+true,0,0,q,4=count srvsel.getserverstable[],1,1,fourth server registered via addserverfull
+true,0,0,q,`myproc~first exec procname from srvsel.getserverstable[] where handle=4i,1,1,procname populated via addserverfull
+true,0,0,q,`:localhost:5555~first exec hpup from srvsel.getserverstable[] where handle=4i,1,1,hpup populated via addserverfull
 
 / ---- setserveractive: marking active/inactive ----
 comment,,,,,,,setserveractive - active flag management
 run,0,0,q,srvsel.setserveractive[2i;0b],1,1,mark second rdb server inactive
-true,0,0,q,not (exec active from srvsel.getservers[] where handle=2i)[0],1,1,handle 2 is now inactive
-true,0,0,q,(exec active from srvsel.getservers[] where handle=1i)[0],1,1,handle 1 remains active
+true,0,0,q,not (exec active from srvsel.getserverstable[] where handle=2i)[0],1,1,handle 2 is now inactive
+true,0,0,q,(exec active from srvsel.getserverstable[] where handle=1i)[0],1,1,handle 1 remains active
 run,0,0,q,srvsel.setserveractive[2i;1b],1,1,mark second rdb server active again
-true,0,0,q,(exec active from srvsel.getservers[] where handle=2i)[0],1,1,handle 2 is active again
+true,0,0,q,(exec active from srvsel.getserverstable[] where handle=2i)[0],1,1,handle 2 is active again
+
+
+/ ---- getservers ----
+comment,,,,,,,getservers - server lookup with attribute match scoring
+true,0,0,q,`serverid`procname`servertype`hpup`handle`lastp`attributes`attribmatch~cols srvsel.getservers[`;`;()!()],1,1,getservers returns table with correct columns
+true,0,0,q,count[select from srvsel.getserverstable[] where active]=count srvsel.getservers[`;`;()!()],1,1,getservers with ` lookups returns all active servers
+true,0,0,q,all `hdb=exec servertype from srvsel.getservers[`servertype;`hdb;()!()],1,1,getservers filters by servertype correctly
+true,0,0,q,0=count srvsel.getservers[`servertype;`nonexistent;()!()],1,1,getservers returns empty table for unknown servertype
+true,0,0,q,0<count srvsel.getservers[`procname;`;()!()],1,1,getservers with null procname lookups returns all active servers
+true,0,0,q,"any {(first value x)[0]}each (srvsel.getservers[`servertype;`hdb;(enlist`date)!enlist 2024.01.01])`attribmatch",1,1,getservers attribmatch shows complete match for registered date
+
+/ ---- selector ----
+comment,,,,,,,selector - selection strategy
+run,0,0,q,"seltab:([]handle:1 2i;lastp:(2024.01.01D00:00;2024.01.02D00:00))",1,1,create test server table for selector
+true,0,0,q,1i~(srvsel.selector[seltab;`roundrobin])`handle,1,1,selector roundrobin picks least recently used (oldest lastp)
+true,0,0,q,2i~(srvsel.selector[seltab;`last])`handle,1,1,selector last picks most recently used (newest lastp)
+true,0,0,q,((srvsel.selector[seltab;`any])`handle) in 1 2i,1,1,selector any picks a handle from the table
+fail,0,0,q,srvsel.selector[seltab;`unknown],1,1,selector rejects unknown strategy
+
+/ ---- getserverbytype / gethandlebytype / gethpbytype ----
+comment,,,,,,,getserverbytype and convenience projections
+true,0,0,q,(srvsel.gethandlebytype[`rdb;`roundrobin]) in exec handle from srvsel.getserverstable[] where servertype=`rdb,active,1,1,gethandlebytype returns a live rdb handle
+true,0,0,q,(srvsel.gethandlebytype[`hdb;`roundrobin]) in exec handle from srvsel.getserverstable[] where servertype=`hdb,active,1,1,gethandlebytype returns a live hdb handle
+true,0,0,q,()~srvsel.gethandlebytype[`nonexistent;`roundrobin],1,1,gethandlebytype returns () for unknown servertype
+true,0,0,q,(srvsel.gethpbytype[`hdb;`roundrobin]) in exec hpup from srvsel.getserverstable[] where servertype=`hdb,active,1,1,gethpbytype returns hpup for matching server
+run,0,0,q,srvsel.gethandlebytype[`rdb;`roundrobin],1,1,gethandlebytype call updates lastp and hits via updatestats
+true,0,0,q,"0<(exec hits from srvsel.getserverstable[] where handle in exec handle from srvsel.getserverstable[] where servertype=`rdb,active)[0]",1,1,hits incremented after gethandlebytype call
 
 / ---- getserverids: symbol list path ----
 comment,,,,,,,getserverids - symbol list (servertype) path
@@ -61,29 +95,30 @@ true,0,0,q,"0<count srvsel.getserverids[`servertype`date!(`hdb;enlist 2024.01.01
 
 / ---- addserversfromtable ----
 comment,,,,,,,addserversfromtable - bulk registration from connection table
-run,0,0,q,"conntab:([]w:10i 11i 12i;proctype:`rdb`hdb`rdb;attributes:(()!();`date`sym!(,2024.12.01;,`IBM);()!()))",1,1,define test connection table
+run,0,0,q,"conntab:([]w:10 11 12i;proctype:`rdb`hdb`rdb;attributes:(()!();`date`sym!(enlist 2024.12.01;enlist`IBM);()!()))",1,1,define test connection table without optional columns
 run,0,0,q,srvsel.addserversfromtable[`rdb`hdb;conntab],1,1,register rdb and hdb from connection table
-true,0,0,q,3<=count select from srvsel.getservers[] where handle in 10i 11i 12i,1,1,all three handles registered
-run,0,0,q,"conntab2:([]w:10i 11i;proctype:`rdb`hdb;attributes:(()!();()!()))",1,1,define second connection table with already-active handles
+true,0,0,q,3<=count select from srvsel.getserverstable[] where handle in 10 11 12i,1,1,all three handles registered
+run,0,0,q,"conntab2:([]w:10 11i;proctype:`rdb`hdb;attributes:(()!();()!()))",1,1,define connection table with already-active handles
 run,0,0,q,srvsel.addserversfromtable[`rdb`hdb;conntab2],1,1,addserversfromtable skips already-active handles
-run,0,0,q,"conntab3:([]w:20i 21i;proctype:`tickerplant`rdb;attributes:(()!();()!()))",1,1,define connection table with mixed proctypes
+run,0,0,q,"conntab3:([]w:20 21i;proctype:`tickerplant`rdb;attributes:(()!();()!()))",1,1,define connection table with mixed proctypes
 run,0,0,q,srvsel.addserversfromtable[`rdb;conntab3],1,1,addserversfromtable filters by proctype - only rdb registered
-true,0,0,q,0<count select from srvsel.getservers[] where handle=21i,1,1,rdb handle 21 was registered
-true,0,0,q,0=count select from srvsel.getservers[] where handle=20i,1,1,tickerplant handle 20 was not registered
-run,0,0,q,"conntab4:([]w:enlist 30i;proctype:enlist`rdb;attributes:enlist()!())",1,1,define single-row connection table
-run,0,0,q,srvsel.addserversfromtable[`ALL;conntab4],1,1,addserversfromtable with `ALL registers all proctypes
-true,0,0,q,0<count select from srvsel.getservers[] where handle=30i,1,1,handle 30 registered via ALL
+true,0,0,q,0<count select from srvsel.getserverstable[] where handle=21i,1,1,rdb handle 21 was registered
+true,0,0,q,0=count select from srvsel.getserverstable[] where handle=20i,1,1,tickerplant handle 20 was not registered
+run,0,0,q,"conntab4:([]w:30 31i;proctype:`rdb`hdb;procname:`p1`p2;hpup:`:host:1001`:host:1002;attributes:(()!();()!()))",1,1,define connection table with optional procname and hpup columns
+run,0,0,q,srvsel.addserversfromtable[`ALL;conntab4],1,1,addserversfromtable with `ALL and optional columns
+true,0,0,q,`p1~first exec procname from srvsel.getserverstable[] where handle=30i,1,1,procname populated from connection table
+true,0,0,q,`:host:1002~first exec hpup from srvsel.getserverstable[] where handle=31i,1,1,hpup populated from connection table
 
 / ---- log call verification ----
 comment,,,,,,,log call verification - switch to capturing logger
 run,0,0,q,srvsel.init[enlist[`log]!enlist logcap],1,1,switch to capturing logger
 
-comment,,,,,,,log call verification - addserverattr
+comment,,,,,,,log call verification - addserverfull
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,srvsel.addserver[99i;`rdb],1,1,register server with capturing logger
-true,0,0,q,1=count select from caplog where fn=`info,1,1,addserverattr emits one info log entry
-true,0,0,q,"any caplog[`msg] like ""*registering server*""",1,1,addserverattr logs registration message
-true,0,0,q,`addserverattr~first (select from caplog where fn=`info)[`ctx],1,1,addserverattr log uses addserverattr context symbol
+run,0,0,q,"srvsel.addserverfull[99i;`testproc;`rdb;`:host:9999;()!()]",1,1,register server with capturing logger
+true,0,0,q,1=count select from caplog where fn=`info,1,1,addserverfull emits one info log entry
+true,0,0,q,"any caplog[`msg] like ""*registering server*""",1,1,addserverfull logs registration message
+true,0,0,q,`addserverfull~first (select from caplog where fn=`info)[`ctx],1,1,addserverfull log uses addserverfull context symbol
 
 comment,,,,,,,log call verification - setserveractive
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
@@ -96,5 +131,5 @@ comment,,,,,,,log call verification - addserversfromtable
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
 run,0,0,q,"srvsel.addserversfromtable[`rdb;([]w:enlist 98i;proctype:enlist`rdb;attributes:enlist()!())]",1,1,bulk register with capturing logger
 true,0,0,q,any caplog[`fn]=`info,1,1,addserversfromtable emits info log entries
-true,0,0,q,"any caplog[`msg] like ""*registering*servers from connection table*""",1,1,addserversfromtable logs count of servers being registered
+true,0,0,q,"any caplog[`msg] like ""*servers from connection table*""",1,1,addserversfromtable logs count of servers being registered
 true,0,0,q,`addserversfromtable~first (select from caplog where fn=`info)[`ctx],1,1,addserversfromtable log uses addserversfromtable context symbol

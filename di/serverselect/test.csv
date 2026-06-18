@@ -133,3 +133,120 @@ run,0,0,q,"srvsel.addserversfromtable[`rdb;([]w:enlist 98i;proctype:enlist`rdb;a
 true,0,0,q,any caplog[`fn]=`info,1,1,addserversfromtable emits info log entries
 true,0,0,q,"any caplog[`msg] like ""*servers from connection table*""",1,1,addserversfromtable logs count of servers being registered
 true,0,0,q,`addserversfromtable~first (select from caplog where fn=`info)[`ctx],1,1,addserversfromtable log uses addserversfromtable context symbol
+
+/ reset to no-op logger for edge case tests
+run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,reset to no-op logger for edge case tests
+
+/ ---- addserverfull: edge cases ----
+comment,,,,,,,addserverfull - edge cases
+run,0,0,q,"srvsel.addserverfull[70i;`first;`rdb;`:first:7000;()!()]",1,1,register first entry at handle 70
+run,0,0,q,"srvsel.addserverfull[70i;`second;`hdb;`:second:7070;()!()]",1,1,register second entry at same handle (keyed by serverid not handle)
+true,0,0,q,2=count select from srvsel.getserverstable[] where handle=70i,1,1,addserverfull with duplicate handle creates two distinct rows (new serverid each time)
+fail,0,0,q,"srvsel.addserverfull[`badhandle;`;`rdb;`;()!()]",1,1,addserverfull rejects symbol handle (type error on int column)
+fail,0,0,q,"srvsel.addserverfull[71i;`;""rdb"";`;()!()]",1,1,addserverfull rejects string servertype (type error on symbol column)
+
+/ ---- addserver: edge cases ----
+comment,,,,,,,addserver - edge cases
+true,0,0,q,(()!())~first exec attributes from srvsel.getserverstable[] where handle=1i,1,1,addserver stores empty attributes dict
+true,0,0,q,null first exec procname from srvsel.getserverstable[] where handle=1i,1,1,addserver stores null procname
+true,0,0,q,null first exec hpup from srvsel.getserverstable[] where handle=1i,1,1,addserver stores null hpup
+fail,0,0,q,"srvsel.addserver[`badhandle;`rdb]",1,1,addserver rejects symbol handle (type error)
+fail,0,0,q,"srvsel.addserver[72i;""rdb""]",1,1,addserver rejects string servertype (type error)
+
+/ ---- addserverattr: edge cases ----
+comment,,,,,,,addserverattr - edge cases
+true,0,0,q,null first exec procname from srvsel.getserverstable[] where handle=3i,1,1,addserverattr stores null procname
+true,0,0,q,null first exec hpup from srvsel.getserverstable[] where handle=3i,1,1,addserverattr stores null hpup
+fail,0,0,q,"srvsel.addserverattr[`badhandle;`hdb;()!()]",1,1,addserverattr rejects symbol handle (type error)
+fail,0,0,q,"srvsel.addserverattr[73i;""hdb"";()!()]",1,1,addserverattr rejects string servertype (type error)
+
+/ ---- setserveractive: edge cases ----
+comment,,,,,,,setserveractive - edge cases
+run,0,0,q,srvsel.setserveractive[9999i;0b],1,1,setserveractive on non-existent handle is a no-op
+true,0,0,q,0=count select from srvsel.getserverstable[] where handle=9999i,1,1,non-existent handle not inserted by setserveractive
+fail,0,0,q,"srvsel.setserveractive[1i;`yes]",1,1,setserveractive rejects symbol active flag (type error)
+fail,0,0,q,"srvsel.setserveractive[""badhandle"";0b]",1,1,setserveractive rejects string handle (type error)
+
+/ ---- getservers: edge cases ----
+comment,,,,,,,getservers - edge cases
+run,0,0,q,srvsel.setserveractive[1i;0b],1,1,mark handle 1 inactive for getservers inactive-exclusion test
+true,0,0,q,not (1i) in exec handle from srvsel.getservers[`servertype;`rdb;()!()],1,1,getservers excludes inactive servers from results
+run,0,0,q,srvsel.setserveractive[1i;1b],1,1,restore handle 1 active after inactive-exclusion test
+true,0,0,q,"all (exec servertype from srvsel.getservers[`servertype;`rdb`hdb;()!()]) in `rdb`hdb",1,1,getservers accepts symbol list as lookups
+true,0,0,q,4i in exec handle from srvsel.getservers[`procname;`myproc;()!()],1,1,getservers procname filter returns server with matching procname
+
+/ ---- selector: edge cases ----
+comment,,,,,,,selector - edge cases
+run,0,0,q,"singleseltab:([]handle:enlist 77i;lastp:enlist 2024.01.15D00:00)",1,1,create single-row selector table
+true,0,0,q,77i~(srvsel.selector[singleseltab;`roundrobin])`handle,1,1,selector roundrobin on single row returns that row
+true,0,0,q,77i~(srvsel.selector[singleseltab;`last])`handle,1,1,selector last on single row returns that row
+true,0,0,q,77i~(srvsel.selector[singleseltab;`any])`handle,1,1,selector any on single row returns that row
+run,0,0,q,"emptyseltab:([]handle:`int$();lastp:`timestamp$())",1,1,create empty selector table
+true,0,0,q,0Ni~(srvsel.selector[emptyseltab;`roundrobin])`handle,1,1,selector roundrobin on empty table returns null handle
+true,0,0,q,0Ni~(srvsel.selector[emptyseltab;`last])`handle,1,1,selector last on empty table returns null handle
+
+/ ---- getserverbytype: direct tests ----
+comment,,,,,,,getserverbytype - direct tests
+true,0,0,q,`rdb~srvsel.getserverbytype[`rdb;`servertype;`roundrobin],1,1,getserverbytype returns correct column value for servertype
+true,0,0,q,()~srvsel.getserverbytype[`nonexistent;`handle;`roundrobin],1,1,getserverbytype returns () for unknown servertype
+true,0,0,q,"(srvsel.getserverbytype[`hdb;`hpup;`roundrobin]) in exec hpup from srvsel.getserverstable[] where servertype=`hdb",1,1,getserverbytype returns hpup value for hdb type
+
+/ ---- gethpbytype: edge cases ----
+comment,,,,,,,gethpbytype - edge cases
+true,0,0,q,()~srvsel.gethpbytype[`nonexistent;`roundrobin],1,1,gethpbytype returns () for unknown servertype
+
+/ ---- getserverids: edge cases ----
+comment,,,,,,,getserverids - edge cases
+run,0,0,q,srvsel.getserverids[`symbol$()],1,1,getserverids with empty symbol list runs without error
+true,0,0,q,"0<count srvsel.getserverids[`rdb`hdb]",1,1,getserverids with multiple servertypes returns results for all types
+true,0,0,q,"0<count srvsel.getserverids[`date`attributetype!(enlist 2024.01.01;`independent)]",1,1,getserverids supports independent attribute matching strategy
+fail,0,0,q,"srvsel.getserverids[`date`besteffort!(enlist 1990.01.01;0b)]",1,1,getserverids throws when no servers have requested attribute value
+fail,0,0,q,"srvsel.getserverids[`servertype`date!(`nonexistent;enlist 2024.01.01)]",1,1,getserverids throws for unknown servertype in attribute dict
+
+/ ---- mock log: init behaviour ----
+comment,,,,,,,mock log - init does not itself emit any log output
+run,0,0,q,srvsel.init[enlist[`log]!enlist logcap],1,1,switch to capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,re-init with no-op logger
+true,0,0,q,0=count caplog,1,1,init produces no log output of its own
+
+/ ---- mock log: rewiring takes effect immediately ----
+comment,,,,,,,mock log - rewiring the log dependency via init takes effect on subsequent calls
+run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,wire no-op logger
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,"srvsel.addserverfull[85i;`;`rdb;`;()!()]",1,1,register server while no-op logger is active
+true,0,0,q,0=count caplog,1,1,no-op logger suppresses all output - nothing captured
+run,0,0,q,srvsel.init[enlist[`log]!enlist logcap],1,1,rewire to capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,"srvsel.addserverfull[86i;`;`rdb;`;()!()]",1,1,register server after rewiring to capturing logger
+true,0,0,q,1=count select from caplog where fn=`info,1,1,rewired logger is called - one info entry captured
+
+/ ---- mock log: addserverfull message content ----
+comment,,,,,,,mock log - addserverfull message includes handle procname and servertype values
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,"srvsel.addserverfull[87i;`logtest;`hdb;`:h:999;()!()]",1,1,register server for message content test
+true,0,0,q,"any caplog[`msg] like ""*handle=87*""",1,1,addserverfull log message includes handle value
+true,0,0,q,"any caplog[`msg] like ""*procname=logtest*""",1,1,addserverfull log message includes procname value
+true,0,0,q,"any caplog[`msg] like ""*type=hdb*""",1,1,addserverfull log message includes servertype value
+true,0,0,q,0=count select from caplog where fn=`warn,1,1,addserverfull does not call warn on success
+true,0,0,q,0=count select from caplog where fn=`error,1,1,addserverfull does not call error on success
+
+/ ---- mock log: setserveractive message content ----
+comment,,,,,,,mock log - setserveractive message includes handle and active state for both transitions
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,srvsel.setserveractive[87i;0b],1,1,mark server inactive for message content test
+true,0,0,q,"any caplog[`msg] like ""*handle=87*""",1,1,setserveractive log message includes handle value
+true,0,0,q,"any caplog[`msg] like ""*active=0*""",1,1,setserveractive log message includes active=0 on deactivation
+true,0,0,q,0=count select from caplog where fn=`warn,1,1,setserveractive does not call warn on success
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,srvsel.setserveractive[87i;1b],1,1,mark server active again for active=1 message test
+true,0,0,q,"any caplog[`msg] like ""*active=1*""",1,1,setserveractive log message includes active=1 on activation
+
+/ ---- mock log: addserversfromtable message content ----
+comment,,,,,,,mock log - addserversfromtable message includes count and triggers per-server addserverfull logs
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,"srvsel.addserversfromtable[`rdb;([]w:88 89i;proctype:`rdb`rdb;attributes:(()!();()!()))]",1,1,bulk register 2 servers for message content test
+true,0,0,q,"any caplog[`msg] like ""*registering 2 servers*""",1,1,addserversfromtable log message includes server count
+true,0,0,q,3=count select from caplog where fn=`info,1,1,addserversfromtable emits one summary log plus one per-server log (2+1=3 total)
+true,0,0,q,0=count select from caplog where fn=`warn,1,1,addserversfromtable does not call warn on success
+true,0,0,q,0=count select from caplog where fn=`error,1,1,addserversfromtable does not call error on success

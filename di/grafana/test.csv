@@ -1,0 +1,52 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,Setup
+before,0,0,q,grafana:use`di.grafana,1,,load module into session
+before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,,mock logger for injection
+
+comment,,,,,,,Export surface and required dependency
+true,0,0,q,(asc key grafana)~`getconfig`init,1,,only init and getconfig are exported
+fail,0,0,q,grafana.init[(::)],1,,init errors when no log dependency is supplied
+fail,0,0,q,grafana.init[enlist[`log]!enlist(::)],1,,init errors when log dependency is null
+
+comment,,,,,,,Initialisation wires handlers and applies defaults
+run,0,0,q,grafana.init[enlist[`log]!enlist mocklog],1,,initialise with mock logger
+true,0,0,q,.m.di.0grafana.wired,1,,handlers wired after init
+true,0,0,q,1000=.m.di.0grafana.ticks,1,,ticks default applied
+true,0,0,q,(`timecol`sym`timebackdate`ticks`del)~key grafana.getconfig[],1,,getconfig exposes the config keys
+
+comment,,,,,,,Target parsing helpers
+true,0,0,q,.m.di.0grafana.isfunc "f.x",1,,isfunc detects function prefix
+true,0,0,q,.m.di.0grafana.istab "t.x",1,,istab detects table prefix
+true,0,0,q,not .m.di.0grafana.isfunc "t.x",1,,isfunc rejects non-function prefix
+true,0,0,q,.m.di.0grafana.istype["o.x";"o"],1,,istype matches arbitrary prefix
+true,0,0,q,(("t.trade";"t.quote"))~.m.di.0grafana.prefix["t";("trade";"quote")],1,,prefix prepends char and delimiter
+
+comment,,,,,,,Build a recent test table in root
+run,0,0,q,trade:([]time:.z.p-0D00:00:01*til 10;sym:10#`a`b;price:10?100f),1,,create test trade table with recent timestamps
+true,0,0,q,(`a`b)~asc .m.di.0grafana.finddistinctsyms trade,1,,distinct syms found within lookback
+true,0,0,q,10=count .m.di.0grafana.memvals trade,1,,memvals returns last ticks rows from memory
+true,0,0,q,0<count .m.di.0grafana.catchvals trade,1,,catchvals returns rows
+
+comment,,,,,,,Table request
+run,0,0,q,.test.tbrqt:enlist[`targets]!enlist (enlist[`target]!enlist "t.trade"),1,,build a table request
+run,0,0,q,.test.tb:.m.di.0grafana.tbfunc .test.tbrqt,1,,run the table builder
+true,0,0,q,.test.tb like "*columns*",1,,table response carries column metadata
+true,0,0,q,.test.tb like "*table*",1,,table response declares table type
+
+comment,,,,,,,Timeseries request
+run,0,0,q,.test.tsrqt:`targets`range!((enlist `target`type!("g.trade";"timeserie"));`from`to!(("" sv (string .z.p-1D;enlist"Z"));("" sv (string .z.p+1D;enlist"Z")))),1,,build a graph timeseries request
+run,0,0,q,.test.ts:.m.di.0grafana.tsfunc .test.tsrqt,1,,run the timeseries builder
+true,0,0,q,.test.ts like "*price*",1,,timeseries response returns numeric column datapoints
+
+comment,,,,,,,Handlers route grafana requests
+run,0,0,q,.test.sr:.z.pp (("search {}");(enlist `$"X-Grafana-Org-Id")!enlist ""),1,,post routed through installed .z.pp to search
+true,0,0,q,.test.sr like "*trade*",1,,search response lists the test table
+run,0,0,q,.m.di.0grafana.prevpp:{"fellthrough"},1,,install a sentinel as the pre-existing post handler
+true,0,0,q,.z.pp[(("ignored");()!())]~"fellthrough",1,,non-grafana post falls through to the pre-existing handler
+run,0,0,q,.test.ph:.z.ph (`;(enlist `$"X-Grafana-Org-Id")!enlist ""),1,,get routed through installed .z.ph
+true,0,0,q,.test.ph~"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n",1,,get returns an alive response
+
+comment,,,,,,,Configuration override
+run,0,0,q,grafana.init[`log`config!(mocklog;enlist[`ticks]!enlist 5)],1,,re-init with a config override
+true,0,0,q,5=.m.di.0grafana.ticks,1,,ticks config overridden
+true,0,0,q,5=grafana.getconfig[][`ticks],1,,getconfig reflects the overridden ticks

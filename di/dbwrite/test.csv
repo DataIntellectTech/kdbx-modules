@@ -114,7 +114,7 @@ true,0,0,q,2=logcount,1,,loginfo called twice (start and end)
 run,0,0,q,dbwrite.loadconfig[`],1,,ensure default sort params (by time)
 run,0,0,q,"sdtbl:([]time:2024.01.01D09:00:00.000000000 2024.01.01D08:00:00.000000000;sym:`IBM`AAPL;price:100 200f)",1,,unsorted test table
 run,0,0,q,"dbwrite.savedown[`:dbwrite_sd_hdb;2024.01.01;`trade;sdtbl]",1,,write to hdb partition
-run,0,0,q,"sdpath:.Q.par[`:dbwrite_sd_hdb;2024.01.01;`trade]",1,,partition path for assertions
+run,0,0,q,"sdpath:` sv (.Q.par[`:dbwrite_sd_hdb;2024.01.01;`trade];`)",1,,partition path with trailing slash for xasc compatibility
 true,0,0,q,2=count get sdpath,1,,two rows written to partition
 true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,,rows sorted by time ascending after sort
 true,0,0,q,0<count get `:dbwrite_sd_hdb/sym,1,,sym enumeration file created in hdb root
@@ -122,16 +122,21 @@ true,0,0,q,0<count get `:dbwrite_sd_hdb/sym,1,,sym enumeration file created in h
 / Test 12 cont: savedown - table without sym column
 run,0,0,q,"nosymtbl:([]time:enlist 2024.01.02D10:00:00.000000000;price:enlist 50f)",1,,table with no sym column
 run,0,0,q,"dbwrite.savedown[`:dbwrite_sd_hdb;2024.01.02;`nosymtrade;nosymtbl]",1,,savedown table without sym column
-true,0,0,q,"1=count get .Q.par[`:dbwrite_sd_hdb;2024.01.02;`nosymtrade]",1,,row written correctly for table without sym
+true,0,0,q,"1=count get ` sv (.Q.par[`:dbwrite_sd_hdb;2024.01.02;`nosymtrade];`)",1,,row written correctly for table without sym
 
-/ Test 13: upsert - append rows to existing partition and re-sort
-run,0,0,q,"usttbl:([]time:enlist 2024.01.01D07:00:00.000000000;sym:enlist`MSFT;price:enlist 300f)",1,,row with earlier time than existing data
-run,0,0,q,"dbwrite.upsert[`:dbwrite_sd_hdb;2024.01.01;`trade;usttbl]",1,,upsert into existing partition
-true,0,0,q,3=count get sdpath,1,,three rows on disk after upsert
-true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,,still sorted by time after upsert
+/ Test 13: appenddown - append rows to existing partition without sorting
+run,0,0,q,"apptbl:([]time:enlist 2024.01.01D07:00:00.000000000;sym:enlist`MSFT;price:enlist 300f)",1,,row with earlier time than existing data
+run,0,0,q,"dbwrite.appenddown[`:dbwrite_sd_hdb;2024.01.01;`trade;apptbl]",1,,append to existing partition
+true,0,0,q,3=count get sdpath,1,,three rows on disk after appenddown
+true,0,0,q,not (asc exec time from get sdpath)~exec time from get sdpath,1,,rows not yet sorted (no auto-sort on appenddown)
 
-/ Test 13 cont: upsert into non-existent partition throws
-true,0,0,q,"@[dbwrite.upsert[`:dbwrite_sd_hdb;2099.01.01;`nonexist;];sdtbl;{1b}]",1,,upsert into non-existent partition throws
+/ Test 13 cont: sort explicitly after appenddown
+run,0,0,q,"dbwrite.sort[(`trade;sdpath)]",1,,sort partition after appending
+true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,,sorted by time after explicit sort call
+
+/ Test 13 cont: appenddown into non-existent partition throws
+true,0,0,q,"@[dbwrite.appenddown[`:dbwrite_sd_hdb;2099.01.01;`nonexist;];sdtbl;{1b}]",1,,appenddown into non-existent partition throws
+
 
 / Clean up all created on-disk files and directories
 after,0,0,q,@[hdel;`:dbwrite_defp_tp/;{}],1,,cleanup defaultparams test partition

@@ -72,21 +72,23 @@ sort:{[d]
 / dir: hdb root (hsym); part: partition value (date/month/int); tabname: symbol; data: in-memory table
 savedown:{[dir;part;tabname;data]
   .z.m.loginfo[`dbwrite;"saving ",string[tabname]," partition ",string[part]," to ",string dir];
-  path:.Q.par[dir;part;tabname];
+  path:` sv (.Q.par[dir;part;tabname];`);
   data:.Q.en[dir;data];
   path set $[`sym in cols data;@[data;`sym;{`p#x}];data];
   sort[(tabname;path)];
   .z.m.loginfo[`dbwrite;"finished saving ",string tabname];
   };
 
-/ upsert data into an existing on-disk partition and re-sort
+/ append data to an existing on-disk partition; enumerate syms but do not sort
+/ call sort separately when the partition is complete
 / dir: hdb root (hsym); part: partition value; tabname: symbol; data: in-memory table
-upsert:{[dir;part;tabname;data]
-  .z.m.loginfo[`dbwrite;"upserting ",string[tabname]," partition ",string[part]," in ",string dir];
-  path:.Q.par[dir;part;tabname];
+appenddown:{[dir;part;tabname;data]
+  .z.m.loginfo[`dbwrite;"appending ",string[tabname]," partition ",string[part]," in ",string dir];
+  path:` sv (.Q.par[dir;part;tabname];`);
+  if[not count @[key;path;{`$()}];
+    '"appenddown: partition does not exist at ",string path];
   .[path;();,;.Q.en[dir;data]];
-  sort[(tabname;path)];
-  .z.m.loginfo[`dbwrite;"finished upserting ",string tabname];
+  .z.m.loginfo[`dbwrite;"finished appending ",string tabname];
   };
 
 / format current process memory stats as a loggable string

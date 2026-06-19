@@ -7,7 +7,7 @@ Write, sort, and attribute utilities for kdb+ processes that persist data to dis
 ## Features
 
 - Write in-memory tables to a date-partitioned HDB with `savedown` — enumerates syms, applies `p#` to `sym`, writes, then sorts
-- Append rows to an existing partition with `upsert` — enumerates syms, appends, then re-sorts
+- Append rows to an existing partition with `appenddown` — enumerates syms and appends; sort separately when the partition is complete
 - Sort on-disk table partitions by configured columns using `xasc`
 - Apply kdb+ attributes (`p`, `s`, `g`, `u`) to on-disk columns after sort
 - Sort and attribute behaviour driven by a CSV config file; a `default` row acts as a fallback
@@ -60,7 +60,7 @@ Sorts `trade` by `sym`, applies `p` to `sym`. Tables not listed fall back to `de
 |---|---|
 | `init[config;deps]` | Wire injected dependencies; must be called first |
 | `savedown[dir;part;tabname;data]` | Write in-memory table to HDB partition, enumerate syms, apply `p#sym`, then sort |
-| `upsert[dir;part;tabname;data]` | Append rows to existing partition, enumerate syms, then re-sort |
+| `appenddown[dir;part;tabname;data]` | Append rows to existing partition and enumerate syms; does not sort |
 | `loadconfig[file]` | Load and validate the sort config CSV into module state |
 | `sort[d]` | Sort an on-disk partition and apply attributes per config |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
@@ -117,9 +117,11 @@ dbwrite.savedown[`:hdb;2024.01.02;`trade;data]
 
 ---
 
-### `upsert[dir;part;tabname;data]`
+### `appenddown[dir;part;tabname;data]`
 
-Appends rows to an existing on-disk partition then re-sorts. Enumerates symbol columns before appending. The partition must already exist — use `savedown` for the initial write.
+Appends rows to an existing on-disk partition. Enumerates symbol columns then appends; does not sort. Call `sort` explicitly when the partition is complete.
+
+Keeping sort separate allows multiple intraday appends without the cost of re-sorting a growing partition on each call.
 
 **Parameters**
 
@@ -133,7 +135,11 @@ Appends rows to an existing on-disk partition then re-sorts. Enumerates symbol c
 **Returns** — generic null on success; throws if the partition does not exist or on write failure.
 
 ```q
-dbwrite.upsert[`:hdb;2024.01.02;`trade;latedata]
+/ intraday: append each batch as it arrives
+dbwrite.appenddown[`:hdb;2024.01.02;`trade;batch]
+
+/ end-of-day: sort once when done
+dbwrite.sort[(`trade;.Q.par[`:hdb;2024.01.02;`trade])]
 ```
 
 ---
@@ -249,12 +255,12 @@ deps:(enlist`log)!enlist logdep
 dbwrite.init[(::);deps]
 ```
 
-Tests cover: dependency injection, `init` error on missing log dep, `savedown` write and sort, `savedown` without sym column, `upsert` append and re-sort, `upsert` error on non-existent partition, `sort` with default row fallback / explicit config / `default` row fallback / no-match skip / empty input / wrong type, `loadconfig` with null file / valid file / unrecognised columns / unrecognised attributes / missing file / header-only file, `applyattr` on missing path / null column / invalid attribute / valid path, `gc` log count.
+Tests cover: dependency injection, `init` error on missing log dep, `savedown` write and sort, `savedown` without sym column, `appenddown` append without sort, explicit `sort` after `appenddown`, `appenddown` error on non-existent partition, `sort` with default row fallback / explicit config / `default` row fallback / no-match skip / empty input / wrong type, `loadconfig` with null file / valid file / unrecognised columns / unrecognised attributes / missing file / header-only file, `applyattr` on missing path / null column / invalid attribute / valid path, `gc` log count.
 
 ---
 
 ## Exported symbols
 
 ```q
-export:([init;savedown;upsert;sort;applyattr;loadconfig;gc])
+export:([init;savedown;appenddown;sort;applyattr;loadconfig;gc])
 ```

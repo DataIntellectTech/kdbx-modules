@@ -108,7 +108,7 @@ Read a config CSV and **return** it as a table. Does not store it — pass the r
 |---|---|---|
 | `file` | hsym (or symbol) | Path to the CSV. Coerced with `hsym`, so `` `:config/sort.csv `` and `` `config/sort.csv `` both work. |
 
-The CSV must have the four columns `tabname,att,column,sort` in that order. Logs an info message on read and an error message on file-read failure (then rethrows). Content validation (column names, attribute values) happens in `sorttab`.
+The CSV must have the four columns `tabname,att,column,sort` in that order. Logs info messages while reading (the read start and the row count) and an error message on file-read failure (then rethrows). Content validation (column names, attribute values) happens in `sorttab`.
 
 ```q
 config:srt.readcsv `:config/sort.csv

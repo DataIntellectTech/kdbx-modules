@@ -22,25 +22,39 @@ init:{[deps]
 readcsv:{[file]
   / convenience for the common case where config lives in a csv - returns it, does not store
   / pass the result to sorttab, e.g. srt.sorttab[srt.readcsv `:sort.csv;`trade;dirs]
-  / the csv must have columns tabname,att,column,sort in that order
+  / the csv must have the columns tabname,att,column,sort (in any order)
   file:hsym file;
-  t:@[readfile; file; readerr[file]];
+  t:parsecsv @[readfile; file; readerr[file]];
   .z.m.log[`info][`readcsv;"read ",(string count t)," sort param row(s) from ",string file];
   :t;
   };
 
-/ internal - read and parse a sort-config csv (the protected action in readcsv)
+/ internal - protected file read; only the i/o so a genuine read failure gets the readerr message
 readfile:{[file]
-  / kept named rather than inline so readcsv reads cleanly and matches the style guide
+  / returns the raw csv lines; header validation and parsing happen in parsecsv
   .z.m.log[`info][`readcsv;"reading sort params from ",string file];
-  :("SSSB";enlist",") 0: file;
+  :read0 file;
   };
 
 / internal - log and rethrow a csv read failure
 readerr:{[file;e]
-  / surfaces the failure to the caller after logging it under the readcsv context
-  .z.m.log[`error][`readcsv;"failed to read ",string[file],": ",e];
-  '"failed to read ",string[file],": ",e;
+  / build the message once, surface it under the readcsv context, then rethrow it to the caller
+  m:"failed to read ",string[file],": ",e;
+  .z.m.log[`error][`readcsv;m];
+  'm;
+  };
+
+/ internal - validate the header and parse csv lines into a config table
+parsecsv:{[lines]
+  / map types by column name so the csv column order does not matter; reject any other shape
+  / outside the readfile i/o trap so a bad header surfaces as a clear di.sort: error
+  if[0=count lines;
+    '"di.sort: csv has no header row"];
+  hdr:`$"," vs first lines;
+  if[not (asc distinct hdr)~`att`column`sort`tabname;
+    '"di.sort: csv header must be exactly tabname,att,column,sort; got: ",", " sv string hdr];
+  types:{$[x=`sort;"B";"S"]} each hdr;
+  :`tabname`att`column`sort#(types;enlist",") 0: lines;
   };
 
 sorttab:{[config;tabname;dirs]
@@ -48,6 +62,8 @@ sorttab:{[config;tabname;dirs]
   / config: a sort-config table (build it directly or via readcsv); tabname: symbol; dirs: hsym or list of hsyms
   / example: srt.sorttab[srt.readcsv `:sort.csv;`trade;`:/hdb/2024.01.01/trade]
   checkconfig config;
+  if[not -11h=type tabname;
+    '"di.sort: tabname must be a symbol, got type ",string type tabname];
   st:string tabname;
   .z.m.log[`info][`sorttab;"sorting the ",st," table"];
   sp:getsortparams[config;tabname;st];
@@ -83,9 +99,10 @@ logreturn:{[lvl;msg;rows]
   };
 
 / internal - resolve which config rows apply to a table
-getsortparams:{[config;t;st]
+getsortparams:{[config;tab;st]
+  / tab is the table-name symbol (NOT a table); named to avoid clashing with the tabname column
   / a table uses its own rows; unlisted tables fall back to the default row, else are skipped
-  if[count tabsp:select from config where tabname=t;
+  if[count tabsp:select from config where tabname=tab;
     :logreturn[`info;"sort parameters have been retrieved for: ",st;tabsp]];
   if[count defsp:select from config where tabname=`default;
     :logreturn[`info;"no sort parameters have been specified for: ",st,". using default parameters";defsp]];
@@ -112,7 +129,7 @@ sortdir:{[sp;dloc]
   / sort by the columns flagged sort=1b, then attribute the columns that request one
   sortcols:exec column from sp where sort, not null column;
   if[count sortcols; sortcolumns[dloc;sortcols]];
-  attrcols:select column,att from sp where not null att;
+  attrcols:select column,att from sp where att in `p`s`g`u;
   if[count attrcols; applyattr[dloc;;]'[attrcols`column;attrcols`att]];
   };
 
@@ -125,8 +142,9 @@ attrerr:{[dl;cn;at;e]
 
 / internal - apply a single attribute to a specific column in an on-disk partition
 applyattr:{[dloc;colname;att]
-  / sortdir only passes non-null atts; guard here in case applyattr is ever called directly
-  if[null att; :()];
+  / skip anything that is not a real attribute - covers the empty none-sentinel and any bad value
+  / sortdir already filters to valid atts; this guards a direct call to applyattr
+  if[not att in `p`s`g`u; :()];
   .z.m.log[`info][`applyattr;"applying ",string[att]," attr to the ",string[colname]," column in ",string dloc];
   .[{@[x;y;z#]};
     (dloc;colname;att);

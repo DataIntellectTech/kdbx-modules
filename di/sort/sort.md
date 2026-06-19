@@ -108,7 +108,7 @@ Read a config CSV and **return** it as a table. Does not store it — pass the r
 |---|---|---|
 | `file` | hsym (or symbol) | Path to the CSV. Coerced with `hsym`, so `` `:config/sort.csv `` and `` `config/sort.csv `` both work. |
 
-The CSV must have the four columns `tabname,att,column,sort` in that order. Logs info messages while reading (the read start and the row count) and an error message on file-read failure (then rethrows). Content validation (column names, attribute values) happens in `sorttab`.
+The CSV must have exactly the four columns `tabname`, `att`, `column`, `sort` — in **any** order (the result is normalised to canonical column order). The header is validated as it is read: a missing, extra, or misnamed column raises a clear `di.sort:` error rather than silently mis-parsing or dropping data. Logs info messages while reading (the read start and the row count) and an error message on file-read failure (then rethrows). Attribute-value validation (e.g. an unknown `att`) happens later in `sorttab`.
 
 ```q
 config:srt.readcsv `:config/sort.csv
@@ -130,7 +130,7 @@ Sort and apply attributes to on-disk partitions for a single table, using the su
 | `tabname` | symbol | Table name |
 | `dirs` | hsym, or list of hsyms | Partition directory (or directories) for that table |
 
-`config` is validated first; `sorttab` errors (prefixed `di.sort:`) if it is not a table, has unknown or missing columns, has a non-boolean `sort` column, or has an `att` value outside `` ` `p`s`g`u ``.
+`config` is validated first; `sorttab` errors (prefixed `di.sort:`) if it is not a table, has unknown or missing columns, has a non-boolean `sort` column, or has an `att` value outside `` ` `p`s`g`u ``. It also errors (prefixed `di.sort:`) if `tabname` is not a symbol.
 
 Lookup order for sort parameters within `config`:
 1. Rows where `tabname` matches the supplied table name

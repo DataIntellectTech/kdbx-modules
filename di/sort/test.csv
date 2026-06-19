@@ -9,6 +9,8 @@ before,0,0,q,"`:tmp_sort_badatt.csv 0: (""tabname,att,column,sort"";""trade,z,sy
 before,0,0,q,"`:tmp_sort_3col.csv 0: (""tabname,att,sort"";""trade,p,1"")",1,1,write csv with only 3 columns - missing column
 before,0,0,q,"`:tmp_sort_empty.csv 0: enlist ""tabname,att,column,sort""",1,1,write header-only sort csv
 before,0,0,q,"`:tmp_sort_nodfl.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1"")",1,1,write sort csv with no default row
+before,0,0,q,"`:tmp_sort_5col.csv 0: (""tabname,att,column,sort,extra"";""trade,p,sym,1,foo"")",1,1,write csv with an unexpected extra column
+before,0,0,q,"`:tmp_sort_reorder.csv 0: (""tabname,att,sort,column"";""trade,p,1,sym"";""trade,,0,time"";""default,p,1,sym"")",1,1,write valid csv with columns in a different order
 before,0,0,q,srt.init[enlist[`log]!enlist mylog],1,1,init with no-op logger
 before,0,0,q,cfg:([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,reusable valid config table (hand-built)
 before,0,0,q,nodflcfg:srt.readcsv `:tmp_sort_nodfl.csv,1,1,reusable config with a trade row but no default
@@ -29,10 +31,15 @@ true,0,0,q,3=count srt.readcsv `:tmp_sort_valid.csv,1,1,readcsv returns a 3-row 
 true,0,0,q,`tabname`att`column`sort~cols srt.readcsv `:tmp_sort_valid.csv,1,1,readcsv table has the correct column schema
 true,0,0,q,(srt.readcsv `:tmp_sort_valid.csv)~([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,readcsv round-trips the csv content
 true,0,0,q,0=count srt.readcsv `:tmp_sort_empty.csv,1,1,readcsv returns an empty table for a header-only csv
+true,0,0,q,(srt.readcsv `:tmp_sort_reorder.csv)~srt.readcsv `:tmp_sort_valid.csv,1,1,readcsv is column-order independent
+true,0,0,q,`tabname`att`column`sort~cols srt.readcsv `:tmp_sort_reorder.csv,1,1,readcsv normalises reordered columns to canonical order
 
-comment,,,,,,,readcsv - input failures (missing file / type error)
+comment,,,,,,,readcsv - input and header validation failures
 fail,0,0,q,srt.readcsv `:nonexistent_file.csv,1,1,readcsv errors on a missing file
 fail,0,0,q,srt.readcsv 42,1,1,readcsv errors on a non-symbol file argument
+fail,0,0,q,srt.readcsv `:tmp_sort_badcols.csv,1,1,readcsv rejects a csv with wrong column names
+fail,0,0,q,srt.readcsv `:tmp_sort_3col.csv,1,1,readcsv rejects a csv missing a required column
+fail,0,0,q,srt.readcsv `:tmp_sort_5col.csv,1,1,readcsv rejects a csv with an extra column
 
 comment,,,,,,,sorttab - happy path via both a hand-built table and a csv
 run,0,0,q,srt.sorttab[cfg;`trade;()],1,1,sorttab accepts a hand-built config table
@@ -44,9 +51,7 @@ fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; bad:enlist`p; column:enlist`sym
 fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`p; column:enlist`sym);`trade;enlist`:/],1,1,sorttab rejects a missing required config column
 fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`z; column:enlist`sym; sort:enlist 1b);`trade;enlist`:/],1,1,sorttab rejects unknown attribute values
 fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`p; column:enlist`sym; sort:enlist 1);`trade;enlist`:/],1,1,sorttab rejects a non-boolean sort column
-fail,0,0,q,srt.sorttab[srt.readcsv `:tmp_sort_badcols.csv;`trade;enlist`:/],1,1,sorttab rejects csv config with unknown columns
 fail,0,0,q,srt.sorttab[srt.readcsv `:tmp_sort_badatt.csv;`trade;enlist`:/],1,1,sorttab rejects csv config with invalid attributes
-fail,0,0,q,srt.sorttab[srt.readcsv `:tmp_sort_3col.csv;`trade;enlist`:/],1,1,sorttab rejects csv config missing a required column
 
 comment,,,,,,,sorttab - edge cases (empty config / null att / empty dirs / atom dir / type error)
 true,0,0,q,()~srt.sorttab[([] tabname:`symbol$();att:`symbol$();column:`symbol$();sort:`boolean$());`trade;enlist`:/],1,1,empty config yields no work and returns ()
@@ -54,6 +59,7 @@ run,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`; column:enlist`sym; 
 run,0,0,q,srt.sorttab[cfg;`trade;()],1,1,sorttab handles an empty partition list without error
 run,0,0,q,srt.sorttab[cfg;`trade;`:/],1,1,sorttab accepts a single atom hsym dir not just a list
 fail,0,0,q,srt.sorttab[cfg;42;enlist`:/],1,1,sorttab errors on a non-symbol table name
+true,0,0,q,"""di.sort:""~8#@[{srt.sorttab[cfg;42;enlist`:/]};(::);{x}]",1,1,non-symbol table name gives a di.sort:-prefixed error
 
 comment,,,,,,,sorttab - params resolution (table-specific / default / none)
 run,0,0,q,srt.sorttab[cfg;`trade;enlist`:/],1,1,sorttab uses the table-specific params row
@@ -112,3 +118,5 @@ after,0,0,q,hdel`:tmp_sort_badatt.csv,1,1,remove bad att csv
 after,0,0,q,hdel`:tmp_sort_3col.csv,1,1,remove 3-col fixture csv
 after,0,0,q,hdel`:tmp_sort_empty.csv,1,1,remove empty fixture csv
 after,0,0,q,hdel`:tmp_sort_nodfl.csv,1,1,remove no-default fixture csv
+after,0,0,q,hdel`:tmp_sort_5col.csv,1,1,remove 5-col fixture csv
+after,0,0,q,hdel`:tmp_sort_reorder.csv,1,1,remove reordered fixture csv

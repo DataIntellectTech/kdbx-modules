@@ -1,18 +1,19 @@
 # di.dbwrite
 
-Sort, attribute application, save-down manipulation, and garbage-collection utilities for kdb+ processes that persist data to disk (RDB, WDB, TickerLogReplay).
+Write, sort, and attribute utilities for kdb+ processes that persist data to disk.
 
 ---
 
 ## Features
 
+- Write in-memory tables to a date-partitioned HDB with `savedown` — enumerates syms, applies `p#` to `sym`, writes, then sorts
+- Append rows to an existing partition with `upsert` — enumerates syms, appends, then re-sorts
 - Sort on-disk table partitions by configured columns using `xasc`
 - Apply kdb+ attributes (`p`, `s`, `g`, `u`) to on-disk columns after sort
-- Register per-table pre-write manipulation functions applied before save-down
-- Run `.Q.gc[]` with before/after memory logging
 - Sort and attribute behaviour driven by a CSV config file; a `default` row acts as a fallback
 - A built-in `default` row in `params` provides an out-of-the-box fallback (sort by `time` ascending) when no config file is loaded
-- All errors from sort, attribute application, and manipulation are caught and logged — they do not propagate
+- Run `.Q.gc[]` with before/after memory logging
+- All errors from sort, attribute application, and write operations are either caught-and-logged (sort, applyattr) or propagated to the caller (savedown, upsert)
 
 ---
 
@@ -34,7 +35,7 @@ The `log` dependency must be passed to `init`. The module throws if it is absent
 |---|---|---|
 | `tabname` | symbol | Table name, or `` `default `` as a catch-all fallback |
 | `att` | symbol | kdb+ attribute to apply: `p`, `s`, `g`, `u`, or empty for none |
-| `column` | symbol | Column to sort or attribute; empty means attribute-only (no sort contribution) |
+| `column` | symbol | Column to sort or attribute |
 | `sort` | boolean | `1b` — include in `xasc` sort key; `0b` — attribute only |
 
 Example `sort.csv`:
@@ -58,12 +59,11 @@ Sorts `trade` by `sym`, applies `p` to `sym`. Tables not listed fall back to `de
 | Function | Description |
 |---|---|
 | `init[config;deps]` | Wire injected dependencies; must be called first |
+| `savedown[dir;part;tabname;data]` | Write in-memory table to HDB partition, enumerate syms, apply `p#sym`, then sort |
+| `upsert[dir;part;tabname;data]` | Append rows to existing partition, enumerate syms, then re-sort |
 | `loadconfig[file]` | Load and validate the sort config CSV into module state |
 | `sort[d]` | Sort an on-disk partition and apply attributes per config |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
-| `savedownmanipulation` | Dict mapping table name → unary function; amend to register pre-write transformations |
-| `manipulate[t;x]` | Apply a registered pre-write manipulation to a table |
-| `postreplay[d;p]` | Post-EOD stub; override to add custom logic |
 | `gc[]` | Run `.Q.gc[]` and log before/after memory stats |
 
 ---
@@ -90,6 +90,50 @@ logdep:`info`warn`error!(log.info;log.warn;log.error)
 
 dbwrite:use`di.dbwrite
 dbwrite.init[(::);(enlist`log)!enlist logdep]
+```
+
+---
+
+### `savedown[dir;part;tabname;data]`
+
+Writes an in-memory table to a date-partitioned HDB. Enumerates symbol columns against the HDB sym file, applies `p#` to `sym` if present, writes the partition, then calls `sort` to sort and apply attributes per the loaded config.
+
+**Parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `dir` | hsym | HDB root directory (e.g. `` `:hdb ``) |
+| `part` | date/month/int | Partition value |
+| `tabname` | symbol | Table name — determines the partition subdirectory |
+| `data` | table | In-memory table to write |
+
+**Returns** — generic null on success; throws on write failure.
+
+If `loadconfig` has not been called, the built-in default row applies (sort by `time` ascending). If the table has no `sym` column, enumeration and `p#` are skipped.
+
+```q
+dbwrite.savedown[`:hdb;2024.01.02;`trade;data]
+```
+
+---
+
+### `upsert[dir;part;tabname;data]`
+
+Appends rows to an existing on-disk partition then re-sorts. Enumerates symbol columns before appending. The partition must already exist — use `savedown` for the initial write.
+
+**Parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `dir` | hsym | HDB root directory |
+| `part` | date/month/int | Partition value |
+| `tabname` | symbol | Table name |
+| `data` | table | Rows to append |
+
+**Returns** — generic null on success; throws if the partition does not exist or on write failure.
+
+```q
+dbwrite.upsert[`:hdb;2024.01.02;`trade;latedata]
 ```
 
 ---
@@ -136,8 +180,6 @@ Sorts an on-disk table partition and applies configured attributes.
 
 **Returns** — generic null on success; `()` if no sort config is found for the table.
 
-If `loadconfig` has not been called before `sort` is first invoked, `sort` automatically uses the built-in `default` row in `params` — sorts by `time` ascending with no attribute.
-
 Config lookup order within the loaded params:
 1. Rows where `tabname` matches — used directly.
 2. Rows where `tabname = \`default` — used with a `warn` log.
@@ -169,61 +211,6 @@ Logs the attempt before applying. On failure, logs the error and continues — d
 
 ```q
 dbwrite.applyattr[`:hdb/2024.01.02/trade/;`sym;`p]
-```
-
----
-
-### `savedownmanipulation`
-
-A dictionary mapping table name (symbol) to a unary manipulation function. Amend this before EOD to register per-table pre-write transformations.
-
-```q
-dbwrite.savedownmanipulation[`trade]:{[x] update sym:`p#sym from x}
-```
-
-Manipulations are applied by `manipulate[t;x]`. An empty dict (the default) means no manipulation is applied to any table.
-
----
-
-### `manipulate[t;x]`
-
-Applies a registered pre-write manipulation to table `x` of type `t`.
-
-**Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `t` | symbol | Table name used to look up the registered manipulation function |
-| `x` | table | Table data to transform |
-
-**Returns** — modified table, or original table unmodified if no manipulation is registered for `t` or the registered function throws.
-
-On error the original table is returned unchanged and the error is logged at `error` level. Register functions in `savedownmanipulation` before calling.
-
-```q
-dbwrite.savedownmanipulation[`trade]:{[x] update sym:`p#sym from x}
-data:dbwrite.manipulate[`trade;data]
-```
-
----
-
-### `postreplay[d;p]`
-
-Post-EOD stub called after all tables have been written and sorted.
-
-**Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `d` | hsym | HDB directory |
-| `p` | date | Partition value |
-
-**Returns** — generic null.
-
-This is a no-op by default. Override at the call site to add custom post-replay logic.
-
-```q
-dbwrite.postreplay[`:hdb;2024.01.02]
 ```
 
 ---
@@ -262,12 +249,12 @@ deps:(enlist`log)!enlist logdep
 dbwrite.init[(::);deps]
 ```
 
-Tests cover: dependency injection, `init` error on missing log dep, `manipulate` pass-through and registered function application and error recovery via `savedownmanipulation`, `postreplay` stub, `sort` with default row fallback / explicit config / `default` row fallback / no-match skip / empty input / wrong type, `loadconfig` with null file (warns and resets to default row) / valid file / unrecognised columns / unrecognised attributes / missing file / header-only file, `applyattr` on missing path / null column / invalid attribute / valid path, `gc` log count.
+Tests cover: dependency injection, `init` error on missing log dep, `savedown` write and sort, `savedown` without sym column, `upsert` append and re-sort, `upsert` error on non-existent partition, `sort` with default row fallback / explicit config / `default` row fallback / no-match skip / empty input / wrong type, `loadconfig` with null file / valid file / unrecognised columns / unrecognised attributes / missing file / header-only file, `applyattr` on missing path / null column / invalid attribute / valid path, `gc` log count.
 
 ---
 
 ## Exported symbols
 
 ```q
-export:([init;sort;applyattr;loadconfig;manipulate;savedownmanipulation;postreplay;gc])
+export:([init;savedown;upsert;sort;applyattr;loadconfig;gc])
 ```

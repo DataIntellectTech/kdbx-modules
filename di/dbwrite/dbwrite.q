@@ -1,8 +1,6 @@
 / sort params table - default row sorts all tables by time ascending
 params:([] tabname:enlist`default; att:enlist`; column:enlist`time; sort:enlist 1b);
 
-/ save-down manipulation registry: tabname -> unary function
-savedownmanipulation:()!();
 
 / load and validate sort.csv into .z.M.params
 / file: hsym path; null warns and resets params to default row
@@ -69,19 +67,27 @@ sort:{[d]
     ]]
   };
 
-/ apply registered pre-write manipulation to table x of type t
-/ returns modified table; on error logs and returns original unmodified table
-manipulate:{[t;x]
-  $[t in key .z.M.savedownmanipulation;
-    @[.z.M.savedownmanipulation[t];x;
-      {[x;e].z.m.logerr[`dbwrite;"save-down manipulation failed: ",e];x}[x]];
-    x]
+
+/ write table to a date-partitioned hdb: enumerate syms, apply p# to sym if present, write, then sort
+/ dir: hdb root (hsym); part: partition value (date/month/int); tabname: symbol; data: in-memory table
+savedown:{[dir;part;tabname;data]
+  .z.m.loginfo[`dbwrite;"saving ",string[tabname]," partition ",string[part]," to ",string dir];
+  path:.Q.par[dir;part;tabname];
+  data:.Q.en[dir;data];
+  path set $[`sym in cols data;@[data;`sym;{`p#x}];data];
+  sort[(tabname;path)];
+  .z.m.loginfo[`dbwrite;"finished saving ",string tabname];
   };
 
-/ post-EOD hook - called after all tables written and sorted
-/ d: hdb directory (hsym), p: partition value (date)
-/ stub: override at the call site to add custom post-replay logic
-postreplay:{[d;p]};
+/ upsert data into an existing on-disk partition and re-sort
+/ dir: hdb root (hsym); part: partition value; tabname: symbol; data: in-memory table
+upsert:{[dir;part;tabname;data]
+  .z.m.loginfo[`dbwrite;"upserting ",string[tabname]," partition ",string[part]," in ",string dir];
+  path:.Q.par[dir;part;tabname];
+  .[path;();,;.Q.en[dir;data]];
+  sort[(tabname;path)];
+  .z.m.loginfo[`dbwrite;"finished upserting ",string tabname];
+  };
 
 / format current process memory stats as a loggable string
 memstats:{[]"mem stats: ",{"; "sv "=" sv'flip(string key x;(string value x),\:" MB")}`long$.Q.w[]%1048576};
@@ -94,10 +100,8 @@ gc:{
   };
 
 init:{[config;deps]
-  / config: dict with optional keys
-  /   `savedownmanipulation: tabname!function dict of pre-write manipulation functions
-  / deps: `log!(logdict)
-  /   `log: `info`warn`error!(infofunc;warnfunc;errfunc) - required
+  / config: unused, pass (::)
+  / deps: `log!(logdict) - `info`warn`error!(infofunc;warnfunc;errfunc) - required
   logdict:$[99h=type deps;$[(`log in key deps) and not (::)~deps`log;deps`log;()!()];()!()];
   if[not count logdict;
     '"di.dbwrite: log dependency is required; pass `info`warn`error functions - see di.log or refer to confluence documentation";

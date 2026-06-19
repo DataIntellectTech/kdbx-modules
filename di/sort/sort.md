@@ -1,26 +1,26 @@
 # di.sort
 
-Module for sorting and applying attributes to on-disk kdb+ tables. Driven by a configuration CSV (`sort.csv`) that specifies which columns to sort by and which attributes to apply per table. If a table has no explicit entry, `di.sort` falls back to a `default` row. Extracted from the `.sort` namespace in TorQ's `dbwriteutils.q`.
+Module for sorting and applying attributes to on-disk kdb+ tables. Driven by a **config table** that specifies which columns to sort by and which attributes to apply per table. You pass that table straight to `sorttab`; if you keep your config in a CSV file, `readcsv` reads one into the right shape for you. If a table has no explicit entry, `di.sort` falls back to a `default` row. Extracted from the `.sort` namespace in TorQ's `dbwriteutils.q`.
 
 ## Usage
 
 ```q
 srt:use`di.sort
 
-/ inject dependencies — log is required, savedir defaults to `:sort.csv
+/ inject dependencies — log is required
 log:use`di.log
 logdep:`info`warn`error!(log.info;log.warn;log.error)
-srt.init[`log`savedir!(logdep;`:config/sort.csv)]
+srt.init[enlist[`log]!enlist logdep]
 
-/ load sort configuration
-srt.getsortcsv[`:config/sort.csv]
+/ build a config table directly ...
+config:([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b)
+srt.sorttab[config; `trade; `:/hdb/2000.01.01/trade`:/hdb/2000.01.02/trade]
 
-/ sort all partitions for a table
-srt.sorttab[(`trade; `:/hdb/2000.01.01/trade`:/hdb/2000.01.02/trade)]
-
-/ inspect loaded config
-srt.getparams[]
+/ ... or read the config from a csv and pass it straight in
+srt.sorttab[srt.readcsv `:config/sort.csv; `trade; `:/hdb/2000.01.01/trade]
 ```
+
+`di.sort` holds no state of its own: every `sorttab` call takes the config it should use, so you can build that config however you like (by hand, from a query, or from a CSV) and reuse or vary it freely.
 
 ### Typical HDB sort loop
 
@@ -28,124 +28,124 @@ srt.getparams[]
 srt:use`di.sort
 log:use`di.log
 logdep:`info`warn`error!(log.info;log.warn;log.error)
-srt.init[`log`savedir!(logdep;`:config/sort.csv)]
+srt.init[enlist[`log]!enlist logdep]
 
-/ collect partitions per table then sort each
-tables:`trade`quote
-dirs:raze {[t;hdb] ([] t:t; d:hdb,/:t) } [;`:/hdb] each tables
-srt.sorttab each {(first x;exec d from x)} each value tables!dirs
+config:srt.readcsv `:config/sort.csv
+
+/ .Q.par[root;date;table] builds the on-disk partition path
+hdb:`:/hdb
+dates:2000.01.01 2000.01.02
+tabs:`trade`quote
+/ for each table, build its partition paths, then sort every table with the same config
+pdirs:{[hdb;dates;t] .Q.par[hdb;;t] each dates}[hdb;dates] each tabs
+srt.sorttab[config]'[tabs; pdirs]
 ```
 
-## sort.csv format
+## The config table
 
-```
-tabname,att,column,sort
-trade,p,sym,1
-trade,s,time,1
-trade,,price,0
-quote,p,sym,1
-default,p,sym,1
-```
+`di.sort` is configured with a table of this shape:
 
 | Column | Type | Description |
 |---|---|---|
 | `tabname` | symbol | Table name, or `default` to apply to all unlisted tables |
-| `att` | symbol | Attribute to apply after sort: `p` `s` `g` `u` or empty for none |
+| `att` | symbol | Attribute to apply after sort: `p` `s` `g` `u` or empty (`` ` ``) for none |
 | `column` | symbol | Column to sort/attribute |
-| `sort` | boolean | `1` to use this column as a sort key; `0` to apply attribute only |
+| `sort` | boolean | `1b` to use this column as a sort key; `0b` to apply an attribute only |
+
+Build it any way you like — in code, from a query, or from a CSV via `readcsv`:
+
+```q
+([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b)
+```
+
+Multiple rows for the same table are supported. All rows with `sort=1b` for a table form the compound sort key, in the order they appear. Attribute rows with `sort=0b` are applied independently after sorting.
 
 **Attributes:**
 
 | Value | Description |
 |---|---|
-| `p` | Parted — all rows with the same value are contiguous. Requires the column to be sorted first (`sort=1`). |
+| `p` | Parted — all rows with the same value are contiguous. Requires the column to be sorted first (`sort=1b`). |
 | `s` | Sorted — values are in ascending order. Applied automatically by `xasc`; set explicitly here if wanted after the sort step. |
 | `g` | Grouped — inverse index stored on disk. Suitable for low-to-medium cardinality unsorted columns. |
 | `u` | Unique — all values are distinct. |
-| ` ` (empty) | No attribute applied. Column may still participate in the sort if `sort=1`. |
+| ` ` (empty) | No attribute applied. Column may still participate in the sort if `sort=1b`. |
 
-Multiple rows for the same table are supported. All rows with `sort=1` for a table are used as the compound sort key in the order they appear. Attribute rows with `sort=0` are applied independently after sorting.
+### sort.csv format (for `readcsv`)
+
+A CSV consumed by `readcsv` must have these four columns, in this order:
+
+```
+tabname,att,column,sort
+trade,p,sym,1
+trade,,time,0
+quote,p,sym,1
+default,p,sym,1
+```
 
 ## API
 
 ### `init[deps]`
 
-Wire injectable dependencies and optional configuration. Must be called before any other function.
+Wire injectable dependencies. Must be called before any other function.
 
 | Key | Required | Type | Description |
 |---|---|---|---|
 | `` `log `` | yes | dict | Functions keyed `` `info`warn`error ``, each with signature `{[ctx;msg]}` |
-| `` `savedir `` | no | hsym | Path to sort.csv used as fallback when `sorttab` is called with an empty `params` table. Defaults to `` `:sort.csv ``. |
 
-Errors with prefix `di.sort:` if `log` is missing or does not contain all three required keys.
+Errors with prefix `di.sort:` if `deps` is not a dict, if `log` is missing, or if the log dict does not contain all three required keys.
 
 ```q
-/ minimal — savedir defaults to `:sort.csv
 srt.init[enlist[`log]!enlist logdep]
-
-/ with explicit sort.csv path
-srt.init[`log`savedir!(logdep;`:config/sort.csv)]
 ```
 
 ---
 
-### `getsortcsv[file]`
+### `readcsv[file]`
 
-Load and validate sort configuration from a CSV file. Populates the internal `params` table used by `sorttab`.
+Read a config CSV and **return** it as a table. Does not store it — pass the result to `sorttab`. Use this only when your config lives in a CSV; a hand-built table goes straight to `sorttab`.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `file` | hsym | Path to sort.csv |
+| `file` | hsym (or symbol) | Path to the CSV. Coerced with `hsym`, so `` `:config/sort.csv `` and `` `config/sort.csv `` both work. |
 
-Validates that:
-- All four required columns (`tabname`, `att`, `column`, `sort`) are present
-- No unrecognised column names exist
-- All `att` values are one of `` ` `p`s`g`u ``
-
-Logs an info message on successful load and an error message on file-read failure (then rethrows).
+The CSV must have the four columns `tabname,att,column,sort` in that order. Logs an info message on read and an error message on file-read failure (then rethrows). Content validation (column names, attribute values) happens in `sorttab`.
 
 ```q
-srt.getsortcsv[`:config/sort.csv]
+config:srt.readcsv `:config/sort.csv
+srt.sorttab[config; `trade; dirs]
+
+/ or in one line
+srt.sorttab[srt.readcsv `:config/sort.csv; `trade; dirs]
 ```
 
 ---
 
-### `sorttab[d]`
+### `sorttab[config;tabname;dirs]`
 
-Sort and apply attributes to on-disk partitions for a single table.
+Sort and apply attributes to on-disk partitions for a single table, using the supplied config table.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `d` | 2-element list | `(tablename; partition_dirs)` where `partition_dirs` is an hsym or list of hsyms |
+| `config` | table | A config table with columns `` `tabname`att`column`sort `` (see [The config table](#the-config-table)) |
+| `tabname` | symbol | Table name |
+| `dirs` | hsym, or list of hsyms | Partition directory (or directories) for that table |
 
-Lookup order for sort parameters:
+`config` is validated first; `sorttab` errors (prefixed `di.sort:`) if it is not a table, has unknown or missing columns, has a non-boolean `sort` column, or has an `att` value outside `` ` `p`s`g`u ``.
+
+Lookup order for sort parameters within `config`:
 1. Rows where `tabname` matches the supplied table name
 2. Rows where `tabname = \`default`
 3. If neither found — logs a warn and returns `()` without error
 
-Each partition directory is processed independently. A failure on one partition is logged (as an error) and does not halt remaining partitions.
-
-If `params` is empty when `sorttab` is called, it auto-loads from the `savedir` set during `init`.
+Each partition directory is processed independently: a failure on one partition is logged (as an error) and does not halt remaining partitions.
 
 ```q
 / single partition
-srt.sorttab[(`trade; enlist `:/hdb/2000.01.01/trade)]
+srt.sorttab[config; `trade; enlist `:/hdb/2000.01.01/trade]
 
 / multiple partitions
-srt.sorttab[(`trade; `:/hdb/2000.01.01/trade`:/hdb/2000.01.02/trade)]
+srt.sorttab[config; `trade; `:/hdb/2000.01.01/trade`:/hdb/2000.01.02/trade]
 ```
-
----
-
-### `getparams[]`
-
-Return the current sort configuration table loaded by `getsortcsv`.
-
-```q
-srt.getparams[]
-```
-
-Returns a table with schema `([] tabname:\`symbol$(); att:\`symbol$(); column:\`symbol$(); sort:\`boolean$())`.
 
 ## Log dependency contract
 
@@ -169,8 +169,8 @@ Context symbols used by `di.sort` in log calls:
 
 | Context | Level | When |
 |---|---|---|
-| `` `getsortcsv `` | info | CSV retrieval start and row count on successful load |
-| `` `getsortcsv `` | error | File read failure (rethrown after logging) |
+| `` `readcsv `` | info | CSV read start and row count on successful read |
+| `` `readcsv `` | error | File read failure (rethrown after logging) |
 | `` `sorttab `` | info | Sort start, params lookup result, column list, sort completion |
 | `` `sorttab `` | warn | Table has no matching params and no default row |
 | `` `sorttab `` | error | `xasc` failure on a partition (non-fatal — remaining partitions continue) |

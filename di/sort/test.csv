@@ -3,87 +3,85 @@ before,0,0,q,srt:use`di.sort,1,1,load module
 before,0,0,q,mylog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
 before,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,1,initialise log capture table
 before,0,0,q,logcap:`info`warn`error!({[c;m] `caplog upsert(`info;c;m)};{[c;m] `caplog upsert(`warn;c;m)};{[c;m] `caplog upsert(`error;c;m)}),1,1,define capturing mock logger
-before,0,0,q,"`:tmp_sort_autoload.csv 0: (""tabname,att,column,sort"";""default,p,sym,1"")",1,1,write autoload fixture csv
 before,0,0,q,"`:tmp_sort_valid.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1"";""trade,,time,0"";""default,p,sym,1"")",1,1,write valid sort csv
 before,0,0,q,"`:tmp_sort_badcols.csv 0: (""tabname,attr,col,sort"";""trade,p,sym,1"")",1,1,write csv with bad column names
 before,0,0,q,"`:tmp_sort_badatt.csv 0: (""tabname,att,column,sort"";""trade,z,sym,1"")",1,1,write csv with invalid attribute value
 before,0,0,q,"`:tmp_sort_3col.csv 0: (""tabname,att,sort"";""trade,p,1"")",1,1,write csv with only 3 columns - missing column
 before,0,0,q,"`:tmp_sort_empty.csv 0: enlist ""tabname,att,column,sort""",1,1,write header-only sort csv
 before,0,0,q,"`:tmp_sort_nodfl.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1"")",1,1,write sort csv with no default row
-before,0,0,q,srt.init[`log`savedir!(mylog;`:tmp_sort_autoload.csv)],1,1,init with autoload savedir so params=0 before tests
+before,0,0,q,srt.init[enlist[`log]!enlist mylog],1,1,init with no-op logger
+before,0,0,q,cfg:([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,reusable valid config table (hand-built)
+before,0,0,q,nodflcfg:srt.readcsv `:tmp_sort_nodfl.csv,1,1,reusable config with a trade row but no default
 
-comment,,,,,,,init - dependency injection validation
+comment,,,,,,,init - dependency injection validation (type errors / empty / null)
 fail,0,0,q,srt.init[(::)],1,1,init rejects :: as deps
-fail,0,0,q,srt.init[enlist[`log]!enlist(::)],1,1,init rejects null log dep
+fail,0,0,q,srt.init[42],1,1,init rejects a non-dict deps value
 fail,0,0,q,srt.init[()!()],1,1,init rejects empty dict
 fail,0,0,q,srt.init[enlist[`other]!enlist mylog],1,1,init rejects dict missing log key
+fail,0,0,q,srt.init[enlist[`log]!enlist(::)],1,1,init rejects null log dep
 fail,0,0,q,srt.init[enlist[`log]!enlist 42],1,1,init rejects non-dict log value
 fail,0,0,q,srt.init[enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects log dict missing required key
 true,0,0,q,"(7#@[srt.init;(::);{x}])~""di.sort""",1,1,error message is prefixed di.sort
+run,0,0,q,srt.init[enlist[`log]!enlist mylog],1,1,re-init with valid log dep
 
-comment,,,,,,,getparams - initial state before getsortcsv
-true,0,0,q,0=count srt.getparams[],1,1,params empty before getsortcsv
-true,0,0,q,"([] tabname:`symbol$();att:`symbol$();column:`symbol$();sort:`boolean$())~srt.getparams[]",1,1,params has correct empty schema
+comment,,,,,,,readcsv - returns a config table from a csv
+true,0,0,q,3=count srt.readcsv `:tmp_sort_valid.csv,1,1,readcsv returns a 3-row config table
+true,0,0,q,`tabname`att`column`sort~cols srt.readcsv `:tmp_sort_valid.csv,1,1,readcsv table has the correct column schema
+true,0,0,q,(srt.readcsv `:tmp_sort_valid.csv)~([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,readcsv round-trips the csv content
+true,0,0,q,0=count srt.readcsv `:tmp_sort_empty.csv,1,1,readcsv returns an empty table for a header-only csv
 
-comment,,,,,,,sorttab - auto-load from savedir when params is empty
-run,0,0,q,srt.sorttab[(`other;enlist`:/)] ,1,1,sorttab triggers getsortcsv auto-load when params is empty
-true,0,0,q,1=count srt.getparams[],1,1,params populated via auto-load in sorttab
+comment,,,,,,,readcsv - input failures (missing file / type error)
+fail,0,0,q,srt.readcsv `:nonexistent_file.csv,1,1,readcsv errors on a missing file
+fail,0,0,q,srt.readcsv 42,1,1,readcsv errors on a non-symbol file argument
 
-comment,,,,,,,init - accept valid configs
-run,0,0,q,srt.init[enlist[`log]!enlist mylog],1,1,init accepts valid log dep - savedir defaults to :sort.csv
-run,0,0,q,srt.init[`log`savedir!(mylog;`:config/sort.csv)],1,1,init accepts savedir config key
+comment,,,,,,,sorttab - happy path via both a hand-built table and a csv
+run,0,0,q,srt.sorttab[cfg;`trade;()],1,1,sorttab accepts a hand-built config table
+run,0,0,q,srt.sorttab[srt.readcsv `:tmp_sort_valid.csv;`trade;()],1,1,sorttab accepts a config table read from a csv
 
-comment,,,,,,,getsortcsv - validation failures
-fail,0,0,q,srt.getsortcsv[`:tmp_sort_badcols.csv],1,1,getsortcsv rejects unknown column names
-fail,0,0,q,srt.getsortcsv[`:tmp_sort_badatt.csv],1,1,getsortcsv rejects unknown attribute values
-fail,0,0,q,srt.getsortcsv[`:nonexistent_file.csv],1,1,getsortcsv errors on missing file
-fail,0,0,q,srt.getsortcsv[`:tmp_sort_3col.csv],1,1,getsortcsv rejects csv with a missing required column
+comment,,,,,,,sorttab - config validation (type errors / bad content)
+fail,0,0,q,srt.sorttab[42;`trade;enlist`:/],1,1,sorttab rejects a non-table config
+fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; bad:enlist`p; column:enlist`sym; sort:enlist 1b);`trade;enlist`:/],1,1,sorttab rejects unrecognised config columns
+fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`p; column:enlist`sym);`trade;enlist`:/],1,1,sorttab rejects a missing required config column
+fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`z; column:enlist`sym; sort:enlist 1b);`trade;enlist`:/],1,1,sorttab rejects unknown attribute values
+fail,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`p; column:enlist`sym; sort:enlist 1);`trade;enlist`:/],1,1,sorttab rejects a non-boolean sort column
+fail,0,0,q,srt.sorttab[srt.readcsv `:tmp_sort_badcols.csv;`trade;enlist`:/],1,1,sorttab rejects csv config with unknown columns
+fail,0,0,q,srt.sorttab[srt.readcsv `:tmp_sort_badatt.csv;`trade;enlist`:/],1,1,sorttab rejects csv config with invalid attributes
+fail,0,0,q,srt.sorttab[srt.readcsv `:tmp_sort_3col.csv;`trade;enlist`:/],1,1,sorttab rejects csv config missing a required column
 
-comment,,,,,,,getsortcsv - empty csv (header only)
-run,0,0,q,srt.getsortcsv[`:tmp_sort_empty.csv],1,1,getsortcsv loads header-only csv without error
-true,0,0,q,0=count srt.getparams[],1,1,params is empty after loading header-only csv
+comment,,,,,,,sorttab - edge cases (empty config / null att / empty dirs / atom dir / type error)
+true,0,0,q,()~srt.sorttab[([] tabname:`symbol$();att:`symbol$();column:`symbol$();sort:`boolean$());`trade;enlist`:/],1,1,empty config yields no work and returns ()
+run,0,0,q,srt.sorttab[([] tabname:enlist`trade; att:enlist`; column:enlist`sym; sort:enlist 0b);`trade;enlist`:/],1,1,sorttab accepts a null (no) attribute row
+run,0,0,q,srt.sorttab[cfg;`trade;()],1,1,sorttab handles an empty partition list without error
+run,0,0,q,srt.sorttab[cfg;`trade;`:/],1,1,sorttab accepts a single atom hsym dir not just a list
+fail,0,0,q,srt.sorttab[cfg;42;enlist`:/],1,1,sorttab errors on a non-symbol table name
 
-comment,,,,,,,getsortcsv - successful load
-run,0,0,q,srt.getsortcsv[`:tmp_sort_valid.csv],1,1,getsortcsv loads valid csv without error
+comment,,,,,,,sorttab - params resolution (table-specific / default / none)
+run,0,0,q,srt.sorttab[cfg;`trade;enlist`:/],1,1,sorttab uses the table-specific params row
+run,0,0,q,srt.sorttab[cfg;`other;enlist`:/],1,1,sorttab falls back to the default params row
+true,0,0,q,()~srt.sorttab[nodflcfg;`other;enlist`:/],1,1,sorttab returns () when no params found and no default row
 
-comment,,,,,,,getparams - state after getsortcsv
-true,0,0,q,3=count srt.getparams[],1,1,params has 3 rows after getsortcsv
-true,0,0,q,`tabname`att`column`sort~cols srt.getparams[],1,1,params has correct column schema
-true,0,0,q,`trade`trade`default~(srt.getparams[])`tabname,1,1,params tabnames match csv content
-true,0,0,q,`p``p~(srt.getparams[])`att,1,1,params attributes match csv content
-true,0,0,q,101b~(srt.getparams[])`sort,1,1,params sort flags match csv content
+comment,,,,,,,log call verification - switch to capturing logger
+run,0,0,q,srt.init[enlist[`log]!enlist logcap],1,1,re-init with capturing logger
 
-comment,,,,,,,sorttab - table-specific params and edge cases
-run,0,0,q,srt.sorttab[(`trade;enlist`:/)] ,1,1,sorttab uses table-specific params row not default fallback
-run,0,0,q,srt.sorttab[(`trade;())],1,1,sorttab handles empty partition list without error
-
-comment,,,,,,,sorttab - no matching params and no default row
-run,0,0,q,srt.getsortcsv[`:tmp_sort_nodfl.csv],1,1,load params with trade row only and no default
-true,0,0,q,()~srt.sorttab[(`other;enlist`:/)] ,1,1,sorttab returns () when no params found and no default row
-
-comment,,,,,,,log call verification - init with capturing logger
-run,0,0,q,srt.init[`log`savedir!(logcap;`:sort.csv)],1,1,switch to capturing logger
-run,0,0,q,srt.getsortcsv[`:tmp_sort_valid.csv],1,1,reload valid params for log tests
-
-comment,,,,,,,log call verification - getsortcsv info logging on successful load
+comment,,,,,,,log call verification - readcsv info logging on successful read
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,srt.getsortcsv[`:tmp_sort_valid.csv],1,1,call getsortcsv with capturing logger
-true,0,0,q,2=count select from caplog where fn=`info,1,1,getsortcsv emits exactly two info entries
-true,0,0,q,"any caplog[`msg] like ""*retrieving sort settings*""",1,1,getsortcsv logs retrieval start message
-true,0,0,q,"any caplog[`msg] like ""*loaded 3 sort config rows*""",1,1,getsortcsv logs loaded row count
-true,0,0,q,all (select from caplog where fn=`info)[`ctx]=`getsortcsv,1,1,getsortcsv info entries use getsortcsv context symbol
-true,0,0,q,not any caplog[`fn]=`error,1,1,getsortcsv logs no errors on success
+run,0,0,q,srt.readcsv `:tmp_sort_valid.csv,1,1,call readcsv with capturing logger
+true,0,0,q,2=count select from caplog where fn=`info,1,1,readcsv emits exactly two info entries
+true,0,0,q,"any caplog[`msg] like ""*reading sort params*""",1,1,readcsv logs read start message
+true,0,0,q,"any caplog[`msg] like ""*read 3 sort param*""",1,1,readcsv logs the row count read
+true,0,0,q,all (select from caplog where fn=`info)[`ctx]=`readcsv,1,1,readcsv info entries use readcsv context symbol
+true,0,0,q,not any caplog[`fn]=`error,1,1,readcsv logs no errors on success
 
-comment,,,,,,,log call verification - getsortcsv error logging on file load failure
+comment,,,,,,,log call verification - readcsv error logging on file read failure
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,@[srt.getsortcsv;`:nonexistent_file.csv;{x}],1,1,trigger file load error
-true,0,0,q,1=count select from caplog where fn=`error,1,1,getsortcsv logs exactly one error on file failure
-true,0,0,q,"any caplog[`msg] like ""*failed to open*""",1,1,error log message mentions failed to open
-true,0,0,q,`getsortcsv~first (select from caplog where fn=`error)[`ctx],1,1,file error is logged under getsortcsv context symbol
+run,0,0,q,@[srt.readcsv;`:nonexistent_file.csv;{x}],1,1,trigger file read error
+true,0,0,q,1=count select from caplog where fn=`error,1,1,readcsv logs exactly one error on file failure
+true,0,0,q,"any caplog[`msg] like ""*failed to read*""",1,1,error log message mentions failed to read
+true,0,0,q,`readcsv~first (select from caplog where fn=`error)[`ctx],1,1,file error is logged under readcsv context symbol
 
 comment,,,,,,,log call verification - sorttab info logging for table-specific params and partition operations
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,srt.sorttab[(`trade;enlist`:/)] ,1,1,sorttab with table-specific params
+run,0,0,q,srt.sorttab[cfg;`trade;enlist`:/],1,1,sorttab with table-specific params
 true,0,0,q,"any caplog[`msg] like ""*sorting the trade table*""",1,1,sorttab logs sort start
 true,0,0,q,"any caplog[`msg] like ""*sort parameters have been retrieved for: trade*""",1,1,sorttab logs table-specific params lookup
 true,0,0,q,"any caplog[`msg] like ""*finished sorting the trade table*""",1,1,sorttab logs sort completion
@@ -98,13 +96,12 @@ true,0,0,q,"any caplog[`msg] like ""*unable to apply*""",1,1,attrerr logs attrib
 
 comment,,,,,,,log call verification - sorttab info logging for default params fallback path
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,srt.sorttab[(`other;enlist`:/)] ,1,1,sorttab falls back to default params row
+run,0,0,q,srt.sorttab[cfg;`other;enlist`:/],1,1,sorttab falls back to default params row
 true,0,0,q,"any caplog[`msg] like ""*using default parameters*""",1,1,sorttab logs default params fallback
 
 comment,,,,,,,log call verification - sorttab warn logging when no params and no default row
-run,0,0,q,srt.getsortcsv[`:tmp_sort_nodfl.csv],1,1,load params with no default row
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,srt.sorttab[(`other;enlist`:/)] ,1,1,sorttab with no matching params
+run,0,0,q,srt.sorttab[nodflcfg;`other;enlist`:/],1,1,sorttab with no matching params
 true,0,0,q,any caplog[`fn]=`warn,1,1,sorttab emits a warn log when table has no sort config
 true,0,0,q,"any caplog[`msg] like ""*will not be sorted*""",1,1,warn message indicates table will not be sorted
 true,0,0,q,`sorttab~first (select from caplog where fn=`warn)[`ctx],1,1,warn is logged under sorttab context symbol
@@ -112,7 +109,6 @@ true,0,0,q,`sorttab~first (select from caplog where fn=`warn)[`ctx],1,1,warn is 
 after,0,0,q,hdel`:tmp_sort_valid.csv,1,1,remove valid sort csv
 after,0,0,q,hdel`:tmp_sort_badcols.csv,1,1,remove bad cols csv
 after,0,0,q,hdel`:tmp_sort_badatt.csv,1,1,remove bad att csv
-after,0,0,q,hdel`:tmp_sort_autoload.csv,1,1,remove autoload fixture csv
 after,0,0,q,hdel`:tmp_sort_3col.csv,1,1,remove 3-col fixture csv
 after,0,0,q,hdel`:tmp_sort_empty.csv,1,1,remove empty fixture csv
 after,0,0,q,hdel`:tmp_sort_nodfl.csv,1,1,remove no-default fixture csv

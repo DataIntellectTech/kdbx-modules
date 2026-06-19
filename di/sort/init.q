@@ -2,4 +2,4 @@
 
 \l ::sort.q
 
-export:([init;getsortcsv;sorttab;getparams])
+export:([init;readcsv;sorttab])

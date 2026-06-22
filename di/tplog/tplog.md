@@ -1,4 +1,4 @@
-# `tplogutils` – Tickerplant Log Check & Repair Utilities for kdb+/q
+# `tplog` – Tickerplant Log Check & Repair Utilities for kdb+/q
 
 A small utility module for **checking** and **best‑effort repairing** tickerplant-style log files by scanning raw bytes for update-message boundaries, attempting to deserialize candidate messages, and writing any recoverable messages into a new `*.good` logfile.
 
@@ -20,7 +20,7 @@ A small utility module for **checking** and **best‑effort repairing** tickerpl
 ## :file_folder: Directory contents
 
 - `init.q` – module implementation (constants + `check`, `repair`)
-- `tplogutils.md` – documentation (you can replace/rename to `README.md` if desired)
+- `tplog.md` – documentation (you can replace/rename to `README.md` if desired)
 - `test.q` – tests + helpers for creating valid/corrupted logs
 - `test.csv` – test manifest for your project’s test harness
 
@@ -34,7 +34,7 @@ If you are using KDB-X (where `use` exists), load the module using the symbol th
 If your `QPATH` includes the `di` directory (e.g. `~/kdbx-modules/di`), a common pattern is:
 
 ```q
-tplogutils:use`tplogutils
+tplog:use`tplog
 ```
 
 ---
@@ -77,7 +77,7 @@ This means:
 ### `check`
 
 ```q
-tplogutils.check[logfile; lastmsgtoreplay]
+tplog.check[logfile; lastmsgtoreplay]
 ```
 
 **Parameters**
@@ -101,7 +101,7 @@ tplogutils.check[logfile; lastmsgtoreplay]
 ### `repair`
 
 ```q
-tplogutils.repair[logfile]
+tplog.repair[logfile]
 ```
 
 **Purpose**
@@ -128,11 +128,11 @@ Create a “good” logfile containing only recoverable messages.
 
 ```q
 / Load module
-tplogutils:use`tplogutils
+tplog:use`tplog
 
 / Decide whether to repair
 log:`:tp.log
-safe:tplogutils.check[log; 0j]
+safe:tplog.check[log; 0j]
 
 / safe is either `:tp.log or `:tp.log.good
 safe
@@ -141,10 +141,10 @@ safe
 ### Always repair
 
 ```q
-tplogutils:use`tplogutils
+tplog:use`tplog
 
 log:`:tp.log
-good:tplogutils.repair log
+good:tplog.repair log
 good
 ```
 
@@ -173,10 +173,10 @@ The module includes `test.q` and `test.csv`.
 
 ```q
 / Load module
-tplogutils:use`tplogutils
+tplog:use`tplog
 
 / Load tests
-\l /path/to/kdbx-modules/di/tplogutils/test.q
+\l /path/to/kdbx-modules/di/tplog/test.q
 
 / Run a few key tests
 test_check_valid_log[]
@@ -185,9 +185,9 @@ test_repair_recovers_messages[]
 test_repair_garbage_at_end[]
 ```
 
-> **Note:** If the tests refer to `tplogsutil` but you loaded the module as `tplogutils`, either:
-> - load the module into a `tplogsutil` variable as well, or
-> - update the test references to `tplogutils`.
+> **Note:** If the tests reference the module under a different name than the one used when loading it, either:
+> - load the module under the expected name as well, or
+> - update the test references to use the loaded module name.
 
 ---
 

@@ -18,9 +18,13 @@
 
 ---
 
-## memo: Dependencies
+## Dependencies
 
-- KX log module
+Passed as a dictionary to `init`. The `log` dependency is required — `init` throws if absent.
+
+| Key | Required | Type | Description |
+|---|---|---|---|
+| `` `log `` | yes | dict | Logger with keys `` `info`warn`error ``, each `{[c;m]}`. See `di.log` for a default implementation. |
 
 ---
 
@@ -58,7 +62,8 @@ depth, 10,default, 1, 17, 8
 ## :wrench: Functions
 
 | Function           | Description                                                    |
-|--------------------|----------------------------------------------------------------| 
+|--------------------|----------------------------------------------------------------|
+|`init`              | Initialise module with injected log dependency                 |
 |`showcomp`          | Load specified compression config and show compression details for files to be compressed |
 |`getcompressioncsv` | get function to return loaded compressioncsv config            |
 |`compressmaxage`    | Compress files according to config up to the specified max age |
@@ -72,6 +77,11 @@ depth, 10,default, 1, 17, 8
 ```q
 // Include compression module in a process
 cmp:use`di.compression
+logdep:`info`warn`error!(
+  {[c;m] -1 "INFO  [",string[c],"] ",m;};
+  {[c;m] -1 "WARN  [",string[c],"] ",m;};
+  {[c;m] -2 "ERROR [",string[c],"] ",m;});
+cmp.init[enlist[`log]!enlist logdep]
 
 // View dictionary of functions
 cmp

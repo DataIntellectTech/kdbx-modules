@@ -1,6 +1,6 @@
-/ dbwrite module - sort, attribute application, save-down manipulation, and GC utilities
+/ dbwrite module - write, sort, and attribute utilities for on-disk data
 / used by processes that persist data to disk (rdb, wdb, tickerlogreplay)
 
 \l ::dbwrite.q
 
-export:([init;readcsv;sort;applyattr;savedown;appenddown;manipulate;postreplay;gc])
+export:([init;readcsv;sort;applyattr;savedown;appenddown;gc])

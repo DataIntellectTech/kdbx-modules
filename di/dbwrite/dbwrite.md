@@ -14,7 +14,6 @@ The sorting/attribute engine is `di.sort` baked in directly: a **config table** 
 - Append rows to an existing partition with `appenddown` — enumerates syms and appends; sort separately when the partition is complete
 - Sort on-disk table partitions by configured columns using `xasc`, then apply kdb+ attributes (`p`,`s`,`g`,`u`)
 - Config supplied as an in-memory table or read from a CSV (`readcsv`); a `default` row or `(::)` provides a fallback
-- Apply a registered pre-write `manipulate` transformation per table
 - Run `.Q.gc[]` with before/after memory logging
 - Sort and attribute errors are caught-and-logged (a single partition failure does not halt the run); config and write errors are raised to the caller with a `di.dbwrite:` prefix
 
@@ -32,7 +31,7 @@ The `log` dependency must be passed to `init`. The module throws if it is absent
 log:use`di.log
 logdep:`info`warn`error!(log.info;log.warn;log.error)
 dbwrite:use`di.dbwrite
-dbwrite.init[(::); enlist[`log]!enlist logdep]
+dbwrite.init[enlist[`log]!enlist logdep]
 ```
 
 ---
@@ -61,25 +60,22 @@ default,,time,1
 
 | Function | Description |
 |---|---|
-| `init[config;deps]` | Wire injected dependencies (and optional `savedownmanipulation`); must be called first |
+| `init[deps]` | Wire injected dependencies; must be called first |
 | `readcsv[file]` | Read a config CSV and return it as a table |
 | `sort[config;tabname;dirs]` | Sort on-disk partition(s) for a table and apply attributes per config |
 | `savedown[config;dir;part;tabname;data]` | Write an in-memory table to an HDB partition, then sort it per config |
 | `appenddown[dir;part;tabname;data]` | Append rows to an existing partition (no sort) |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
-| `manipulate[t;x]` | Apply the registered pre-write manipulation for table `t` |
-| `postreplay[d;p]` | Post-EOD override hook (stub) |
 | `gc[]` | Run `.Q.gc[]` and log before/after memory stats |
 
 ---
 
-### `init[config;deps]`
+### `init[deps]`
 
 Wire injected dependencies. Must be called before any other function.
 
 | Arg | Type | Description |
 |---|---|---|
-| `config` | dict (or `::`) | Optional. May contain `savedownmanipulation` — a `tabname!unary-function` dict applied by `manipulate`. `::` or a dict without the key means no manipulations. |
 | `deps` | dict | Must contain `` `log `` → `` `info`warn`error!(infofn;warnfn;errfn) ``. |
 
 Throws (prefixed `di.dbwrite:`) if `deps` is not a dict, `log` is missing, or the log dict lacks any required key.
@@ -94,7 +90,7 @@ Read a config CSV and **return** it as a table (does not store it) — pass the 
 |---|---|---|
 | `file` | symbol/hsym | Path to the CSV; coerced with `hsym`. Errors (`di.dbwrite:`) if not a symbol. |
 
-The header is validated as it is read; a wrong shape errors clearly. Attribute-value validation happens later in `sort`.
+The CSV is parsed field-by-field and validated as it is read — it does **not** silently pad, truncate, or coerce malformed rows. A clear `di.dbwrite:` error is raised if: the header is not exactly `tabname,att,column,sort` (any order); any data row does not have exactly four fields; or any `sort` value is not `0` or `1`. Column order is normalised to canonical. Attribute-value validation happens later in `sort`.
 
 ```q
 config:dbwrite.readcsv `:config/sort.csv
@@ -172,22 +168,6 @@ dbwrite.applyattr[`:/hdb/2024.01.02/trade; `sym; `p]
 
 ---
 
-### `manipulate[t;x]`
-
-Apply the registered pre-write manipulation for table `t` to `x`, returning the result. Unchanged if none is registered; if the manipulation throws, the failure is logged and `x` is returned unchanged.
-
-```q
-data:dbwrite.manipulate[`trade; data]
-```
-
----
-
-### `postreplay[d;p]`
-
-Post-EOD hook, called after all tables are written and sorted. A stub by default (`{[d;p]}`) — override at the call site to add custom post-replay logic.
-
----
-
 ### `gc[]`
 
 Run `.Q.gc[]`, logging memory stats before and after.
@@ -201,12 +181,12 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.dbwrite
 ```
 
-The suite injects mock loggers: a no-op logger, and a capturing logger that records `(level;ctx;msg)` so log behaviour can be asserted. On-disk behaviour (sort, attributes, `savedown`/`appenddown`) is exercised against real splayed partitions and cleaned up afterwards. It covers: dependency-injection validation; `readcsv` returns / column-order independence / header-validation failures; `sort` validation / edge cases / resolution / on-disk results / multi-dir / non-fatal partition failure; `savedown` write+sort (default and explicit config, and a table without `sym`); `appenddown` append-without-sort then explicit sort, and the non-existent-partition error; `applyattr`; `manipulate`; `postreplay`; `gc`; and the logging contract.
+The suite injects mock loggers: a no-op logger, and a capturing logger that records `(level;ctx;msg)` so log behaviour can be asserted. On-disk behaviour (sort, attributes, `savedown`/`appenddown`) is exercised against real splayed partitions and cleaned up afterwards. It covers: dependency-injection validation; `readcsv` returns / column-order independence / header-validation failures; `sort` validation / edge cases / resolution / on-disk results / multi-dir / non-fatal partition failure; `savedown` write+sort (default and explicit config, and a table without `sym`); `appenddown` append-without-sort then explicit sort, and the non-existent-partition error; `applyattr`; `gc`; and the logging contract.
 
 ---
 
 ## Exported symbols
 
 ```q
-export:([init;readcsv;sort;applyattr;savedown;appenddown;manipulate;postreplay;gc])
+export:([init;readcsv;sort;applyattr;savedown;appenddown;gc])
 ```

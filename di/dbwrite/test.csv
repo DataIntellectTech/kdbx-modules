@@ -13,20 +13,23 @@ before,0,0,q,"`:tmp_dbw_nodfl.csv 0: (""tabname,att,column,sort"";""trade,p,sym,
 before,0,0,q,"`:tmp_dbw_5col.csv 0: (""tabname,att,column,sort,extra"";""trade,p,sym,1,foo"")",1,1,write csv with an extra column
 before,0,0,q,"`:tmp_dbw_reorder.csv 0: (""tabname,att,sort,column"";""trade,p,1,sym"";""trade,,0,time"";""default,p,1,sym"")",1,1,write valid csv with columns reordered
 before,0,0,q,`:tmp_dbw_nohdr.csv 0: (),1,1,write a zero-line csv (no header)
-before,0,0,q,dbwrite.init[(::); enlist[`log]!enlist mylog],1,1,init with no-op logger
+before,0,0,q,"`:tmp_dbw_short.csv 0: (""tabname,att,column,sort"";""trade,p,sym"")",1,1,write csv with a too-short data row
+before,0,0,q,"`:tmp_dbw_long.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1,extra"")",1,1,write csv with a too-long data row
+before,0,0,q,"`:tmp_dbw_badbool.csv 0: (""tabname,att,column,sort"";""trade,p,sym,x"")",1,1,write csv with a non-boolean sort value
+before,0,0,q,dbwrite.init[enlist[`log]!enlist mylog],1,1,init with no-op logger
 before,0,0,q,cfg:([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,reusable valid config table (hand-built)
 before,0,0,q,nodflcfg:dbwrite.readcsv `:tmp_dbw_nodfl.csv,1,1,reusable config with a trade row but no default
 
 comment,,,,,,,init - dependency injection validation (type errors / empty / null)
-fail,0,0,q,dbwrite.init[(::);(::)],1,1,init rejects :: as deps
-fail,0,0,q,dbwrite.init[(::);42],1,1,init rejects a non-dict deps value
-fail,0,0,q,dbwrite.init[(::);()!()],1,1,init rejects empty dict
-fail,0,0,q,dbwrite.init[(::);enlist[`other]!enlist mylog],1,1,init rejects dict missing log key
-fail,0,0,q,dbwrite.init[(::);enlist[`log]!enlist(::)],1,1,init rejects null log dep
-fail,0,0,q,dbwrite.init[(::);enlist[`log]!enlist 42],1,1,init rejects non-dict log value
-fail,0,0,q,dbwrite.init[(::);enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects log dict missing required key
-true,0,0,q,"""di.dbwrite:""~11#@[{dbwrite.init[(::);(::)]};(::);{x}]",1,1,error message is prefixed di.dbwrite
-run,0,0,q,dbwrite.init[(::); enlist[`log]!enlist mylog],1,1,re-init with valid log dep
+fail,0,0,q,dbwrite.init[(::)],1,1,init rejects :: as deps
+fail,0,0,q,dbwrite.init[42],1,1,init rejects a non-dict deps value
+fail,0,0,q,dbwrite.init[()!()],1,1,init rejects empty dict
+fail,0,0,q,dbwrite.init[enlist[`other]!enlist mylog],1,1,init rejects dict missing log key
+fail,0,0,q,dbwrite.init[enlist[`log]!enlist(::)],1,1,init rejects null log dep
+fail,0,0,q,dbwrite.init[enlist[`log]!enlist 42],1,1,init rejects non-dict log value
+fail,0,0,q,dbwrite.init[enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects log dict missing required key
+true,0,0,q,"""di.dbwrite:""~11#@[{dbwrite.init[(::)]};(::);{x}]",1,1,error message is prefixed di.dbwrite
+run,0,0,q,dbwrite.init[enlist[`log]!enlist mylog],1,1,re-init with valid log dep
 
 comment,,,,,,,readcsv - returns a config table from a csv
 true,0,0,q,3=count dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,readcsv returns a 3-row config table
@@ -43,6 +46,9 @@ fail,0,0,q,dbwrite.readcsv `:tmp_dbw_badcols.csv,1,1,readcsv rejects a csv with 
 fail,0,0,q,dbwrite.readcsv `:tmp_dbw_3col.csv,1,1,readcsv rejects a csv missing a required column
 fail,0,0,q,dbwrite.readcsv `:tmp_dbw_5col.csv,1,1,readcsv rejects a csv with an extra column
 fail,0,0,q,dbwrite.readcsv `:tmp_dbw_nohdr.csv,1,1,readcsv rejects a csv with no header row
+fail,0,0,q,dbwrite.readcsv `:tmp_dbw_short.csv,1,1,readcsv rejects a data row with too few fields
+fail,0,0,q,dbwrite.readcsv `:tmp_dbw_long.csv,1,1,readcsv rejects a data row with too many fields
+fail,0,0,q,dbwrite.readcsv `:tmp_dbw_badbool.csv,1,1,readcsv rejects a non-boolean sort value
 
 comment,,,,,,,sort - happy path via both a hand-built table and a csv
 run,0,0,q,dbwrite.sort[cfg;`trade;()],1,1,sort accepts a hand-built config table
@@ -55,6 +61,8 @@ fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`p; column:enlist`sy
 fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`z; column:enlist`sym; sort:enlist 1b);`trade;enlist`:/],1,1,sort rejects unknown attribute values
 fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`p; column:enlist`sym; sort:enlist 1);`trade;enlist`:/],1,1,sort rejects a non-boolean sort column
 fail,0,0,q,dbwrite.sort[dbwrite.readcsv `:tmp_dbw_badatt.csv;`trade;enlist`:/],1,1,sort rejects csv config with invalid attributes
+fail,0,0,q,dbwrite.sort[([] tabname:enlist`; att:enlist`p; column:enlist`sym; sort:enlist 1b);`trade;enlist`:/],1,1,sort rejects a null tabname in config
+fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`p; column:enlist`; sort:enlist 1b);`trade;enlist`:/],1,1,sort rejects a null column in config
 
 comment,,,,,,,sort - edge cases (empty config / null att / empty dirs / atom dir / type error)
 true,0,0,q,()~dbwrite.sort[([] tabname:`symbol$();att:`symbol$();column:`symbol$();sort:`boolean$());`trade;enlist`:/],1,1,empty config yields no work and returns ()
@@ -133,21 +141,8 @@ run,0,0,q,dbwrite.sort[(::);`trade;sdpath],1,1,sort the partition explicitly aft
 true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,1,sorted by time after the explicit sort
 fail,0,0,q,dbwrite.appenddown[`:dbw_hdb;2099.01.01;`nope;sdtbl],1,1,appenddown into a non-existent partition errors
 
-comment,,,,,,,manipulate - registered / passthrough / error fallback
-run,0,0,q,mymanip:enlist[`trade]!enlist {[x] update done:1b from x},1,1,define a save-down manipulation
-run,0,0,q,dbwrite.init[enlist[`savedownmanipulation]!enlist mymanip; enlist[`log]!enlist mylog],1,1,init wiring savedownmanipulation from config
-true,0,0,q,`done in cols dbwrite.manipulate[`trade; ([] sym:enlist`a; px:enlist 1.)],1,1,registered manipulation is applied
-true,0,0,q,not `done in cols dbwrite.manipulate[`quote; ([] sym:enlist`a)],1,1,unregistered table passes through unchanged
-run,0,0,q,"badmanip:enlist[`bad]!enlist {[x] '""boom""}",1,1,define a throwing manipulation
-run,0,0,q,dbwrite.init[enlist[`savedownmanipulation]!enlist badmanip; enlist[`log]!enlist mylog],1,1,init wiring the throwing manipulation
-true,0,0,q,([] a:enlist 1)~dbwrite.manipulate[`bad; ([] a:enlist 1)],1,1,manipulation error falls back to the unmodified table
-run,0,0,q,dbwrite.init[(::); enlist[`log]!enlist mylog],1,1,re-init with no manipulations
-
-comment,,,,,,,postreplay - exported override hook (dbwrite never calls it internally); confirm it is a callable no-op
-true,0,0,q,(::)~dbwrite.postreplay[`:hdb;2024.01.01],1,1,postreplay is callable and returns generic null
-
 comment,,,,,,,log call verification - switch to capturing logger
-run,0,0,q,dbwrite.init[(::); enlist[`log]!enlist logcap],1,1,re-init with capturing logger
+run,0,0,q,dbwrite.init[enlist[`log]!enlist logcap],1,1,re-init with capturing logger
 
 comment,,,,,,,log call verification - readcsv info logging on successful read
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
@@ -198,6 +193,9 @@ after,0,0,q,hdel`:tmp_dbw_nodfl.csv,1,1,remove no-default csv
 after,0,0,q,hdel`:tmp_dbw_5col.csv,1,1,remove 5-col csv
 after,0,0,q,hdel`:tmp_dbw_reorder.csv,1,1,remove reordered csv
 after,0,0,q,hdel`:tmp_dbw_nohdr.csv,1,1,remove no-header csv
+after,0,0,q,hdel`:tmp_dbw_short.csv,1,1,remove short-row csv
+after,0,0,q,hdel`:tmp_dbw_long.csv,1,1,remove long-row csv
+after,0,0,q,hdel`:tmp_dbw_badbool.csv,1,1,remove bad-bool csv
 after,0,0,q,rmrf`:dbw_sort_tp,1,1,cleanup sort partition
 after,0,0,q,rmrf`:dbw_def_tp,1,1,cleanup default partition
 after,0,0,q,rmrf`:dbw_md1,1,1,cleanup md1 partition

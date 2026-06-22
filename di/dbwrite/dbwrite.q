@@ -1,4 +1,4 @@
-/ dbwrite - sort, attribute application, save-down manipulation, and GC utilities for on-disk data
+/ dbwrite - write, sort, and attribute utilities for on-disk data
 / used by processes that persist data to disk (rdb, wdb, tickerlogreplay)
 
 / attributes that may legitimately appear in a config (empty leaves a column unattributed)
@@ -7,9 +7,8 @@ validatts:``p`s`g`u;
 / built-in fallback config - sort every table by time ascending when no config is supplied
 defaultparams:([] tabname:enlist`default; att:enlist`; column:enlist`time; sort:enlist 1b);
 
-init:{[config;deps]
-  / wire injected deps and optional module config
-  / config: dict with optional `savedownmanipulation (tabname!unary fn applied pre-write)
+init:{[deps]
+  / wire the injected log dependency
   / deps: `log!(logdict) where logdict is `info`warn`error!(infofn;warnfn;errfn) - required
   if[99h<>type deps;
     '"di.dbwrite: deps must be a dict with a `log key; see di.log for a default logger"];
@@ -20,10 +19,6 @@ init:{[config;deps]
   if[not all (`info`warn`error) in key deps`log;
     '"di.dbwrite: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
   .z.m.log:deps`log;
-  .z.m.savedownmanipulation:()!();
-  if[99h=type config;
-    if[`savedownmanipulation in key config;
-      .z.m.savedownmanipulation:config`savedownmanipulation]];
   };
 
 readcsv:{[file]
@@ -52,17 +47,22 @@ readerr:{[file;e]
   'm;
   };
 
-/ internal - validate the header and parse csv lines into a config table
+/ internal - validate the header and data rows, then parse csv lines into a config table
 parsecsv:{[lines]
-  / map types by column name so the csv column order does not matter; reject any other shape
-  / outside the readfile i/o trap so a bad header surfaces as a clear di.dbwrite: error
+  / parse field-by-field rather than via 0:, which silently pads/truncates/coerces malformed rows
+  / map columns by header name so order does not matter; runs outside the readfile i/o trap
   if[0=count lines;
     '"di.dbwrite: csv has no header row"];
   hdr:`$"," vs first lines;
   if[not (asc distinct hdr)~`att`column`sort`tabname;
     '"di.dbwrite: csv header must be exactly tabname,att,column,sort; got: ",", " sv string hdr];
-  types:{$[x=`sort;"B";"S"]} each hdr;
-  :`tabname`att`column`sort#(types;enlist",") 0: lines;
+  rows:"," vs/: 1 _ lines;
+  if[count bad:where (count each rows)<>count hdr;
+    '"di.dbwrite: csv data row(s) ",(", " sv string 1+bad)," must have ",(string count hdr)," fields"];
+  c:hdr!$[count rows; flip rows; (count hdr)#enlist ()];
+  if[not all (c`sort) in enlist each "01";
+    '"di.dbwrite: the sort column must contain only 0 or 1"];
+  :([] tabname:`$c`tabname; att:`$c`att; column:`$c`column; sort:"B"$c`sort);
   };
 
 / internal - validate a sort-config table, signalling a clear error if it is malformed
@@ -77,6 +77,10 @@ checkconfig:{[t]
   missingcols:(`tabname`att`column`sort) where not (`tabname`att`column`sort) in c;
   if[count missingcols;
     '"di.dbwrite: missing required config column(s): ",", " sv string missingcols];
+  if[any null t`tabname;
+    '"di.dbwrite: config tabname must not be null"];
+  if[any null t`column;
+    '"di.dbwrite: config column must not be null"];
   if[not 1h=type t`sort;
     '"di.dbwrite: the sort column must be boolean"];
   badatts:at where not (at:distinct t`att) in validatts;
@@ -135,11 +139,10 @@ sortcolumns:{[dloc;sortcols]
 
 / internal - sort columns and apply attributes for a single on-disk partition directory
 sortdir:{[sp;dloc]
-  / sort by the columns flagged sort=1b, then attribute the columns that request one
+  / sort by the columns flagged sort=1b, then hand every row to applyattr (it skips non-attributes)
   sortcols:exec column from sp where sort, not null column;
   if[count sortcols; sortcolumns[dloc;sortcols]];
-  attrcols:select column,att from sp where att in `p`s`g`u;
-  if[count attrcols; applyattr[dloc;;]'[attrcols`column;attrcols`att]];
+  applyattr[dloc;;]'[sp`column;sp`att];
   };
 
 / internal - log an attribute application failure without rethrowing
@@ -183,22 +186,6 @@ appenddown:{[dir;part;tabname;data]
   .[path;();,;.Q.en[dir;data]];
   .z.m.log[`info][`dbwrite;"finished appending ",string tabname];
   };
-
-manipulate:{[t;x]
-  / apply registered pre-write manipulation to table x of type t; unchanged if none registered
-  if[not t in key .z.m.savedownmanipulation; :x];
-  :@[.z.m.savedownmanipulation[t]; x; maniperr[x]];
-  };
-
-/ internal - log a failed save-down manipulation and fall back to the unmodified table
-maniperr:{[x;e]
-  / called as the manipulate error handler; the unmodified table is the safe fallback
-  .z.m.log[`error][`dbwrite;"save-down manipulation failed: ",e];
-  :x;
-  };
-
-/ post-EOD hook - called after all tables written and sorted; override at the call site
-postreplay:{[d;p]};
 
 / internal - render a memory-usage dict as a "key=val MB; ..." string
 fmtmem:{[m]

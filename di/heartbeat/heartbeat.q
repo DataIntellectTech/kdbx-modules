@@ -28,7 +28,6 @@ setcp:{[f]
   / replace the current-time function (used by tests and simulation)
   .z.m.cp:f;
   };
-
 / configuration defaults - overridden by the config dictionary passed to init
 enabled:1b;             / whether heartbeat publishing / checking is enabled
 subenabled:0b;          / whether this process monitors (subscribes to) other heartbeats

@@ -61,3 +61,32 @@ fail,0,0,q,heartbeat.init[()!();()!()],1,1,errors when log dependency missing
 fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist logdep],1,1,errors when timer dependency missing
 fail,0,0,q,heartbeat.init[()!();`log`timer!(logdep;timerdep)],1,1,errors when pubsub dependency missing
 fail,0,0,q,heartbeat.init[enlist[`subenabled]!enlist 1b;`log`timer`pubsub!(logdep;timerdep;psdep)],1,1,monitor errors when servers dependency missing
+
+comment,,,,,,,real-process integration - a background publisher beats over real di.pubsub into this process
+run,0,0,q,system"q -p 5050 -q &",1,,start a background heartbeat publisher
+run,0,0,q,system"sleep 1",1,,wait for the publisher to come up
+run,0,0,q,h:hopen`::5050,1,,connect to the publisher
+
+true,0,0,q,h>0,1,,connected to the publisher
+run,0,0,q,h"hbmod:use`di.heartbeat",1,,load heartbeat on the publisher
+run,0,0,q,h"pubsub:use`di.pubsub",1,,load pubsub on the publisher
+run,0,0,q,h"heartbeat:.m.di.0heartbeat.heartbeat",1,,expose the heartbeat schema at root for pubsub
+run,0,0,q,h"pubsub.init[]",1,,initialise the pubsub registry on the publisher
+run,0,0,q,h"logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,silent log dep on the publisher
+run,0,0,q,h"timerdep:enlist[`addjob]!enlist{[id;func;params;period;mode;opts]}",1,,no-op timer dep - publish is triggered manually for determinism
+run,0,0,q,h"psdep:`publish`subscribe!(pubsub.publish;{[x]})",1,,inject the real pubsub publish into heartbeat
+run,0,0,q,h"hbmod.init[`proctype`procname`port!(`rdb;`pub1;5050i);`log`timer`pubsub!(logdep;timerdep;psdep)]",1,,init the publisher as an rdb named pub1
+run,0,0,q,upd:{[t;x] if[`heartbeat~t; heartbeat.storeheartbeat x]},1,,route incoming beats into the local store
+run,0,0,q,.m.di.0heartbeat.hb:0#.m.di.0heartbeat.hb,1,,clear the local store before subscribing
+run,0,0,q,h(`pubsub.subscribe;`heartbeat;`),1,,subscribe this process to the publisher's heartbeat feed
+run,0,0,q,h".m.di.0heartbeat.publishheartbeat[]",1,,publisher emits one heartbeat over real ipc
+true,0,0,q,1=count heartbeat.gethb[],1,,beat received and stored via real pubsub
+true,0,0,q,`pub1 in exec procname from heartbeat.gethb[],1,,stored beat carries the remote publisher identity
+run,0,0,q,heartbeat.setcp[{.z.p}],1,,use real time - the just-received beat is fresh
+run,0,0,q,heartbeat.checkheartbeat[],1,,check staleness while the beat is fresh
+true,0,0,q,not first exec error from heartbeat.gethb[] where procname=`pub1,1,,fresh beat is not in error
+run,0,0,q,heartbeat.setcp[{.z.p+0D01:00:00}],1,,skew the clock 1h ahead so the beat looks stale
+run,0,0,q,heartbeat.checkheartbeat[],1,,re-check after the publisher has effectively gone silent
+true,0,0,q,first exec error from heartbeat.gethb[] where procname=`pub1,1,,stale publisher escalated to error over real ipc
+run,0,0,q,neg[h](exit;0);neg[h](::),1,,shut down the background publisher
+run,0,0,q,hclose h,1,,close the handle

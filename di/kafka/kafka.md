@@ -11,7 +11,7 @@ Kafka consumer and producer interface for kdb+ processes. Wraps the `kafkaq` nat
 - Publish byte vectors to topics with optional message keys
 - Graceful disabled mode on unsupported platforms - all native functions are replaced with informative stubs
 - Message handler (`kupd`) configurable at init or updated live via `setkupd`
-- Compatible with any logging implementation via the injected `log` dependency
+- Compatible with `kx.log` and any logger that exposes unary `info`/`warn`/`error` functions
 
 ---
 
@@ -19,19 +19,18 @@ Kafka consumer and producer interface for kdb+ processes. Wraps the `kafkaq` nat
 
 **Native library:** `kafkaq.so` (Linux) or `kafkaq.dll` (Windows). Must be present on the host. Path is provided via the `libpath` config key or derived from the `KDBLIB` environment variable.
 
-**Injected:** `log` - required. Pass `info`, `warn`, and `error` log functions via the `deps` argument to `init`. See `di.log` or the Confluence documentation for the expected function signatures.
+**Injected:** `log` - optional. Pass a `kx.log` logger instance (from `kx.log.createLog[]`) under the `log` key in `deps`. If absent, or if the instance does not provide `info`/`warn`/`error` functions, the module falls back to no-op logging.
 
 ---
 
 ## Initialisation
 
 ```q
-log:use`di.log
-log.init[logconfig]
-logdep:enlist[`log]!enlist `info`warn`error!(log.info;log.warn;log.error)
+kxlog:use`kx.log
+logger:kxlog.createLog[]
 
 kafka:use`di.kafka
-kafka.init[`enabled`libpath!(1b;`$/opt/TorQ/lib/l64/kafkaq);logdep]
+kafka.init[`enabled`libpath!(1b;`$/opt/TorQ/lib/l64/kafkaq);enlist[`log]!enlist logger]
 ```
 
 All config keys are optional. Passing `(::)` or `()!()` as config applies defaults.
@@ -42,7 +41,7 @@ All config keys are optional. Passing `(::)` or `()!()` as config applies defaul
 | `libpath` | symbol | derived from `KDBLIB` env var | Path to the kafkaq library **without** file extension. If `KDBLIB` is not set, provide this explicitly. |
 | `kupd` | function | logs message via injected logger | Message handler called by the C library on Kafka message receipt. Signature: `{[key;bytes]}`. |
 
-The `log` dependency is **required**. `init` throws if it is absent, `(::)`, or missing any of `info`/`warn`/`error`.
+If no `log` dep is provided, or it is missing `info`/`warn`/`error` functions, the module falls back to no-op logging silently.
 
 `init` must be called before any other function is used. It is safe to call multiple times.
 
@@ -108,16 +107,15 @@ Updates the message handler after `init` without requiring a full reinitialisati
 ## Usage example
 
 ```q
-log:use`di.log
-log.init[logconfig]
-logdep:enlist[`log]!enlist `info`warn`error!(log.info;log.warn;log.error)
+kxlog:use`kx.log
+logger:kxlog.createLog[]
 
 myhandler:{[k;x]
   upd[`kafkadata;(enlist .z.p;enlist k;enlist "c"$x)];
   };
 
 kafka:use`di.kafka
-kafka.init[`enabled`libpath`kupd!(1b;`$/opt/TorQ/lib/l64/kafkaq;myhandler);logdep]
+kafka.init[`enabled`libpath`kupd!(1b;`$/opt/TorQ/lib/l64/kafkaq;myhandler);enlist[`log]!enlist logger]
 
 kafka.initconsumer[`localhost:9092;()!()]
 kafka.subscribe[`trades;0]
@@ -165,7 +163,7 @@ If `enabled:1b` and the library file is not found, `init` logs an error and cont
 |---|---|
 | `enabled:@[value;\`enabled;.z.o in \`l64]` | `kafka.init[\`enabled!enlist 1b;logdep]` |
 | `kupd:{[k;x]...}` defined in settings | `kafka.init[\`kupd!enlist{[k;x]...};logdep]` |
-| default `kupd` prints bytes to stdout (`-1 \`char$x`) | default `kupd` routes through injected logger - override with `kupd` config key if stdout behaviour is needed |
+| default `kupd` prints bytes to stdout (`-1 \`char$x`) | default `kupd` routes through injected `kx.log` logger (unary call) - override with `kupd` config key for custom behaviour |
 | `.kafka.initconsumer[s;o]` | `kafka.initconsumer[s;o]` |
 | `.kafka.initproducer[s;o]` | `kafka.initproducer[s;o]` |
 | `.kafka.cleanupconsumer[(::)]` | `kafka.cleanupconsumer[(::)]` |
@@ -178,6 +176,10 @@ If `enabled:1b` and the library file is not found, `init` logs an error and cont
 ## Manual verification (requires kafkaq.so and Kafka broker)
 
 ```q
+kxlog:use`kx.log
+logger:kxlog.createLog[]
+logdep:enlist[`log]!enlist logger
+
 / verify lib loads
 kafka.init[`enabled`libpath!(1b;`$/path/to/l64/kafkaq);logdep]
 
@@ -199,5 +201,5 @@ kafka.cleanupproducer[(::)]
 ## Notes
 
 - `enabled` defaults to `1b` only on `l64` hosts; everywhere else it defaults to `0b`. Pass `enabled:1b` explicitly to force-enable on a platform where a native library build is available.
-- The `log` dependency is required with no fallback. This differs from TorQ, which has no equivalent concept of injected logging - this module requires it for consistency with other `di.*` modules.
-- The default `kupd` routes through the injected logger rather than TorQ's original raw stdout write (`-1 \`char$x`). Override with the `kupd` config key if stdout behaviour is needed.
+- The `log` dependency is optional. Pass a `kx.log` logger instance for production observability; omit it for standalone or test use. Logger functions use a unary `{[msg]}` signature — context is embedded in the message string (e.g. `"kafka: message"`).
+- The default `kupd` routes through the injected logger rather than TorQ's original raw stdout write (`-1 \`char$x`). Override with the `kupd` config key if custom behaviour is needed.

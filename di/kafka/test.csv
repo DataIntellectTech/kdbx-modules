@@ -1,18 +1,15 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 / pre-test setup
 before,0,0,q,kafka:use`di.kafka,1,1,load di.kafka module
-before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,no-op mock log dependency
+before,0,0,q,mocklog:`info`warn`error!({[m]};{[m]};{[m]}),1,1,no-op mock log dependency - unary {[m]} matches kx.log contract
 before,0,0,q,logdep:enlist[`log]!enlist mocklog,1,1,log dep dict
 before,0,0,q,kafkaterrored:0b,1,1,flag used to prove enabled:0b branch was skipped not merely unsuccessful
-before,0,0,q,capturelog:`info`warn`error!({[c;m]};{[c;m]};{[c;m] `kafkaterrored set 1b}),1,1,capturing mock logger - error fn uses set builtin; only reliable when not called from within module execution context
+before,0,0,q,capturelog:`info`warn`error!({[m]};{[m]};{[m] `kafkaterrored set 1b}),1,1,capturing mock logger - error fn uses set builtin; only reliable when not called from within module execution context
 
-/ logdict extraction - invalid deps inputs throw correct message
-true,0,0,q,.[kafka.init;(()!();()!());{x}] like "*log dependency*",1,1,empty dict deps throws correct message
-true,0,0,q,.[kafka.init;(()!();(::));{x}] like "*log dependency*",1,1,:: as deps throws correct message
-true,0,0,q,.[kafka.init;(()!();42);{x}] like "*log dependency*",1,1,non-dict deps throws correct message
-true,0,0,q,.[kafka.init;(()!();enlist[`log]!enlist(::));{x}] like "*log dependency*",1,1,log value of :: throws correct message
-true,0,0,q,.[kafka.init;(()!();enlist[`notlog]!enlist mocklog);{x}] like "*log dependency*",1,1,deps without log key throws correct message
-true,0,0,q,.[kafka.init;(()!();enlist[`log]!enlist `info`warn!(mocklog`info;mocklog`warn));{x}] like "*log dependency*",1,1,partial log dict missing error key throws correct message
+/ log dep is optional - invalid or absent deps fall back to no-op logger without error
+run,0,0,q,kafka.init[()!();()!()],1,1,no log dep provided - falls back to defaultlog no-ops without error
+run,0,0,q,kafka.init[()!();42],1,1,non-dict deps - falls back gracefully without error
+run,0,0,q,kafka.init[()!();enlist[`notlog]!enlist mocklog],1,1,missing log key in deps - falls back gracefully without error
 
 / init disabled - stubs throw with correct message
 run,0,0,q,kafka.init[()!();logdep],1,1,init with empty config does not error

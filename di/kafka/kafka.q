@@ -1,11 +1,15 @@
 / kafka consumer/producer interface - wraps kafkaq native library
 
 / default message handler - routes message through injected logger
-defaultkupd:{[k;x].z.m.loginfo[`kafka;"kupd: ","c"$x]};
+/ safe to reference .z.m.loginfo here: kupd can only fire after initconsumer+subscribe, both of which require init
+defaultkupd:{[k;x].z.m.loginfo["kafka: kupd: ","c"$x]};
 
 / default lib path derived from KDBLIB env var and os string
 / override with libpath config key if KDBLIB is not set in the environment
 defaultlib:`$getenv[`KDBLIB],"/",string[.z.o],"/kafkaq";
+
+/ default no-op logger - used when no log dep is injected
+defaultlog:`info`warn`error!({[m]};{[m]};{[m]});
 
 / ============================================================
 / module state and defaults
@@ -54,12 +58,11 @@ setkupd:{[f]
 
 init:{[config;deps]
   / config: dict with optional keys `enabled`libpath`kupd
-  / deps: `log!(logdict)
-  /   `log: `info`warn`error!(infofunc;warnfunc;errfunc) - required
-  logdict:$[99h=type deps;$[(`log in key deps) and not (::)~deps`log;deps`log;()!()];()!()];
-  if[not all `info`warn`error in key logdict;
-    '"di.kafka: log dependency is required; pass `info`warn`error functions - see di.log or refer to confluence documentation";
-    ];
+  / deps: optional. `log key should be a kx.log logger instance (from kx.log.createLog[])
+  /   if absent or missing info/warn/error keys, falls back to no-op logger
+  / extract deps`log safely; type check before key avoids crash on non-dict lograw (e.g. deps=(::))
+  lograw:$[99h=type deps;@[deps;`log;{(::)}];(::)];
+  logdict:$[99h=type lograw;$[all `info`warn`error in key lograw;lograw;defaultlog];defaultlog];
   .z.m.loginfo:logdict`info;
   .z.m.logwarn:logdict`warn;
   .z.m.logerr:logdict`error;
@@ -73,7 +76,7 @@ init:{[config;deps]
     / protected key - kdbx throws on paths with non-existent ancestors
     libexists:@[{not ()~key x};libfile;{0b}];
     if[not libexists;
-      .z.m.logerr[`kafka;"no such file ",1_string libfile]
+      .z.m.logerr["kafka: no such file ",1_string libfile]
       ];
     if[libexists;
       .z.m.initconsumer:.z.m.lib 2:(`initconsumer;2);
@@ -84,7 +87,7 @@ init:{[config;deps]
       .z.m.publish:.z.m.lib 2:(`publish;4);
       / set global kupd - unavoidable side effect of native library design
       @[`.;`kupd;:;.z.m.kupd];
-      .z.m.loginfo[`kafka;"kupd is set to ",-3!.z.m.kupd];
+      .z.m.loginfo["kafka: kupd set to ",-3!.z.m.kupd];
       ];
     ];
   };

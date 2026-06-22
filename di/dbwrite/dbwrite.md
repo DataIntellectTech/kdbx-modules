@@ -118,7 +118,7 @@ dbwrite.sort[config; `trade; `:/hdb/2024.01.02/trade`:/hdb/2024.01.03/trade]
 
 ### `savedown[config;dir;part;tabname;data]`
 
-Write an in-memory table to a date-partitioned HDB partition, then sort it per `config`. Enumerates symbol columns against the HDB sym file and applies `p#` to `sym` (if present) before writing.
+Write an in-memory table to a date-partitioned HDB partition, then sort it per `config`. Enumerates symbol columns against the HDB sym file before writing. Sorting **and** attributes are driven entirely by `config` and applied by `sort` *after* the write — so an attribute like `p#` is only applied once its column is grouped (e.g. a config that sorts by `sym` and parts `sym`), never to unsorted data.
 
 | Parameter | Type | Description |
 |---|---|---|

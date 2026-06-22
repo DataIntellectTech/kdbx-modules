@@ -141,6 +141,19 @@ run,0,0,q,dbwrite.sort[(::);`trade;sdpath],1,1,sort the partition explicitly aft
 true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,1,sorted by time after the explicit sort
 fail,0,0,q,dbwrite.appenddown[`:dbw_hdb;2099.01.01;`nope;sdtbl],1,1,appenddown into a non-existent partition errors
 
+comment,,,,,,,integration - savedown realistic (repeated/unsorted sym) data builds a valid queryable partition
+run,0,0,q,symcfg:([] tabname:enlist`trade; att:enlist`p; column:enlist`sym; sort:enlist 1b),1,1,config that sorts by sym and applies p#
+run,0,0,q,"rd:([] time:2024.01.01D10 2024.01.01D09 2024.01.01D11; sym:`IBM`AAPL`IBM; px:1 2 3f)",1,1,realistic unsorted data with a repeated sym
+run,0,0,q,dbwrite.savedown[symcfg;`:dbw_ihdb;2024.01.01;`trade;rd],1,1,savedown repeated-sym data (must not crash applying p#)
+run,0,0,q,"ip:get ` sv (.Q.par[`:dbw_ihdb;2024.01.01;`trade];`)",1,1,read the written partition back
+true,0,0,q,`AAPL`IBM`IBM~value ip`sym,1,1,partition is sorted (grouped) by sym on disk (sym is enumerated - resolve with value)
+true,0,0,q,`p=attr ip`sym,1,1,p# applied to sym post-sort (valid because the data is grouped)
+true,0,0,q,2=count select from ip where sym=`IBM,1,1,p# lookup is correct - two IBM rows
+true,0,0,q,1=count select from ip where sym=`AAPL,1,1,p# lookup is correct - one AAPL row
+run,0,0,q,dbwrite.savedown[(::);`:dbw_ihdb;2024.01.02;`trade;rd],1,1,savedown repeated-sym data with the default (time) config must not crash
+true,0,0,q,(asc x)~x:exec time from get ` sv (.Q.par[`:dbw_ihdb;2024.01.02;`trade];`),1,1,default-config partition sorted by time
+true,0,0,q,`=attr (get ` sv (.Q.par[`:dbw_ihdb;2024.01.02;`trade];`))`sym,1,1,default-config leaves sym unattributed (not falsely parted)
+
 comment,,,,,,,log call verification - switch to capturing logger
 run,0,0,q,dbwrite.init[enlist[`log]!enlist logcap],1,1,re-init with capturing logger
 
@@ -203,3 +216,4 @@ after,0,0,q,rmrf`:dbw_md2,1,1,cleanup md2 partition
 after,0,0,q,rmrf`:dbw_good,1,1,cleanup good partition
 after,0,0,q,rmrf`:dbw_attr_tp,1,1,cleanup attr partition
 after,0,0,q,rmrf`:dbw_hdb,1,1,cleanup savedown hdb tree
+after,0,0,q,rmrf`:dbw_ihdb,1,1,cleanup integration hdb tree

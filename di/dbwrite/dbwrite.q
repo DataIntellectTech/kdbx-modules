@@ -166,11 +166,11 @@ savedown:{[config;dir;part;tabname;data]
   / write an in-memory table to a date-partitioned hdb partition, then sort it per config
   / config: a sort-config table, or (::) for the built-in default; dir: hdb root (hsym)
   / part: partition value (date/month/int); tabname: symbol; data: in-memory table
-  / enumerates syms against the hdb sym file and applies p# to sym before writing
+  / enumerates syms against the hdb sym file; sorting and attributes are driven by config
+  / (attributes such as p# are applied post-sort by sort, where the data is correctly grouped)
   .z.m.log[`info][`dbwrite;"saving ",string[tabname]," partition ",string[part]," to ",string dir];
   path:` sv (.Q.par[dir;part;tabname];`);
-  data:.Q.en[dir;data];
-  path set $[`sym in cols data; @[data;`sym;{`p#x}]; data];
+  path set .Q.en[dir;data];
   sort[config;tabname;path];
   .z.m.log[`info][`dbwrite;"finished saving ",string tabname];
   };

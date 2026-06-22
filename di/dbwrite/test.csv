@@ -1,150 +1,207 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-/ Pre-test set-up: load module and mock loggers, and initialise module with mocks
-before,0,0,q,dbwrite:use`di.dbwrite,1,,load di.dbwrite module
-before,0,0,q,logcount:0,1,,initialise log call counter
-before,0,0,q,loginfo:{[c;m] logcount::logcount+1},1,,mock info logger
-before,0,0,q,logwarn:{[c;m] logcount::logcount+1},1,,mock warn logger
-before,0,0,q,logerr:{[c;m] logcount::logcount+1},1,,mock error logger
-before,0,0,q,"logdep:`info`warn`error!(loginfo;logwarn;logerr)",1,,build log dep dict
-before,0,0,q,"deps:(enlist`log)!enlist logdep",1,,wrap in deps dict
-before,0,0,q,dbwrite.init[(::);deps],1,,initialise module with mock loggers
+before,0,0,q,dbwrite:use`di.dbwrite,1,1,load module
+before,0,0,q,mylog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
+before,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,1,initialise log capture table
+before,0,0,q,logcap:`info`warn`error!({[c;m] `caplog upsert(`info;c;m)};{[c;m] `caplog upsert(`warn;c;m)};{[c;m] `caplog upsert(`error;c;m)}),1,1,define capturing mock logger
+before,0,0,q,"rmrf:{[d] if[11h=type k:key d; rmrf each ` sv/:d,/:k]; @[hdel;d;{}]}",1,1,recursive delete helper for on-disk cleanup
+before,0,0,q,"`:tmp_dbw_valid.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1"";""trade,,time,0"";""default,p,sym,1"")",1,1,write valid sort csv
+before,0,0,q,"`:tmp_dbw_badcols.csv 0: (""tabname,attr,col,sort"";""trade,p,sym,1"")",1,1,write csv with bad column names
+before,0,0,q,"`:tmp_dbw_badatt.csv 0: (""tabname,att,column,sort"";""trade,z,sym,1"")",1,1,write csv with invalid attribute value
+before,0,0,q,"`:tmp_dbw_3col.csv 0: (""tabname,att,sort"";""trade,p,1"")",1,1,write csv missing a column
+before,0,0,q,"`:tmp_dbw_empty.csv 0: enlist ""tabname,att,column,sort""",1,1,write header-only sort csv
+before,0,0,q,"`:tmp_dbw_nodfl.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1"")",1,1,write sort csv with no default row
+before,0,0,q,"`:tmp_dbw_5col.csv 0: (""tabname,att,column,sort,extra"";""trade,p,sym,1,foo"")",1,1,write csv with an extra column
+before,0,0,q,"`:tmp_dbw_reorder.csv 0: (""tabname,att,sort,column"";""trade,p,1,sym"";""trade,,0,time"";""default,p,1,sym"")",1,1,write valid csv with columns reordered
+before,0,0,q,`:tmp_dbw_nohdr.csv 0: (),1,1,write a zero-line csv (no header)
+before,0,0,q,dbwrite.init[(::); enlist[`log]!enlist mylog],1,1,init with no-op logger
+before,0,0,q,cfg:([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,reusable valid config table (hand-built)
+before,0,0,q,nodflcfg:dbwrite.readcsv `:tmp_dbw_nodfl.csv,1,1,reusable config with a trade row but no default
 
-/ Test 1: init wires injected logger into individual loginfo/logwarn/logerr slots
-true,0,0,q,logdep[`info]~.m.di.0dbwrite.loginfo,1,1,injected info function stored
-true,0,0,q,logdep[`warn]~.m.di.0dbwrite.logwarn,1,1,injected warn function stored
-true,0,0,q,logdep[`error]~.m.di.0dbwrite.logerr,1,1,injected error function stored
+comment,,,,,,,init - dependency injection validation (type errors / empty / null)
+fail,0,0,q,dbwrite.init[(::);(::)],1,1,init rejects :: as deps
+fail,0,0,q,dbwrite.init[(::);42],1,1,init rejects a non-dict deps value
+fail,0,0,q,dbwrite.init[(::);()!()],1,1,init rejects empty dict
+fail,0,0,q,dbwrite.init[(::);enlist[`other]!enlist mylog],1,1,init rejects dict missing log key
+fail,0,0,q,dbwrite.init[(::);enlist[`log]!enlist(::)],1,1,init rejects null log dep
+fail,0,0,q,dbwrite.init[(::);enlist[`log]!enlist 42],1,1,init rejects non-dict log value
+fail,0,0,q,dbwrite.init[(::);enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects log dict missing required key
+true,0,0,q,"""di.dbwrite:""~11#@[{dbwrite.init[(::);(::)]};(::);{x}]",1,1,error message is prefixed di.dbwrite
+run,0,0,q,dbwrite.init[(::); enlist[`log]!enlist mylog],1,1,re-init with valid log dep
 
-/ Test 2: init errors when log dep not provided
-fail,0,0,q,dbwrite.init[(::);(::)],1,1,init without log dep throws an error
-fail,0,0,q,dbwrite.init[(::);`log!(::)],1,1,init with log set to (::) throws an error
+comment,,,,,,,readcsv - returns a config table from a csv
+true,0,0,q,3=count dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,readcsv returns a 3-row config table
+true,0,0,q,`tabname`att`column`sort~cols dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,readcsv table has the correct column schema
+true,0,0,q,(dbwrite.readcsv `:tmp_dbw_valid.csv)~([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,readcsv round-trips the csv content
+true,0,0,q,0=count dbwrite.readcsv `:tmp_dbw_empty.csv,1,1,readcsv returns an empty table for a header-only csv
+true,0,0,q,(dbwrite.readcsv `:tmp_dbw_reorder.csv)~dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,readcsv is column-order independent
+true,0,0,q,`tabname`att`column`sort~cols dbwrite.readcsv `:tmp_dbw_reorder.csv,1,1,readcsv normalises reordered columns to canonical order
 
-/ Test 3: sort uses default row when table name not in config
-run,0,0,q,`:dbwrite_defp_tp/.d set `time`sym,1,,write column order file
-run,0,0,q,`:dbwrite_defp_tp/time set 2024.01.01D09:00:00.000000000 2024.01.01D08:00:00.000000000,1,,write unsorted time column
-run,0,0,q,`:dbwrite_defp_tp/sym set `IBM`AAPL,1,,write sym column
-run,0,0,q,"dbwrite.sort[(`anytable;`:dbwrite_defp_tp/)]",1,,sort using default row
-true,0,0,q,(asc exec time from get `:dbwrite_defp_tp/)~exec time from get `:dbwrite_defp_tp/,1,,time column sorted ascending by default row
+comment,,,,,,,readcsv - input and header validation failures
+fail,0,0,q,dbwrite.readcsv `:nonexistent_file.csv,1,1,readcsv errors on a missing file
+fail,0,0,q,dbwrite.readcsv 42,1,1,readcsv errors on a non-symbol file argument
+fail,0,0,q,dbwrite.readcsv `:tmp_dbw_badcols.csv,1,1,readcsv rejects a csv with wrong column names
+fail,0,0,q,dbwrite.readcsv `:tmp_dbw_3col.csv,1,1,readcsv rejects a csv missing a required column
+fail,0,0,q,dbwrite.readcsv `:tmp_dbw_5col.csv,1,1,readcsv rejects a csv with an extra column
+fail,0,0,q,dbwrite.readcsv `:tmp_dbw_nohdr.csv,1,1,readcsv rejects a csv with no header row
 
-/ Test 4: loadconfig null resets params to default row
-run,0,0,q,dbwrite.loadconfig[`],1,,call loadconfig with null file
-true,0,0,q,.m.di.0dbwrite.params~([] tabname:enlist`default; att:enlist`; column:enlist`time; sort:enlist 1b),1,,params reset to default row
+comment,,,,,,,sort - happy path via both a hand-built table and a csv
+run,0,0,q,dbwrite.sort[cfg;`trade;()],1,1,sort accepts a hand-built config table
+run,0,0,q,dbwrite.sort[dbwrite.readcsv `:tmp_dbw_valid.csv;`trade;()],1,1,sort accepts a config table read from a csv
 
-/ Test 5: loadconfig - valid config file loaded and parsed correctly
-run,0,0,q,cfgfile:`:dbwrite_test.csv,1,,temp sort config path
-run,0,0,q,"cfgfile 0:(""tabname,att,column,sort"";""trade,p,sym,1"";""trade,,price,0"")",1,,write test sort config
-run,0,0,q,dbwrite.loadconfig[cfgfile],1,,loadconfig with valid csv succeeds
-true,0,0,q,2=count .m.di.0dbwrite.params,1,,two rows loaded into params
-true,0,0,q,all `trade=exec tabname from .m.di.0dbwrite.params,1,,both rows are for trade table
+comment,,,,,,,sort - config validation (type errors / bad content)
+fail,0,0,q,dbwrite.sort[42;`trade;enlist`:/],1,1,sort rejects a non-table config
+fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; bad:enlist`p; column:enlist`sym; sort:enlist 1b);`trade;enlist`:/],1,1,sort rejects unrecognised config columns
+fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`p; column:enlist`sym);`trade;enlist`:/],1,1,sort rejects a missing required config column
+fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`z; column:enlist`sym; sort:enlist 1b);`trade;enlist`:/],1,1,sort rejects unknown attribute values
+fail,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`p; column:enlist`sym; sort:enlist 1);`trade;enlist`:/],1,1,sort rejects a non-boolean sort column
+fail,0,0,q,dbwrite.sort[dbwrite.readcsv `:tmp_dbw_badatt.csv;`trade;enlist`:/],1,1,sort rejects csv config with invalid attributes
 
-/ Test 5 cont: loadconfig - invalid and edge-case inputs
-true,0,0,q,@[dbwrite.loadconfig;`:nonexistent_file_xyz;{1b}],1,,nonexistent file throws
-true,0,0,q,@[dbwrite.loadconfig;42;{1b}],1,,non-symbol arg throws
-run,0,0,q,badcols:`:dbwrite_badcols.csv,1,,
-run,0,0,q,"badcols 0:(""wrongcol,att,column,sort"";""trade,p,sym,1"")",1,,csv with unrecognised column name
-true,0,0,q,@[dbwrite.loadconfig;badcols;{1b}],1,,unrecognised column throws
-run,0,0,q,badatt:`:dbwrite_badatt.csv,1,,
-run,0,0,q,"badatt 0:(""tabname,att,column,sort"";""trade,z,sym,1"")",1,,csv with unrecognised attribute
-true,0,0,q,@[dbwrite.loadconfig;badatt;{1b}],1,,unrecognised attribute throws
-run,0,0,q,emptycfg:`:dbwrite_empty.csv,1,,
-run,0,0,q,"emptycfg 0:enlist""tabname,att,column,sort""",1,,csv with header only
-run,0,0,q,dbwrite.loadconfig[emptycfg],1,,loadconfig with header-only csv
-true,0,0,q,0=count .m.di.0dbwrite.params,1,,params is empty after header-only csv
+comment,,,,,,,sort - edge cases (empty config / null att / empty dirs / atom dir / type error)
+true,0,0,q,()~dbwrite.sort[([] tabname:`symbol$();att:`symbol$();column:`symbol$();sort:`boolean$());`trade;enlist`:/],1,1,empty config yields no work and returns ()
+run,0,0,q,dbwrite.sort[([] tabname:enlist`trade; att:enlist`; column:enlist`sym; sort:enlist 0b);`trade;enlist`:/],1,1,sort accepts a null (no) attribute row
+run,0,0,q,dbwrite.sort[cfg;`trade;()],1,1,sort handles an empty partition list without error
+run,0,0,q,dbwrite.sort[cfg;`trade;`:/],1,1,sort accepts a single atom hsym dir not just a list
+fail,0,0,q,dbwrite.sort[cfg;42;enlist`:/],1,1,sort errors on a non-symbol table name
+true,0,0,q,"""di.dbwrite:""~11#@[{dbwrite.sort[cfg;42;enlist`:/]};(::);{x}]",1,1,non-symbol table name gives a di.dbwrite:-prefixed error
 
-/ Test 6: applyattr - error cases
-run,0,0,q,logcount:0,1,,reset counter
-run,0,0,q,"dbwrite.applyattr[`:nonexist_attr_dir/;`sym;`p]",1,,apply to non-existent path
-true,0,0,q,2=logcount,1,,loginfo (before attempt) and logerr (on failure) each called once
+comment,,,,,,,sort - params resolution (table-specific / default / none / (::) fallback)
+run,0,0,q,dbwrite.sort[cfg;`trade;enlist`:/],1,1,sort uses the table-specific params row
+run,0,0,q,dbwrite.sort[cfg;`other;enlist`:/],1,1,sort falls back to the default params row
+true,0,0,q,()~dbwrite.sort[nodflcfg;`other;enlist`:/],1,1,sort returns () when no params found and no default row
+run,0,0,q,dbwrite.sort[(::);`anytable;()],1,1,sort with (::) config uses the built-in default config
 
-/ Test 6 cont: applyattr - null column name logs error and does not throw
-run,0,0,q,`:dbwrite_attr_tp/.d set `sym`price,1,,write column order file
-run,0,0,q,`:dbwrite_attr_tp/sym set `IBM`AAPL`MSFT,1,,write sym column
-run,0,0,q,`:dbwrite_attr_tp/price set 200 100 300f,1,,write price column
-run,0,0,q,logcount:0,1,,reset counter
-run,0,0,q,"dbwrite.applyattr[`:dbwrite_attr_tp/;`;`p]",1,,apply with null column name
-true,0,0,q,2=logcount,1,,loginfo and logerr both called for null column
+comment,,,,,,,sort - on-disk end-to-end (explicit config sorts by sym and applies p#)
+run,0,0,q,`:dbw_sort_tp/.d set `sym`price,1,1,write column order file
+run,0,0,q,`:dbw_sort_tp/sym set `IBM`AAPL`MSFT,1,1,write unsorted sym column
+run,0,0,q,`:dbw_sort_tp/price set 200 100 300f,1,1,write price column
+run,0,0,q,dbwrite.sort[cfg;`trade;`:dbw_sort_tp/],1,1,sort the trade partition by its config
+true,0,0,q,`AAPL`IBM`MSFT~exec sym from get `:dbw_sort_tp/,1,1,sym sorted ascending on disk
+true,0,0,q,`p=attr get `:dbw_sort_tp/sym,1,1,p attribute applied to sym on disk
 
-/ Test 6 cont: applyattr - invalid att logs error
-run,0,0,q,logcount:0,1,,reset counter
-run,0,0,q,"dbwrite.applyattr[`:dbwrite_attr_tp/;`sym;`z]",1,,apply with invalid attribute
-true,0,0,q,2=logcount,1,,loginfo and logerr both called for invalid att
+comment,,,,,,,sort - on-disk end-to-end ((::) default config sorts by time)
+run,0,0,q,`:dbw_def_tp/.d set `time`sym,1,1,write column order file
+run,0,0,q,`:dbw_def_tp/time set 2024.01.01D09:00 2024.01.01D08:00,1,1,write unsorted time column
+run,0,0,q,`:dbw_def_tp/sym set `IBM`AAPL,1,1,write sym column
+run,0,0,q,dbwrite.sort[(::);`anytable;`:dbw_def_tp/],1,1,sort using the built-in default config
+true,0,0,q,(asc exec time from get `:dbw_def_tp/)~exec time from get `:dbw_def_tp/,1,1,time sorted ascending by the default config
 
-/ Test 7: applyattr - attribute applied and logged when path exists
-run,0,0,q,logcount:0,1,,reset counter
-run,0,0,q,"dbwrite.applyattr[`:dbwrite_attr_tp/;`sym;`p]",1,,apply p attr to sym column
-true,0,0,q,1=logcount,1,,loginfo called once (no error)
-true,0,0,q,`p=attr get `:dbwrite_attr_tp/sym,1,,p attribute applied on disk
+comment,,,,,,,sort - multiple partition dirs in one call, and a non-fatal partition failure
+run,0,0,q,`:dbw_md1/.d set `sym`px,1,1,write md1 column order
+run,0,0,q,`:dbw_md1/sym set `c`a`b,1,1,write md1 unsorted sym
+run,0,0,q,`:dbw_md1/px set 1 2 3f,1,1,write md1 price
+run,0,0,q,`:dbw_md2/.d set `sym`px,1,1,write md2 column order
+run,0,0,q,`:dbw_md2/sym set `b`c`a,1,1,write md2 unsorted sym
+run,0,0,q,`:dbw_md2/px set 1 2 3f,1,1,write md2 price
+run,0,0,q,dbwrite.sort[cfg;`trade;(`:dbw_md1/;`:dbw_md2/)],1,1,sort two partition dirs in one call
+true,0,0,q,`a`b`c~exec sym from get `:dbw_md1/,1,1,first partition sorted
+true,0,0,q,`a`b`c~exec sym from get `:dbw_md2/,1,1,second partition sorted
+run,0,0,q,`:dbw_good/.d set `sym`px,1,1,write good-partition column order
+run,0,0,q,`:dbw_good/sym set `c`a`b,1,1,write good-partition unsorted sym
+run,0,0,q,`:dbw_good/px set 1 2 3f,1,1,write good-partition price
+run,0,0,q,dbwrite.sort[cfg;`trade;(`:dbw_good/;`:/)],1,1,sort a good dir alongside a bad one
+true,0,0,q,`a`b`c~exec sym from get `:dbw_good/,1,1,good partition still sorted despite the bad one failing
 
-/ Test 8: sort - skip when table not in config and no default row
-run,0,0,q,dbwrite.loadconfig[cfgfile],1,,reload trade-only config (no default row)
-run,0,0,q,logcount:0,1,,reset counter
-true,0,0,q,()~dbwrite.sort[`no_params_table_xyz],1,,returns () when table not in config
-true,0,0,q,2=logcount,1,,loginfo (sorting start) and logwarn (skip) both called
-true,0,0,q,()~dbwrite.sort[()],1,,empty list returns ()
+comment,,,,,,,applyattr - applies an attribute on disk and is a no-op for non-attributes
+run,0,0,q,`:dbw_attr_tp/.d set `sym`price,1,1,write column order file
+run,0,0,q,`:dbw_attr_tp/sym set `IBM`AAPL`MSFT,1,1,write sym column
+run,0,0,q,`:dbw_attr_tp/price set 200 100 300f,1,1,write price column
+run,0,0,q,dbwrite.applyattr[`:dbw_attr_tp/;`sym;`p],1,1,apply p attr to sym
+true,0,0,q,`p=attr get `:dbw_attr_tp/sym,1,1,p attribute applied to sym on disk
+run,0,0,q,dbwrite.applyattr[`:dbw_attr_tp/;`price;`z],1,1,applyattr is a silent no-op for an invalid attribute
+true,0,0,q,`=attr get `:dbw_attr_tp/price,1,1,invalid attribute leaves the column unattributed
 
-/ Test 8 cont: sort - wrong type logs error and returns ()
-run,0,0,q,logcount:0,1,,reset counter
-true,0,0,q,()~dbwrite.sort[42],1,,wrong type (long) returns ()
-true,0,0,q,1=logcount,1,,logerr called once for wrong type
+comment,,,,,,,savedown - write an in-memory table to an hdb partition then sort it
+run,0,0,q,"sdtbl:([]time:2024.01.01D09:00 2024.01.01D08:00;sym:`IBM`AAPL;price:100 200f)",1,1,unsorted test table
+run,0,0,q,dbwrite.savedown[(::);`:dbw_hdb;2024.01.01;`trade;sdtbl],1,1,savedown with the default config (sort by time)
+run,0,0,q,"sdpath:` sv (.Q.par[`:dbw_hdb;2024.01.01;`trade];`)",1,1,resolve the partition path
+true,0,0,q,2=count get sdpath,1,1,two rows written to the partition
+true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,1,partition sorted by time after savedown
+true,0,0,q,0<count key `:dbw_hdb/sym,1,1,sym enumeration file created in the hdb root
+run,0,0,q,"dbwrite.savedown[(::);`:dbw_hdb;2024.01.02;`nosym;([]time:enlist 2024.01.02D10:00;price:enlist 50f)]",1,1,savedown a table without a sym column
+true,0,0,q,"1=count get ` sv (.Q.par[`:dbw_hdb;2024.01.02;`nosym];`)",1,1,row written for a table without sym
+run,0,0,q,"sdtbl2:([]time:2024.01.03D09:00 2024.01.03D08:00;sym:`IBM`AAPL;price:300 100f)",1,1,table with descending price for an explicit-config savedown
+run,0,0,q,"pcfg:([] tabname:enlist`trade; att:enlist`; column:enlist`price; sort:enlist 1b)",1,1,explicit config sorting trade by price
+run,0,0,q,"dbwrite.savedown[pcfg;`:dbw_hdb;2024.01.03;`trade;sdtbl2]",1,1,savedown with an explicit (non-default) config
+run,0,0,q,"sd3:get ` sv (.Q.par[`:dbw_hdb;2024.01.03;`trade];`)",1,1,read the explicit-config partition
+true,0,0,q,(asc exec price from sd3)~exec price from sd3,1,1,partition sorted by price per the explicit config
 
-/ Test 9: sort - sorting and attribute application when config entry exists for table
-run,0,0,q,`:dbwrite_sort_tp/.d set `sym`price,1,,write column order file
-run,0,0,q,`:dbwrite_sort_tp/sym set `IBM`AAPL`MSFT,1,,write unsorted sym column
-run,0,0,q,`:dbwrite_sort_tp/price set 200 100 300f,1,,write price column
-run,0,0,q,"dbwrite.sort[(`trade;`:dbwrite_sort_tp/)]",1,,sort trade table in test partition
-true,0,0,q,`AAPL`IBM`MSFT~exec sym from get `:dbwrite_sort_tp/,1,,sorted ascending by sym
-true,0,0,q,`p=attr get `:dbwrite_sort_tp/sym,1,,p attribute applied to sym on disk
+comment,,,,,,,appenddown - append to a partition without sorting then sort explicitly
+run,0,0,q,"dbwrite.appenddown[`:dbw_hdb;2024.01.01;`trade;([]time:enlist 2024.01.01D07:00;sym:enlist`MSFT;price:enlist 300f)]",1,1,append an earlier-time row to an existing partition
+true,0,0,q,3=count get sdpath,1,1,three rows on disk after appenddown
+true,0,0,q,not (asc exec time from get sdpath)~exec time from get sdpath,1,1,rows not auto-sorted by appenddown
+run,0,0,q,dbwrite.sort[(::);`trade;sdpath],1,1,sort the partition explicitly after appending
+true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,1,sorted by time after the explicit sort
+fail,0,0,q,dbwrite.appenddown[`:dbw_hdb;2099.01.01;`nope;sdtbl],1,1,appenddown into a non-existent partition errors
 
-/ Test 10: sort - default row used after resetting params with loadconfig null
-run,0,0,q,dbwrite.loadconfig[`],1,,reset params to default row via null loadconfig
-run,0,0,q,`:dbwrite_reset_tp/.d set `time`sym,1,,write column order file
-run,0,0,q,`:dbwrite_reset_tp/time set 2024.01.01D09:00:00.000000000 2024.01.01D08:00:00.000000000,1,,write unsorted time column
-run,0,0,q,`:dbwrite_reset_tp/sym set `IBM`AAPL,1,,write sym column
-run,0,0,q,`:dbwrite_reset_tp/price set 200 100f,1,,write price column
-run,0,0,q,logcount:0,1,,reset counter
-run,0,0,q,"dbwrite.sort[(`othertable;`:dbwrite_reset_tp/)]",1,,sort using default row
-true,0,0,q,(asc exec time from get `:dbwrite_reset_tp/)~exec time from get `:dbwrite_reset_tp/,1,,sorted ascending by time via default row
-true,0,0,q,4=logcount,1,,loginfo x2 (sorting start + sort-by) + logwarn x1 (using defaults) + loginfo x1 (finished)
+comment,,,,,,,manipulate - registered / passthrough / error fallback
+run,0,0,q,mymanip:enlist[`trade]!enlist {[x] update done:1b from x},1,1,define a save-down manipulation
+run,0,0,q,dbwrite.init[enlist[`savedownmanipulation]!enlist mymanip; enlist[`log]!enlist mylog],1,1,init wiring savedownmanipulation from config
+true,0,0,q,`done in cols dbwrite.manipulate[`trade; ([] sym:enlist`a; px:enlist 1.)],1,1,registered manipulation is applied
+true,0,0,q,not `done in cols dbwrite.manipulate[`quote; ([] sym:enlist`a)],1,1,unregistered table passes through unchanged
+run,0,0,q,"badmanip:enlist[`bad]!enlist {[x] '""boom""}",1,1,define a throwing manipulation
+run,0,0,q,dbwrite.init[enlist[`savedownmanipulation]!enlist badmanip; enlist[`log]!enlist mylog],1,1,init wiring the throwing manipulation
+true,0,0,q,([] a:enlist 1)~dbwrite.manipulate[`bad; ([] a:enlist 1)],1,1,manipulation error falls back to the unmodified table
+run,0,0,q,dbwrite.init[(::); enlist[`log]!enlist mylog],1,1,re-init with no manipulations
 
-/ Test 11: gc calls loginfo twice and does not throw
-run,0,0,q,logcount:0,1,,reset counter
-run,0,0,q,dbwrite.gc[],1,,run garbage collect
-true,0,0,q,2=logcount,1,,loginfo called twice (start and end)
+comment,,,,,,,postreplay - exported override hook (dbwrite never calls it internally); confirm it is a callable no-op
+true,0,0,q,(::)~dbwrite.postreplay[`:hdb;2024.01.01],1,1,postreplay is callable and returns generic null
 
-/ Test 12: savedown - write table to hdb partition
-run,0,0,q,dbwrite.loadconfig[`],1,,ensure default sort params (by time)
-run,0,0,q,"sdtbl:([]time:2024.01.01D09:00:00.000000000 2024.01.01D08:00:00.000000000;sym:`IBM`AAPL;price:100 200f)",1,,unsorted test table
-run,0,0,q,"dbwrite.savedown[`:dbwrite_sd_hdb;2024.01.01;`trade;sdtbl]",1,,write to hdb partition
-run,0,0,q,"sdpath:` sv (.Q.par[`:dbwrite_sd_hdb;2024.01.01;`trade];`)",1,,partition path with trailing slash for xasc compatibility
-true,0,0,q,2=count get sdpath,1,,two rows written to partition
-true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,,rows sorted by time ascending after sort
-true,0,0,q,0<count get `:dbwrite_sd_hdb/sym,1,,sym enumeration file created in hdb root
+comment,,,,,,,log call verification - switch to capturing logger
+run,0,0,q,dbwrite.init[(::); enlist[`log]!enlist logcap],1,1,re-init with capturing logger
 
-/ Test 12 cont: savedown - table without sym column
-run,0,0,q,"nosymtbl:([]time:enlist 2024.01.02D10:00:00.000000000;price:enlist 50f)",1,,table with no sym column
-run,0,0,q,"dbwrite.savedown[`:dbwrite_sd_hdb;2024.01.02;`nosymtrade;nosymtbl]",1,,savedown table without sym column
-true,0,0,q,"1=count get ` sv (.Q.par[`:dbwrite_sd_hdb;2024.01.02;`nosymtrade];`)",1,,row written correctly for table without sym
+comment,,,,,,,log call verification - readcsv info logging on successful read
+run,0,0,q,caplog:0#caplog,1,1,reset log capture
+run,0,0,q,dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,call readcsv with capturing logger
+true,0,0,q,2=count select from caplog where fn=`info,1,1,readcsv emits exactly two info entries
+true,0,0,q,"any caplog[`msg] like ""*reading sort config*""",1,1,readcsv logs read start message
+true,0,0,q,"any caplog[`msg] like ""*read 3 sort config*""",1,1,readcsv logs the row count read
+true,0,0,q,all (select from caplog where fn=`info)[`ctx]=`dbwrite,1,1,readcsv logs under the dbwrite context symbol
+true,0,0,q,not any caplog[`fn]=`error,1,1,readcsv logs no errors on success
 
-/ Test 13: appenddown - append rows to existing partition without sorting
-run,0,0,q,"apptbl:([]time:enlist 2024.01.01D07:00:00.000000000;sym:enlist`MSFT;price:enlist 300f)",1,,row with earlier time than existing data
-run,0,0,q,"dbwrite.appenddown[`:dbwrite_sd_hdb;2024.01.01;`trade;apptbl]",1,,append to existing partition
-true,0,0,q,3=count get sdpath,1,,three rows on disk after appenddown
-true,0,0,q,not (asc exec time from get sdpath)~exec time from get sdpath,1,,rows not yet sorted (no auto-sort on appenddown)
+comment,,,,,,,log call verification - readcsv error logging on file read failure
+run,0,0,q,caplog:0#caplog,1,1,reset log capture
+run,0,0,q,@[dbwrite.readcsv;`:nonexistent_file.csv;{x}],1,1,trigger file read error
+true,0,0,q,1=count select from caplog where fn=`error,1,1,readcsv logs exactly one error on file failure
+true,0,0,q,"any caplog[`msg] like ""*failed to read*""",1,1,error log message mentions failed to read
 
-/ Test 13 cont: sort explicitly after appenddown
-run,0,0,q,"dbwrite.sort[(`trade;sdpath)]",1,,sort partition after appending
-true,0,0,q,(asc exec time from get sdpath)~exec time from get sdpath,1,,sorted by time after explicit sort call
+comment,,,,,,,log call verification - sort info and partition-failure logging
+run,0,0,q,caplog:0#caplog,1,1,reset log capture
+run,0,0,q,dbwrite.sort[cfg;`trade;enlist`:/],1,1,sort with table-specific params against a bad dir
+true,0,0,q,"any caplog[`msg] like ""*sorting the trade table*""",1,1,sort logs sort start
+true,0,0,q,"any caplog[`msg] like ""*sort params found for: trade*""",1,1,sort logs the params lookup
+true,0,0,q,"any caplog[`msg] like ""*finished sorting the trade table*""",1,1,sort logs completion
+true,0,0,q,"any caplog[`msg] like ""*failed to sort*""",1,1,sort logs the partition sort failure
+true,0,0,q,"any caplog[`msg] like ""*unable to apply*""",1,1,sort logs the attribute application failure
+true,0,0,q,all (select from caplog where fn in `info`warn`error)[`ctx]=`dbwrite,1,1,all log entries use the dbwrite context symbol
 
-/ Test 13 cont: appenddown into non-existent partition throws
-true,0,0,q,"@[dbwrite.appenddown[`:dbwrite_sd_hdb;2099.01.01;`nonexist;];sdtbl;{1b}]",1,,appenddown into non-existent partition throws
+comment,,,,,,,log call verification - default fallback and skip warning
+run,0,0,q,caplog:0#caplog,1,1,reset log capture
+run,0,0,q,dbwrite.sort[cfg;`other;enlist`:/],1,1,sort falls back to the default params row
+true,0,0,q,"any caplog[`msg] like ""*using defaults*""",1,1,sort logs the default params fallback
+run,0,0,q,caplog:0#caplog,1,1,reset log capture
+run,0,0,q,dbwrite.sort[nodflcfg;`other;enlist`:/],1,1,sort with no matching params and no default
+true,0,0,q,any caplog[`fn]=`warn,1,1,sort emits a warn when no config applies
+true,0,0,q,"any caplog[`msg] like ""*skipping sort*""",1,1,warn message indicates the table is skipped
 
+comment,,,,,,,gc - runs and logs before/after
+run,0,0,q,caplog:0#caplog,1,1,reset log capture
+run,0,0,q,dbwrite.gc[],1,1,run garbage collect
+true,0,0,q,2=count select from caplog where fn=`info,1,1,gc logs two info entries (start and end)
+true,0,0,q,"any caplog[`msg] like ""*garbage collect*""",1,1,gc logs a garbage-collect message
 
-/ Clean up all created on-disk files and directories
-after,0,0,q,@[hdel;`:dbwrite_defp_tp/;{}],1,,cleanup defaultparams test partition
-after,0,0,q,@[hdel;cfgfile;{}],1,,remove temp sort config
-after,0,0,q,@[hdel;badcols;{}],1,,remove temp bad columns file
-after,0,0,q,@[hdel;badatt;{}],1,,remove temp bad attribute file
-after,0,0,q,@[hdel;emptycfg;{}],1,,remove empty config file
-after,0,0,q,@[hdel;`:dbwrite_attr_tp/;{}],1,,cleanup attr test partition
-after,0,0,q,@[hdel;`:dbwrite_sort_tp/;{}],1,,cleanup sort test partition
-after,0,0,q,@[hdel;`:dbwrite_reset_tp/;{}],1,,cleanup reset test partition
-after,0,0,q,@[hdel;`:dbwrite_sd_hdb;{}],1,,cleanup savedown/upsert test hdb
+after,0,0,q,hdel`:tmp_dbw_valid.csv,1,1,remove valid csv
+after,0,0,q,hdel`:tmp_dbw_badcols.csv,1,1,remove bad cols csv
+after,0,0,q,hdel`:tmp_dbw_badatt.csv,1,1,remove bad att csv
+after,0,0,q,hdel`:tmp_dbw_3col.csv,1,1,remove 3-col csv
+after,0,0,q,hdel`:tmp_dbw_empty.csv,1,1,remove empty csv
+after,0,0,q,hdel`:tmp_dbw_nodfl.csv,1,1,remove no-default csv
+after,0,0,q,hdel`:tmp_dbw_5col.csv,1,1,remove 5-col csv
+after,0,0,q,hdel`:tmp_dbw_reorder.csv,1,1,remove reordered csv
+after,0,0,q,hdel`:tmp_dbw_nohdr.csv,1,1,remove no-header csv
+after,0,0,q,rmrf`:dbw_sort_tp,1,1,cleanup sort partition
+after,0,0,q,rmrf`:dbw_def_tp,1,1,cleanup default partition
+after,0,0,q,rmrf`:dbw_md1,1,1,cleanup md1 partition
+after,0,0,q,rmrf`:dbw_md2,1,1,cleanup md2 partition
+after,0,0,q,rmrf`:dbw_good,1,1,cleanup good partition
+after,0,0,q,rmrf`:dbw_attr_tp,1,1,cleanup attr partition
+after,0,0,q,rmrf`:dbw_hdb,1,1,cleanup savedown hdb tree

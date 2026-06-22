@@ -3,4 +3,4 @@
 
 \l ::dbwrite.q
 
-export:([init;savedown;appenddown;sort;applyattr;loadconfig;gc])
+export:([init;readcsv;sort;applyattr;savedown;appenddown;manipulate;postreplay;gc])

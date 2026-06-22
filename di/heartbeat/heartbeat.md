@@ -22,7 +22,7 @@ signatures can be supplied.
 | Dependency | Keys | Required | Purpose |
 |------------|------|----------|---------|
 | `log` | `info` `warn` `error` (each `{[ctx;msg]}`) | always | logging |
-| `timer` | `addjob` (the full `di.timer` dict may be passed) | always | scheduling the publish / check / subscribe jobs |
+| `timer` | `addjob` `deletejobs` (the full `di.timer` dict may be passed) | always | scheduling the publish / check / subscribe jobs (`deletejobs` lets `init` be re-run safely) |
 | `pubsub` | `publish` (`{[table;data]}`) `subscribe` (`{[handle]}`) | always | publishing heartbeats / subscribing to publishers |
 | `servers` | `getservers` (`{[proctype]}` returning handles) | when `subenabled` | discovering heartbeat publishers by process type |
 | `handlers` | `register` `remove` `list` | when `subenabled` | registering the connection-close (`.z.pc`) cleanup |
@@ -32,9 +32,9 @@ signatures can be supplied.
 required when `subenabled` is set (i.e. this process monitors other heartbeats);
 a pure publisher needs only `log`, `timer` and `pubsub`.
 
-Only the functions the module actually calls are accessed (`timer`'s `addjob`,
-`handlers`' `register`), but supplying the full contracted dictionary keeps the
-dependency interchangeable with the real `di.*` modules.
+Only the functions the module actually calls are accessed (`timer`'s `addjob` and
+`deletejobs`, `handlers`' `register`), but supplying the full contracted dictionary
+keeps the dependency interchangeable with the real `di.*` modules.
 
 The module keeps its **own** current-time function rather than taking it from the
 timer dependency (so it doesn't rely on the timer exporting a clock getter). It
@@ -106,9 +106,9 @@ logdep: `info`warn`error!(logmod.info;logmod.warn;logmod.error)
 
 timer: use `di.timer
 timer.init[()!()]
-// heartbeat only needs addjob from the timer - it keeps its own clock (see setcp)
+// heartbeat needs addjob and deletejobs from the timer - it keeps its own clock (see setcp)
 // note: di.timer's addjob is a namespace; addjob.custom has the [id;func;params;period;mode;opts] signature heartbeat calls
-timerdep: enlist[`addjob]!enlist timer.addjob.custom
+timerdep: `addjob`deletejobs!(timer.addjob.custom; timer.deletejobs)
 
 // a pubsub dependency must provide publish[table;data] and subscribe[handle]
 pubsub: use `di.pubsub

@@ -69,6 +69,7 @@ setdeps:{[deps]
   .z.m.logerr:logdict`error;
   timerdict:requiredep[deps;`timer];
   .z.m.timeraddjob:timerdict`addjob;
+  .z.m.timerdeletejobs:timerdict`deletejobs;
   pubsubdict:requiredep[deps;`pubsub];
   .z.m.pubsubpublish:pubsubdict`publish;
   .z.m.pubsubsubscribe:pubsubdict`subscribe;
@@ -95,6 +96,8 @@ registertimers:{
   / schedule the periodic heartbeat jobs via the injected timer
   / mode 2 = period after previous actual start - a heartbeat says "alive now", so
   / missed beats must not be replayed as a catch-up storm (which mode 1 would do)
+  / clear any previously-registered jobs first so init is safe to call again
+  .z.m.timerdeletejobs[`hbpublish`hbcheck`hbsubscribe];
   if[enabled;
     .z.m.timeraddjob[`hbpublish;publishheartbeat;();tosecs publishinterval;2;()!()];
     .z.m.timeraddjob[`hbcheck;checkheartbeat;();tosecs checkinterval;2;()!()]];
@@ -113,7 +116,7 @@ init:{[config;deps]
   / config - dictionary of configuration overrides (see configkeys), or (::) for defaults
   / deps   - dictionary of injected dependencies keyed by name, each a dictionary of functions:
   /   `log      - `info`warn`error            - required
-  /   `timer    - `addjob (full di.timer dict may be passed) - required
+  /   `timer    - `addjob`deletejobs (full di.timer dict may be passed) - required
   /   `pubsub   - `publish`subscribe          - required
   /   `servers  - `getservers                 - required when subenabled
   /   `handlers - `register`remove`list       - required when subenabled

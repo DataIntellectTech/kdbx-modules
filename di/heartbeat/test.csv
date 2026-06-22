@@ -3,7 +3,7 @@ comment,,,,,,,Setup - load module and inject mock dependencies
 before,0,0,q,heartbeat:use`di.heartbeat,1,1,load the heartbeat module
 before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent log mock
 before,0,0,q,.test.now:2025.01.01D00:00:00.000,1,1,controllable current time for the timer mock
-before,0,0,q,timerdep:enlist[`addjob]!enlist {[id;func;params;period;mode;opts]},1,1,timer mock - heartbeat only requires addjob
+before,0,0,q,timerdep:`addjob`deletejobs!({[id;func;params;period;mode;opts]};{[ids]}),1,1,timer mock - heartbeat requires addjob and deletejobs
 before,0,0,q,psdep:`publish`subscribe!({[t;x] .test.pubt:t;.test.pubx:x;.test.pubcount:.test.pubcount+1};{[h] .test.subh:h}),1,1,pubsub mock capturing publish and subscribe
 before,0,0,q,.test.pubcount:0,1,1,initialise publish counter
 before,0,0,q,deps:`log`timer`pubsub!(logdep;timerdep;psdep),1,1,assemble dependency dictionary
@@ -62,6 +62,13 @@ fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist logdep],1,1,errors when time
 fail,0,0,q,heartbeat.init[()!();`log`timer!(logdep;timerdep)],1,1,errors when pubsub dependency missing
 fail,0,0,q,heartbeat.init[enlist[`subenabled]!enlist 1b;`log`timer`pubsub!(logdep;timerdep;psdep)],1,1,monitor errors when servers dependency missing
 
+comment,,,,,,,init is idempotent - re-running clears jobs first instead of colliding on ids
+run,0,0,q,.test.jobids:(`$())!`boolean$(),1,1,track registered job ids
+run,0,0,q,timerdep2:`addjob`deletejobs!({[id;func;params;period;mode;opts] if[id in key .test.jobids;'"duplicate job id"]; .test.jobids[id]:1b};{[ids] .test.jobids:(key[.test.jobids] except ids)#.test.jobids}),1,1,stateful timer mock that rejects duplicate job ids like di.timer
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(logdep;timerdep2;psdep)],1,1,first init registers the jobs
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(logdep;timerdep2;psdep)],1,1,second init must not collide - clears then re-adds
+true,0,0,q,`hbcheck`hbpublish~asc key .test.jobids,1,1,exactly the publish and check jobs are registered after re-init
+
 comment,,,,,,,real-process integration - a background publisher beats over real di.pubsub into this process
 run,0,0,q,system"q -p 5050 -q &",1,,start a background heartbeat publisher
 run,0,0,q,system"sleep 1",1,,wait for the publisher to come up
@@ -73,7 +80,7 @@ run,0,0,q,h"pubsub:use`di.pubsub",1,,load pubsub on the publisher
 run,0,0,q,h"heartbeat:.m.di.0heartbeat.heartbeat",1,,expose the heartbeat schema at root for pubsub
 run,0,0,q,h"pubsub.init[]",1,,initialise the pubsub registry on the publisher
 run,0,0,q,h"logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,silent log dep on the publisher
-run,0,0,q,h"timerdep:enlist[`addjob]!enlist{[id;func;params;period;mode;opts]}",1,,no-op timer dep - publish is triggered manually for determinism
+run,0,0,q,h"timerdep:`addjob`deletejobs!({[id;func;params;period;mode;opts]};{[ids]})",1,,no-op timer dep - publish is triggered manually for determinism
 run,0,0,q,h"psdep:`publish`subscribe!(pubsub.publish;{[x]})",1,,inject the real pubsub publish into heartbeat
 run,0,0,q,h"hbmod.init[`proctype`procname`port!(`rdb;`pub1;5050i);`log`timer`pubsub!(logdep;timerdep;psdep)]",1,,init the publisher as an rdb named pub1
 run,0,0,q,upd:{[t;x] if[`heartbeat~t; heartbeat.storeheartbeat x]},1,,route incoming beats into the local store

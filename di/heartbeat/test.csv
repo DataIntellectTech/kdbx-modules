@@ -56,12 +56,14 @@ true,0,0,q,5i~.test.subh,1,1,subscribe dependency was invoked with the handle
 run,0,0,q,.m.di.0heartbeat.closeconnection[5i],1,1,simulate connection close
 true,0,0,q,not 5i in .m.di.0heartbeat.subscribedhandles,1,1,handle removed on close
 
-comment,,,,,,,log is optional - omitting it falls back to a no-op logger (init still logs at the end)
-run,0,0,q,heartbeat.init[`proctype`procname!(`rdb;`rdb1);`timer`pubsub!(timerdep;psdep)],1,1,init without a log dep falls back to no-op logging without error
-run,0,0,q,heartbeat.checkheartbeat[],1,1,a logging code path runs safely under the no-op logger
+comment,,,,,,,log is required - init errors clearly when deps or log is missing or malformed
+fail,0,0,q,heartbeat.init[()!();(::)],1,1,errors when deps is not a dictionary
+fail,0,0,q,heartbeat.init[()!();()!()],1,1,errors when log dependency missing
+fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist 42],1,1,errors when log value is not a dictionary
+fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,errors when log dict is missing the error key
 
 comment,,,,,,,timer and pubsub are required - init errors when they are missing
-fail,0,0,q,heartbeat.init[()!();()!()],1,1,errors when timer dependency missing (no deps supplied)
+fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist logdep],1,1,errors when timer dependency missing
 fail,0,0,q,heartbeat.init[()!();`log`timer!(logdep;timerdep)],1,1,errors when pubsub dependency missing
 fail,0,0,q,heartbeat.init[enlist[`subenabled]!enlist 1b;`log`timer`pubsub!(logdep;timerdep;psdep)],1,1,monitor errors when servers dependency missing
 run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);deps],1,1,re-init with full mock deps and subenabled 0b to restore clean module state (prior fail test left subenabled 1b)

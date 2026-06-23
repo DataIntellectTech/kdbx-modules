@@ -4,8 +4,8 @@
 / blocked - even when the underlying connection is still valid
 / the module handles both publishing heartbeats and, on the monitoring side,
 / storing received heartbeats and raising warnings / errors when they stop
-/ runtime dependencies are injected via init - timer and pubsub are required (init errors
-/ if missing); log is an optional kx.log-style logger with a no-op fallback - see heartbeat.md
+/ runtime dependencies are injected via init and are required - log, timer and pubsub always
+/ (servers and handlers when monitoring); init errors immediately if one is missing - see heartbeat.md
 / module-local state convention: read config bare, mutate via .z.m, and access
 / injected dependencies via .z.m at every call site
 
@@ -54,10 +54,6 @@ configkeys:`enabled`subenabled`debug`publishinterval`checkinterval`warningtolera
 warningperiod:{[processtype] `timespan$warningtolerance*publishinterval};
 errorperiod:{[processtype] `timespan$errortolerance*publishinterval};
 
-/ no-op fallback logger - used when no (or an incomplete) log dependency is injected
-/ functions are unary {[msg]} to match the kx.log logger contract
-defaultlog:`info`warn`error!({[m]};{[m]};{[m]});
-
 requiredep:{[deps;name]
   / extract a required dependency dictionary, erroring immediately if absent or null
   d:$[99h=type deps;$[(name in key deps) and not (::)~deps name;deps name;()!()];()!()];
@@ -68,12 +64,16 @@ requiredep:{[deps;name]
 
 setdeps:{[deps]
   / extract and store injected dependencies under .z.m (log kept whole; the rest as the functions used)
-  / log is optional (a kx.log logger; no-op fallback if absent or missing a mandatory level);
-  / only info/warn/error are mandated - the whole logger is kept, so any extra levels the
-  / user provides (debug/fatal/custom, kx.log format controls) remain available
-  / timer and pubsub are always required; servers and handlers only when monitoring
-  lograw:$[99h=type deps;$[`log in key deps;deps`log;(::)];(::)];
-  .z.m.log:$[99h=type lograw;$[all `info`warn`error in key lograw;lograw;defaultlog];defaultlog];
+  / log, timer and pubsub are required; servers and handlers only when monitoring
+  / init errors immediately if deps is not a dictionary or a required dependency is missing/malformed
+  / nested if guards (not and) - and evaluates both sides eagerly and key would throw on a non-dict
+  if[99h<>type deps;'"di.heartbeat: deps must be a dictionary of injected dependencies - see heartbeat.md"];
+  / log - required: a dict providing info/warn/error (e.g. a kx.log logger); only those three are
+  / mandated but the whole logger is kept, so extra levels (debug/fatal/custom) remain available
+  if[not `log in key deps;'"di.heartbeat: log dependency is required; pass a logger keyed on `log - see kx.log"];
+  if[99h<>type deps`log;'"di.heartbeat: log value must be a dict of info/warn/error functions"];
+  if[not all `info`warn`error in key deps`log;'"di.heartbeat: log dict must have `info`warn`error keys; got: ",", " sv string key deps`log];
+  .z.m.log:deps`log;
   timerdict:requiredep[deps;`timer];
   .z.m.timeraddjob:timerdict`addjob;
   .z.m.timerdeletejobs:timerdict`deletejobs;
@@ -130,7 +130,7 @@ init:{[config;deps]
   / initialise the module with configuration and injected dependencies - see heartbeat.md
   / config - dictionary of configuration overrides (see configkeys), or (::) for defaults
   / deps   - dictionary of injected dependencies keyed by name, each a dictionary of functions:
-  /   `log      - a kx.log logger - optional; must provide unary info/warn/error, may provide more
+  /   `log      - a kx.log logger - required; must provide unary info/warn/error, may provide more
   /   `timer    - `addjob`deletejobs (full di.timer dict may be passed) - required
   /   `pubsub   - `publish`subscribe          - required
   /   `servers  - `getservers                 - required when subenabled

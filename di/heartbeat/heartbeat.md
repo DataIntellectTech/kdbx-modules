@@ -21,15 +21,18 @@ any module exporting the contracted function signatures can be supplied.
 
 | Dependency | Keys | Required | Purpose |
 |------------|------|----------|---------|
-| `log` | `info` `warn` `error` (each unary `{[msg]}` - a `kx.log` logger) | optional (no-op fallback) | logging |
+| `log` | a `kx.log` logger - **must** provide unary `info` `warn` `error` (`{[msg]}`); extra levels allowed | optional (no-op fallback) | logging |
 | `timer` | `addjob` `deletejobs` (the full `di.timer` dict may be passed) | always | scheduling the publish / check / subscribe jobs (`deletejobs` lets `init` be re-run safely) |
 | `pubsub` | `publish` (`{[table;data]}`) `subscribe` (`{[handle]}`) | always | publishing heartbeats / subscribing to publishers |
 | `servers` | `getservers` (`{[proctype]}` returning handles) | when `subenabled` | discovering heartbeat publishers by process type |
 | `handlers` | `register` `remove` `list` | when `subenabled` | registering the connection-close (`.z.pc`) cleanup |
 
-`log` is a `kx.log` logger (its `info`/`warn`/`error` are **unary** `{[msg]}` - the
-context tag is folded into the message, e.g. `"heartbeat: ..."`). It is optional: if
-absent or missing any of `info`/`warn`/`error`, the module logs to a silent no-op.
+`log` is a `kx.log` logger. Only `info`/`warn`/`error` are **mandated** (each unary
+`{[msg]}` - the context tag is folded into the message, e.g. `"heartbeat: ..."`); the
+**whole logger is retained**, so any extra levels or controls it provides (`debug`,
+`fatal`, custom levels, `kx.log` format/level setters) remain available and are not
+stripped. It is optional: if absent, or missing any of `info`/`warn`/`error`, the
+module logs to a silent no-op.
 `timer` and `handlers` otherwise follow the standard kdb-x core dependency contracts;
 `pubsub` and `servers` are heartbeat-specific. `servers` and `handlers` are only
 required when `subenabled` is set (i.e. this process monitors other heartbeats);

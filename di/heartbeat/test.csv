@@ -72,6 +72,12 @@ run,0,0,q,caplog:`info`warn`error!({[m] .test.loginfo:m};{[m] .test.logwarn:m};{
 run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(caplog;timerdep;psdep)],1,1,init with the capturing logger
 true,0,0,q,.test.loginfo~"heartbeat: di.heartbeat initialised",1,1,init message routed through the injected logger not the no-op fallback
 
+comment,,,,,,,only info/warn/error are mandated - a richer logger is accepted and kept whole
+run,0,0,q,caplog2:`info`warn`error`debug!({[m]};{[m]};{[m]};{[m]}),1,1,logger providing an extra debug level beyond the mandatory three
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(caplog2;timerdep;psdep)],1,1,init with the richer logger
+true,0,0,q,`debug in key .m.di.0heartbeat.log,1,1,extra level retained - the whole logger is kept not stripped to three functions
+true,0,0,q,all `info`warn`error in key .m.di.0heartbeat.log,1,1,mandatory levels present
+
 comment,,,,,,,init is idempotent - re-running clears jobs first instead of colliding on ids
 run,0,0,q,.test.jobids:(`$())!`boolean$(),1,1,track registered job ids
 run,0,0,q,timerdep2:`addjob`deletejobs!({[id;func;params;period;mode;opts] if[id in key .test.jobids;'"duplicate job id"]; .test.jobids[id]:1b};{[ids] .test.jobids:(key[.test.jobids] except ids)#.test.jobids}),1,1,stateful timer mock that rejects duplicate job ids like di.timer

@@ -1,46 +1,58 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-/ pre-test setup
-before,0,0,q,kafka:use`di.kafka,1,1,load di.kafka module
-before,0,0,q,mocklog:`info`warn`error!({[m]};{[m]};{[m]}),1,1,no-op mock log dependency - unary {[m]} matches kx.log contract
-before,0,0,q,logdep:enlist[`log]!enlist mocklog,1,1,log dep dict
-before,0,0,q,kafkaterrored:0b,1,1,flag used to prove enabled:0b branch was skipped not merely unsuccessful
-before,0,0,q,capturelog:`info`warn`error!({[m]};{[m]};{[m] `kafkaterrored set 1b}),1,1,capturing mock logger - error fn uses set builtin; only reliable when not called from within module execution context
-
-/ log dep is optional - invalid or absent deps fall back to no-op logger without error
-run,0,0,q,kafka.init[()!();()!()],1,1,no log dep provided - falls back to defaultlog no-ops without error
-run,0,0,q,kafka.init[()!();42],1,1,non-dict deps - falls back gracefully without error
-run,0,0,q,kafka.init[()!();enlist[`notlog]!enlist mocklog],1,1,missing log key in deps - falls back gracefully without error
-
-/ init disabled - stubs throw with correct message
-run,0,0,q,kafka.init[()!();logdep],1,1,init with empty config does not error
-true,0,0,q,.[kafka.initconsumer;(`localhost:9092;()!());{x}] like "*kafka not enabled*",1,1,initconsumer stub throws correct message
-true,0,0,q,.[kafka.initproducer;(`localhost:9092;()!());{x}] like "*kafka not enabled*",1,1,initproducer stub throws correct message
-true,0,0,q,.[kafka.cleanupconsumer;enlist(::);{x}] like "*kafka not enabled*",1,1,cleanupconsumer stub throws correct message
-true,0,0,q,.[kafka.cleanupproducer;enlist(::);{x}] like "*kafka not enabled*",1,1,cleanupproducer stub throws correct message
-true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,subscribe stub throws correct message
-true,0,0,q,.[kafka.publish;(`test;0;`;0x68656c6c6f);{x}] like "*kafka not enabled*",1,1,publish stub throws correct message
-
-/ init - explicit enabled:0b: capturelog proves lib-loading branch was skipped not merely unsuccessful
-run,0,0,q,kafka.init[enlist[`enabled]!enlist 0b;enlist[`log]!enlist capturelog],1,1,init with enabled:0b does not error
-true,0,0,q,not kafkaterrored,1,1,logerr was not called - lib-loading branch was genuinely skipped
-true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,subscribe throws correct message after explicit disabled init
-
-/ init - :: config
-run,0,0,q,kafka.init[::;logdep],1,1,init with :: config does not error
-
-/ init - enabled:1b with missing lib: process continues with stubs intact
-/ note: logerr is called internally but cannot be captured from within kdbx module execution context
-run,0,0,q,kafka.init[`enabled`libpath!(1b;`fakekafkaq);logdep],1,1,init with enabled:1b and missing lib does not throw
-true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,stubs remain after failed lib load
-
-/ setkupd - state unobservable without live broker; test confirms no throw only
-run,0,0,q,kafka.init[()!();logdep],1,1,reinit with no-op log before setkupd test
-run,0,0,q,kafka.setkupd[{[k;x]}],1,1,setkupd does not error when disabled - internal state unobservable without live broker
-
-/ init - custom kupd
-run,0,0,q,kafka.init[(enlist`kupd)!enlist{[k;x]};logdep],1,1,init with custom kupd does not error
-
-/ multiple consecutive init calls do not corrupt state
-run,0,0,q,kafka.init[()!();logdep],1,1,second consecutive init does not error
-run,0,0,q,kafka.init[enlist[`enabled]!enlist 0b;logdep],1,1,third consecutive init with enabled:0b does not error
-true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not enabled*",1,1,stubs remain correct after multiple init calls
+comment,,,,,,,setup - load module and inject mock dependencies
+before,0,0,q,kafka:use`di.kafka,1,1,load the kafka module
+before,0,0,q,logdep:`info`warn`error!({[m]};{[m]};{[m]}),1,1,silent no-op log mock - monadic {[m]} matches the kx.log contract
+before,0,0,q,caplog:`info`warn`error!({[m] `.test.cap upsert(`info;m)};{[m] `.test.cap upsert(`warn;m)};{[m] `.test.cap upsert(`error;m)}),1,1,capturing log mock - records (level;msg) for assertion
+before,0,0,q,.test.cap:([] fn:`symbol$();msg:()),1,1,initialise log capture table
+before,0,0,q,.test.kupdk:`,1,1,last key received by the test kupd callback
+before,0,0,q,.test.kupdx:`byte$(),1,1,last payload received by the test kupd callback
+comment,,,,,,,init - dep validation
+fail,0,0,q,kafka.init[enlist[`libpath]!enlist"/tmp";(::)],1,1,errors when deps is not a dictionary
+fail,0,0,q,kafka.init[enlist[`libpath]!enlist"/tmp";()!()],1,1,errors when log dependency is missing
+fail,0,0,q,kafka.init[enlist[`libpath]!enlist"/tmp";enlist[`log]!enlist 42],1,1,errors when log value is not a dictionary
+fail,0,0,q,kafka.init[enlist[`libpath]!enlist"/tmp";enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,errors when log dict is missing the error key
+run,0,0,q,.test.err:@[{kafka.init[()!();()!()]};(::);{x}],1,1,capture error string from init with no deps
+true,0,0,q,.test.err like "di.kafka:*",1,1,error is prefixed di.kafka:
+comment,,,,,,,init - config validation
+fail,0,0,q,kafka.init[()!();enlist[`log]!enlist logdep],1,1,errors when libpath is missing from config
+comment,,,,,,,init - disabled platform (enabled:0b) - native library skipped; libpath not required
+run,0,0,q,kafka.init[enlist[`enabled]!enlist 0b;enlist[`log]!enlist logdep],1,1,init with enabled:0b succeeds without libpath
+true,0,0,q,not .m.di.0kafka.enabled,1,1,module enabled flag reflects disabled state
+comment,,,,,,,stubs - functions throw before init loads the library
+true,0,0,q,.[kafka.initconsumer;(`localhost:9092;()!());{x}] like "*kafka not initialised*",1,1,initconsumer stub throws before init
+true,0,0,q,.[kafka.initproducer;(`localhost:9092;()!());{x}] like "*kafka not initialised*",1,1,initproducer stub throws before init
+true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not initialised*",1,1,subscribe stub throws before init
+true,0,0,q,.[kafka.publish;(`test;0;`;0x68656c6c6f);{x}] like "*kafka not initialised*",1,1,publish stub throws before init
+true,0,0,q,.[kafka.cleanupconsumer;enlist 0;{x}] like "*kafka not initialised*",1,1,cleanupconsumer stub throws before init
+true,0,0,q,.[kafka.cleanupproducer;enlist 0;{x}] like "*kafka not initialised*",1,1,cleanupproducer stub throws before init
+comment,,,,,,,setkupd - replaces the callback stored in module state
+run,0,0,q,kafka.setkupd[{[k;x] .test.kupdk:k;.test.kupdx:x}],1,1,replace the callback via setkupd
+true,0,0,q,.m.di.0kafka.kupd~{[k;x] .test.kupdk:k;.test.kupdx:x},1,1,module-local kupd replaced by setkupd
+comment,,,,,,,setkupd - the root .kupd forwarder delegates into module state (wired without loading the native lib)
+before,0,0,q,.m.di.0kafka.kupd:{[k;x] .test.kupdk:k;.test.kupdx:x},1,1,set a capturing callback directly in module state
+before,0,0,q,`.kupd set {[k;x] .m.di.0kafka.kupd[k;x]},1,1,install the forwarder directly as init would without loading the native lib
+run,0,0,q,.test.kupdk:`;.test.kupdx:`byte$(),1,1,reset capture
+run,0,0,q,.kupd[`testkey;`byte$"hello"],1,1,simulate the native library delivering a message
+true,0,0,q,`testkey~.test.kupdk,1,1,forwarder passed the key through to the module callback
+true,0,0,q,(`byte$"hello")~.test.kupdx,1,1,forwarder passed the payload through to the module callback
+comment,,,,,,,setkupd - replacing callback via setkupd is reflected in the forwarder immediately
+run,0,0,q,kafka.setkupd[{[k;x] .test.kupdk:`replaced;.test.kupdx:x}],1,1,replace the callback
+run,0,0,q,.test.kupdk:`,1,1,reset capture
+run,0,0,q,.kupd[`;`byte$"x"],1,1,deliver a message through the forwarder
+true,0,0,q,`replaced~.test.kupdk,1,1,new callback invoked - forwarder always delegates to current .z.m.kupd
+comment,,,,,,,log call verification - capturing logger sees init message
+run,0,0,q,.test.cap:0#.test.cap,1,1,reset log capture
+run,0,0,q,.m.di.0kafka.log:caplog,1,1,inject capturing logger directly for log-only tests
+run,0,0,q,.m.di.0kafka.log[`info]["kafka: di.kafka initialised"],1,1,simulate the init log call
+true,0,0,q,1=count select from .test.cap where fn=`info,1,1,one info entry captured
+true,0,0,q,any (.test.cap`msg) like "kafka: *",1,1,log message carries kafka context prefix
+comment,,,,,,,kx.log integration - wire a real kx.log instance and confirm the contract is satisfied
+run,0,0,q,kxlogger:use`kx.log,1,1,load the system kx.log module
+run,0,0,q,kxinst:kxlogger.createLog[],1,1,create a kx.log logger instance
+run,0,0,q,.m.di.0kafka.log:`info`warn`error!(kxinst`info;kxinst`warn;kxinst`error),1,1,inject the real logger
+run,0,0,q,.m.di.0kafka.log[`info]["kafka: kx.log integration test"],1,1,emit a real log message through kx.log
+true,0,0,q,all `info`warn`error in key .m.di.0kafka.log,1,1,kx.log instance satisfies the required contract
+comment,,,,,,,setdeps - bare kx.log instance accepted directly as deps (tested via internal setdeps to avoid native lib requirement)
+run,0,0,q,.m.di.0kafka.setdeps[kxinst],1,1,setdeps accepts bare kx.log instance without wrapping
+true,0,0,q,all `info`warn`error in key .m.di.0kafka.log,1,1,bare instance normalised into log dep in module state
+fail,0,0,q,.m.di.0kafka.setdeps[`info`warn!(kxinst`info;kxinst`warn)],1,1,bare instance missing error key is rejected

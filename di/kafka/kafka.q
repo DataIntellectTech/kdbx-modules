@@ -1,93 +1,104 @@
-/ kafka consumer/producer interface - wraps kafkaq native library
+/ kafka - wrapper around the kafkaq native library
+/ provides consumer and producer lifecycle management plus a configurable message callback
+/ the native library calls .kupd in the root namespace on message receipt; init sets a forwarder
+/ into .z.m.kupd so the callback can be replaced at runtime via setkupd without re-initialising
+/ the log dependency is required - init errors immediately if absent or malformed
+/ log functions are monadic {[msg]} loggers; a kx.log instance satisfies the contract
 
-/ default message handler - routes message through injected logger
-/ safe to reference .z.m.loginfo here: kupd can only fire after initconsumer+subscribe, both of which require init
-defaultkupd:{[k;x].z.m.loginfo["kafka: kupd: ","c"$x]};
+/ default message callback - prints message bytes as chars to stdout
+/ safe to use stdout here: kupd can only fire after initconsumer+subscribe, both require init
+/ override via setkupd or by passing kupd in the config dict to init
+defaultkupd:{[k;x] -1 `char$x;};
 
-/ default lib path derived from KDBLIB env var and os string
-/ override with libpath config key if KDBLIB is not set in the environment
-defaultlib:`$getenv[`KDBLIB],"/",string[.z.o],"/kafkaq";
-
-/ default no-op logger - used when no log dep is injected
-defaultlog:`info`warn`error!({[m]};{[m]};{[m]});
-
-/ ============================================================
-/ module state and defaults
-/ ============================================================
-
-/ whether native library is loaded - overwritten by init; true by default on l64
+/ configuration defaults
+kupd:defaultkupd;
 enabled:.z.o in `l64;
 
-/ path to kafkaq library without file extension - overwritten by init
-lib:defaultlib;
-
-/ message handler called by C library on message receipt - overwritten by init
-kupd:defaultkupd;
-
 / ============================================================
-/ native function stubs - replaced by init when enabled:1b and library loads
+/ native function stubs - replaced by bindfunctions when library loads
 / ============================================================
 
-/ initialise consumer with broker address and option dictionary
-initconsumer:{[s;o]'"kafka not enabled"};
+initconsumer:{[s;o]'"di.kafka: kafka not initialised - call init first"};
+initproducer:{[s;o]'"di.kafka: kafka not initialised - call init first"};
+cleanupconsumer:{[h]'"di.kafka: kafka not initialised - call init first"};
+cleanupproducer:{[h]'"di.kafka: kafka not initialised - call init first"};
+subscribe:{[t;p]'"di.kafka: kafka not initialised - call init first"};
+publish:{[t;p;k;m]'"di.kafka: kafka not initialised - call init first"};
 
-/ initialise producer with broker address and option dictionary
-initproducer:{[s;o]'"kafka not enabled"};
+/ ============================================================
+/ internal functions
+/ ============================================================
 
-/ disconnect and free consumer object and stop subscription thread - rank-1 matches C lib 2:(`cleanupconsumer;1)
-cleanupconsumer:{[x]'"kafka not enabled"};
+setdeps:{[deps]
+  / accept a bare kx.log instance (info/warn/error at top level) or a full deps dict keyed on `log
+  d:$[(99h=type deps)and not `log in key deps;enlist[`log]!enlist deps;deps];
+  logval:$[99h=type d;$[`log in key d;d`log;(::)];(::)];
+  if[not $[99h=type logval;all `info`warn`error in key logval;0b];
+    '"di.kafka: log dep required - pass a kx.log instance or `info`warn`error!(infofn;warnfn;errfn) keyed on `log"];
+  .z.m.log:logval;
+  };
 
-/ disconnect and free producer object - rank-1 matches C lib 2:(`cleanupproducer;1)
-cleanupproducer:{[x]'"kafka not enabled"};
+setconfig:{[config]
+  / apply recognised configuration overrides on top of current defaults; returns normalised cfg dict
+  cfg:$[99h=type config;config;()!()];
+  if[`enabled in key cfg; .z.m.enabled:cfg`enabled];
+  if[`libpath in key cfg; .z.m.lib:cfg`libpath];
+  if[`kupd in key cfg; .z.m.kupd:cfg`kupd];
+  cfg
+  };
 
-/ start subscription thread for topic on partition - messages delivered to kupd
-subscribe:{[t;p]'"kafka not enabled"};
+loadlib:{[libpath]
+  / resolve and load the native kafkaq shared library from the configured path
+  / the os-appropriate extension (.so or .dll) is appended automatically
+  lib:`$string[libpath],"/",string[.z.o],"/kafkaq";
+  libfile:hsym ` sv lib,$[.z.o like "w*";`dll;`so];
+  libexists:@[{not ()~key x};libfile;{0b}];
+  if[not libexists;
+    .z.m.log[`error]["kafka: native library not found at ",string libfile];
+    '"di.kafka: native library not found at ",string libfile];
+  .z.m.log[`info]["kafka: loading library ",string libfile];
+  .z.m.lib:lib;
+  };
 
-/ publish byte vector to topic and partition with given key
-publish:{[t;p;k;m]'"kafka not enabled"};
+bindfunctions:{[]
+  / bind the six c functions from the loaded kafkaq library into module-local state
+  / overwrites the stubs defined at module level
+  .z.m.initconsumer:.z.m.lib 2:(`initconsumer;2);
+  .z.m.initproducer:.z.m.lib 2:(`initproducer;2);
+  .z.m.cleanupconsumer:.z.m.lib 2:(`cleanupconsumer;1);
+  .z.m.cleanupproducer:.z.m.lib 2:(`cleanupproducer;1);
+  .z.m.subscribe:.z.m.lib 2:(`subscribe;2);
+  .z.m.publish:.z.m.lib 2:(`publish;4);
+  };
 
 / ============================================================
 / public api
 / ============================================================
 
 setkupd:{[f]
-  / update message handler; propagate to global kupd for C callback if enabled
+  / replace the message callback invoked when a subscribed message arrives
+  / f must be a binary function {[k;x]} where k is the message key (symbol) and x is the payload (bytes)
+  / the root .kupd forwarder always delegates to the current value - swap takes effect immediately
+  / note: messages in-flight from the c background thread may briefly invoke the previous handler
   .z.m.kupd:f;
-  if[.z.m.enabled;@[`.;`kupd;:;f]];
   };
 
 init:{[config;deps]
-  / config: dict with optional keys `enabled`libpath`kupd
-  / deps: optional. `log key should be a kx.log logger instance (from kx.log.createLog[])
-  /   if absent or missing info/warn/error keys, falls back to no-op logger
-  / extract deps`log safely; type check before key avoids crash on non-dict lograw (e.g. deps=(::))
-  lograw:$[99h=type deps;@[deps;`log;{(::)}];(::)];
-  logdict:$[99h=type lograw;$[all `info`warn`error in key lograw;lograw;defaultlog];defaultlog];
-  .z.m.loginfo:logdict`info;
-  .z.m.logwarn:logdict`warn;
-  .z.m.logerr:logdict`error;
-  / normalise config - handles (::) and ()!() identically
-  cfg:$[99h=type config;config;()!()];
-  .z.m.enabled:$[`enabled in key cfg;cfg`enabled;.z.o in `l64];
-  .z.m.lib:$[`libpath in key cfg;cfg`libpath;defaultlib];
-  .z.m.kupd:$[`kupd in key cfg;cfg`kupd;defaultkupd];
-  if[.z.m.enabled;
-    libfile:hsym ` sv .z.m.lib,$[.z.o like "w*";`dll;`so];
-    / protected key - kdbx throws on paths with non-existent ancestors
-    libexists:@[{not ()~key x};libfile;{0b}];
-    if[not libexists;
-      .z.m.logerr["kafka: no such file ",1_string libfile]
-      ];
-    if[libexists;
-      .z.m.initconsumer:.z.m.lib 2:(`initconsumer;2);
-      .z.m.initproducer:.z.m.lib 2:(`initproducer;2);
-      .z.m.cleanupconsumer:.z.m.lib 2:(`cleanupconsumer;1);
-      .z.m.cleanupproducer:.z.m.lib 2:(`cleanupproducer;1);
-      .z.m.subscribe:.z.m.lib 2:(`subscribe;2);
-      .z.m.publish:.z.m.lib 2:(`publish;4);
-      / set global kupd - unavoidable side effect of native library design
-      @[`.;`kupd;:;.z.m.kupd];
-      .z.m.loginfo["kafka: kupd set to ",-3!.z.m.kupd];
-      ];
+  / initialise the kafka module - validate deps, apply config, load native library
+  / config: required dict with `libpath (root library directory - os subdirectory is appended automatically)
+  /         optionally `kupd to set a custom message callback
+  / deps:   kx.log instance (passed directly) or dict with `log -> `info`warn`error!(infofn;warnfn;errfn)
+  / example:
+  /   kafka.init[enlist[`libpath]!enlist`$/opt/kdb/lib;kxlog.createLog[]]
+  setdeps deps;
+  cfg:setconfig config;
+  if[enabled;
+    if[not `libpath in key cfg;
+      '"di.kafka: config must contain `libpath - root library directory containing the os-specific kafkaq build"];
+    loadlib cfg`libpath;
+    bindfunctions[];
+    / install the root .kupd forwarder so the native library delegates to our configurable callback
+    `.kupd set {[k;x] .z.m.kupd[k;x]};
     ];
+  .z.m.log[$[enabled;`info;`warn]]["kafka: di.kafka initialised",$[enabled;"";" (native library not loaded - platform not supported)"]];
   };

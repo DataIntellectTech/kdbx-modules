@@ -29,6 +29,7 @@ readcsv:{[file]
     '"di.dbwrite: readcsv file must be a symbol, got type ",string type file];
   file:hsym file;
   t:parsecsv @[readfile; file; readerr[file]];
+  checkconfig t;
   .z.m.log[`info][`dbwrite;"read ",(string count t)," sort config row(s) from ",string file];
   .z.m.sortconfig:t;
   };
@@ -38,6 +39,11 @@ setconfig:{[t]
   / t must be a table with columns tabname,att,column,sort
   checkconfig t;
   .z.m.sortconfig:t;
+  };
+
+getconfig:{[]
+  / return the current sort config stored in .z.m.sortconfig; (::) if not yet set
+  :.z.m.sortconfig;
   };
 
 / internal - protected file read; only the i/o so a genuine read failure gets the readerr message

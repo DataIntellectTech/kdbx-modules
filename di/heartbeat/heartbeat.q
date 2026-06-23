@@ -4,8 +4,8 @@
 / blocked - even when the underlying connection is still valid
 / the module handles both publishing heartbeats and, on the monitoring side,
 / storing received heartbeats and raising warnings / errors when they stop
-/ runtime dependencies are injected via init and are required - the module errors
-/ immediately if a required dependency is missing - see heartbeat.md
+/ runtime dependencies are injected via init - timer and pubsub are required (init errors
+/ if missing); log is an optional kx.log-style logger with a no-op fallback - see heartbeat.md
 / module-local state convention: read config bare, mutate via .z.m, and access
 / injected dependencies via .z.m at every call site
 
@@ -52,6 +52,10 @@ configkeys:`enabled`subenabled`debug`publishinterval`checkinterval`warningtolera
 warningperiod:{[processtype] `timespan$warningtolerance*publishinterval};
 errorperiod:{[processtype] `timespan$errortolerance*publishinterval};
 
+/ no-op fallback logger - used when no (or an incomplete) log dependency is injected
+/ functions are unary {[msg]} to match the kx.log logger contract
+defaultlog:`info`warn`error!({[m]};{[m]};{[m]});
+
 requiredep:{[deps;name]
   / extract a required dependency dictionary, erroring immediately if absent or null
   d:$[99h=type deps;$[(name in key deps) and not (::)~deps name;deps name;()!()];()!()];
@@ -61,9 +65,11 @@ requiredep:{[deps;name]
   };
 
 setdeps:{[deps]
-  / extract and store the required dependencies, flattened for access via .z.m
-  / log, timer and pubsub are always required; servers and handlers only when monitoring
-  logdict:requiredep[deps;`log];
+  / extract and store injected dependencies, flattened for access via .z.m
+  / log is optional (a kx.log logger; no-op fallback if absent or incomplete);
+  / timer and pubsub are always required; servers and handlers only when monitoring
+  lograw:$[99h=type deps;$[`log in key deps;deps`log;(::)];(::)];
+  logdict:$[99h=type lograw;$[all `info`warn`error in key lograw;lograw;defaultlog];defaultlog];
   .z.m.loginfo:logdict`info;
   .z.m.logwarn:logdict`warn;
   .z.m.logerr:logdict`error;
@@ -115,7 +121,7 @@ init:{[config;deps]
   / initialise the module with configuration and injected dependencies - see heartbeat.md
   / config - dictionary of configuration overrides (see configkeys), or (::) for defaults
   / deps   - dictionary of injected dependencies keyed by name, each a dictionary of functions:
-  /   `log      - `info`warn`error            - required
+  /   `log      - a kx.log logger (unary info/warn/error) - optional, no-op fallback
   /   `timer    - `addjob`deletejobs (full di.timer dict may be passed) - required
   /   `pubsub   - `publish`subscribe          - required
   /   `servers  - `getservers                 - required when subenabled
@@ -127,7 +133,7 @@ init:{[config;deps]
   setdeps deps;
   registertimers[];
   registerhandlers[];
-  .z.m.loginfo[`heartbeat;"di.heartbeat initialised"];
+  .z.m.loginfo["heartbeat: di.heartbeat initialised"];
   };
 
 publishheartbeat:{
@@ -152,12 +158,12 @@ addprocs:{[proctypes;procnames]
 
 logwarnproc:{[r]
   / log a single process moving into warning state
-  .z.m.logwarn[`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
+  .z.m.logwarn["heartbeat: process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
   };
 
 logerrproc:{[r]
   / log a single process moving into error state
-  .z.m.logerr[`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
+  .z.m.logerr["heartbeat: process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
   };
 
 warn:{[procs]
@@ -191,7 +197,7 @@ checkheartbeat:{
 
 subscribeone:{[h]
   / subscribe to a single remote heartbeat publisher, logging and skipping on failure
-  ok:@[{.z.m.pubsubsubscribe x;1b};h;{[h;e] .z.m.logerr[`heartbeat;"failed to subscribe to heartbeats on handle ",(string h),": ",e];0b}[h]];
+  ok:@[{.z.m.pubsubsubscribe x;1b};h;{[h;e] .z.m.logerr["heartbeat: failed to subscribe to heartbeats on handle ",(string h),": ",e];0b}[h]];
   if[ok;.z.m.subscribedhandles:distinct subscribedhandles,h];
   };
 
@@ -204,7 +210,7 @@ getheartbeats:{[proctype]
   / subscribe to publishers of the given process type(s) that are not yet subscribed
   handles:(.z.m.serversgetservers proctype) except subscribedhandles;
   if[count handles;
-    .z.m.loginfo[`heartbeat;"subscribing to new heartbeat handle(s) ",", " sv string handles];
+    .z.m.loginfo["heartbeat: subscribing to new heartbeat handle(s) ",", " sv string handles];
     subscribe handles];
   };
 

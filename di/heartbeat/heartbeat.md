@@ -14,23 +14,26 @@ It covers both sides:
 ## Dependencies
 
 All runtime dependencies are **injected** via `init` as dictionaries of functions
-(`` `dependency!(dict of functions) ``). They are **required** - `init` errors
-immediately with a clear message if a required dependency is missing. There is no
-hard dependency on any other module: any module exporting the contracted function
-signatures can be supplied.
+(`` `dependency!(dict of functions) ``). The functional dependencies are **required** -
+`init` errors immediately with a clear message if one is missing. `log` is **optional**
+and falls back to a no-op logger. There is no hard dependency on any other module:
+any module exporting the contracted function signatures can be supplied.
 
 | Dependency | Keys | Required | Purpose |
 |------------|------|----------|---------|
-| `log` | `info` `warn` `error` (each `{[ctx;msg]}`) | always | logging |
+| `log` | `info` `warn` `error` (each unary `{[msg]}` - a `kx.log` logger) | optional (no-op fallback) | logging |
 | `timer` | `addjob` `deletejobs` (the full `di.timer` dict may be passed) | always | scheduling the publish / check / subscribe jobs (`deletejobs` lets `init` be re-run safely) |
 | `pubsub` | `publish` (`{[table;data]}`) `subscribe` (`{[handle]}`) | always | publishing heartbeats / subscribing to publishers |
 | `servers` | `getservers` (`{[proctype]}` returning handles) | when `subenabled` | discovering heartbeat publishers by process type |
 | `handlers` | `register` `remove` `list` | when `subenabled` | registering the connection-close (`.z.pc`) cleanup |
 
-`log`, `timer` and `handlers` follow the standard kdb-x core dependency contracts;
+`log` is a `kx.log` logger (its `info`/`warn`/`error` are **unary** `{[msg]}` - the
+context tag is folded into the message, e.g. `"heartbeat: ..."`). It is optional: if
+absent or missing any of `info`/`warn`/`error`, the module logs to a silent no-op.
+`timer` and `handlers` otherwise follow the standard kdb-x core dependency contracts;
 `pubsub` and `servers` are heartbeat-specific. `servers` and `handlers` are only
 required when `subenabled` is set (i.e. this process monitors other heartbeats);
-a pure publisher needs only `log`, `timer` and `pubsub`.
+a pure publisher needs only `timer` and `pubsub`.
 
 Only the functions the module actually calls are accessed (`timer`'s `addjob` and
 `deletejobs`, `handlers`' `register`), but supplying the full contracted dictionary
@@ -98,11 +101,9 @@ recognised key may be supplied; unset keys keep their defaults.
 // load the module
 heartbeat: use `di.heartbeat
 
-// build dependency dictionaries (here from di.log and di.timer)
-// note: bound as logmod, not log, since log is a reserved q word
-logmod: use `di.log
-logmod.init[()!()]
-logdep: `info`warn`error!(logmod.info;logmod.warn;logmod.error)
+// log is an optional kx.log logger instance (its info/warn/error are unary)
+logger: use `kx.log
+log: logger.createLog[]
 
 timer: use `di.timer
 timer.init[()!()]
@@ -114,8 +115,8 @@ timerdep: `addjob`deletejobs!(timer.addjob.custom; timer.deletejobs)
 pubsub: use `di.pubsub
 psdep: `publish`subscribe!(pubsub.publish; {[h] h(`.m.di.0pubsub.subscribe;`heartbeat;`)})
 
-// initialise as a publishing RDB (log, timer and pubsub are all required)
-heartbeat.init[`proctype`procname!(`rdb;`rdb1); `log`timer`pubsub!(logdep;timerdep;psdep)]
+// initialise as a publishing RDB - timer and pubsub required, log optional
+heartbeat.init[`proctype`procname!(`rdb;`rdb1); `log`timer`pubsub!(log;timerdep;psdep)]
 
 // publish a heartbeat immediately (normally the timer does this)
 heartbeat.publishheartbeat[]

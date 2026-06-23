@@ -14,7 +14,6 @@ The sorting/attribute engine is `di.sort` baked in directly: a **config table** 
 - Append rows to an existing partition with `appenddown` — enumerates syms and appends; sort separately when the partition is complete
 - Sort on-disk table partitions by configured columns using `xasc`, then apply kdb+ attributes (`p`,`s`,`g`,`u`)
 - Config supplied as an in-memory table or read from a CSV (`readcsv`); a `default` row or `(::)` provides a fallback
-- Run `.Q.gc[]` with before/after memory logging
 - Sort and attribute errors are caught-and-logged (a single partition failure does not halt the run); config and write errors are raised to the caller with a `di.dbwrite:` prefix
 
 ---
@@ -23,13 +22,14 @@ The sorting/attribute engine is `di.sort` baked in directly: a **config table** 
 
 | Dependency | Key | Required | Description |
 |---|---|---|---|
-| logger | `` `log `` | yes | Functions `info`,`warn`,`error` — each `{[ctx;msg] ...}` |
+| logger | `` `log `` | yes | Functions `info`,`warn`,`error` — each monadic `{[msg] ...}` |
 
-The `log` dependency must be passed to `init`. The module throws if it is absent, `(::)`, or missing any of the three keys. `di.log` satisfies the contract:
+The `log` dependency must be passed to `init`. The module throws if it is absent, `(::)`, or missing any of the three keys. The functions are monadic message loggers (`{[msg] ...}`); a [`kx.log`](https://github.com/KxSystems/logging) instance satisfies the contract. The module folds its own context into each message as a `dbwrite:` prefix, so no per-call context argument is needed:
 
 ```q
-log:use`di.log
-logdep:`info`warn`error!(log.info;log.warn;log.error)
+logger:use`kx.log
+loginst:logger.createLog[]
+logdep:`info`warn`error!(loginst`info;loginst`warn;loginst`error)
 dbwrite:use`di.dbwrite
 dbwrite.init[enlist[`log]!enlist logdep]
 ```
@@ -66,7 +66,6 @@ default,,time,1
 | `savedown[config;dir;part;tabname;data]` | Write an in-memory table to an HDB partition, then sort it per config |
 | `appenddown[dir;part;tabname;data]` | Append rows to an existing partition (no sort) |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
-| `gc[]` | Run `.Q.gc[]` and log before/after memory stats |
 
 ---
 
@@ -168,12 +167,6 @@ dbwrite.applyattr[`:/hdb/2024.01.02/trade; `sym; `p]
 
 ---
 
-### `gc[]`
-
-Run `.Q.gc[]`, logging memory stats before and after.
-
----
-
 ## Running tests
 
 ```q
@@ -181,12 +174,12 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.dbwrite
 ```
 
-The suite injects mock loggers: a no-op logger, and a capturing logger that records `(level;ctx;msg)` so log behaviour can be asserted. On-disk behaviour (sort, attributes, `savedown`/`appenddown`) is exercised against real splayed partitions and cleaned up afterwards. It covers: dependency-injection validation; `readcsv` returns / column-order independence / header-validation failures; `sort` validation / edge cases / resolution / on-disk results / multi-dir / non-fatal partition failure; `savedown` write+sort (default and explicit config, and a table without `sym`); `appenddown` append-without-sort then explicit sort, and the non-existent-partition error; `applyattr`; `gc`; and the logging contract.
+The suite injects monadic mock loggers (`{[msg] ...}`): a no-op logger, and a capturing logger that records `(level;msg)` so log behaviour can be asserted. It also wires a real `kx.log` instance through `init` to confirm the module works end-to-end against the system logger. On-disk behaviour (sort, attributes, `savedown`/`appenddown`) is exercised against real splayed partitions and cleaned up afterwards. It covers: dependency-injection validation; `readcsv` returns / column-order independence / header-validation failures; `sort` validation / edge cases / resolution / on-disk results / multi-dir / non-fatal partition failure; `savedown` write+sort (default and explicit config, and a table without `sym`); `appenddown` append-without-sort then explicit sort, and the non-existent-partition error; `applyattr`; the `dbwrite:`-prefixed logging contract; and the real `kx.log` integration.
 
 ---
 
 ## Exported symbols
 
 ```q
-export:([init;readcsv;sort;applyattr;savedown;appenddown;gc])
+export:([init;readcsv;sort;applyattr;savedown;appenddown])
 ```

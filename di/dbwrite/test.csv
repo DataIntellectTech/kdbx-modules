@@ -1,8 +1,8 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,dbwrite:use`di.dbwrite,1,1,load module
-before,0,0,q,mylog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
-before,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,1,initialise log capture table
-before,0,0,q,logcap:`info`warn`error!({[c;m] `caplog upsert(`info;c;m)};{[c;m] `caplog upsert(`warn;c;m)};{[c;m] `caplog upsert(`error;c;m)}),1,1,define capturing mock logger
+before,0,0,q,mylog:`info`warn`error!({[m]};{[m]};{[m]}),1,1,define no-op monadic mock logger (kx.log-style)
+before,0,0,q,"caplog:([] fn:`symbol$();msg:())",1,1,initialise log capture table
+before,0,0,q,logcap:`info`warn`error!({[m] `caplog upsert(`info;m)};{[m] `caplog upsert(`warn;m)};{[m] `caplog upsert(`error;m)}),1,1,define capturing monadic mock logger
 before,0,0,q,"rmrf:{[d] if[11h=type k:key d; rmrf each ` sv/:d,/:k]; @[hdel;d;{}]}",1,1,recursive delete helper for on-disk cleanup
 before,0,0,q,"`:tmp_dbw_valid.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1"";""trade,,time,0"";""default,p,sym,1"")",1,1,write valid sort csv
 before,0,0,q,"`:tmp_dbw_badcols.csv 0: (""tabname,attr,col,sort"";""trade,p,sym,1"")",1,1,write csv with bad column names
@@ -163,7 +163,7 @@ run,0,0,q,dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,call readcsv with capturing lo
 true,0,0,q,2=count select from caplog where fn=`info,1,1,readcsv emits exactly two info entries
 true,0,0,q,"any caplog[`msg] like ""*reading sort config*""",1,1,readcsv logs read start message
 true,0,0,q,"any caplog[`msg] like ""*read 3 sort config*""",1,1,readcsv logs the row count read
-true,0,0,q,all (select from caplog where fn=`info)[`ctx]=`dbwrite,1,1,readcsv logs under the dbwrite context symbol
+true,0,0,q,"all (select from caplog where fn=`info)[`msg] like ""dbwrite: *""",1,1,readcsv logs are tagged with the dbwrite context prefix
 true,0,0,q,not any caplog[`fn]=`error,1,1,readcsv logs no errors on success
 
 comment,,,,,,,log call verification - readcsv error logging on file read failure
@@ -180,7 +180,7 @@ true,0,0,q,"any caplog[`msg] like ""*sort params found for: trade*""",1,1,sort l
 true,0,0,q,"any caplog[`msg] like ""*finished sorting the trade table*""",1,1,sort logs completion
 true,0,0,q,"any caplog[`msg] like ""*failed to sort*""",1,1,sort logs the partition sort failure
 true,0,0,q,"any caplog[`msg] like ""*unable to apply*""",1,1,sort logs the attribute application failure
-true,0,0,q,all (select from caplog where fn in `info`warn`error)[`ctx]=`dbwrite,1,1,all log entries use the dbwrite context symbol
+true,0,0,q,"all (select from caplog where fn in `info`warn`error)[`msg] like ""dbwrite: *""",1,1,all log entries carry the dbwrite context prefix
 
 comment,,,,,,,log call verification - default fallback and skip warning
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
@@ -191,11 +191,12 @@ run,0,0,q,dbwrite.sort[nodflcfg;`other;enlist`:/],1,1,sort with no matching para
 true,0,0,q,any caplog[`fn]=`warn,1,1,sort emits a warn when no config applies
 true,0,0,q,"any caplog[`msg] like ""*skipping sort*""",1,1,warn message indicates the table is skipped
 
-comment,,,,,,,gc - runs and logs before/after
-run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,dbwrite.gc[],1,1,run garbage collect
-true,0,0,q,2=count select from caplog where fn=`info,1,1,gc logs two info entries (start and end)
-true,0,0,q,"any caplog[`msg] like ""*garbage collect*""",1,1,gc logs a garbage-collect message
+comment,,,,,,,kx.log integration - wire a real kx.log instance (system module) and actually format+emit
+run,0,0,q,kxlogger:use`kx.log,1,1,load the system kx.log module
+run,0,0,q,kxinst:kxlogger.createLog[],1,1,create a kx.log instance (default info level so messages truly format+emit)
+run,0,0,q,dbwrite.init[enlist[`log]!enlist `info`warn`error!(kxinst`info;kxinst`warn;kxinst`error)],1,1,init with a real kx.log-backed logger
+true,0,0,q,3=count dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,readcsv works end-to-end and emits real info logs through kx.log
+run,0,0,q,@[dbwrite.readcsv;`:nonexistent_file.csv;{x}],1,1,error path formats+emits a real error log through kx.log without crashing
 
 after,0,0,q,hdel`:tmp_dbw_valid.csv,1,1,remove valid csv
 after,0,0,q,hdel`:tmp_dbw_badcols.csv,1,1,remove bad cols csv

@@ -10,8 +10,9 @@ defaultparams:([] tabname:enlist`default; att:enlist`; column:enlist`time; sort:
 init:{[deps]
   / wire the injected log dependency
   / deps: `log!(logdict) where logdict is `info`warn`error!(infofn;warnfn;errfn) - required
+  / the functions are monadic {[msg]} loggers; a kx.log instance satisfies this (use`kx.log;createLog[])
   if[99h<>type deps;
-    '"di.dbwrite: deps must be a dict with a `log key; see di.log for a default logger"];
+    '"di.dbwrite: deps must be a dict with a `log key; see kx.log for a logger"];
   if[not `log in key deps;
     '"di.dbwrite: log dependency is required; pass `info`warn`error functions keyed on `log"];
   if[99h<>type deps`log;
@@ -28,14 +29,14 @@ readcsv:{[file]
     '"di.dbwrite: readcsv file must be a symbol, got type ",string type file];
   file:hsym file;
   t:parsecsv @[readfile; file; readerr[file]];
-  .z.m.log[`info][`dbwrite;"read ",(string count t)," sort config row(s) from ",string file];
+  .z.m.log[`info]["dbwrite: read ",(string count t)," sort config row(s) from ",string file];
   :t;
   };
 
 / internal - protected file read; only the i/o so a genuine read failure gets the readerr message
 readfile:{[file]
   / returns the raw csv lines; header validation and parsing happen in parsecsv
-  .z.m.log[`info][`dbwrite;"reading sort config from ",string file];
+  .z.m.log[`info]["dbwrite: reading sort config from ",string file];
   :read0 file;
   };
 
@@ -43,7 +44,7 @@ readfile:{[file]
 readerr:{[file;e]
   / build the message once, surface it under the dbwrite context, then rethrow it to the caller
   m:"failed to read ",string[file],": ",e;
-  .z.m.log[`error][`dbwrite;m];
+  .z.m.log[`error]["dbwrite: ",m];
   'm;
   };
 
@@ -97,17 +98,17 @@ sort:{[config;tabname;dirs]
   if[not -11h=type tabname;
     '"di.dbwrite: tabname must be a symbol, got type ",string type tabname];
   st:string tabname;
-  .z.m.log[`info][`dbwrite;"sorting the ",st," table"];
+  .z.m.log[`info]["dbwrite: sorting the ",st," table"];
   sp:getsortparams[config;tabname;st];
   if[not count sp; :()];
   sortdir[sp] each distinct (),dirs;
-  .z.m.log[`info][`dbwrite;"finished sorting the ",st," table"];
+  .z.m.log[`info]["dbwrite: finished sorting the ",st," table"];
   };
 
 / internal - log a sort message then return the resolved rows
 logreturn:{[lvl;msg;rows]
   / keeps each branch body in getsortparams to a single statement
-  .z.m.log[lvl][`dbwrite;msg];
+  .z.m.log[lvl]["dbwrite: ",msg];
   :rows;
   };
 
@@ -125,14 +126,14 @@ getsortparams:{[config;tab;st]
 / internal - log a sort failure without rethrowing so remaining partitions still run
 sorterr:{[sc;dl;e]
   / a single partition failure should not halt the whole run
-  .z.m.log[`error][`dbwrite;"failed to sort ",string[dl]," by ",(", " sv string sc),": ",e];
+  .z.m.log[`error]["dbwrite: failed to sort ",string[dl]," by ",(", " sv string sc),": ",e];
   :();
   };
 
 / internal - sort one partition directory by the given columns
 sortcolumns:{[dloc;sortcols]
   / split out of sortdir so the conditional body there stays a single statement
-  .z.m.log[`info][`dbwrite;"sorting ",string[dloc]," by: ",", " sv string sortcols];
+  .z.m.log[`info]["dbwrite: sorting ",string[dloc]," by: ",", " sv string sortcols];
   .[xasc;(sortcols;dloc);
     sorterr[sortcols;dloc]];
   };
@@ -148,7 +149,7 @@ sortdir:{[sp;dloc]
 / internal - log an attribute application failure without rethrowing
 attrerr:{[dl;cn;at;e]
   / logs failure and continues so other columns and partitions still get processed
-  .z.m.log[`error][`dbwrite;"unable to apply ",string[at]," attr to ",string[cn]," in ",string[dl],": ",e];
+  .z.m.log[`error]["dbwrite: unable to apply ",string[at]," attr to ",string[cn]," in ",string[dl],": ",e];
   :();
   };
 
@@ -156,7 +157,7 @@ applyattr:{[dloc;colname;att]
   / apply a single kdb+ attribute to an on-disk column; logs and swallows errors so a run continues
   / skip anything that is not a real attribute - covers the empty none-sentinel and any bad value
   if[not att in `p`s`g`u; :()];
-  .z.m.log[`info][`dbwrite;"applying ",string[att]," attr to ",string[colname]," in ",string dloc];
+  .z.m.log[`info]["dbwrite: applying ",string[att]," attr to ",string[colname]," in ",string dloc];
   .[{@[x;y;z#]};
     (dloc;colname;att);
     attrerr[dloc;colname;att]];
@@ -168,23 +169,23 @@ savedown:{[config;dir;part;tabname;data]
   / part: partition value (date/month/int); tabname: symbol; data: in-memory table
   / enumerates syms against the hdb sym file; sorting and attributes are driven by config
   / (attributes such as p# are applied post-sort by sort, where the data is correctly grouped)
-  .z.m.log[`info][`dbwrite;"saving ",string[tabname]," partition ",string[part]," to ",string dir];
+  .z.m.log[`info]["dbwrite: saving ",string[tabname]," partition ",string[part]," to ",string dir];
   path:` sv (.Q.par[dir;part;tabname];`);
   path set .Q.en[dir;data];
   sort[config;tabname;path];
-  .z.m.log[`info][`dbwrite;"finished saving ",string tabname];
+  .z.m.log[`info]["dbwrite: finished saving ",string tabname];
   };
 
 appenddown:{[dir;part;tabname;data]
   / append rows to an existing on-disk partition (enumerates syms); does not sort
   / call sort separately once the partition is complete, to avoid re-sorting on every append
   / dir: hdb root (hsym); part: partition value; tabname: symbol; data: in-memory table
-  .z.m.log[`info][`dbwrite;"appending ",string[tabname]," partition ",string[part]," in ",string dir];
+  .z.m.log[`info]["dbwrite: appending ",string[tabname]," partition ",string[part]," in ",string dir];
   path:` sv (.Q.par[dir;part;tabname];`);
   if[not count @[key;path;{`$()}];
     '"di.dbwrite: appenddown partition does not exist at ",string path];
   .[path;();,;.Q.en[dir;data]];
-  .z.m.log[`info][`dbwrite;"finished appending ",string tabname];
+  .z.m.log[`info]["dbwrite: finished appending ",string tabname];
   };
 
 / internal - render a memory-usage dict as a "key=val MB; ..." string
@@ -201,7 +202,7 @@ memstats:{[]
 
 gc:{[]
   / run .Q.gc[] and log before/after memory stats
-  .z.m.log[`info][`dbwrite;"starting garbage collect. ",memstats[]];
+  .z.m.log[`info]["dbwrite: starting garbage collect. ",memstats[]];
   r:.Q.gc[];
-  .z.m.log[`info][`dbwrite;"garbage collection returned ",(string `long$r%1048576),"MB. ",memstats[]];
+  .z.m.log[`info]["dbwrite: garbage collection returned ",(string `long$r%1048576),"MB. ",memstats[]];
   };

@@ -2,18 +2,16 @@
 
 Write, sort, and attribute utilities for kdb+ processes that persist data to disk (rdb, wdb, tickerlogreplay).
 
-The sorting/attribute engine is `di.sort` baked in directly: a **config table** (`tabname`,`att`,`column`,`sort`) drives which columns are sorted and which attributes are applied per table. You pass that config straight to `sort`/`savedown`; if it lives in a CSV, `readcsv` reads it into the right shape. A table with no explicit entry falls back to a `default` row, and `(::)` selects a built-in default (sort every table by `time` ascending).
-
-`di.dbwrite` holds no sort state of its own — each call takes the config it should use, so you can build that config by hand, from a query, or from a CSV and reuse or vary it freely.
+A **config table** (`tabname`,`att`,`column`,`sort`) drives which columns are sorted and which attributes are applied per table. Load it once with `readcsv` (from a CSV) or `setconfig` (from an in-memory table); `sort` and `savedown` read from module state automatically. A table with no explicit entry falls back to a `default` row; if no config has been loaded, the built-in default (sort every table by `time` ascending) applies.
 
 ---
 
 ## Features
 
-- Write an in-memory table to a date-partitioned HDB with `savedown` — enumerates syms, applies `p#` to `sym`, writes, then sorts per config
+- Write an in-memory table to a date-partitioned HDB with `savedown` — enumerates syms, writes, sorts per stored config, then runs `.Q.gc[]`
 - Append rows to an existing partition with `appenddown` — enumerates syms and appends; sort separately when the partition is complete
 - Sort on-disk table partitions by configured columns using `xasc`, then apply kdb+ attributes (`p`,`s`,`g`,`u`)
-- Config supplied as an in-memory table or read from a CSV (`readcsv`); a `default` row or `(::)` provides a fallback
+- Config loaded once via `readcsv` (from a CSV) or `setconfig` (from a table); inspectable at any time with `getconfig`
 - Sort and attribute errors are caught-and-logged (a single partition failure does not halt the run); config and write errors are raised to the caller with a `di.dbwrite:` prefix
 
 ---
@@ -45,7 +43,7 @@ dbwrite.init[enlist[`log]!enlist logdep]
 | `column` | symbol | Column to sort and/or attribute |
 | `sort` | boolean | `1b` — include in the `xasc` sort key; `0b` — attribute only |
 
-Build it directly, or read it from a CSV with `readcsv`. A CSV must have exactly the four columns `tabname,att,column,sort`, in **any** order (the result is normalised to canonical order); a missing, extra, or misnamed column raises a clear `di.dbwrite:` error rather than silently mis-parsing.
+Build it directly and load with `setconfig`, or read it from a CSV with `readcsv`. A CSV must have exactly the four columns `tabname,att,column,sort` in **any** order (the result is normalised to canonical order); a missing, extra, or misnamed column raises a clear `di.dbwrite:` error rather than silently mis-parsing.
 
 ```
 tabname,att,column,sort
@@ -61,9 +59,11 @@ default,,time,1
 | Function | Description |
 |---|---|
 | `init[deps]` | Wire injected dependencies; must be called first |
-| `readcsv[file]` | Read a config CSV and return it as a table |
-| `sort[config;tabname;dirs]` | Sort on-disk partition(s) for a table and apply attributes per config |
-| `savedown[config;dir;part;tabname;data]` | Write an in-memory table to an HDB partition, then sort it per config |
+| `readcsv[file]` | Read a config CSV and store it in module state |
+| `setconfig[t]` | Store a hand-built config table in module state |
+| `getconfig[]` | Return the currently stored config (`::` if not yet set) |
+| `sort[tabname;dirs]` | Sort on-disk partition(s) for a table and apply attributes per stored config |
+| `savedown[dir;part;tabname;data]` | Write an in-memory table to an HDB partition, sort it, then run gc |
 | `appenddown[dir;part;tabname;data]` | Append rows to an existing partition (no sort) |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
 
@@ -71,11 +71,11 @@ default,,time,1
 
 ### `init[deps]`
 
-Wire injected dependencies. Must be called before any other function.
+Wire injected dependencies. Must be called before any other function. Also resets the stored sort config to `(::)`.
 
 | Arg | Type | Description |
 |---|---|---|
-| `deps` | dict | Must contain `` `log `` → `` `info`warn`error!(infofn;warnfn;errfn) ``. |
+| `deps` | dict | Must contain `` `log `` → `` `info`warn`error!(infofn;warnfn;errfn) `` |
 
 Throws (prefixed `di.dbwrite:`) if `deps` is not a dict, `log` is missing, or the log dict lacks any required key.
 
@@ -83,54 +83,76 @@ Throws (prefixed `di.dbwrite:`) if `deps` is not a dict, `log` is missing, or th
 
 ### `readcsv[file]`
 
-Read a config CSV and **return** it as a table (does not store it) — pass the result to `sort` or `savedown`.
+Read a config CSV and store it in module state (equivalent to calling `setconfig` with the parsed result). The stored config is used by subsequent calls to `sort` and `savedown`.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `file` | symbol/hsym | Path to the CSV; coerced with `hsym`. Errors (`di.dbwrite:`) if not a symbol. |
 
-The CSV is parsed field-by-field and validated as it is read — it does **not** silently pad, truncate, or coerce malformed rows. A clear `di.dbwrite:` error is raised if: the header is not exactly `tabname,att,column,sort` (any order); any data row does not have exactly four fields; or any `sort` value is not `0` or `1`. Column order is normalised to canonical. Attribute-value validation happens later in `sort`.
+The CSV is parsed field-by-field and fully validated before storing — it does **not** silently pad, truncate, or coerce malformed rows. A clear `di.dbwrite:` error is raised if: the header is not exactly `tabname,att,column,sort` (any order); any data row does not have exactly four fields; any `sort` value is not `0` or `1`; or any `att` value is not in `` ` `p`s`g`u ``. Column order is normalised to canonical.
 
 ```q
-config:dbwrite.readcsv `:config/sort.csv
+dbwrite.readcsv `:config/sort.csv
 ```
 
 ---
 
-### `sort[config;tabname;dirs]`
+### `setconfig[t]`
 
-Sort and apply attributes to the on-disk partition(s) for one table.
+Store a hand-built config table in module state. Alternative to `readcsv` when the config is constructed in-session rather than read from a file. Validates the table before storing — throws (`di.dbwrite:`) on any schema or content error.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `config` | table, or `::` | Config table (built directly or via `readcsv`). `::` uses the built-in default config. |
+| `t` | table | Config table with columns `tabname`,`att`,`column`,`sort` |
+
+```q
+dbwrite.setconfig ([] tabname:`trade`default; att:`p`; column:`sym`time; sort:11b)
+```
+
+---
+
+### `getconfig[]`
+
+Return the currently stored sort config. Returns `(::)` if `init` has been called but neither `readcsv` nor `setconfig` has been called yet.
+
+```q
+dbwrite.getconfig[]
+```
+
+---
+
+### `sort[tabname;dirs]`
+
+Sort and apply attributes to the on-disk partition(s) for one table, using the config stored by `readcsv` or `setconfig`. Falls back to the built-in default (sort by `time` ascending) if no config has been loaded.
+
+| Parameter | Type | Description |
+|---|---|---|
 | `tabname` | symbol | Table name. Errors (`di.dbwrite:`) if not a symbol. |
-| `dirs` | hsym, or list of hsyms | Partition directory (or directories). |
+| `dirs` | hsym, or list of hsyms | Partition directory or directories. |
 
-`config` is validated first (errors `di.dbwrite:` if not a table, has unknown/missing columns, a non-boolean `sort`, or an `att` outside `` ` `p`s`g`u ``). Row lookup: the table's own rows → the `default` row → otherwise a warn is logged and `()` returned. Each partition is processed independently; a failure on one is logged and does not halt the rest.
+Row lookup: the table's own rows → the `default` row → otherwise a warn is logged and `()` returned. Each partition is processed independently; a failure on one is logged and does not halt the rest.
 
 ```q
-dbwrite.sort[config; `trade; `:/hdb/2024.01.02/trade`:/hdb/2024.01.03/trade]
+dbwrite.sort[`trade; (`:hdb/2024.01.02/trade; `:hdb/2024.01.03/trade)]
 ```
 
 ---
 
-### `savedown[config;dir;part;tabname;data]`
+### `savedown[dir;part;tabname;data]`
 
-Write an in-memory table to a date-partitioned HDB partition, then sort it per `config`. Enumerates symbol columns against the HDB sym file before writing. Sorting **and** attributes are driven entirely by `config` and applied by `sort` *after* the write — so an attribute like `p#` is only applied once its column is grouped (e.g. a config that sorts by `sym` and parts `sym`), never to unsorted data.
+Write an in-memory table to a date-partitioned HDB partition, sort it per the stored config, then run `.Q.gc[]`. Enumerates symbol columns against the HDB sym file before writing. Sorting and attributes are applied by `sort` *after* the write — so an attribute like `p#` is only applied once its column is correctly grouped.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `config` | table, or `::` | Config passed through to `sort` (`::` for the default). |
 | `dir` | hsym | HDB root directory (e.g. `` `:hdb ``). |
 | `part` | date/month/int | Partition value. |
 | `tabname` | symbol | Table name — determines the partition subdirectory. |
 | `data` | table | In-memory table to write. |
 
-Throws on write failure. If the table has no `sym` column, enumeration and `p#` are skipped.
+Throws on write failure.
 
 ```q
-dbwrite.savedown[config; `:hdb; 2024.01.02; `trade; data]
+dbwrite.savedown[`:hdb; 2024.01.02; `trade; data]
 ```
 
 ---
@@ -152,7 +174,7 @@ Throws (prefixed `di.dbwrite:`) if the partition does not exist, or on write fai
 / intraday: append each batch as it arrives
 dbwrite.appenddown[`:hdb; 2024.01.02; `trade; batch]
 / end-of-day: sort once when done
-dbwrite.sort[config; `trade; .Q.par[`:hdb;2024.01.02;`trade]]
+dbwrite.sort[`trade; .Q.par[`:hdb; 2024.01.02; `trade]]
 ```
 
 ---
@@ -162,7 +184,7 @@ dbwrite.sort[config; `trade; .Q.par[`:hdb;2024.01.02;`trade]]
 Apply a single kdb+ attribute to one on-disk column (best-effort: logs and swallows errors so a run continues). A non-attribute `att` (the empty sentinel or any value outside `` `p`s`g`u ``) is a silent no-op.
 
 ```q
-dbwrite.applyattr[`:/hdb/2024.01.02/trade; `sym; `p]
+dbwrite.applyattr[`:hdb/2024.01.02/trade; `sym; `p]
 ```
 
 ---
@@ -174,12 +196,12 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.dbwrite
 ```
 
-The suite injects monadic mock loggers (`{[msg] ...}`): a no-op logger, and a capturing logger that records `(level;msg)` so log behaviour can be asserted. It also wires a real `kx.log` instance through `init` to confirm the module works end-to-end against the system logger. On-disk behaviour (sort, attributes, `savedown`/`appenddown`) is exercised against real splayed partitions and cleaned up afterwards. It covers: dependency-injection validation; `readcsv` returns / column-order independence / header-validation failures; `sort` validation / edge cases / resolution / on-disk results / multi-dir / non-fatal partition failure; `savedown` write+sort (default and explicit config, and a table without `sym`); `appenddown` append-without-sort then explicit sort, and the non-existent-partition error; `applyattr`; the `dbwrite:`-prefixed logging contract; and the real `kx.log` integration.
+The suite injects monadic mock loggers (`{[msg] ...}`): a no-op logger, and a capturing logger that records `(level;msg)` so log behaviour can be asserted. It also wires a real `kx.log` instance through `init` to confirm the module works end-to-end against the system logger. On-disk behaviour (sort, attributes, `savedown`/`appenddown`) is exercised against real splayed partitions and cleaned up afterwards. It covers: dependency-injection validation; `readcsv` stores-and-verifies / column-order independence / header-validation failures; `setconfig` happy path and validation failures; `sort` edge cases / resolution / on-disk results / multi-dir / non-fatal partition failure; `savedown` write+sort (default and explicit config, and a table without `sym`); `appenddown` append-without-sort then explicit sort, and the non-existent-partition error; `applyattr`; the `dbwrite:`-prefixed logging contract; and the real `kx.log` integration.
 
 ---
 
 ## Exported symbols
 
 ```q
-export:([init;readcsv;sort;applyattr;savedown;appenddown])
+export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown])
 ```

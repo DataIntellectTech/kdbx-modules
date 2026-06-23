@@ -20,17 +20,31 @@ init:{[deps]
   if[not all (`info`warn`error) in key deps`log;
     '"di.dbwrite: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
   .z.m.log:deps`log;
+  .z.m.sortconfig:(::);
   };
 
 readcsv:{[file]
-  / read a sort-config csv and return it as a table (does not store it); pass the result to sort
+  / read a sort-config csv and store it in .z.m.sortconfig; used by sort and savedown
   / the csv must have the columns tabname,att,column,sort (in any order)
   if[not -11h=type file;
     '"di.dbwrite: readcsv file must be a symbol, got type ",string type file];
   file:hsym file;
   t:parsecsv @[readfile; file; readerr[file]];
+  checkconfig t;
   .z.m.log[`info]["dbwrite: read ",(string count t)," sort config row(s) from ",string file];
-  :t;
+  .z.m.sortconfig:t;
+  };
+
+setconfig:{[t]
+  / set .z.m.sortconfig from an in-memory table; alternative to readcsv when config is built in-session
+  / t must be a table with columns tabname,att,column,sort
+  checkconfig t;
+  .z.m.sortconfig:t;
+  };
+
+getconfig:{[]
+  / return the current sort config stored in .z.m.sortconfig; (::) if not yet set
+  :.z.m.sortconfig;
   };
 
 / internal - protected file read; only the i/o so a genuine read failure gets the readerr message
@@ -89,11 +103,11 @@ checkconfig:{[t]
     '"di.dbwrite: unrecognised attribute(s) in att column: ",", " sv string badatts];
   };
 
-sort:{[config;tabname;dirs]
-  / sort and apply attributes to the on-disk partition dirs for one table using config
-  / config: a sort-config table (build it directly or via readcsv); (::) uses the default config
+sort:{[tabname;dirs]
+  / sort and apply attributes to the on-disk partition dirs for one table using .z.m.sortconfig
+  / falls back to defaultparams if readcsv has not been called
   / tabname: symbol table name; dirs: hsym or list of hsyms (partition directories)
-  config:$[(::)~config; defaultparams; config];
+  config:$[(::)~.z.m.sortconfig; defaultparams; .z.m.sortconfig];
   checkconfig config;
   if[not -11h=type tabname;
     '"di.dbwrite: tabname must be a symbol, got type ",string type tabname];
@@ -163,17 +177,16 @@ applyattr:{[dloc;colname;att]
     attrerr[dloc;colname;att]];
   };
 
-savedown:{[config;dir;part;tabname;data]
-  / write an in-memory table to a date-partitioned hdb partition, then sort it per config
-  / config: a sort-config table, or (::) for the built-in default; dir: hdb root (hsym)
-  / part: partition value (date/month/int); tabname: symbol; data: in-memory table
-  / enumerates syms against the hdb sym file; sorting and attributes are driven by config
-  / (attributes such as p# are applied post-sort by sort, where the data is correctly grouped)
+savedown:{[dir;part;tabname;data]
+  / write an in-memory table to a date-partitioned hdb partition, then sort it per .z.m.sortconfig
+  / dir: hdb root (hsym); part: partition value (date/month/int); tabname: symbol; data: in-memory table
+  / enumerates syms against the hdb sym file; sorting and attributes are driven by .z.m.sortconfig
   .z.m.log[`info]["dbwrite: saving ",string[tabname]," partition ",string[part]," to ",string dir];
   path:` sv (.Q.par[dir;part;tabname];`);
   path set .Q.en[dir;data];
-  sort[config;tabname;path];
+  sort[tabname;path];
   .z.m.log[`info]["dbwrite: finished saving ",string tabname];
+  gc[];
   };
 
 appenddown:{[dir;part;tabname;data]

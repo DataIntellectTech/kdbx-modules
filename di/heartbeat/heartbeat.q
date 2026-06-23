@@ -28,25 +28,27 @@ setcp:{[f]
   / replace the current-time function (used by tests and simulation)
   .z.m.cp:f;
   };
+
 / configuration defaults - overridden by the config dictionary passed to init
-enabled:1b;             / whether heartbeat publishing / checking is enabled
-subenabled:0b;          / whether this process monitors (subscribes to) other heartbeats
-debug:1b;               / whether to log warning / error transitions
+enabled:1b;                   / whether heartbeat publishing / checking is enabled
+subenabled:0b;                / whether this process monitors (subscribes to) other heartbeats
+debug:1b;                     / whether to log warning / error transitions
 publishinterval:0D00:00:30;   / how often heartbeats are published
 checkinterval:0D00:00:10;     / how often received heartbeats are checked
-warningtolerance:1.5;   / warning after warningtolerance*publishinterval without a beat
-errortolerance:2f;      / error after errortolerance*publishinterval without a beat
-proctype:`unknown;      / this process's type (published as sym)
-procname:.z.h;          / this process's name
-pid:.z.i;               / this process's pid
-host:.z.h;              / this process's host
-port:`int$system"p";    / this process's port
-connections:`$();       / process types this monitor should subscribe to
-onwarning:{[procs]};    / callback fired with the rows entering warning state
-onerror:{[procs]};      / callback fired with the rows entering error state
+warningtolerance:1.5;         / warning after warningtolerance*publishinterval without a beat
+errortolerance:2f;            / error after errortolerance*publishinterval without a beat
+proctype:`unknown;            / this process's type (published as sym)
+procname:.z.h;                / this process's name
+pid:.z.i;                     / this process's pid
+host:.z.h;                    / this process's host
+port:`int$system"p";          / this process's port
+connections:`$();             / process types this monitor should subscribe to
+onwarning:{[procs]};          / callback fired with the rows entering warning state
+onerror:{[procs]};            / callback fired with the rows entering error state
 
 / recognised configuration keys - anything else passed via config is ignored
-configkeys:`enabled`subenabled`debug`publishinterval`checkinterval`warningtolerance`errortolerance`proctype`procname`pid`host`port`connections`onwarning`onerror;
+configkeys:`enabled`subenabled`debug`publishinterval`checkinterval`warningtolerance`errortolerance,
+  `proctype`procname`pid`host`port`connections`onwarning`onerror;
 
 / warning / error grace periods - vary by process type if required
 warningperiod:{[processtype] `timespan$warningtolerance*publishinterval};
@@ -65,7 +67,7 @@ requiredep:{[deps;name]
   };
 
 setdeps:{[deps]
-  / extract and store injected dependencies, flattened for access via .z.m
+  / extract and store injected dependencies under .z.m (log kept whole; the rest as the functions used)
   / log is optional (a kx.log logger; no-op fallback if absent or missing a mandatory level);
   / only info/warn/error are mandated - the whole logger is kept, so any extra levels the
   / user provides (debug/fatal/custom, kx.log format controls) remain available

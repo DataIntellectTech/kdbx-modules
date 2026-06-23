@@ -80,11 +80,19 @@ setdeps:{[deps]
   pubsubdict:requiredep[deps;`pubsub];
   .z.m.pubsubpublish:pubsubdict`publish;
   .z.m.pubsubsubscribe:pubsubdict`subscribe;
-  if[subenabled;
-    serversdict:requiredep[deps;`servers];
-    .z.m.serversgetservers:serversdict`getservers;
-    handlersdict:requiredep[deps;`handlers];
-    .z.m.handlersregister:handlersdict`register];
+  / monitor-only deps are wired via a separate function so the conditional stays a
+  / single statement - the style guide says avoid block statements within conditionals
+  if[subenabled;setmonitordeps deps];
+  };
+
+setmonitordeps:{[deps]
+  / wire the monitor-only dependencies, required only when subenabled (this process
+  / monitors others' heartbeats); split out of setdeps to keep that conditional a
+  / single statement per the coding standards
+  serversdict:requiredep[deps;`servers];
+  .z.m.serversgetservers:serversdict`getservers;
+  handlersdict:requiredep[deps;`handlers];
+  .z.m.handlersregister:handlersdict`register;
   };
 
 setconfig:{[config]

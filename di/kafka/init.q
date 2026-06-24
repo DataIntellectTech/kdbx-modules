@@ -3,4 +3,4 @@
 
 version:"0.1.0";
 
-export:([init;initconsumer;initproducer;cleanupconsumer;cleanupproducer;subscribe;publish;setkupd;version])
+export:([init;initconsumer;initproducer;cleanupconsumer;cleanupproducer;subscribe;publish;setkupd])

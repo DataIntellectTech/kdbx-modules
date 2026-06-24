@@ -3,12 +3,10 @@
 / the native library calls .kupd in the root namespace on message receipt; init sets a forwarder
 / into .z.m.kupd so the callback can be replaced at runtime via setkupd without re-initialising
 / the log dependency is required - init errors immediately if absent or malformed
-/ log functions are monadic {[msg]} loggers; a kx.log instance satisfies the contract
+/ log functions are binary {[c;m]} where c is a symbol context and m is a string
 
-/ default message callback - prints message bytes as chars to stdout
-/ safe to use stdout here: kupd can only fire after initconsumer+subscribe, both require init
-/ override via setkupd or by passing kupd in the config dict to init
-defaultkupd:{[k;x] -1 `char$x;};
+/ default message callback - no-op; replace with setkupd after init
+defaultkupd:{[k;x] (::)};
 
 / configuration defaults
 kupd:defaultkupd;
@@ -20,8 +18,8 @@ enabled:.z.o in `l64;
 
 initconsumer:{[s;o]'"di.kafka: kafka not initialised - call init first"};
 initproducer:{[s;o]'"di.kafka: kafka not initialised - call init first"};
-cleanupconsumer:{[h]'"di.kafka: kafka not initialised - call init first"};
-cleanupproducer:{[h]'"di.kafka: kafka not initialised - call init first"};
+cleanupconsumer:{'"di.kafka: kafka not initialised - call init first"};
+cleanupproducer:{'"di.kafka: kafka not initialised - call init first"};
 subscribe:{[t;p]'"di.kafka: kafka not initialised - call init first"};
 publish:{[t;p;k;m]'"di.kafka: kafka not initialised - call init first"};
 
@@ -29,22 +27,23 @@ publish:{[t;p;k;m]'"di.kafka: kafka not initialised - call init first"};
 / internal functions
 / ============================================================
 
-setdeps:{[deps]
-  / accept a bare kx.log instance (info/warn/error at top level) or a full deps dict keyed on `log
-  d:$[(99h=type deps)and not `log in key deps;enlist[`log]!enlist deps;deps];
-  logval:$[99h=type d;$[`log in key d;d`log;(::)];(::)];
-  if[not $[99h=type logval;all `info`warn`error in key logval;0b];
-    '"di.kafka: log dep required - pass a kx.log instance or `info`warn`error!(infofn;warnfn;errfn) keyed on `log"];
-  .z.m.log:logval;
+normlog:{[logdict]
+  / detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
+  / kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
+  / plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
+  $[any `getlvl`sinks`fmts in key logdict;
+    `info`warn`error!(
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
+    logdict]
   };
 
-setconfig:{[config]
-  / apply recognised configuration overrides on top of current defaults; returns normalised cfg dict
-  cfg:$[99h=type config;config;()!()];
+setconfig:{[configs]
+  / apply recognised configuration overrides; dep keys (log etc.) are ignored
+  cfg:$[99h=type configs;configs;()!()];
   if[`enabled in key cfg; .z.m.enabled:cfg`enabled];
-  if[`libpath in key cfg; .z.m.lib:cfg`libpath];
   if[`kupd in key cfg; .z.m.kupd:cfg`kupd];
-  cfg
   };
 
 loadlib:{[libpath]
@@ -54,19 +53,22 @@ loadlib:{[libpath]
   libfile:hsym ` sv lib,$[.z.o like "w*";`dll;`so];
   libexists:@[{not ()~key x};libfile;{0b}];
   if[not libexists;
-    .z.m.log[`error]["kafka: native library not found at ",string libfile];
+    .z.m.log[`error][`kafka;"native library not found at ",string libfile];
     '"di.kafka: native library not found at ",string libfile];
-  .z.m.log[`info]["kafka: loading library ",string libfile];
+  .z.m.log[`info][`kafka;"loading library ",string libfile];
   .z.m.lib:lib;
   };
 
 bindfunctions:{[]
   / bind the six c functions from the loaded kafkaq library into module-local state
   / overwrites the stubs defined at module level
+  / cleanupconsumer and cleanupproducer are unary in the c interface but take null (::) - expose as niladic
   .z.m.initconsumer:.z.m.lib 2:(`initconsumer;2);
   .z.m.initproducer:.z.m.lib 2:(`initproducer;2);
-  .z.m.cleanupconsumer:.z.m.lib 2:(`cleanupconsumer;1);
-  .z.m.cleanupproducer:.z.m.lib 2:(`cleanupproducer;1);
+  .z.m.rawcleanupconsumer:.z.m.lib 2:(`cleanupconsumer;1);
+  .z.m.rawcleanupproducer:.z.m.lib 2:(`cleanupproducer;1);
+  .z.m.cleanupconsumer:{rawcleanupconsumer[(::)]};
+  .z.m.cleanupproducer:{rawcleanupproducer[(::)]};
   .z.m.subscribe:.z.m.lib 2:(`subscribe;2);
   .z.m.publish:.z.m.lib 2:(`publish;4);
   };
@@ -83,22 +85,29 @@ setkupd:{[f]
   .z.m.kupd:f;
   };
 
-init:{[config;deps]
+init:{[configs]
   / initialise the kafka module - validate deps, apply config, load native library
-  / config: required dict with `libpath (root library directory - os subdirectory is appended automatically)
-  /         optionally `kupd to set a custom message callback
-  / deps:   kx.log instance (passed directly) or dict with `log -> `info`warn`error!(infofn;warnfn;errfn)
-  / example:
-  /   kafka.init[enlist[`libpath]!enlist`$/opt/kdb/lib;kxlog.createLog[]]
-  setdeps deps;
-  cfg:setconfig config;
+  / configs: dict containing `log (required) plus optional `libpath, `enabled, `kupd
+  / log dep: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - binary, c=context symbol, m=string
+  / examples:
+  /   kafka.init[`log`libpath!(logdep;`$/opt/kdb/lib)]
+  /   kafka.init[`log`libpath`enabled!(logdep;`$/opt/kdb/lib;0b)]
+  if[99h<>type configs;
+    '"di.kafka: configs must be a dict with `log key"];
+  if[not `log in key configs;
+    '"di.kafka: log dependency is required; pass `info`warn`error!(infofn;warnfn;errfn) keyed on `log"];
+  if[99h<>type configs`log;
+    '"di.kafka: log value must be a dict; pass `info`warn`error functions"];
+  if[not all `info`warn`error in key configs`log;
+    '"di.kafka: log dict must have `info`warn`error keys; got: ",(", " sv string key configs`log)];
+  .z.m.log:normlog configs`log;
+  setconfig configs;
   if[enabled;
-    if[not `libpath in key cfg;
-      '"di.kafka: config must contain `libpath - root library directory containing the os-specific kafkaq build"];
-    loadlib cfg`libpath;
+    if[not `libpath in key configs;
+      '"di.kafka: configs must contain `libpath - root library directory containing the os-specific kafkaq build"];
+    loadlib configs`libpath;
     bindfunctions[];
-    / install the root .kupd forwarder so the native library delegates to our configurable callback
     `.kupd set {[k;x] .z.m.kupd[k;x]};
-    ];
-  .z.m.log[$[enabled;`info;`warn]]["kafka: di.kafka initialised",$[enabled;"";" (native library not loaded - platform not supported)"]];
+  ];
+  .z.m.log[$[enabled;`info;`warn]][`kafka;"di.kafka initialised",$[enabled;"";" (native library not loaded - platform not supported)"]];
   };

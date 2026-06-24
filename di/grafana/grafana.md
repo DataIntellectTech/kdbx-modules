@@ -31,8 +31,8 @@ its tables become available as Grafana panels.
 q)grafana:use`di.grafana
 ```
 
-Only `init` is exported; everything else runs automatically via the installed
-HTTP handlers.
+`init` and `getconfig` are exported; the request handlers run automatically
+once `init` has installed them.
 
 ---
 
@@ -117,8 +117,19 @@ init[deps]
 - `logdict` – `` `info`warn`error `` ! three `{[c;m]}` functions (required).
 - `configdict` – any subset of the keys in the [configuration](#gear-configuration) table.
 
-Errors if no logger is supplied. Returns nothing; its effect is wiring the
+Errors immediately if the `log` dependency is missing, is not a dictionary, or
+lacks the `info`/`warn`/`error` keys. Returns nothing; its effect is wiring the
 logger, applying configuration, and installing the `.z.pp`/`.z.ph` handlers.
+
+### `getconfig`
+
+```
+getconfig[]
+```
+
+Returns the currently active configuration as a dictionary (`timecol`, `sym`,
+`timebackdate`, `ticks`, `del`) — useful for confirming how the running module
+is tuned without reaching into module internals.
 
 ---
 

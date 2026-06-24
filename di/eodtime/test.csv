@@ -1,71 +1,70 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-/ Pre-test setup: load module and initialise with GMT defaults
+comment,,,,,,,setup - load module and initialise with gmt defaults and no log dep
 before,0,0,q,eodtime:use`di.eodtime,1,1,load di.eodtime module
-before,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"GMT";0D00:00:00.000)],1,1,init with gmt defaults
-
-/ Test 1: getd
+before,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"GMT";0D00:00:00.000);()!()],1,1,init with gmt defaults and no log dep
+comment,,,,,,,getd
 true,0,0,q,-14h=type eodtime.getd[],1,1,getd returns date type
-
-/ Test 2: getnextroll
+comment,,,,,,,getnextroll
 true,0,0,q,-12h=type eodtime.getnextroll[],1,1,getnextroll returns timestamp type
 true,0,0,q,eodtime.getnextroll[]>.z.p,1,1,getnextroll returns future timestamp
-
-/ Test 3: getdailyadj
+comment,,,,,,,getdailyadj
 true,0,0,q,-16h=type eodtime.getdailyadj[],1,1,getdailyadj returns timespan type
 true,0,0,q,0D=eodtime.getdailyadj[],1,1,getdailyadj returns 0D for gmt datatimezone
-
-/ Test 4: getdailyadjustment
+comment,,,,,,,getdailyadjustment
 true,0,0,q,-16h=type eodtime.getdailyadjustment[],1,1,getdailyadjustment returns timespan type
 true,0,0,q,0D=eodtime.getdailyadjustment[],1,1,getdailyadjustment returns 0D for gmt datatimezone
-
-/ Test 5: getroll - gmt zero offset
+comment,,,,,,,getroll - gmt zero offset
 true,0,0,q,-12h=type eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns timestamp type
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns next midnight for gmt zero offset
-
-/ Test 6: getroll - gmt with rolltimeoffset
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"GMT";0D17:00:00.000)],1,1,reinit with 5pm gmt roll time
+comment,,,,,,,getroll - gmt with rolltimeoffset
+run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"GMT";0D17:00:00.000);()!()],1,1,reinit with 5pm gmt roll time
 true,0,0,q,2025.01.01D17:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns todays 5pm when before roll time
 true,0,0,q,2025.01.02D17:00:00.000000000=eodtime.getroll[2025.01.01D18:00:00.000000000],1,1,getroll returns next day 5pm when past roll time
-
-/ Test 7: setnextroll
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"GMT";0D00:00:00.000)],1,1,reinit with gmt defaults
+comment,,,,,,,setnextroll
+run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"GMT";0D00:00:00.000);()!()],1,1,reinit with gmt defaults
 run,0,0,q,eodtime.setnextroll[2025.06.01D00:00:00.000000000],1,1,setnextroll does not error
 true,0,0,q,2025.06.01D00:00:00.000000000=eodtime.getnextroll[],1,1,getnextroll reflects setnextroll
-
-/ Test 8: setdailyadj
+comment,,,,,,,setdailyadj
 run,0,0,q,eodtime.setdailyadj[0D01:00:00.000000000],1,1,setdailyadj does not error
 true,0,0,q,0D01:00:00.000000000=eodtime.getdailyadj[],1,1,getdailyadj reflects setdailyadj
-
-/ Test 9: setd
+comment,,,,,,,setd
 run,0,0,q,eodtime.setd[2025.06.01],1,1,setd does not error
 true,0,0,q,2025.06.01=eodtime.getd[],1,1,getd reflects setd
-
-/ Test 10: utc-equivalent timezone shortcuts (GMT/UTC/Etc/GMT)
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"UTC";`$"Etc/GMT";0D00:00:00.000)],1,1,reinit with UTC/Etc/GMT shortcuts
+comment,,,,,,,utc-equivalent timezone shortcuts (GMT/UTC/Etc/GMT)
+run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"UTC";`$"Etc/GMT";0D00:00:00.000);()!()],1,1,reinit with UTC/Etc/GMT shortcuts
 true,0,0,q,0D=eodtime.getdailyadjustment[],1,1,Etc/GMT datatimezone returns 0D without lookup
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,UTC rolltimezone returns correct roll
-
-/ Test 11: non-gmt rolltimezone (Europe/London winter - UTC+0)
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000)],1,1,reinit with London rolltimezone
+comment,,,,,,,non-gmt rolltimezone (Europe/London)
+run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000);()!()],1,1,reinit with London rolltimezone
 true,0,0,q,-12h=type eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns timestamp type for non-gmt rolltimezone
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll correct for london winter (utc+0)
 true,0,0,q,2025.07.01D23:00:00.000000000=eodtime.getroll[2025.07.01D12:00:00.000000000],1,1,getroll correct for london summer (utc+1 - midnight local is 23:00 utc)
-
-/ Test 12: non-gmt datatimezone (Europe/London - DST aware)
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"Europe/London";0D00:00:00.000)],1,1,reinit with London datatimezone
+comment,,,,,,,non-gmt datatimezone (Europe/London - DST aware)
+run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"GMT";`$"Europe/London";0D00:00:00.000);()!()],1,1,reinit with London datatimezone
 true,0,0,q,-16h=type eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns timespan type
 true,0,0,q,0D<=eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns non-negative offset
-
-/ Test 13: init with empty dict applies all defaults
-run,0,0,q,eodtime.init[()!()],1,1,init with empty config applies all defaults
+comment,,,,,,,init with empty dict applies all defaults
+run,0,0,q,eodtime.init[()!();()!()],1,1,init with empty config applies all defaults
 true,0,0,q,0D=eodtime.getdailyadj[],1,1,default datatimezone (GMT) produces zero daily adjustment
 true,0,0,q,0D=eodtime.getdailyadjustment[],1,1,default datatimezone (GMT) produces zero computed adjustment
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,default rolltimeoffset (0D) gives midnight roll
-
-/ Test 14: init with :: applies all defaults
-run,0,0,q,eodtime.init[::],1,1,init with :: applies defaults without error
+comment,,,,,,,init with :: applies all defaults
+run,0,0,q,eodtime.init[::;()!()],1,1,init with :: applies defaults without error
 true,0,0,q,0D=eodtime.getdailyadj[],1,1,:: init produces zero daily adjustment
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,:: init default rolltimeoffset gives midnight roll
-
-/ Test 15: error cases
+comment,,,,,,,error cases
 fail,0,0,q,eodtime.getroll[`notvalid],1,1,getroll throws on non-timestamp input
+comment,,,,,,,log dep - optional no-op fallback
+run,0,0,q,eodtime.init[()!();()!()],1,1,init with no log dep does not error
+run,0,0,q,eodtime.init[()!();42],1,1,non-dict deps falls back gracefully without error
+run,0,0,q,eodtime.init[()!();enlist[`notlog]!enlist 42],1,1,missing log key in deps falls back gracefully
+comment,,,,,,,log dep - bare kx.log instance accepted directly
+run,0,0,q,kxlogger:use`kx.log,1,1,load kx.log
+run,0,0,q,kxinst:kxlogger.createLog[],1,1,create kx.log instance
+run,0,0,q,eodtime.init[()!();kxinst],1,1,bare kx.log instance accepted directly as deps
+comment,,,,,,,log dep - init message captured when logger provided
+run,0,0,q,caplog:`info`warn`error!({[m] `.test.cap upsert(`info;m)};{[m] `.test.cap upsert(`warn;m)};{[m] `.test.cap upsert(`error;m)}),1,1,capturing log mock
+run,0,0,q,.test.cap:([] fn:`symbol$();msg:()),1,1,initialise log capture table
+run,0,0,q,eodtime.init[()!();enlist[`log]!enlist caplog],1,1,init with capturing logger
+true,0,0,q,1=count select from .test.cap where fn=`info,1,1,one info entry captured on init
+true,0,0,q,any (.test.cap`msg) like "eodtime: *",1,1,log message carries eodtime context prefix

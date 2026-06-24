@@ -6,7 +6,31 @@ End-of-day time management for TorQ-based tickerplant processes. Resolves the cu
 
 ## Dependencies
 
-**Hard dependency:** `di.tz` - loaded automatically when the module is imported.
+| Dependency | Key | Required | Description |
+|---|---|---|---|
+| logger | `log` | no | `info`, `warn`, `error` — each monadic `{[msg] ...}`. Falls back to a silent no-op if absent or malformed |
+
+**Hard dependency:** `di.tz` — loaded automatically when the module is imported.
+
+A `kx.log` instance can be passed directly as the second argument to `init` — no manual wrapping required:
+
+```q
+kxlog:use`kx.log
+eodtime:use`di.eodtime
+eodtime.init[config;kxlog.createLog[]]
+```
+
+Alternatively, pass a deps dict with a `log` key:
+
+```q
+eodtime.init[config;enlist[`log]!enlist kxlog.createLog[]]
+```
+
+If no logger is needed, pass an empty dict or omit it entirely — the module will run silently:
+
+```q
+eodtime.init[config;()!()]
+```
 
 ---
 
@@ -14,7 +38,7 @@ End-of-day time management for TorQ-based tickerplant processes. Resolves the cu
 
 ```q
 eodtime:use`di.eodtime
-eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000)]
+eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000);()!()]
 ```
 
 Config keys are all optional. Passing `(::)` or an empty dict `()!()` loads the module with defaults that match TorQ's original `eodtime.q` behaviour.
@@ -34,11 +58,11 @@ Timezone values should be standard timezone identifiers in the format `"Region/C
 ## Exported functions
 
 ### `init`
-Initialises the module with the provided config. Computes initial values of `d`, `nextroll`, and `dailyadj`.
+Initialises the module with the provided config and optional log dependency. Computes initial values of `d`, `nextroll`, and `dailyadj`.
 ```q
-eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000)]
-/ or with defaults:
-eodtime.init[::]
+eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000);kxlog.createLog[]]
+/ or with defaults and no logger:
+eodtime.init[::;()!()]
 ```
 
 ### `getd`
@@ -100,8 +124,9 @@ eodtime.setd[1+eodtime.getd[]]
 
 ```q
 / load and initialise for a London-based system rolling at midnight
+kxlog:use`kx.log
 eodtime:use`di.eodtime
-eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000)]
+eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000);kxlog.createLog[]]
 
 / check current state
 eodtime.getd[]           / today's trading date in London time

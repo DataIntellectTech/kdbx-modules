@@ -3,9 +3,6 @@
 / utc-equivalent timezone names - zero offset from utc so no timezone lookup required
 utczones:`$("GMT";"UTC";"Etc/GMT");
 
-/ default no-op logger - used when no log dep is injected
-defaultlog:`info`warn`error!({[m]};{[m]};{[m]});
-
 / ============================================================
 / module state and defaults
 / ============================================================
@@ -32,12 +29,16 @@ dailyadj:0D00:00:00.000;
 / internal helpers
 / ============================================================
 
-setdeps:{[deps]
-  / accept a bare kx.log instance (info/warn/error at top level) or a full deps dict keyed on `log
-  / if absent or malformed falls back to no-op logger silently - log dep is optional for this module
-  dv:$[99h=type deps;$[not `log in key deps;enlist[`log]!enlist deps;deps];deps];
-  logval:$[99h=type dv;$[`log in key dv;dv`log;defaultlog];defaultlog];
-  .z.m.log:$[99h=type logval;$[all `info`warn`error in key logval;logval;defaultlog];defaultlog];
+normlog:{[logdict]
+  / detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
+  / kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
+  / plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
+  $[any `getlvl`sinks`fmts in key logdict;
+    `info`warn`error!(
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
+    logdict]
   };
 
 / returns timespan offset from utc for rolltimezone at timestamp p
@@ -81,21 +82,27 @@ setnextroll:{.z.m.nextroll:x};
 setdailyadj:{.z.m.dailyadj:x};
 setd:{.z.m.d:x};
 
-/ initialise module with config dictionary and optional log dependency
-init:{[config;deps]
-  / config: dict with optional keys `rolltimezone`datatimezone`rolltimeoffset
-  /         pass (::) or ()!() to use all defaults matching torq eodtime.q behaviour
-  / deps:   optional - kx.log instance or dict with `log -> `info`warn`error!(infofn;warnfn;errfn)
-  /         if absent or malformed falls back to no-op logging silently
-  / example:
-  /   eodtime.init[`rolltimezone!enlist`$"Europe/London";kxlog.createLog[]]
-  setdeps deps;
-  cfg:$[99h=type config;config;()!()];
-  .z.m.rolltimezone:$[`rolltimezone in key cfg;cfg`rolltimezone;`$"GMT"];
-  .z.m.datatimezone:$[`datatimezone in key cfg;cfg`datatimezone;`$"GMT"];
-  .z.m.rolltimeoffset:$[`rolltimeoffset in key cfg;cfg`rolltimeoffset;0D00:00:00.000];
+init:{[configs]
+  / initialise the eodtime module - validate deps, apply config, compute initial state
+  / configs: dict containing `log (required) plus optional `rolltimezone, `datatimezone, `rolltimeoffset
+  / log dep: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - binary, c=context symbol, m=string
+  / examples:
+  /   eodtime.init[enlist[`log]!enlist logdep]
+  /   eodtime.init[`log`rolltimezone!(logdep;`$"Europe/London")]
+  if[99h<>type configs;
+    '"di.eodtime: configs must be a dict with `log key"];
+  if[not `log in key configs;
+    '"di.eodtime: log dependency is required; pass `info`warn`error!(infofn;warnfn;errfn) keyed on `log"];
+  if[99h<>type configs`log;
+    '"di.eodtime: log value must be a dict; pass `info`warn`error functions"];
+  if[not all `info`warn`error in key configs`log;
+    '"di.eodtime: log dict must have `info`warn`error keys; got: ",(", " sv string key configs`log)];
+  .z.m.log:normlog configs`log;
+  .z.m.rolltimezone:$[`rolltimezone in key configs;configs`rolltimezone;`$"GMT"];
+  .z.m.datatimezone:$[`datatimezone in key configs;configs`datatimezone;`$"GMT"];
+  .z.m.rolltimeoffset:$[`rolltimeoffset in key configs;configs`rolltimeoffset;0D00:00:00.000];
   .z.m.dailyadj:getdailyadjustment[];
   .z.m.d:getday[.z.p];
   .z.m.nextroll:getroll[.z.p];
-  .z.m.log[`info]["eodtime: initialised with rolltimezone=",string[rolltimezone]," datatimezone=",string[datatimezone]," rolltimeoffset=",string rolltimeoffset];
+  .z.m.log[`info][`eodtime;"initialised with rolltimezone=",string[rolltimezone]," datatimezone=",string[datatimezone]," rolltimeoffset=",string rolltimeoffset];
   };

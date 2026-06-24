@@ -8,61 +8,56 @@ End-of-day time management for TorQ-based tickerplant processes. Resolves the cu
 
 | Dependency | Key | Required | Description |
 |---|---|---|---|
-| logger | `log` | no | `info`, `warn`, `error` — each monadic `{[msg] ...}`. Falls back to a silent no-op if absent or malformed |
+| logger | `log` | yes | `info`, `warn`, `error` — each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
 **Hard dependency:** `di.tz` — loaded automatically when the module is imported.
 
-A `kx.log` instance can be passed directly as the second argument to `init` — no manual wrapping required:
+The `log` dependency must be passed to `init` inside the `configs` dict. The module
+throws immediately if it is absent or missing any of the three required keys.
+
+A `kx.log` instance can be passed directly — the module normalises monadic functions
+to the binary `{[c;m]}` contract automatically:
 
 ```q
 kxlog:use`kx.log
 eodtime:use`di.eodtime
-eodtime.init[config;kxlog.createLog[]]
-```
-
-Alternatively, pass a deps dict with a `log` key:
-
-```q
-eodtime.init[config;enlist[`log]!enlist kxlog.createLog[]]
-```
-
-If no logger is needed, pass an empty dict or omit it entirely — the module will run silently:
-
-```q
-eodtime.init[config;()!()]
+eodtime.init[`log`rolltimezone!(kxlog.createLog[];`$"Europe/London")]
 ```
 
 ---
 
 ## Initialisation
 
+`init[configs]` takes a single dictionary combining the `log` dependency with
+any configuration overrides.
+
+| Key | Required | Description |
+|---|---|---|
+| `log` | yes | Binary log dep — `info`, `warn`, `error` functions each `{[c;m]}` |
+| `rolltimezone` | no | Timezone used for EOD roll scheduling. Default: `` `$"GMT" `` |
+| `datatimezone` | no | Timezone used for stamping incoming data. Default: `` `$"GMT" `` |
+| `rolltimeoffset` | no | Offset from midnight for the EOD roll (e.g. `0D17:00:00.000` for a 5pm roll). Default: `0D` |
+
+Passing only the required `log` key loads the module with defaults that match TorQ's original `eodtime.q` behaviour:
+
 ```q
-eodtime:use`di.eodtime
-eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000);()!()]
+eodtime.init[enlist[`log]!enlist logdep]
 ```
 
-Config keys are all optional. Passing `(::)` or an empty dict `()!()` loads the module with defaults that match TorQ's original `eodtime.q` behaviour.
+`init` must be called before any other function is used. It computes the initial values of `d`, `nextroll`, and `dailyadj`. Calling getters before `init` returns uninitialised defaults (`0Nd`, `0Wp`, `0D`) which will silently produce wrong results in downstream processes.
 
-| Key              | Type     | Default          | Description                                                                 |
-|------------------|----------|------------------|-----------------------------------------------------------------------------|
-| `rolltimezone`   | symbol   | `` `$"GMT" ``    | Timezone used for EOD roll scheduling                                       |
-| `datatimezone`   | symbol   | `` `$"GMT" ``    | Timezone used for stamping incoming data                                    |
-| `rolltimeoffset` | timespan | `0D00:00:00.000` | Offset from midnight for the EOD roll (e.g. `0D17:00:00.000` for a 5pm roll) |
-
-`init` must be called before any other function is used. It computes the initial values of `d`, `nextroll`, and `dailyadj`.
-
-Timezone values should be standard timezone identifiers in the format `"Region/City"` (e.g. `"Europe/London"`, `"America/New_York"`). The values `"GMT"`, `"UTC"` and `"Etc/GMT"` are handled as special cases returning zero offset directly, without a timezone lookup. `"GMT"` is not recognised by `di.tz` but is the default timezone in TorQ, so this ensures the module works out of the box with existing TorQ products (i.e. backwards compatible). Note: `"Etc/UTC"` is a valid argument in `di.tz`.
+Timezone values should be standard timezone identifiers in the format `"Region/City"` (e.g. `"Europe/London"`, `"America/New_York"`). The values `"GMT"`, `"UTC"` and `"Etc/GMT"` are handled as zero-offset shortcuts directly, without a timezone lookup. `"GMT"` is not recognised by `di.tz` but is the TorQ default, so this ensures the module works out of the box with existing TorQ products. Note: `"Etc/UTC"` is a valid argument in `di.tz`.
 
 ---
 
 ## Exported functions
 
 ### `init`
-Initialises the module with the provided config and optional log dependency. Computes initial values of `d`, `nextroll`, and `dailyadj`.
+Initialises the module. Validates the log dependency, applies config, and computes initial values of `d`, `nextroll`, and `dailyadj`.
 ```q
-eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000);kxlog.createLog[]]
-/ or with defaults and no logger:
-eodtime.init[::;()!()]
+eodtime.init[`log`rolltimezone`datatimezone`rolltimeoffset!(logdep;`$"Europe/London";`$"GMT";0D)]
+/ or with defaults only:
+eodtime.init[enlist[`log]!enlist logdep]
 ```
 
 ### `getd`
@@ -123,10 +118,11 @@ eodtime.setd[1+eodtime.getd[]]
 ## Usage example
 
 ```q
-/ load and initialise for a London-based system rolling at midnight
 kxlog:use`kx.log
+
+/ load and initialise for a London-based system rolling at midnight
 eodtime:use`di.eodtime
-eodtime.init[`rolltimezone`datatimezone`rolltimeoffset!(`$"Europe/London";`$"GMT";0D00:00:00.000);kxlog.createLog[]]
+eodtime.init[`log`rolltimezone`datatimezone`rolltimeoffset!(kxlog.createLog[];`$"Europe/London";`$"GMT";0D)]
 
 / check current state
 eodtime.getd[]           / today's trading date in London time

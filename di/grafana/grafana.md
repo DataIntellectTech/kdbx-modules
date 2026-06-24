@@ -53,6 +53,23 @@ mylog:`info`warn`error!(
   {[c;m] -2 "ERROR [",string[c],"] ",m;});
 ```
 
+### Handler wiring
+
+`init` installs the adaptor by closure-wrapping the process's `.z.pp` (POST) and
+`.z.ph` (GET) callbacks: it captures any pre-existing handler, then installs a
+wrapper that routes Grafana requests (those carrying the `X-Grafana-Org-Id`
+header) to the adaptor and **falls through to the captured handler for
+everything else** — so adding the module to a process that already serves HTTP
+does not break existing endpoints. This follows the `di.timer` precedent of a
+module owning a `.z.*` callback as its core mechanism.
+
+The intended end-state under the modularisation guide is to register these
+through the injected `di.handlers` dependency rather than assigning `.z.*`
+directly. That migration is deferred until `di.handlers` exists and supports
+**return-yielding** handler chains — `.z.pp`/`.z.ph` must *return* the HTTP
+response and conditionally defer, which a side-effect-only chain cannot express.
+`di.handlers` is not implemented on any branch yet.
+
 ---
 
 ## :gear: Configuration

@@ -23,6 +23,9 @@ types:.Q.t!`array`boolean,(3#`null),(5#`number),11#`string;
 / milliseconds between 1970.01.01 and 2000.01.01
 epoch:946684800000;
 
+/ internal flag - set true once the http handlers have been installed
+wired:0b;
+
 / -----------------------------------------------------------------------------
 / request handling
 / -----------------------------------------------------------------------------
@@ -32,14 +35,14 @@ zpp:{[x]
   / cut at the first whitespace to isolate the api url from any function params
   r:(0;n?" ")cut n:first x;
   rqt:.j.k r 1;
-  .z.m.loginfo[`grafana;"received ",(r 0)," request"];
+  .z.m.log[`info][`grafana;"received ",(r 0)," request"];
   handler:$["query"~r 0;query;"search"~r 0;search;annotation];
-  :.[handler;enlist rqt;{[e].z.m.logerr[`grafana;"failed to process request: ",e];'e}];
+  :.[handler;enlist rqt;{[e].z.m.log[`error][`grafana;"failed to process request: ",e];'e}];
   };
 
 annotation:{[rqt]
   / annotation endpoint is not yet implemented
-  .z.m.logwarn[`grafana;"annotation url not yet implemented"];
+  .z.m.log[`warn][`grafana;"annotation url not yet implemented"];
   :`$"Annotation url nyi";
   };
 
@@ -237,20 +240,24 @@ init:{[deps]
   / examples:
   /   grafana.init[enlist[`log]!enlist mylog]
   /   grafana.init[`log`config!(mylog;enlist[`ticks]!enlist 500)]
-  logdict:$[99h=type deps;$[(`log in key deps)and not(::)~deps`log;deps`log;()!()];()!()];
-  if[not count logdict;'"di.grafana: log dependency is required; pass `info`warn`error functions - see di.log for a default implementation"];
-  .z.m.loginfo:logdict`info;
-  .z.m.logwarn:logdict`warn;
-  .z.m.logerr:logdict`error;
+  / validate the required log dependency - nested guards, no eager `and`
+  if[99h<>type deps;'"di.grafana: deps must be a dict with `log key"];
+  if[not`log in key deps;'"di.grafana: log dependency is required; pass `info`warn`error functions keyed on `log"];
+  if[99h<>type deps`log;'"di.grafana: log value must be a dict; pass `info`warn`error functions"];
+  if[not all`info`warn`error in key deps`log;'"di.grafana: log dict must have `info`warn`error keys; got: ",", " sv string key deps`log];
+  .z.m.log:deps`log;
   / overlay any supplied configuration onto the defaults
-  config:$[99h=type deps;$[(`config in key deps)and not(::)~deps`config;deps`config;()!()];()!()];
-  if[count config;
-    vars:`timecol`sym`timebackdate`ticks`del inter key config;
-    (.Q.dd[.z.M]each vars)set'config vars;
+  config:$[`config in key deps;deps`config;()!()];
+  if[99h=type config;
+    if[`timecol in key config;.z.m.timecol:config`timecol];
+    if[`sym in key config;.z.m.sym:config`sym];
+    if[`timebackdate in key config;.z.m.timebackdate:config`timebackdate];
+    if[`ticks in key config;.z.m.ticks:config`ticks];
+    if[`del in key config;.z.m.del:config`del];
    ];
   / install the http handlers once, preserving any existing definitions
-  if[not`wired in key .z.M;sethandlers[]];
-  .z.m.loginfo[`grafana;"initialised grafana json datasource adaptor"];
+  if[not wired;sethandlers[]];
+  .z.m.log[`info][`grafana;"initialised grafana json datasource adaptor"];
   };
 
 getconfig:{

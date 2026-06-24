@@ -7,6 +7,7 @@ comment,,,,,,,Export surface and required dependency
 true,0,0,q,(asc key grafana)~`getconfig`init,1,,only init and getconfig are exported
 fail,0,0,q,grafana.init[(::)],1,,init errors when no log dependency is supplied
 fail,0,0,q,grafana.init[enlist[`log]!enlist(::)],1,,init errors when log dependency is null
+fail,0,0,q,grafana.init[enlist[`log]!enlist `info`warn!({[c;m]};{[c;m]})],1,,init errors when log dict is missing keys
 
 comment,,,,,,,Initialisation wires handlers and applies defaults
 run,0,0,q,grafana.init[enlist[`log]!enlist mocklog],1,,initialise with mock logger

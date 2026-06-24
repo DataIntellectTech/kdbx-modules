@@ -41,10 +41,13 @@ true,0,0,q,0=count dbwrite.getconfig[],1,1,empty csv produces empty stored confi
 run,0,0,q,dbwrite.readcsv `:tmp_dbw_reorder.csv,1,1,readcsv with reordered columns stores correct config
 true,0,0,q,(dbwrite.getconfig[])~([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,readcsv is column-order independent
 true,0,0,q,`tabname`att`column`sort~cols dbwrite.getconfig[],1,1,readcsv normalises reordered columns to canonical order
+run,0,0,q,"dbwrite.readcsv ""tmp_dbw_valid.csv""",1,1,readcsv accepts a string file path
+true,0,0,q,3=count dbwrite.getconfig[],1,1,string path readcsv stores the correct number of rows
+true,0,0,q,(dbwrite.getconfig[])~([] tabname:`trade`trade`default; att:`p``p; column:`sym`time`sym; sort:101b),1,1,string path readcsv stores the correct config
 
 comment,,,,,,,readcsv - input and header validation failures
 fail,0,0,q,dbwrite.readcsv `:nonexistent_file.csv,1,1,readcsv errors on a missing file
-fail,0,0,q,dbwrite.readcsv 42,1,1,readcsv errors on a non-symbol file argument
+fail,0,0,q,dbwrite.readcsv 42,1,1,readcsv errors on a non-symbol non-string file argument
 fail,0,0,q,dbwrite.readcsv `:tmp_dbw_badcols.csv,1,1,readcsv rejects a csv with wrong column names
 fail,0,0,q,dbwrite.readcsv `:tmp_dbw_3col.csv,1,1,readcsv rejects a csv missing a required column
 fail,0,0,q,dbwrite.readcsv `:tmp_dbw_5col.csv,1,1,readcsv rejects a csv with an extra column

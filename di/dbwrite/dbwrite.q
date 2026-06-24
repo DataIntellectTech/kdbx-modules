@@ -26,9 +26,11 @@ init:{[deps]
 readcsv:{[file]
   / read a sort-config csv and store it in .z.m.sortconfig; used by sort and savedown
   / the csv must have the columns tabname,att,column,sort (in any order)
+  / file: hsym, bare symbol, or string path
+  if[10h=type file; file:hsym `$file];
+  if[-11h=type file; if[not ":" = first string file; file:hsym file]];
   if[not -11h=type file;
-    '"di.dbwrite: readcsv file must be a symbol, got type ",string type file];
-  file:hsym file;
+    '"di.dbwrite: readcsv file must be a symbol or string path, got type ",string type file];
   t:parsecsv @[readfile; file; readerr[file]];
   checkconfig t;
   .z.m.log[`info]["dbwrite: read ",(string count t)," sort config row(s) from ",string file];
@@ -105,8 +107,9 @@ checkconfig:{[t]
 
 sort:{[tabname;dirs]
   / sort and apply attributes to the on-disk partition dirs for one table using .z.m.sortconfig
-  / falls back to defaultparams if readcsv has not been called
-  / tabname: symbol table name; dirs: hsym or list of hsyms (partition directories)
+  / both the sort column order and the att assignments (p/s/g/u) are driven by the config
+  / falls back to defaultparams if config has not been set via readcsv or setconfig
+  / tabname: symbol; dirs: hsym or list of hsyms (partition directories e.g. from .Q.par)
   config:$[(::)~.z.m.sortconfig; defaultparams; .z.m.sortconfig];
   checkconfig config;
   if[not -11h=type tabname;
@@ -169,6 +172,7 @@ attrerr:{[dl;cn;at;e]
 
 applyattr:{[dloc;colname;att]
   / apply a single kdb+ attribute to an on-disk column; logs and swallows errors so a run continues
+  / dloc: hsym (partition directory e.g. `:hdb/2024.01.01/trade); colname: symbol; att: symbol (p|s|g|u or empty)
   / skip anything that is not a real attribute - covers the empty none-sentinel and any bad value
   if[not att in `p`s`g`u; :()];
   .z.m.log[`info]["dbwrite: applying ",string[att]," attr to ",string[colname]," in ",string dloc];

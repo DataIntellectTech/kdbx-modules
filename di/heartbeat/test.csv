@@ -1,13 +1,13 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-comment,,,,,,,Setup - load module and inject mock dependencies
+comment,,,,,,,Setup - load module and inject mock dependencies (single deps dict holds config + deps)
 before,0,0,q,heartbeat:use`di.heartbeat,1,1,load the heartbeat module
-before,0,0,q,logdep:`info`warn`error!({[m]};{[m]};{[m]}),1,1,silent log mock - unary {[m]} matches the kx.log logger contract
-before,0,0,q,.test.now:2025.01.01D00:00:00.000,1,1,controllable current time for the timer mock
+before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent binary log mock - {[c;m]} is the internal contract
+before,0,0,q,.test.now:2025.01.01D00:00:00.000,1,1,controllable current time for the clock
 before,0,0,q,timerdep:`addjob`deletejobs!({[id;func;params;period;mode;opts]};{[ids]}),1,1,timer mock - heartbeat requires addjob and deletejobs
 before,0,0,q,psdep:`publish`subscribe!({[t;x] .test.pubt:t;.test.pubx:x;.test.pubcount:.test.pubcount+1};{[h] .test.subh:h}),1,1,pubsub mock capturing publish and subscribe
 before,0,0,q,.test.pubcount:0,1,1,initialise publish counter
-before,0,0,q,deps:`log`timer`pubsub!(logdep;timerdep;psdep),1,1,assemble dependency dictionary
-before,0,0,q,heartbeat.init[`proctype`procname!(`rdb;`rdb1);deps],1,1,initialise with identity config and mocks
+before,0,0,q,deps:`log`timer`pubsub!(logdep;timerdep;psdep),1,1,dependency-only dict (reused by the required-dependency fail tests)
+before,0,0,q,heartbeat.init[`proctype`procname`log`timer`pubsub!(`rdb;`rdb1;logdep;timerdep;psdep)],1,1,initialise from a single dict of config + deps
 before,0,0,q,heartbeat.setcp[{[].test.now}],1,1,point heartbeat clock at the controllable test time
 
 comment,,,,,,,publishheartbeat publishes a row and bumps the counter
@@ -57,50 +57,56 @@ run,0,0,q,.m.di.0heartbeat.closeconnection[5i],1,1,simulate connection close
 true,0,0,q,not 5i in .m.di.0heartbeat.subscribedhandles,1,1,handle removed on close
 
 comment,,,,,,,log is required - init errors clearly when deps or log is missing or malformed
-fail,0,0,q,heartbeat.init[()!();(::)],1,1,errors when deps is not a dictionary
-fail,0,0,q,heartbeat.init[()!();()!()],1,1,errors when log dependency missing
-fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist 42],1,1,errors when log value is not a dictionary
-fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,errors when log dict is missing the error key
+fail,0,0,q,heartbeat.init[(::)],1,1,errors when deps is not a dictionary
+fail,0,0,q,heartbeat.init[()!()],1,1,errors when log dependency missing
+fail,0,0,q,heartbeat.init[enlist[`log]!enlist 42],1,1,errors when log value is not a dictionary
+fail,0,0,q,heartbeat.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,errors when log dict is missing the error key
 
 comment,,,,,,,timer and pubsub are required - init errors when they are missing
-fail,0,0,q,heartbeat.init[()!();enlist[`log]!enlist logdep],1,1,errors when timer dependency missing
-fail,0,0,q,heartbeat.init[()!();`log`timer!(logdep;timerdep)],1,1,errors when pubsub dependency missing
-fail,0,0,q,heartbeat.init[enlist[`subenabled]!enlist 1b;`log`timer`pubsub!(logdep;timerdep;psdep)],1,1,monitor errors when servers dependency missing
-run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);deps],1,1,re-init with full mock deps and subenabled 0b to restore clean module state (prior fail test left subenabled 1b)
+fail,0,0,q,heartbeat.init[enlist[`log]!enlist logdep],1,1,errors when timer dependency missing
+fail,0,0,q,heartbeat.init[`log`timer!(logdep;timerdep)],1,1,errors when pubsub dependency missing
+fail,0,0,q,heartbeat.init[`subenabled`log`timer`pubsub!(1b;logdep;timerdep;psdep)],1,1,monitor errors when servers dependency missing
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled`log`timer`pubsub!(`rdb;`rdb1;0b;logdep;timerdep;psdep)],1,1,re-init with full deps and subenabled 0b to restore clean module state
 
-comment,,,,,,,an injected logger is actually invoked (guards against silent no-op fallback)
+comment,,,,,,,an injected (binary) logger is actually invoked
 run,0,0,q,.test.loginfo:"",1,1,reset the capture
-run,0,0,q,caplog:`info`warn`error!({[m] .test.loginfo:m};{[m] .test.logwarn:m};{[m] .test.logerr:m}),1,1,capturing unary logger - records the last message at each level
-run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(caplog;timerdep;psdep)],1,1,init with the capturing logger
-true,0,0,q,.test.loginfo~"heartbeat: di.heartbeat initialised",1,1,init message routed through the injected logger not the no-op fallback
+run,0,0,q,caplog:`info`warn`error!({[c;m] .test.loginfo:m};{[c;m] .test.logwarn:m};{[c;m] .test.logerr:m}),1,1,capturing binary logger - records the last message at each level
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled`log`timer`pubsub!(`rdb;`rdb1;0b;caplog;timerdep;psdep)],1,1,init with the capturing logger
+true,0,0,q,.test.loginfo~"di.heartbeat initialised",1,1,init message routed through the injected logger
 
-comment,,,,,,,only info/warn/error are mandated - a richer logger is accepted and kept whole
-run,0,0,q,caplog2:`info`warn`error`debug!({[m]};{[m]};{[m]};{[m]}),1,1,logger providing an extra debug level beyond the mandatory three
-run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(caplog2;timerdep;psdep)],1,1,init with the richer logger
-true,0,0,q,`debug in key .m.di.0heartbeat.log,1,1,extra level retained - the whole logger is kept not stripped to three functions
+comment,,,,,,,a kx.log instance (getlvl/sinks/fmts + unary fns) is auto-wrapped to the binary contract by normlog
+run,0,0,q,.test.kxmsg:"",1,1,reset the capture
+run,0,0,q,fakekx:`info`warn`error`getlvl`sinks`fmts!({[m] .test.kxmsg:m};{[m]};{[m]};`info;()!();()!()),1,1,fake kx.log instance - unary level fns plus the marker keys
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled`log`timer`pubsub!(`rdb;`rdb1;0b;fakekx;timerdep;psdep)],1,1,init with the kx.log-style instance
+true,0,0,q,.test.kxmsg~"heartbeat: di.heartbeat initialised",1,1,unary fn wrapped to binary - context folded into the message
+true,0,0,q,`info`warn`error~key .m.di.0heartbeat.log,1,1,wrapped logger exposes exactly the binary info/warn/error
+
+comment,,,,,,,a binary logger with extra levels is accepted and passed through unchanged
+run,0,0,q,caplog2:`info`warn`error`debug!({[c;m]};{[c;m]};{[c;m]};{[c;m]}),1,1,binary logger providing an extra debug level
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled`log`timer`pubsub!(`rdb;`rdb1;0b;caplog2;timerdep;psdep)],1,1,init with the richer binary logger
+true,0,0,q,`debug in key .m.di.0heartbeat.log,1,1,extra level retained - a non-kx.log dict is passed through unchanged
 true,0,0,q,all `info`warn`error in key .m.di.0heartbeat.log,1,1,mandatory levels present
 
 comment,,,,,,,init is idempotent - re-running clears jobs first instead of colliding on ids
 run,0,0,q,.test.jobids:(`$())!`boolean$(),1,1,track registered job ids
 run,0,0,q,timerdep2:`addjob`deletejobs!({[id;func;params;period;mode;opts] if[id in key .test.jobids;'"duplicate job id"]; .test.jobids[id]:1b};{[ids] .test.jobids:(key[.test.jobids] except ids)#.test.jobids}),1,1,stateful timer mock that rejects duplicate job ids like di.timer
-run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(logdep;timerdep2;psdep)],1,1,first init registers the jobs
-run,0,0,q,heartbeat.init[`proctype`procname`subenabled!(`rdb;`rdb1;0b);`log`timer`pubsub!(logdep;timerdep2;psdep)],1,1,second init must not collide - clears then re-adds
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled`log`timer`pubsub!(`rdb;`rdb1;0b;logdep;timerdep2;psdep)],1,1,first init registers the jobs
+run,0,0,q,heartbeat.init[`proctype`procname`subenabled`log`timer`pubsub!(`rdb;`rdb1;0b;logdep;timerdep2;psdep)],1,1,second init must not collide - clears then re-adds
 true,0,0,q,`hbcheck`hbpublish~asc key .test.jobids,1,1,exactly the publish and check jobs are registered after re-init
 
 comment,,,,,,,real-process integration - a background publisher beats over real di.pubsub into this process
 run,0,0,q,system"q -p 5050 -q &",1,,start a background heartbeat publisher
 run,0,0,q,system"sleep 1",1,,wait for the publisher to come up
 run,0,0,q,h:hopen`::5050,1,,connect to the publisher
-
 true,0,0,q,h>0,1,,connected to the publisher
 run,0,0,q,h"hbmod:use`di.heartbeat",1,,load heartbeat on the publisher
 run,0,0,q,h"pubsub:use`di.pubsub",1,,load pubsub on the publisher
 run,0,0,q,h"heartbeat:.m.di.0heartbeat.heartbeat",1,,expose the heartbeat schema at root for pubsub
 run,0,0,q,h"pubsub.init[]",1,,initialise the pubsub registry on the publisher
-run,0,0,q,h"logdep:`info`warn`error!({[m]};{[m]};{[m]})",1,,silent unary log dep on the publisher (kx.log contract)
+run,0,0,q,h"logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,silent binary log dep on the publisher
 run,0,0,q,h"timerdep:`addjob`deletejobs!({[id;func;params;period;mode;opts]};{[ids]})",1,,no-op timer dep - publish is triggered manually for determinism
 run,0,0,q,h"psdep:`publish`subscribe!(pubsub.publish;{[x]})",1,,inject the real pubsub publish into heartbeat
-run,0,0,q,h"hbmod.init[`proctype`procname`port!(`rdb;`pub1;5050i);`log`timer`pubsub!(logdep;timerdep;psdep)]",1,,init the publisher as an rdb named pub1
+run,0,0,q,h"hbmod.init[`proctype`procname`port`log`timer`pubsub!(`rdb;`pub1;5050i;logdep;timerdep;psdep)]",1,,init the publisher as an rdb named pub1 from a single dict
 run,0,0,q,upd:{[t;x] if[`heartbeat~t; heartbeat.storeheartbeat x]},1,,route incoming beats into the local store
 run,0,0,q,.m.di.0heartbeat.hb:0#.m.di.0heartbeat.hb,1,,clear the local store before subscribing
 run,0,0,q,h(`pubsub.subscribe;`heartbeat;`),1,,subscribe this process to the publisher's heartbeat feed

@@ -4,8 +4,9 @@
 / blocked - even when the underlying connection is still valid
 / the module handles both publishing heartbeats and, on the monitoring side,
 / storing received heartbeats and raising warnings / errors when they stop
-/ runtime dependencies are injected via init and are required - log, timer and pubsub always
-/ (servers and handlers when monitoring); init errors immediately if one is missing - see heartbeat.md
+/ config and dependencies are passed to init in a single dictionary: config keys (see configkeys)
+/ are optional with defaults; log/timer/pubsub are required (servers/handlers when monitoring) and
+/ init errors immediately if a required dependency is missing - see heartbeat.md
 / module-local state convention: read config bare, mutate via .z.m, and access
 / injected dependencies via .z.m at every call site
 
@@ -62,18 +63,31 @@ requiredep:{[deps;name]
   d
   };
 
+normlog:{[logdict]
+  / detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
+  / kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
+  / plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
+  $[any `getlvl`sinks`fmts in key logdict;
+    `info`warn`error!(
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
+    logdict]
+  };
+
 setdeps:{[deps]
-  / extract and store injected dependencies under .z.m (log kept whole; the rest as the functions used)
+  / extract injected dependencies from the single deps dict (which also carries config keys)
   / log, timer and pubsub are required; servers and handlers only when monitoring
   / init errors immediately if deps is not a dictionary or a required dependency is missing/malformed
   / nested if guards (not and) - and evaluates both sides eagerly and key would throw on a non-dict
-  if[99h<>type deps;'"di.heartbeat: deps must be a dictionary of injected dependencies - see heartbeat.md"];
-  / log - required: a dict providing info/warn/error (e.g. a kx.log logger); only those three are
-  / mandated but the whole logger is kept, so extra levels (debug/fatal/custom) remain available
-  if[not `log in key deps;'"di.heartbeat: log dependency is required; pass a logger keyed on `log - see kx.log"];
-  if[99h<>type deps`log;'"di.heartbeat: log value must be a dict of info/warn/error functions"];
-  if[not all `info`warn`error in key deps`log;'"di.heartbeat: log dict must have `info`warn`error keys; got: ",", " sv string key deps`log];
-  .z.m.log:deps`log;
+  if[99h<>type deps;'"di.heartbeat: deps must be a dictionary of config and injected dependencies - see heartbeat.md"];
+  / log - required: info/warn/error (heartbeat uses all three); a kx.log instance is auto-wrapped
+  / to the binary {[c;m]} contract by normlog, so it can be passed directly
+  if[not `log in key deps;'"di.heartbeat: log dependency is required; pass `info`warn`error (or a kx.log logger) keyed on `log"];
+  if[99h<>type deps`log;'"di.heartbeat: log must be a dict of info/warn/error functions (or a kx.log logger)"];
+  lg:normlog deps`log;
+  if[not all `info`warn`error in key lg;'"di.heartbeat: log must provide info/warn/error; got: ",", " sv string key lg];
+  .z.m.log:lg;
   timerdict:requiredep[deps;`timer];
   .z.m.timeraddjob:timerdict`addjob;
   .z.m.timerdeletejobs:timerdict`deletejobs;
@@ -126,23 +140,22 @@ registerhandlers:{
     .z.m.handlersregister[`.z.pc;`heartbeat;closeconnection]];
   };
 
-init:{[config;deps]
-  / initialise the module with configuration and injected dependencies - see heartbeat.md
-  / config - dictionary of configuration overrides (see configkeys), or (::) for defaults
-  / deps   - dictionary of injected dependencies keyed by name, each a dictionary of functions:
-  /   `log      - a kx.log logger - required; must provide unary info/warn/error, may provide more
+init:{[deps]
+  / initialise from a single dictionary holding config overrides and injected dependencies - see heartbeat.md
+  / config keys (see configkeys) are optional and fall back to defaults; dependencies are required:
+  /   `log      - a logger - required; must provide info/warn/error (a kx.log instance is auto-wrapped)
   /   `timer    - `addjob`deletejobs (full di.timer dict may be passed) - required
   /   `pubsub   - `publish`subscribe          - required
   /   `servers  - `getservers                 - required when subenabled
   /   `handlers - `register`remove`list       - required when subenabled
   / note: the module keeps its own clock (cp, default .z.p) - override via setcp
   / example:
-  /   heartbeat.init[`proctype`procname!(`rdb;`rdb1); `log`timer`pubsub!(logdep;timerdep;psdep)]
-  setconfig config;
+  /   heartbeat.init[`proctype`procname`log`timer`pubsub!(`rdb;`rdb1;kxlog;timerdep;psdep)]
+  setconfig deps;
   setdeps deps;
   registertimers[];
   registerhandlers[];
-  .z.m.log[`info]["heartbeat: di.heartbeat initialised"];
+  .z.m.log[`info][`heartbeat;"di.heartbeat initialised"];
   };
 
 publishheartbeat:{
@@ -167,12 +180,12 @@ addprocs:{[proctypes;procnames]
 
 logwarnproc:{[r]
   / log a single process moving into warning state
-  .z.m.log[`warn]["heartbeat: process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
+  .z.m.log[`warn][`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
   };
 
 logerrproc:{[r]
   / log a single process moving into error state
-  .z.m.log[`error]["heartbeat: process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
+  .z.m.log[`error][`heartbeat;"process ",(string r`procname)," (type ",(string r`sym),") has not heartbeated since ",string r`time];
   };
 
 warn:{[procs]
@@ -206,7 +219,7 @@ checkheartbeat:{
 
 subscribeone:{[h]
   / subscribe to a single remote heartbeat publisher, logging and skipping on failure
-  ok:@[{.z.m.pubsubsubscribe x;1b};h;{[h;e] .z.m.log[`error]["heartbeat: failed to subscribe to heartbeats on handle ",(string h),": ",e];0b}[h]];
+  ok:@[{.z.m.pubsubsubscribe x;1b};h;{[h;e] .z.m.log[`error][`heartbeat;"failed to subscribe to heartbeats on handle ",(string h),": ",e];0b}[h]];
   if[ok;.z.m.subscribedhandles:distinct subscribedhandles,h];
   };
 
@@ -219,7 +232,7 @@ getheartbeats:{[proctype]
   / subscribe to publishers of the given process type(s) that are not yet subscribed
   handles:(.z.m.serversgetservers proctype) except subscribedhandles;
   if[count handles;
-    .z.m.log[`info]["heartbeat: subscribing to new heartbeat handle(s) ",", " sv string handles];
+    .z.m.log[`info][`heartbeat;"subscribing to new heartbeat handle(s) ",", " sv string handles];
     subscribe handles];
   };
 

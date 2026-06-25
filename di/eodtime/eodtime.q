@@ -82,25 +82,25 @@ setnextroll:{.z.m.nextroll:x};
 setdailyadj:{.z.m.dailyadj:x};
 setd:{.z.m.d:x};
 
-init:{[configs]
+init:{[deps]
   / initialise the eodtime module - validate deps, apply config, compute initial state
-  / configs: dict containing `log (required) plus optional `rolltimezone, `datatimezone, `rolltimeoffset
-  / log dep: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - binary, c=context symbol, m=string
+  / deps: dict containing `log (required) plus optional `rolltimezone, `datatimezone, `rolltimeoffset
+  / log dep: at minimum `info!{[c;m]} - binary, c=context symbol, m=string
   / examples:
   /   eodtime.init[enlist[`log]!enlist logdep]
   /   eodtime.init[`log`rolltimezone!(logdep;`$"Europe/London")]
-  if[99h<>type configs;
-    '"di.eodtime: configs must be a dict with `log key"];
-  if[not `log in key configs;
-    '"di.eodtime: log dependency is required; pass `info`warn`error!(infofn;warnfn;errfn) keyed on `log"];
-  if[99h<>type configs`log;
-    '"di.eodtime: log value must be a dict; pass `info`warn`error functions"];
-  if[not all `info`warn`error in key configs`log;
-    '"di.eodtime: log dict must have `info`warn`error keys; got: ",(", " sv string key configs`log)];
-  .z.m.log:normlog configs`log;
-  .z.m.rolltimezone:$[`rolltimezone in key configs;configs`rolltimezone;`$"GMT"];
-  .z.m.datatimezone:$[`datatimezone in key configs;configs`datatimezone;`$"GMT"];
-  .z.m.rolltimeoffset:$[`rolltimeoffset in key configs;configs`rolltimeoffset;0D00:00:00.000];
+  if[99h<>type deps;
+    '"di.eodtime: deps must be a dict with `log key"];
+  if[not `log in key deps;
+    '"di.eodtime: log dependency is required; pass at minimum `info!{[c;m]} keyed on `log"];
+  if[99h<>type deps`log;
+    '"di.eodtime: log value must be a dict; pass at minimum `info!{[c;m]}"];
+  if[not `info in key deps`log;
+    '"di.eodtime: log dict must have at minimum an `info key; got: ",(", " sv string key deps`log)];
+  .z.m.log:normlog deps`log;
+  .z.m.rolltimezone:$[`rolltimezone in key deps;deps`rolltimezone;`$"GMT"];
+  .z.m.datatimezone:$[`datatimezone in key deps;deps`datatimezone;`$"GMT"];
+  .z.m.rolltimeoffset:$[`rolltimeoffset in key deps;deps`rolltimeoffset;0D00:00:00.000];
   .z.m.dailyadj:getdailyadjustment[];
   .z.m.d:getday[.z.p];
   .z.m.nextroll:getroll[.z.p];

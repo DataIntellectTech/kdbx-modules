@@ -3,67 +3,85 @@ comment,,,,,,,setup - load module and initialise with gmt defaults and log dep
 before,0,0,q,eodtime:use`di.eodtime,1,1,load di.eodtime module
 before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent no-op log mock - binary {[c;m]} matches the log contract
 before,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"GMT";0D00:00:00.000;logdep)],1,1,init with gmt defaults and log dep
+
 comment,,,,,,,getd
 true,0,0,q,-14h=type eodtime.getd[],1,1,getd returns date type
+
 comment,,,,,,,getnextroll
 true,0,0,q,-12h=type eodtime.getnextroll[],1,1,getnextroll returns timestamp type
 true,0,0,q,eodtime.getnextroll[]>.z.p,1,1,getnextroll returns future timestamp
+
 comment,,,,,,,getdailyadj
 true,0,0,q,-16h=type eodtime.getdailyadj[],1,1,getdailyadj returns timespan type
 true,0,0,q,0D=eodtime.getdailyadj[],1,1,getdailyadj returns 0D for gmt datatimezone
+
 comment,,,,,,,getdailyadjustment
 true,0,0,q,-16h=type eodtime.getdailyadjustment[],1,1,getdailyadjustment returns timespan type
 true,0,0,q,0D=eodtime.getdailyadjustment[],1,1,getdailyadjustment returns 0D for gmt datatimezone
+
 comment,,,,,,,getroll - gmt zero offset
 true,0,0,q,-12h=type eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns timestamp type
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns next midnight for gmt zero offset
+
 comment,,,,,,,getroll - gmt with rolltimeoffset
 run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"GMT";0D17:00:00.000;logdep)],1,1,reinit with 5pm gmt roll time
 true,0,0,q,2025.01.01D17:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns todays 5pm when before roll time
 true,0,0,q,2025.01.02D17:00:00.000000000=eodtime.getroll[2025.01.01D18:00:00.000000000],1,1,getroll returns next day 5pm when past roll time
+
 comment,,,,,,,setnextroll
 run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"GMT";0D00:00:00.000;logdep)],1,1,reinit with gmt defaults
 run,0,0,q,eodtime.setnextroll[2025.06.01D00:00:00.000000000],1,1,setnextroll does not error
 true,0,0,q,2025.06.01D00:00:00.000000000=eodtime.getnextroll[],1,1,getnextroll reflects setnextroll
+
 comment,,,,,,,setdailyadj
 run,0,0,q,eodtime.setdailyadj[0D01:00:00.000000000],1,1,setdailyadj does not error
 true,0,0,q,0D01:00:00.000000000=eodtime.getdailyadj[],1,1,getdailyadj reflects setdailyadj
+
 comment,,,,,,,setd
 run,0,0,q,eodtime.setd[2025.06.01],1,1,setd does not error
 true,0,0,q,2025.06.01=eodtime.getd[],1,1,getd reflects setd
+
 comment,,,,,,,utc-equivalent timezone shortcuts (GMT/UTC/Etc/GMT)
 run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"UTC";`$"Etc/GMT";0D00:00:00.000;logdep)],1,1,reinit with UTC/Etc/GMT shortcuts
 true,0,0,q,0D=eodtime.getdailyadjustment[],1,1,Etc/GMT datatimezone returns 0D without lookup
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,UTC rolltimezone returns correct roll
+
 comment,,,,,,,non-gmt rolltimezone (Europe/London)
 run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"Europe/London";`$"GMT";0D00:00:00.000;logdep)],1,1,reinit with London rolltimezone
 true,0,0,q,-12h=type eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns timestamp type for non-gmt rolltimezone
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll correct for london winter (utc+0)
 true,0,0,q,2025.07.01D23:00:00.000000000=eodtime.getroll[2025.07.01D12:00:00.000000000],1,1,getroll correct for london summer (utc+1 - midnight local is 23:00 utc)
+
 comment,,,,,,,non-gmt datatimezone (Europe/London - DST aware)
 run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"Europe/London";0D00:00:00.000;logdep)],1,1,reinit with London datatimezone
 true,0,0,q,-16h=type eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns timespan type
 true,0,0,q,0D<=eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns non-negative offset
+
 comment,,,,,,,init - empty config (just log dep) applies all defaults
 run,0,0,q,eodtime.init[enlist[`log]!enlist logdep],1,1,init with just log dep applies all defaults
 true,0,0,q,0D=eodtime.getdailyadj[],1,1,default datatimezone (GMT) produces zero daily adjustment
 true,0,0,q,0D=eodtime.getdailyadjustment[],1,1,default datatimezone (GMT) produces zero computed adjustment
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,default rolltimeoffset (0D) gives midnight roll
+
 comment,,,,,,,init - non-dict configs throws
 fail,0,0,q,eodtime.init[(::)],1,1,errors when configs is not a dictionary
+
 comment,,,,,,,error cases
 fail,0,0,q,eodtime.getroll[`notvalid],1,1,getroll throws on non-timestamp input
+
 comment,,,,,,,init - dep validation
 fail,0,0,q,eodtime.init[()!()],1,1,errors when log dependency is missing
 fail,0,0,q,eodtime.init[enlist[`log]!enlist 42],1,1,errors when log value is not a dictionary
-fail,0,0,q,eodtime.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,errors when log dict is missing the error key
+run,0,0,q,eodtime.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,init succeeds with info and warn but no error key - only info is required
 run,0,0,q,.test.err:@[{eodtime.init[()!()]};(::);{x}],1,1,capture error string from init with missing log dep
 true,0,0,q,.test.err like "di.eodtime:*",1,1,error is prefixed di.eodtime:
+
 comment,,,,,,,init - kx.log instance normalised automatically (no manual wrapping required)
 run,0,0,q,kxlogger:use`kx.log,1,1,load kx.log
 run,0,0,q,kxinst:kxlogger.createLog[],1,1,create kx.log instance
 run,0,0,q,eodtime.init[`log`rolltimezone!(kxinst;`$"GMT")],1,1,bare kx.log instance accepted without wrapping
 run,0,0,q,.m.di.0eodtime.log[`info][`eodtime;"normalisation test"],1,1,normalised logger accepts binary {[c;m]} call without error
+
 comment,,,,,,,log call verification - capturing logger sees init message with binary {[c;m]} args
 run,0,0,q,caplog:`info`warn`error!({[c;m] `.test.cap upsert(`info;m)};{[c;m] `.test.cap upsert(`warn;m)};{[c;m] `.test.cap upsert(`error;m)}),1,1,capturing log mock - binary {[c;m]}
 run,0,0,q,.test.cap:([] fn:`symbol$();msg:()),1,1,initialise log capture table

@@ -4,10 +4,7 @@ WebSocket pub/sub and HTML page serving module, extracted from TorQ.
 
 ## Overview
 
-This module does two things:
-
-1. **Pub/sub over WebSockets** — allows browser clients to subscribe to kdb+ tables and receive live updates as data is published.
-2. **HTML page serving** — reads HTML files from a configured directory and serves them over HTTP, optionally replacing server/port placeholders so the page can connect back to itself.
+This module provides pub/sub over WebSockets — browser clients subscribe to kdb+ tables and receive live updates as data is published. The module also sets `.h.HOME` so the default HTTP handler serves static assets (HTML, JS, CSS) from the configured directory without any additional code.
 
 ## Usage
 
@@ -27,28 +24,23 @@ html.addtables[`trades`quotes]
 html.pub[`trades;newdata]
 ```
 
-This mirrors the original TorQ deployment: set `KDBHTML`, initialise, register tables.
+Set `KDBHTML` before calling `init` so static files are served from the right directory.
 
 ## init
 
 ```q
-html.init[configs]
+html.init[deps]
 ```
 
-`configs` is a dictionary. The `` `log `` key is required — `init` signals an error if it is missing or does not contain `` `info`warn`error `` functions. Only recognised keys are picked up:
+`deps` is a dictionary. The `` `log `` key is required — `init` signals an error if it is missing or malformed.
 
 | Key | Type | Description | Default |
 |---|---|---|---|
-| `` `log `` | dict | **Required.** Logging functions with keys `` `info`warn`error ``, each called as `(ctx;msg)` — e.g. from `di.log` | — |
-| `homedir` | string | Path to the directory containing HTML files | `KDBHTML` env var, else `"html"` (TorQ behaviour) |
-| `` `handlers `` | dict | Handler registry with key `` `register `` | Assigns `.z.ws`, `.z.wc` and `.z.pc` directly |
+| `` `log `` | dict | **Required.** Logging functions keyed `` `info`warn`error ``, each called as `{[msg]}` — e.g. from `di.log` | — |
 
-```q
-/ override config explicitly
-html.init[`homedir`log!("/opt/app/html";logdict)]
-```
+The HTML home directory comes from the `KDBHTML` environment variable. If the variable is unset `"html"` is used. There is no `homedir` config key.
 
-`init` also sets `.h.HOME` to `homedir` (protected, skipped if `.h` is unavailable) so the default HTTP handler serves static assets (css/js/img) from the same directory — the equivalent of TorQ's `KDBHTML` behaviour.
+`init` also sets `.h.HOME` to the resolved home directory (protected, skipped if `.h` is unavailable) so the default HTTP handler serves static assets (css/js/img) from the same directory. Calling `init` multiple times is safe — the `.z.ws`/`.z.wc`/`.z.pc` handlers are wired only once.
 
 ## Exported functions
 
@@ -76,21 +68,22 @@ html.sub[tbl;syms]
 
 Subscribes the current handle (`.z.w`) to `tbl`. Pass `` ` `` as `syms` to receive all data. Pass `` ` `` as `tbl` to subscribe to all registered tables. Returns `(tablename; current data)` so the subscriber can initialise their local copy of the table.
 
-### wssub
+### setmodifier
 
 ```q
-html.wssub[tbl]
+html.setmodifier[tbl;fn]
 ```
 
-Calls `sub[tbl;`` ` ``]`. Pass `` ` `` as `tbl` to subscribe to all registered tables. Returns nothing.
+Sets a custom modifier function for `tbl`. `fn` is called on every `pub` as `fn[(\`upd;tbl;data)]` and must return bytes or a string suitable to send directly to a subscriber handle.
 
-### end
+The default modifier encodes data using the c.js binary protocol (kdb+ IPC-wrapped JSON). Use `setmodifier` to switch a table to plain JSON text — for example when subscribers are plain WebSocket clients without c.js:
 
 ```q
-html.end[eodval]
+html.setmodifier[`trades;{-8!.j.j `name`data!("upd";`tablename`tabledata!(x 1;x 2))}]  / default (c.js binary)
+html.setmodifier[`trades;{.j.j `name`data!("upd";`tablename`tabledata!(x 1;x 2))}]      / plain json text
 ```
 
-Broadcasts an end-of-day message to all subscriber handles.
+Signals an error if `tbl` has not been registered via `addtables`.
 
 ### dataformat
 
@@ -99,22 +92,6 @@ html.dataformat[msgtype;msgdata]
 ```
 
 Wraps a message into a `` `name`data `` dictionary, javascript-formatting each table in `msgdata` (a list or dictionary of tables). Used by host data functions that the front end requests over the websocket, e.g. TorQ's monitor `start` call returning several tables at once.
-
-### readpage
-
-```q
-html.readpage[filename]
-```
-
-Reads the file at `homedir/filename` and returns its contents as a string. Returns an error message string if the file is not found.
-
-### readpagereplacehostport
-
-```q
-html.readpagereplacehostport[filename]
-```
-
-Reads the file at `homedir/filename` and replaces `MYKDBSERVER` and `MYKDBPORT` tokens with the process's current IP address and port. Used to serve self-referencing HTML pages over HTTP.
 
 ### evaluate
 
@@ -133,35 +110,36 @@ The module registers a `.z.ws` handler that receives bytes from the browser, des
 The module logs at three points:
 
 - On `init`: confirms the module started and which `homedir` was set
-- On `readpage`: warns if a requested file is not found
 - On `evaluate`: logs at error level when a WebSocket-invoked function fails (the error is also re-thrown to the caller)
 
-There is no built-in default logger — the `log` dict must be injected via `init`, typically from `di.log`. Internally the loggers are stored on `.z.m` as `lginfo`/`lgwarn`/`lgerr` (not `log`, which is a q built-in) and every call site invokes them through `.z.m`.
+There is no built-in default logger — the `log` dict must be injected via `init`, typically from `di.log`. The log functions must be monadic (`{[msg]}`) to match the `kx.log` contract. They are stored on `.z.m` as a single `log` dict and called as `.z.m.log[\`info]["message"]`.
 
-## Example with custom log and handlers config
-
-The `log` functions are called as `(ctx;msg)` and the `handlers` registry's `register`
-is called as `(.z event name; label; handler)`.
+## Example with kx.log
 
 ```q
-/ wire up logging on top of the kx.log module
-/ kx.log loggers take a single message, so wrap them to the (ctx;msg) shape
+/ wire up logging from the kx.log module
 logger:use`kx.log
 kxlog:logger.createLog[]
-logdict:`info`warn`error!(
-  {[c;m] kxlog.info[(string c),": ",m]};
-  {[c;m] kxlog.warn[(string c),": ",m]};
-  {[c;m] kxlog.error[(string c),": ",m]})
+logdep:`info`warn`error!(
+  {[m] kxlog.info[m]};
+  {[m] kxlog.warn[m]};
+  {[m] kxlog.error[m]})
 
-/ wire up handlers via a host-provided registry
-/ a real registry composes handlers so several modules can share .z.ws / .z.wc / .z.pc
-/ omit this key entirely to have the module assign .z.ws / .z.wc / .z.pc directly
-hnddict:enlist[`register]!enlist {[zname;label;fn] zname set fn}
-
-/ initialise html module
+/ initialise html module — set KDBHTML before calling init
+setenv[`KDBHTML;"/opt/app/html"]
 html:use`di.html
-html.init[`homedir`log`handlers!("/opt/app/html";logdict;hnddict)]
+html.init[enlist[`log]!enlist logdep]
 ```
+
+## Browser testing (development)
+
+The default `.z.ws` handler uses kdb+ binary IPC format (`-9!`/`-8!`) and is designed to work with the KX c.js WebSocket library. For development testing without c.js, use the included `modulesetup.q`:
+
+```bash
+q di/html/modulesetup.q
+```
+
+This starts a process on port 5678 with a plain-text JSON websocket handler. Open `test.html` in a browser (or navigate to `http://localhost:5678/test.html` once the process is running) to connect and interact with the module. Run `tick[\`trades;5]` in the q session to push live data to browser subscribers.
 
 ## Testing
 

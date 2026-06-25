@@ -184,9 +184,9 @@ true,0,0,q,"any caplog[`msg] like ""*registering server*""",1,1,injected logger 
 run,0,0,q,caplog:0#caplog,1,1,reset capture
 run,0,0,q,"@[{srvsel.selector[([]handle:1 2i;lastp:2#.z.p);`bogus]};();{}]",1,1,trigger an error path (signal swallowed)
 true,0,0,q,0<count select from caplog where lvl=`error,1,1,injected logger received the error message via .z.m.log[`error]
-fail,0,0,q,srvsel.init[(::)],1,1,init rejects a non-dictionary configs
-fail,0,0,q,srvsel.init[()!()],1,1,init rejects configs missing the log key
-fail,0,0,q,srvsel.init[enlist[`other]!enlist noop],1,1,init rejects configs without a log key
+fail,0,0,q,srvsel.init[(::)],1,1,init rejects a non-dictionary deps
+fail,0,0,q,srvsel.init[()!()],1,1,init rejects deps missing the log key
+fail,0,0,q,srvsel.init[enlist[`other]!enlist noop],1,1,init rejects deps without a log key
 fail,0,0,q,srvsel.init[enlist[`log]!enlist(::)],1,1,init rejects a log value that is not a dict
 fail,0,0,q,"srvsel.init[enlist[`log]!enlist(`info`warn!({[m]};{[m]}))]",1,1,init rejects a log dict missing the error key
 true,0,0,q,"""di.serverselect""~15#@[srvsel.init;(::);{x}]",1,1,init error message is prefixed di.serverselect

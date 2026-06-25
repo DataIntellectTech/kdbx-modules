@@ -185,8 +185,8 @@ chk["injected logger receives the message text";1b;any caplog[`msg] like "*regis
 caplog:0#caplog
 @[{srvsel.selector[([]handle:1 2i;lastp:2#.z.p);`bogus]};();{}]
 chk["injected logger captures an error message";1b;0<count select from caplog where lvl=`error]
-chkerr["init rejects non-dictionary configs";{srvsel.init[(::)]}]
-chkerr["init rejects configs missing log key";{srvsel.init[()!()]}]
+chkerr["init rejects non-dictionary deps";{srvsel.init[(::)]}]
+chkerr["init rejects deps missing log key";{srvsel.init[()!()]}]
 chkerr["init rejects log value that is not a dict";{srvsel.init[enlist[`log]!enlist(::)]}]
 chkerr["init rejects log dict missing error key";{srvsel.init[enlist[`log]!enlist(`info`warn!({[m]};{[m]}))]}]
 srvsel.init[enlist[`log]!enlist (use`kx.log)[`createLog][]]

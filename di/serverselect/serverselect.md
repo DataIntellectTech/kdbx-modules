@@ -12,7 +12,7 @@
 - Query servers by servertype list or attribute requirement dictionary
 - Attribute matching supports cross-product and independent strategies with configurable best-effort mode
 - Bulk registration from a TorQ-compatible connection table
-- Pluggable logging — defaults to `kx.log`, or supply your own logger
+- Injected logging — supply your own logger (a `kx.log` instance or bespoke) via `init`; required, no default
 
 ---
 
@@ -40,7 +40,7 @@ mylog:`info`warn`error!(
 srvsel.init[enlist[`log]!enlist mylog]
 ```
 
-`init` throws with prefix `di.serverselect:` if `configs` is not a dictionary, is missing the `` `log `` key, or the `log` value is not a dictionary exposing `` `info`warn`error ``. All other `di.serverselect:` error conditions are logged via `.z.m.log[\`error]` before being signalled.
+`init` throws with prefix `di.serverselect:` if `deps` is not a dictionary, is missing the `` `log `` key, or the `log` value is not a dictionary exposing `` `info`warn`error ``. All other `di.serverselect:` error conditions are logged via `.z.m.log[\`error]` before being signalled.
 
 ---
 
@@ -102,7 +102,7 @@ srvsel.addserversfromtable[`rdb`hdb; .servers.SERVERS]
 
 `getservers` returns a table including an `attribmatch` column — a dictionary of `attrname!(complete_match_bool;matched_values)` per attribute key in `req`. When `lookups` is not `` ` ``, `nameortype` must be `` `servertype `` or `` `procname ``; any other value throws (and logs) a `di.serverselect:` error rather than silently falling through to a `procname` lookup.
 
-All `di.serverselect:` error conditions — including the input-type checks on `addserverfull`/`setserveractive` and the connection-table column check on `addserversfromtable` — are logged via `logger.error` before being signalled.
+All `di.serverselect:` error conditions — including the input-type checks on `addserverfull`/`setserveractive` and the connection-table column check on `addserversfromtable` — are logged via `.z.m.log[\`error]` before being signalled.
 
 `selector` supports three strategies:
 
@@ -175,18 +175,14 @@ The reserved key `` `besteffort `` (boolean, default `1b`) controls whether a pa
 ## :test_tube: Example
 
 ```q
-/ load module (kx.log is loaded automatically at module init)
+/ load and initialise - init must be called before any other function
 srvsel:use`di.serverselect
+loginst:(use`kx.log)[`createLog][]
+srvsel.init[enlist[`log]!enlist `info`warn`error!(loginst`info;loginst`warn;loginst`error)]
 
-/ register servers as they connect (.z.po handler)
-.z.po:{[h]
-  srvsel.addserverattr[h; getproctype[h]; getattributes[h]];
-  }
-
-/ mark inactive on disconnect (.z.pc handler)
-.z.pc:{[h]
-  srvsel.setserveractive[h; 0b];
-  }
+/ register servers as they connect / mark inactive on disconnect
+/   on connect:    srvsel.addserverattr[h; getproctype[h]; getattributes[h]]
+/   on disconnect: srvsel.setserveractive[h; 0b]
 
 / bulk register from TorQ stack on startup
 srvsel.addserversfromtable[`rdb`hdb; .servers.SERVERS]

@@ -9,12 +9,6 @@ subs:()!();
 / modifier function per table: transforms data before sending to subscriber
 modifier:()!();
 
-/ cache of resolved ip addresses: int -> symbol
-ipacache:(`int$())!`symbol$();
-
-/ home directory for html files - set by init
-homedir:"";
-
 / flag so direct .z handler wiring happens only once across repeated init calls
 zwired:0b;
 
@@ -54,12 +48,6 @@ jsformat:{[tbl]
   :flip k!converters@'colvals;
   };
 
-updformat:{[msgtype;msgdata]
-  / wraps an upd message into a name/data dictionary with javascript-formatted table data
-  formatteddata:(key msgdata)!(msgdata`tablename;jsformat msgdata`tabledata);
-  :(`name`data)!(msgtype;formatteddata);
-  };
-
 dataformat:{[msgtype;msgdata]
   / wraps a message into a name/data dictionary, javascript-formatting each table in msgdata
   / msgdata is a list or dictionary of tables - used by host data functions requested from the front end
@@ -94,29 +82,15 @@ closehandle:{[handle]
   del[;handle] each subtables;
   };
 
-replace:{[str;findreplace]
-  / applies each find->replace pair to the string in sequence using ssr
-  :(ssr/)[str;string key findreplace;value findreplace];
-  };
-
-ipa:{[ipint]
-  / resolves an ip address integer to a hostname symbol, caching results
-  / tries .Q.host first; falls back to converting the ip bytes manually if that fails
-  if[not `~r:ipacache ipint;:r];
-  hostname:.Q.host ipint;
-  r:$[`~hostname;`$"."sv string "i"$0x0 vs ipint;hostname];
-  .z.m.ipacache:@[ipacache;ipint;:;r];
-  :r;
-  };
-
-/ returns the current listen port as a string
-getport:{[] string system "p"};
-
 execdict:{[inputdict]
   / extracts the func key and any additional args from a dictionary and calls the function
   / args are passed to the function in the order the keys appear after func
+  / checks the module funcmap first (module-local functions), then falls back to value for globals
   if[not `func in key inputdict;'"no func in dictionary"];
-  f:value inputdict`func;
+  fname:`$inputdict`func;
+  f:$[fname in key funcmap;
+    funcmap fname;
+    @[value;inputdict`func;{'"unknown function: ",x}]];
   args:value inputdict _ `func;
   :$[1=count key inputdict;f @ 1;f . args];
   };
@@ -131,8 +105,9 @@ addtables:{[tablelist]
   new:tablelist except subtables;
   .z.m.subtables:subtables,new;
   .z.m.subs:subs,new!(count new)#();
-  .z.m.modifier:modifier,new!(count new)#{-8!.j.j updformat["upd";`tablename`tabledata!(x 1;x 2)]};
-  if[count new;.z.m.lginfo[`html;"registered tables: ",", " sv string new]];
+  / default modifier applies jsformat then sends kdb+ IPC binary wrapping a json string (c.js binary protocol)
+  .z.m.modifier:modifier,new!(count new)#{-8!.j.j `name`data!("upd";`tablename`tabledata!(x 1;jsformat x 2))};
+  if[count new;.z.m.log[`info]["di.html: registered tables: ",", " sv string new]];
   };
 
 pub:{[tbl;data]
@@ -154,78 +129,39 @@ sub:{[tbl;syms]
   :add[tbl;syms];
   };
 
-wssub:{[tbl]
-  / subscribes via websocket, no return value
-  sub[tbl;`];
-  };
-
-end:{[eodval]
-  / broadcasts end-of-day message to all subscriber handles across all tables
-  (neg union/[subs[;;0]])@\:(`.u.end;eodval);
-  };
-
-readpage:{[filename]
-  / reads an html file from the configured home directory and returns it as a string
-  / returns a "not found" message string if the file does not exist
-  p:homedir,"/",filename;
-  r:@[read1;`$":",p;""];
-  if[not count r;.z.m.lgwarn[`html;p,": not found"]];
-  :$[count r;"c"$r;p,": not found"];
-  };
-
-readpagereplacehostport:{[filename]
-  / reads a page and replaces MYKDBSERVER and MYKDBPORT tokens with live server values
-  :replace[readpage filename;`MYKDBSERVER`MYKDBPORT!("\"",(string ipa .z.a),"\"";getport[])];
+setmodifier:{[tbl;fn]
+  / sets a custom modifier function for tbl; fn receives (`upd;tbl;data) and must return bytes or a string to send
+  if[not tbl in subtables;'tbl];
+  .z.m.modifier:@[modifier;tbl;:;fn];
   };
 
 evaluate:{[inputdict]
   / safely calls execdict on the input, logging then re-throwing any errors with context
-  :@[execdict;inputdict;{[d;e] m:"failed to execute ",(-3!d)," : ",e;.z.m.lgerr[`html;m];'m}[inputdict]];
+  :@[execdict;inputdict;{[d;e] m:"di.html: failed to execute ",(-3!d)," : ",e;.z.m.log[`error][m];'m}[inputdict]];
   };
 
-init:{[configs]
-  / sets up module state and registers websocket handlers
-  / configs is a dict - recognised keys are homedir, log and handlers
-  / log is required: `info`warn`error!(...) where each is a {[ctx;msg]} function, e.g. from di.log
-  / defaults: homedir from the KDBHTML env var (else "html"), direct .z handler assignment
+/ module-local functions callable via websocket evaluate
+/ execdict checks here first before falling back to value for global lookups
+funcmap:`sub`addtables`pub`dataformat!(sub;addtables;pub;dataformat);
 
-  / log dependency is required - fail loudly rather than falling back to a default logger
-  logdict:$[99h=type configs;$[(`log in key configs) and not (::)~configs`log;configs`log;()!()];()!()];
-  if[not count logdict;
-    '"di.html: log dependency is required; pass `info`warn`error functions - see di.log or refer to confluence documentation"];
-  if[not 99h=type logdict;'"di.html: log must be a dict of `info`warn`error!(logging functions)"];
-  if[count missing:`info`warn`error except key logdict;
-    '"di.html: log dict missing key(s): ",", " sv string missing];
-
-  / default configuration values
+init:{[deps]
+  / initialise the module; deps must contain a log key with info/warn/error functions
+  / deps: dict with `log key -> `info`warn`error!(fn;fn;fn) where each fn is {[msg]}
+  / wires .z.ws/.z.wc/.z.pc handlers once; .h.HOME set from KDBHTML env var (else "html")
+  if[99h<>type deps;
+    '"di.html: deps must be a dict with a `log key"];
+  if[not `log in key deps;
+    '"di.html: log dependency is required; pass `info`warn`error functions keyed on `log"];
+  if[99h<>type deps`log;
+    '"di.html: log value must be a dict of `info`warn`error functions"];
+  if[not all `info`warn`error in key deps`log;
+    '"di.html: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
+  .z.m.log:deps`log;
   hd:$[count e:getenv`KDBHTML;e;"html"];
-  hnd:(::);
-
-  / set custom config values - only recognised keys are picked up
-  if[`homedir in key configs;hd:configs`homedir];
-  if[`handlers in key configs;hnd:configs`handlers];
-
-  .z.m.lginfo:logdict`info;
-  .z.m.lgwarn:logdict`warn;
-  .z.m.lgerr:logdict`error;
-  .z.m.homedir:hd;
-
-  / register .h content type handlers and static file root - protected in case not available in kdb-x
-  / .h.HOME lets the default http handler serve static assets (css/js/img) from homedir, as TorQ does via KDBHTML
-  @[{.h.HOME:x;.h.tx[`non]:{enlist x};.h.ty[`non]:"text/html"};homedir;{[e]}];
-
-  .z.m.lginfo[`html;"initialised with homedir: ",homedir];
-
-  / register handlers via the handlers config if provided
-  / closehandle is registered for both websocket (.z.wc) and ipc (.z.pc) closes, as in TorQ
-  if[not hnd~(::);
-    hnd[`register][`.z.ws;`html.ws;wshandler];
-    hnd[`register][`.z.wc;`html.close;closehandle];
-    hnd[`register][`.z.pc;`html.close;closehandle];
-    :()];
-
-  / no handlers config: assign directly, wrapping any existing handlers to preserve them
-  / wire only once so repeated init calls do not stack the wrappers
+  / .h.HOME lets the default http handler serve static assets; set from KDBHTML env var (else "html")
+  @[{.h.HOME:x;.h.tx[`non]:{enlist x};.h.ty[`non]:"text/html"};hd;{[e]}];
+  .z.m.log[`info]["di.html: initialised"];
+  / wire handlers once; wrap any existing .z.wc/.z.pc to preserve them
   if[zwired;:()];
   .z.ws:wshandler;
   .z.wc:{[existing;h] closehandle h; existing h}[@[value;`.z.wc;{{[x]}}];];

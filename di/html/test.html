@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>di.html module test</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:monospace;background:#111;color:#ccc;padding:12px;font-size:13px}
+  h1{color:#eee;font-size:15px;margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:6px}
+  h2{font-size:12px;color:#fa8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+  .panel{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:4px;padding:10px}
+  .panel.full{grid-column:1/-1}
+  button{background:#252525;color:#bbb;border:1px solid #444;padding:3px 10px;cursor:pointer;font-family:monospace;font-size:12px;margin:2px 2px 2px 0}
+  button:hover{background:#2f2f2f;color:#eee}
+  button.on{background:#143014;color:#8f8;border-color:#3a6;cursor:default}
+  button.off{background:#301414;color:#f88;border-color:#633}
+  .status{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px}
+  .status.connected{background:#143014;color:#8f8}
+  .status.disconnected{background:#301414;color:#f88}
+  .result{background:#111;border:1px solid #2a2a2a;padding:6px 8px;margin-top:6px;min-height:24px;font-size:12px;color:#8cf;word-break:break-all}
+  .result.ok{color:#8f8}
+  .result.err{color:#f88}
+  .result.empty{color:#555;font-style:italic}
+  table{border-collapse:collapse;width:100%;margin-top:4px;font-size:11px}
+  th{padding:2px 8px;border-bottom:1px solid #333;color:#fa8;text-align:left;font-weight:normal}
+  td{padding:2px 8px;border-bottom:1px solid #1e1e1e;color:#ccc}
+  tr:hover td{background:#1e1e1e}
+  .log{height:160px;overflow-y:auto;background:#111;border:1px solid #2a2a2a;padding:6px;font-size:11px;line-height:1.5}
+  .log .ts{color:#555}
+  .log .s{color:#88f}
+  .log .r{color:#8f8}
+  .log .e{color:#f88}
+  .log .i{color:#666}
+  input[type=text]{background:#111;color:#ccc;border:1px solid #444;padding:3px 6px;font-family:monospace;font-size:12px;width:260px}
+  .badge{display:inline-block;background:#1a2a1a;color:#6a6;border:1px solid #2a4a2a;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:4px}
+  .badge.sub{background:#1a1a2a;color:#66a;border-color:#2a2a4a}
+</style>
+</head>
+<body>
+<h1>di.html module test <span id="connstatus" class="status disconnected">disconnected</span></h1>
+
+<div class="grid">
+
+  <!-- CONNECTION -->
+  <div class="panel">
+    <h2>1. connection</h2>
+    <button onclick="connect()">connect</button>
+    <button onclick="disconnect()">disconnect</button>
+    <div class="result empty" id="conn-result">click connect — opens ws://localhost:PORT</div>
+  </div>
+
+  <!-- SUBSCRIBE -->
+  <div class="panel">
+    <h2>2. sub / wssub</h2>
+    <button onclick="wssubTo('trades')">wssub trades</button>
+    <button onclick="wssubTo('quotes')">wssub quotes</button>
+    <button onclick="wssubTo('')">wssub all (`)</button>
+    <div id="sub-badges" style="margin-top:6px;min-height:18px"></div>
+    <div class="result empty" id="sub-result">subscribe → returns (tablename; snapshot)</div>
+  </div>
+
+  <!-- PUB: live table display, one box per subscribed table -->
+  <div class="panel full">
+    <h2>3. pub — live updates</h2>
+    <button onclick="triggerTick('trades',5)">tick trades (5 rows)</button>
+    <button onclick="triggerTick('quotes',5)">tick quotes (5 rows)</button>
+    <button onclick="triggerTick('trades',20)">tick trades (20 rows)</button>
+    <span style="color:#555;font-size:11px;margin-left:8px">calls tick[] in modulesetup.q via evaluate — subscribe first</span>
+    <div id="pub-tables" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+      <div class="result empty" style="width:100%">no updates yet — subscribe to a table first, then click a tick button above</div>
+    </div>
+  </div>
+
+  <!-- EVALUATE -->
+  <div class="panel">
+    <h2>4. evaluate — call q functions</h2>
+    <button onclick="evalTest('neg[42]',{func:'neg',arg1:42})">neg[42] → -42</button>
+    <div style="margin-top:6px">
+      <input id="eval-input" type="text" placeholder='{"func":"neg","arg1":99}'>
+      <button onclick="evalCustom()">send</button>
+    </div>
+    <div class="result empty" id="eval-result">result appears here</div>
+  </div>
+
+  <!-- LOG -->
+  <div class="panel full">
+    <h2>log</h2>
+    <div class="log" id="log"></div>
+  </div>
+
+</div>
+
+<script>
+var ws = null;
+var pending = {};
+var msgid = 0;
+var subscribed = {};
+var tablePanels = {};
+var tableBuffers = {};  // rolling last-5 rows per table
+
+function inferType(v) {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "boolean") return "bool";
+  if (typeof v === "number") return Number.isInteger(v) ? "long" : "float";
+  if (typeof v === "string") {
+    if (/^\d{4}-\d{2}-\d{2}T/.test(v)) return "timestamp";
+    return "symbol";
+  }
+  return typeof v;
+}
+
+function ts() { return new Date().toISOString().slice(11,19); }
+
+function log(msg, cls) {
+  var d = document.getElementById("log");
+  var line = document.createElement("div");
+  line.innerHTML = '<span class="ts">'+ts()+'</span> <span class="'+(cls||"i")+'">'+msg+'</span>';
+  d.appendChild(line);
+  d.scrollTop = d.scrollHeight;
+}
+
+function setResult(id, text, cls) {
+  var el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "result " + (cls||"ok");
+}
+
+function connect() {
+  var port = location.port || 5678;
+  var url = "ws://"+location.hostname+":"+port;
+  ws = new WebSocket(url);
+  ws.onopen = function() {
+    document.getElementById("connstatus").textContent = "connected";
+    document.getElementById("connstatus").className = "status connected";
+    setResult("conn-result", "connected to "+url, "ok");
+    log("connected to "+url, "r");
+  };
+  ws.onmessage = function(e) {
+    if (typeof e.data !== "string") { log("(binary frame — use c.js for binary mode)", "e"); return; }
+    var preview = e.data.length > 120 ? e.data.slice(0,120)+"..." : e.data;
+    log("< "+preview, "r");
+    var obj;
+    try { obj = JSON.parse(e.data); } catch(ex) { return; }
+    // pending single-call reply
+    if (pending[msgid-1]) { pending[msgid-1](obj); delete pending[msgid-1]; }
+    // live upd message from pub
+    if (obj && obj.name === "upd") { renderTable(obj); }
+  };
+  ws.onclose = function() {
+    document.getElementById("connstatus").textContent = "disconnected";
+    document.getElementById("connstatus").className = "status disconnected";
+    setResult("conn-result", "disconnected", "err");
+    log("disconnected", "e");
+  };
+  ws.onerror = function() { log("websocket error", "e"); };
+}
+
+function disconnect() { if (ws) ws.close(); }
+
+function send(obj, cb) {
+  if (!ws || ws.readyState !== 1) { log("not connected", "e"); return; }
+  var id = msgid++;
+  if (cb) pending[id] = cb;
+  var s = JSON.stringify(obj);
+  log("> "+s, "s");
+  ws.send(s);
+}
+
+// section 2: subscribe
+function wssubTo(tbl) {
+  send({func:"wssub", arg1:tbl}, function(r) {
+    var tables = Array.isArray(r[0]) ? r : [r];
+    tables.forEach(function(pair) {
+      if (!pair || !pair[0]) return;
+      var name = pair[0];
+      subscribed[name] = true;
+      updateSubBadges();
+      var snap = pair[1];
+      setResult("sub-result",
+        name+": snapshot "+JSON.stringify(snap).slice(0,80)+(JSON.stringify(snap).length>80?"...":""),
+        "ok");
+    });
+  });
+}
+
+function updateSubBadges() {
+  var el = document.getElementById("sub-badges");
+  el.innerHTML = Object.keys(subscribed).map(function(t) {
+    return '<span class="badge sub">'+t+'</span>';
+  }).join(" ");
+}
+
+function triggerTick(tbl, n) {
+  send({func:"tick", arg1:tbl, arg2:n}, function(r) {
+    log("tick["+tbl+";"+n+"] fired", "i");
+  });
+}
+
+// section 3: pub table rendering — rolling 5-row buffer + meta row
+function renderTable(msg) {
+  var tname = msg.data.tablename;
+  var newRows = msg.data.tabledata;
+  var container = document.getElementById("pub-tables");
+  if (container.querySelector(".result.empty")) container.innerHTML = "";
+  if (!tablePanels[tname]) {
+    var div = document.createElement("div");
+    div.style.cssText = "flex:1;min-width:300px";
+    div.innerHTML = '<div style="color:#fa8;font-size:11px;margin-bottom:4px">'+tname+' <span id="tbl-count-'+tname+'" style="color:#666"></span></div><div id="tbl-'+tname+'"></div>';
+    container.appendChild(div);
+    tablePanels[tname] = true;
+    tableBuffers[tname] = [];
+  }
+  if (newRows && newRows.length) {
+    tableBuffers[tname] = tableBuffers[tname].concat(newRows).slice(-5);
+  }
+  var rows = tableBuffers[tname];
+  var el = document.getElementById("tbl-"+tname);
+  var countEl = document.getElementById("tbl-count-"+tname);
+  if (!rows.length) { el.innerHTML = '<span style="color:#555;font-style:italic">empty</span>'; return; }
+  var keys = Object.keys(rows[0]);
+  // meta row: infer type from the most recent row
+  var latest = rows[rows.length-1];
+  var html = '<table>';
+  html += '<tr style="background:#141414"><td style="padding:2px 8px;color:#555;font-style:italic">meta</td>';
+  keys.forEach(function(k) { html += '<td style="padding:2px 8px;color:#555;font-style:italic">'+inferType(latest[k])+'</td>'; });
+  html += '</tr>';
+  html += '<tr>'+['col'].concat(keys).map(function(k){return'<th>'+k+'</th>'}).join("")+'</tr>';
+  rows.forEach(function(row, i) {
+    var age = rows.length - 1 - i;
+    var op = age === 0 ? "1" : (0.4 + 0.1*(rows.length-1-age)).toFixed(1);
+    html += '<tr style="opacity:'+op+'"><td style="padding:2px 8px;color:#555">'+(i+1)+'</td>';
+    keys.forEach(function(k) { html += '<td>'+row[k]+'</td>'; });
+    html += '</tr>';
+  });
+  html += '</table>';
+  el.innerHTML = html;
+  if (countEl) countEl.textContent = "(last "+rows.length+" rows)";
+}
+
+// section 4: evaluate
+function evalTest(label, obj) {
+  send(obj, function(r) {
+    var s = JSON.stringify(r);
+    setResult("eval-result", label+" → "+s, "ok");
+  });
+}
+
+function evalCustom() {
+  var v = document.getElementById("eval-input").value.trim();
+  if (!v) return;
+  var obj;
+  try { obj = JSON.parse(v); } catch(e) { setResult("eval-result","invalid json: "+e.message,"err"); return; }
+  send(obj, function(r) { setResult("eval-result", JSON.stringify(r).slice(0,200), "ok"); });
+}
+
+window.onload = function() {
+  log("page loaded — click connect, then work through sections 1–4", "i");
+};
+</script>
+</body>
+</html>

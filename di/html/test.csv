@@ -1,9 +1,8 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,html:use`di.html,1,,load di.html module
-before,0,0,q,"mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,mock log config that discards all messages
-before,0,0,q,"html.init[`homedir`log!(""/tmp"";mocklog)]",1,,initialise module with /tmp as html home directory
-before,0,0,q,"(`:/tmp/di_html_test.html) 1: ""<html>test</html>""",1,,write test html file using q file io
-before,0,0,q,"(`:/tmp/di_html_hp_test.html) 1: ""MYKDBSERVER:MYKDBPORT""",1,,write test file containing server and port tokens
+before,0,0,q,"mocklog:`info`warn`error!({[m]};{[m]};{[m]})",1,,mock log dep that discards all messages (monadic {[msg]} matching kx.log contract)
+before,0,0,q,"setenv[`KDBHTML;""/tmp""]",1,,set KDBHTML so init picks up homedir from env
+before,0,0,q,"html.init[enlist[`log]!enlist mocklog]",1,,initialise module with log dep only
 before,0,0,q,htmltestfn:{x-y},1,,helper function for multi-arg evaluate test
 before,0,0,q,"trades:([]sym:`g#`symbol$();px:`float$())",1,,real global table so sub success path can read its contents
 before,0,0,q,"quotes:([]sym:`g#`symbol$();bid:`float$())",1,,real global table so subscribing to all tables can read its contents
@@ -12,27 +11,28 @@ before,0,0,q,"jsf:get ` sv hns,`jsformat",1,,grab the internal jsformat converte
 before,0,0,q,"convtest:([]ts:enlist 2024.01.02D12:00:00.000000000;d:enlist 2024.01.02;tm:enlist 12:00:00.000;sym:enlist `AAPL)",1,,sample table with one column of each time type plus an untyped sym column
 
 run,0,0,q,"html.addtables[`trades`quotes]",1,,register two tables for pub/sub
+true,0,0,q,"`trades`quotes~get ` sv hns,`subtables",1,,addtables stores both table names in module subtables list
+true,0,0,q,"2=count get ` sv hns,`subs",1,,addtables initialises a subscriber list for each registered table
+true,0,0,q,"2=count get ` sv hns,`modifier",1,,addtables creates a default modifier for each registered table
 run,0,0,q,"html.addtables[`trades]",1,,re-registering an existing table does not error
+true,0,0,q,"2=count get ` sv hns,`subtables",1,,re-registering a known table leaves subtables count unchanged
 run,0,0,q,"html.pub[`trades;([]a:enlist 1i)]",1,,pub with no subscribers completes without error
 
 fail,0,0,q,"html.sub[`notregistered;`]",1,,subscribing to an unregistered table throws an error
-run,0,0,q,"html.end[`eod]",1,,end is a clean no-op when there are no subscribers (tested before any console sub)
 true,0,0,q,"`trades~first html.sub[`trades;`]",1,,sub success path returns the table name as first element
 true,0,0,q,"0=count last html.sub[`trades;`]",1,,sub success path returns the current (empty) table contents
-run,0,0,q,"html.wssub[`trades]",1,,wssub delegates to sub without error
+true,0,0,q,"1=count(get ` sv hns,`subs)[`trades]",1,,sub adds the current handle to the trades subscriber list
 run,0,0,q,"html.sub[`;`]",1,,subscribing with backtick subscribes to all registered tables
+true,0,0,q,"all 1=count each(get ` sv hns,`subs)each `trades`quotes",1,,subscribing with backtick registers handle across all tables
 
-true,0,0,q,"-42~html.evaluate[`func`arg1!(""neg"";42)]",1,,evaluate calls a function with one arg correctly
-true,0,0,q,"-1~html.evaluate[`func`arg1`arg2!(""htmltestfn"";1;2)]",1,,evaluate calls a function with multiple args correctly
+true,0,0,q,"-42~html.evaluate[`func`arg1!(""neg"";42)]",1,,evaluate calls a global function with one arg correctly
+true,0,0,q,"-1~html.evaluate[`func`arg1`arg2!(""htmltestfn"";1;2)]",1,,evaluate calls a global function with multiple args correctly
 true,0,0,q,"-1~html.evaluate[(enlist `func)!enlist ""neg""]",1,,evaluate with only func key calls f@1 - preserving TorQ behaviour
+true,0,0,q,"all `sub`addtables`pub`dataformat in key get ` sv hns,`funcmap",1,,funcmap contains the module functions callable via websocket dispatch
+true,0,0,q,"not any `wssub`end in key get ` sv hns,`funcmap",1,,wssub and end are not in funcmap
 fail,0,0,q,"html.evaluate[(enlist `arg1)!enlist 1]",1,,evaluate throws when the func key is missing
 
-true,0,0,q,"""<html>test</html>""~html.readpage[""di_html_test.html""]",1,,readpage returns file contents as a string
-true,0,0,q,"""/tmp/di_html_notfound.html: not found""~html.readpage[""di_html_notfound.html""]",1,,readpage returns a not-found message string for a missing file
-true,0,0,q,"0=count html.readpagereplacehostport[""di_html_hp_test.html""] ss ""MYKDBSERVER""",1,,readpagereplacehostport replaces the MYKDBSERVER token
-true,0,0,q,"0=count html.readpagereplacehostport[""di_html_hp_test.html""] ss ""MYKDBPORT""",1,,readpagereplacehostport replaces the MYKDBPORT token
-
-true,0,0,q,"""/tmp""~.h.HOME",1,,init sets .h.HOME to homedir so the default http handler serves static assets
+true,0,0,q,"""/tmp""~.h.HOME",1,,init sets .h.HOME so the default http handler serves static assets
 true,0,0,q,"""start""~html.dataformat[""start"";enlist convtest][`name]",1,,dataformat returns the message type as name
 true,0,0,q,"1704153600000~first (first html.dataformat[""start"";enlist convtest][`data])[`d]",1,,dataformat javascript-formats each table in a list
 true,0,0,q,"`t1`t2~key html.dataformat[""start"";`t1`t2!(convtest;convtest)][`data]",1,,dataformat preserves table names when given a dictionary of tables
@@ -43,16 +43,16 @@ true,0,0,q,"43200000~first (jsf convtest)`tm",1,,jsformat converts a time column
 true,0,0,q,"`AAPL~first (jsf convtest)`sym",1,,jsformat leaves columns whose type is not in the typemap unchanged
 true,0,0,q,"""""~first (jsf ([]ts:enlist 0Np))`ts",1,,jsformat converts null timestamps to empty strings
 true,0,0,q,"0=count (jsf 0#convtest)`ts",1,,jsformat handles empty tables
+run,0,0,q,"setenv[`KDBHTML;""/tmp""]",1,,re-set KDBHTML and call init a second time to verify repeated init is safe
+run,0,0,q,"html.init[enlist[`log]!enlist mocklog]",1,,repeated init with valid deps does not error
+true,0,0,q,"""/tmp""~.h.HOME",1,,homedir from KDBHTML env var is applied on each init
 
-run,0,0,q,"setenv[`KDBHTML;""/tmp""]",1,,set KDBHTML so default init picks up the TorQ env var
-run,0,0,q,"html.init[enlist[`log]!enlist mocklog]",1,,init without homedir config applies defaults without error
-true,0,0,q,"""/tmp""~.h.HOME",1,,default init takes homedir from the KDBHTML env var like TorQ
-true,0,0,q,"""<html>test</html>""~html.readpage[""di_html_test.html""]",1,,readpage works against the env var derived homedir
+fail,0,0,q,"html.setmodifier[`notregistered;{x}]",1,,setmodifier throws for a table that has not been registered
+run,0,0,q,"html.setmodifier[`trades;{42}]",1,,set a custom modifier for trades
+true,0,0,q,"42~(get ` sv hns,`modifier)[`trades]@()",1,,setmodifier replaces the per-table modifier function
 
-fail,0,0,q,"html.init[(::)]",1,,init without a configs dict throws - the log dependency is required
-fail,0,0,q,"html.init[enlist[`homedir]!enlist ""/tmp""]",1,,init with a configs dict missing the log key throws
-fail,0,0,q,"html.init[enlist[`log]!enlist 42]",1,,init throws when the log value is not a dict
-fail,0,0,q,"html.init[enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,,init throws when the log dict is missing the warn and error keys
+fail,0,0,q,"html.init[(::)]",1,,init rejects a non-dict deps arg
+fail,0,0,q,"html.init[enlist[`homedir]!enlist ""/tmp""]",1,,init rejects a dict missing the log key
+fail,0,0,q,"html.init[enlist[`log]!enlist 42]",1,,init rejects a non-dict log value
+fail,0,0,q,"html.init[enlist[`log]!enlist enlist[`info]!enlist {[m]}]",1,,init rejects a log dict missing the warn and error keys
 true,0,0,q,"(@[html.init;(::);{x}]) like ""*log*""",1,,the missing log dependency error message names the log key
-
-after,0,0,q,"system ""rm /tmp/di_html_test.html /tmp/di_html_hp_test.html""",1,,remove test html files created during setup

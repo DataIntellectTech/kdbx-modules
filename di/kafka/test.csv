@@ -7,24 +7,24 @@ before,0,0,q,.test.cap:([] fn:`symbol$();msg:()),1,1,initialise log capture tabl
 before,0,0,q,.test.kupdk:`,1,1,last key received by the test kupd callback
 before,0,0,q,.test.kupdx:`byte$(),1,1,last payload received by the test kupd callback
 comment,,,,,,,init - dep validation
-fail,0,0,q,kafka.init[(::)],1,1,errors when configs is not a dictionary
+fail,0,0,q,kafka.init[(::)],1,1,errors when deps is not a dictionary
 fail,0,0,q,kafka.init[()!()],1,1,errors when log dependency is missing
 fail,0,0,q,kafka.init[enlist[`log]!enlist 42],1,1,errors when log value is not a dictionary
 fail,0,0,q,kafka.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,errors when log dict is missing the error key
 run,0,0,q,.test.err:@[{kafka.init[()!()]};(::);{x}],1,1,capture error string from init with missing log dep
 true,0,0,q,.test.err like "di.kafka:*",1,1,error is prefixed di.kafka:
 comment,,,,,,,init - config validation
-fail,0,0,q,kafka.init[enlist[`log]!enlist logdep],1,1,errors when libpath is missing from config
+fail,0,0,q,kafka.init[enlist[`log]!enlist logdep],1,1,errors when libpath is missing from deps
 comment,,,,,,,init - disabled platform (enabled:0b) - native library skipped; libpath not required
 run,0,0,q,kafka.init[`log`enabled!(logdep;0b)],1,1,init with enabled:0b succeeds without libpath
 true,0,0,q,not .m.di.0kafka.enabled,1,1,module enabled flag reflects disabled state
-comment,,,,,,,stubs - functions throw before init loads the library
+comment,,,,,,,stubs - functions throw when native library not loaded
 true,0,0,q,.[kafka.initconsumer;(`localhost:9092;()!());{x}] like "*kafka not initialised*",1,1,initconsumer stub throws before init
 true,0,0,q,.[kafka.initproducer;(`localhost:9092;()!());{x}] like "*kafka not initialised*",1,1,initproducer stub throws before init
 true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not initialised*",1,1,subscribe stub throws before init
 true,0,0,q,.[kafka.publish;(`test;0;`;0x68656c6c6f);{x}] like "*kafka not initialised*",1,1,publish stub throws before init
-true,0,0,q,.[kafka.cleanupconsumer;();{x}] like "*kafka not initialised*",1,1,cleanupconsumer stub throws before init
-true,0,0,q,.[kafka.cleanupproducer;();{x}] like "*kafka not initialised*",1,1,cleanupproducer stub throws before init
+true,0,0,q,@[{kafka.cleanupconsumer[]};(::);{x}] like "*kafka not initialised*",1,1,cleanupconsumer stub throws when native library not loaded
+true,0,0,q,@[{kafka.cleanupproducer[]};(::);{x}] like "*kafka not initialised*",1,1,cleanupproducer stub throws when native library not loaded
 comment,,,,,,,setkupd - replaces the callback stored in module state
 run,0,0,q,kafka.setkupd[{[k;x] .test.kupdk:k;.test.kupdx:x}],1,1,replace the callback via setkupd
 true,0,0,q,.m.di.0kafka.kupd~{[k;x] .test.kupdk:k;.test.kupdx:x},1,1,module-local kupd replaced by setkupd

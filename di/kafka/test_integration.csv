@@ -1,0 +1,19 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration tests - require KDBLIB env var set to the root library directory
+comment,,,,,,,KDBLIB is standard TorQ - set by setenv.sh in every TorQ deployment
+comment,,,,,,,tests skip automatically if KDBLIB is absent or kafkaq is not found at the resolved path
+before,0,0,q,kafka:use`di.kafka,1,1,load the kafka module
+before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent no-op log mock
+before,0,0,q,libpath:`$getenv`KDBLIB,1,1,read library root directory from KDBLIB
+before,0,0,q,if[`~libpath;exit 0],1,1,skip if KDBLIB not set
+before,0,0,q,libfile:hsym`$"/" sv ((string libpath);(string .z.o);$[.z.o like "w*";"kafkaq.dll";"kafkaq.so"]),1,1,build os-specific library file path
+before,0,0,q,if[()~key libfile;exit 0],1,1,skip if kafkaq not found at resolved path
+comment,,,,,,,init - library loads without error
+run,0,0,q,kafka.init[`log`libpath!(logdep;libpath)],1,1,init with real kafkaq library succeeds
+comment,,,,,,,bindings - native internals are c functions after successful init
+true,0,0,q,112h=type .m.di.0kafka.nativeinitconsumer,1,1,nativeinitconsumer bound to c function
+true,0,0,q,112h=type .m.di.0kafka.nativeinitproducer,1,1,nativeinitproducer bound to c function
+true,0,0,q,112h=type .m.di.0kafka.rawcleanupconsumer,1,1,rawcleanupconsumer bound to c function
+true,0,0,q,112h=type .m.di.0kafka.rawcleanupproducer,1,1,rawcleanupproducer bound to c function
+true,0,0,q,112h=type .m.di.0kafka.nativesubscribe,1,1,nativesubscribe bound to c function
+true,0,0,q,112h=type .m.di.0kafka.nativepublish,1,1,nativepublish bound to c function

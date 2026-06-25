@@ -1,20 +1,7 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,srvsel:use`di.serverselect,1,1,load module
-before,0,0,q,mylog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,no-op mock logger
-before,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,1,initialise log capture table
-before,0,0,q,logcap:`info`warn`error!({[c;m] `caplog upsert(`info;c;m)};{[c;m] `caplog upsert(`warn;c;m)};{[c;m] `caplog upsert(`error;c;m)}),1,1,define capturing mock logger
-before,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,init with no-op logger for setup
-
-/ ---- init: dependency injection validation ----
-comment,,,,,,,init - dependency injection validation
-run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,init accepts valid log dependency
-fail,0,0,q,srvsel.init[(::)],1,1,init rejects :: (not a dict)
-fail,0,0,q,srvsel.init[()!()],1,1,init rejects empty config (missing log key)
-fail,0,0,q,srvsel.init[enlist[`other]!enlist mylog],1,1,init rejects config without log key
-fail,0,0,q,srvsel.init[enlist[`log]!enlist(::)],1,1,init rejects log dep that is not a dict
-fail,0,0,q,srvsel.init[enlist[`log]!enlist 42],1,1,init rejects non-dict log value
-fail,0,0,q,srvsel.init[enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects log dict missing required key
-true,0,0,q,"(15#@[srvsel.init;enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn));{x}])~""di.serverselect""",1,1,error message is prefixed di.serverselect
+before,0,0,q,"noop:`info`warn`error!({[m]};{[m]};{[m]})",1,1,define a no-op monadic logger
+before,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,init the module with the required log dependency before use
 
 / ---- getserverstable: initial state ----
 comment,,,,,,,getserverstable - initial state before any addserverattr
@@ -73,6 +60,14 @@ true,0,0,q,(srvsel.gethpbytype[`hdb;`roundrobin]) in exec hpup from srvsel.getse
 run,0,0,q,srvsel.gethandlebytype[`rdb;`roundrobin],1,1,gethandlebytype call updates lastp and hits via updatestats
 true,0,0,q,"0<(exec hits from srvsel.getserverstable[] where handle in exec handle from srvsel.getserverstable[] where servertype=`rdb,active)[0]",1,1,hits incremented after gethandlebytype call
 
+/ ---- updatestats: keyed on serverid not handle ----
+comment,,,,,,,updatestats - a selection updates only the chosen serverid even when a handle is shared
+run,0,0,q,"srvsel.addserverfull[60i;`dupa;`zdb;`:h:1;()!()]",1,1,register first server on shared handle 60 (unique servertype zdb)
+run,0,0,q,"srvsel.addserverfull[60i;`dupb;`zdb;`:h:2;()!()]",1,1,register second server on same handle 60
+run,0,0,q,srvsel.gethandlebytype[`zdb;`roundrobin],1,1,select one zdb server by handle
+true,0,0,q,1=sum exec hits from srvsel.getserverstable[] where servertype=`zdb,1,1,exactly one hit recorded across both shared-handle servers (not two)
+true,0,0,q,"1=count select from srvsel.getserverstable[] where servertype=`zdb,not null lastp",1,1,only the selected serverid had its lastp updated
+
 / ---- getserverids: symbol list path ----
 comment,,,,,,,getserverids - symbol list (servertype) path
 true,0,0,q,0<count srvsel.getserverids[`rdb],1,1,getserverids returns IDs for registered rdb type
@@ -108,34 +103,7 @@ run,0,0,q,"conntab4:([]w:30 31i;proctype:`rdb`hdb;procname:`p1`p2;hpup:`:host:10
 run,0,0,q,srvsel.addserversfromtable[`ALL;conntab4],1,1,addserversfromtable with `ALL and optional columns
 true,0,0,q,`p1~first exec procname from srvsel.getserverstable[] where handle=30i,1,1,procname populated from connection table
 true,0,0,q,`:host:1002~first exec hpup from srvsel.getserverstable[] where handle=31i,1,1,hpup populated from connection table
-
-/ ---- log call verification ----
-comment,,,,,,,log call verification - switch to capturing logger
-run,0,0,q,srvsel.init[enlist[`log]!enlist logcap],1,1,switch to capturing logger
-
-comment,,,,,,,log call verification - addserverfull
-run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,"srvsel.addserverfull[99i;`testproc;`rdb;`:host:9999;()!()]",1,1,register server with capturing logger
-true,0,0,q,1=count select from caplog where fn=`info,1,1,addserverfull emits one info log entry
-true,0,0,q,"any caplog[`msg] like ""*registering server*""",1,1,addserverfull logs registration message
-true,0,0,q,`addserverfull~first (select from caplog where fn=`info)[`ctx],1,1,addserverfull log uses addserverfull context symbol
-
-comment,,,,,,,log call verification - setserveractive
-run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,srvsel.setserveractive[99i;0b],1,1,mark server inactive with capturing logger
-true,0,0,q,1=count select from caplog where fn=`info,1,1,setserveractive emits one info log entry
-true,0,0,q,"any caplog[`msg] like ""*active=0*""",1,1,setserveractive logs active flag state
-true,0,0,q,`setserveractive~first (select from caplog where fn=`info)[`ctx],1,1,setserveractive log uses setserveractive context symbol
-
-comment,,,,,,,log call verification - addserversfromtable
-run,0,0,q,caplog:0#caplog,1,1,reset log capture
-run,0,0,q,"srvsel.addserversfromtable[`rdb;([]w:enlist 98i;proctype:enlist`rdb;attributes:enlist()!())]",1,1,bulk register with capturing logger
-true,0,0,q,any caplog[`fn]=`info,1,1,addserversfromtable emits info log entries
-true,0,0,q,"any caplog[`msg] like ""*servers from connection table*""",1,1,addserversfromtable logs count of servers being registered
-true,0,0,q,`addserversfromtable~first (select from caplog where fn=`info)[`ctx],1,1,addserversfromtable log uses addserversfromtable context symbol
-
-/ reset to no-op logger for edge case tests
-run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,reset to no-op logger for edge case tests
+fail,0,0,q,"srvsel.addserversfromtable[`rdb;([]x:enlist 1i;y:enlist`rdb)]",1,1,addserversfromtable rejects connection table missing required columns
 
 / ---- addserverfull: edge cases ----
 comment,,,,,,,addserverfull - edge cases
@@ -174,6 +142,7 @@ true,0,0,q,not (1i) in exec handle from srvsel.getservers[`servertype;`rdb;()!()
 run,0,0,q,srvsel.setserveractive[1i;1b],1,1,restore handle 1 active after inactive-exclusion test
 true,0,0,q,"all (exec servertype from srvsel.getservers[`servertype;`rdb`hdb;()!()]) in `rdb`hdb",1,1,getservers accepts symbol list as lookups
 true,0,0,q,4i in exec handle from srvsel.getservers[`procname;`myproc;()!()],1,1,getservers procname filter returns server with matching procname
+fail,0,0,q,srvsel.getservers[`badname;`x;()!()],1,1,getservers rejects nameortype that is not servertype or procname
 
 / ---- selector: edge cases ----
 comment,,,,,,,selector - edge cases
@@ -203,50 +172,22 @@ true,0,0,q,"0<count srvsel.getserverids[`date`attributetype!(enlist 2024.01.01;`
 fail,0,0,q,"srvsel.getserverids[`date`besteffort!(enlist 1990.01.01;0b)]",1,1,getserverids throws when no servers have requested attribute value
 fail,0,0,q,"srvsel.getserverids[`servertype`date!(`nonexistent;enlist 2024.01.01)]",1,1,getserverids throws for unknown servertype in attribute dict
 
-/ ---- mock log: init behaviour ----
-comment,,,,,,,mock log - init does not itself emit any log output
-run,0,0,q,srvsel.init[enlist[`log]!enlist logcap],1,1,switch to capturing logger
+/ ---- init: dependency injection (required log) ----
+comment,,,,,,,init - inject and validate the required log dependency
+run,0,0,q,"caplog:([]lvl:`symbol$();msg:())",1,1,initialise log capture table
+run,0,0,q,"caplogger:`info`warn`error!({[m]`caplog upsert(`info;m)};{[m]`caplog upsert(`warn;m)};{[m]`caplog upsert(`error;m)})",1,1,define a bespoke capturing logger (info/warn/error single-arg)
+run,0,0,q,srvsel.init[enlist[`log]!enlist caplogger],1,1,re-init with the bespoke capturing logger
 run,0,0,q,caplog:0#caplog,1,1,reset capture
-run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,re-init with no-op logger
-true,0,0,q,0=count caplog,1,1,init produces no log output of its own
-
-/ ---- mock log: rewiring takes effect immediately ----
-comment,,,,,,,mock log - rewiring the log dependency via init takes effect on subsequent calls
-run,0,0,q,srvsel.init[enlist[`log]!enlist mylog],1,1,wire no-op logger
+run,0,0,q,"srvsel.addserver[40i;`rdb]",1,1,register a server while the capturing logger is active
+true,0,0,q,0<count select from caplog where lvl=`info,1,1,injected logger received an info message
+true,0,0,q,"any caplog[`msg] like ""*registering server*""",1,1,injected logger received the registration message text
 run,0,0,q,caplog:0#caplog,1,1,reset capture
-run,0,0,q,"srvsel.addserverfull[85i;`;`rdb;`;()!()]",1,1,register server while no-op logger is active
-true,0,0,q,0=count caplog,1,1,no-op logger suppresses all output - nothing captured
-run,0,0,q,srvsel.init[enlist[`log]!enlist logcap],1,1,rewire to capturing logger
-run,0,0,q,caplog:0#caplog,1,1,reset capture
-run,0,0,q,"srvsel.addserverfull[86i;`;`rdb;`;()!()]",1,1,register server after rewiring to capturing logger
-true,0,0,q,1=count select from caplog where fn=`info,1,1,rewired logger is called - one info entry captured
-
-/ ---- mock log: addserverfull message content ----
-comment,,,,,,,mock log - addserverfull message includes handle procname and servertype values
-run,0,0,q,caplog:0#caplog,1,1,reset capture
-run,0,0,q,"srvsel.addserverfull[87i;`logtest;`hdb;`:h:999;()!()]",1,1,register server for message content test
-true,0,0,q,"any caplog[`msg] like ""*handle=87*""",1,1,addserverfull log message includes handle value
-true,0,0,q,"any caplog[`msg] like ""*procname=logtest*""",1,1,addserverfull log message includes procname value
-true,0,0,q,"any caplog[`msg] like ""*type=hdb*""",1,1,addserverfull log message includes servertype value
-true,0,0,q,0=count select from caplog where fn=`warn,1,1,addserverfull does not call warn on success
-true,0,0,q,0=count select from caplog where fn=`error,1,1,addserverfull does not call error on success
-
-/ ---- mock log: setserveractive message content ----
-comment,,,,,,,mock log - setserveractive message includes handle and active state for both transitions
-run,0,0,q,caplog:0#caplog,1,1,reset capture
-run,0,0,q,srvsel.setserveractive[87i;0b],1,1,mark server inactive for message content test
-true,0,0,q,"any caplog[`msg] like ""*handle=87*""",1,1,setserveractive log message includes handle value
-true,0,0,q,"any caplog[`msg] like ""*active=0*""",1,1,setserveractive log message includes active=0 on deactivation
-true,0,0,q,0=count select from caplog where fn=`warn,1,1,setserveractive does not call warn on success
-run,0,0,q,caplog:0#caplog,1,1,reset capture
-run,0,0,q,srvsel.setserveractive[87i;1b],1,1,mark server active again for active=1 message test
-true,0,0,q,"any caplog[`msg] like ""*active=1*""",1,1,setserveractive log message includes active=1 on activation
-
-/ ---- mock log: addserversfromtable message content ----
-comment,,,,,,,mock log - addserversfromtable message includes count and triggers per-server addserverfull logs
-run,0,0,q,caplog:0#caplog,1,1,reset capture
-run,0,0,q,"srvsel.addserversfromtable[`rdb;([]w:88 89i;proctype:`rdb`rdb;attributes:(()!();()!()))]",1,1,bulk register 2 servers for message content test
-true,0,0,q,"any caplog[`msg] like ""*registering 2 servers*""",1,1,addserversfromtable log message includes server count
-true,0,0,q,3=count select from caplog where fn=`info,1,1,addserversfromtable emits one summary log plus one per-server log (2+1=3 total)
-true,0,0,q,0=count select from caplog where fn=`warn,1,1,addserversfromtable does not call warn on success
-true,0,0,q,0=count select from caplog where fn=`error,1,1,addserversfromtable does not call error on success
+run,0,0,q,"@[{srvsel.selector[([]handle:1 2i;lastp:2#.z.p);`bogus]};();{}]",1,1,trigger an error path (signal swallowed)
+true,0,0,q,0<count select from caplog where lvl=`error,1,1,injected logger received the error message via .z.m.log[`error]
+fail,0,0,q,srvsel.init[(::)],1,1,init rejects a non-dictionary configs
+fail,0,0,q,srvsel.init[()!()],1,1,init rejects configs missing the log key
+fail,0,0,q,srvsel.init[enlist[`other]!enlist noop],1,1,init rejects configs without a log key
+fail,0,0,q,srvsel.init[enlist[`log]!enlist(::)],1,1,init rejects a log value that is not a dict
+fail,0,0,q,"srvsel.init[enlist[`log]!enlist(`info`warn!({[m]};{[m]}))]",1,1,init rejects a log dict missing the error key
+true,0,0,q,"""di.serverselect""~15#@[srvsel.init;(::);{x}]",1,1,init error message is prefixed di.serverselect
+run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,restore the no-op logger

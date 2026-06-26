@@ -38,6 +38,9 @@ comment,,,,,,,Timeseries request
 run,0,0,q,.test.tsrqt:`targets`range!((enlist `target`type!("g.trade";"timeserie"));`from`to!(("" sv (string .z.p-1D;enlist"Z"));("" sv (string .z.p+1D;enlist"Z")))),1,,build a graph timeseries request
 run,0,0,q,.test.ts:.m.di.0grafana.tsfunc .test.tsrqt,1,,run the timeseries builder
 true,0,0,q,.test.ts like "*price*",1,,timeseries response returns numeric column datapoints
+run,0,0,q,.test.tsgrqt:`targets`range!((enlist `target`type!("g.trade.price";"timeserie"));.test.tsrqt`range),1,,build a per-sym graph request
+run,0,0,q,.test.tsg:.m.di.0grafana.tsfunc .test.tsgrqt,1,,run the timeseries builder for graphsym
+true,0,0,q,.test.tsg like "*\"target\":\"a\"*",1,,graphsym returns one datapoints series per sym
 
 comment,,,,,,,Handlers route grafana requests
 run,0,0,q,.test.sr:.z.pp (("search {}");(enlist `$"X-Grafana-Org-Id")!enlist ""),1,,post routed through installed .z.pp to search
@@ -48,6 +51,12 @@ run,0,0,q,.test.ph:.z.ph (`;(enlist `$"X-Grafana-Org-Id")!enlist ""),1,,get rout
 true,0,0,q,.test.ph~"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n",1,,get returns an alive response
 
 comment,,,,,,,Configuration override
-run,0,0,q,grafana.init[`log`config!(mocklog;enlist[`ticks]!enlist 5)],1,,re-init with a config override
+run,0,0,q,grafana.init[`log`ticks!(mocklog;5)],1,,re-init with a config override
 true,0,0,q,5=.m.di.0grafana.ticks,1,,ticks config overridden
 true,0,0,q,5=grafana.getconfig[][`ticks],1,,getconfig reflects the overridden ticks
+
+comment,,,,,,,kx.log instance normalisation
+run,0,0,q,kxlog:`getlvl`sinks`fmts`info`warn`error!((::);(::);(::);{[m]};{[m]};{[m]}),1,,build a fake kx.log instance with monadic loggers
+run,0,0,q,grafana.init[enlist[`log]!enlist kxlog],1,,init accepts a kx.log instance via normlog
+true,0,0,q,(`error`info`warn)~asc key .m.di.0grafana.log,1,,normlog wrapped kx.log into the info/warn/error contract
+true,0,0,q,(::)~.m.di.0grafana.log[`info][`ctx;"msg"],1,,wrapped logger is callable as a binary {[c;m]}

@@ -222,6 +222,18 @@ tablesym:{[coln;rqt;symname]
 / initialisation
 / -----------------------------------------------------------------------------
 
+normlog:{[logdict]
+  / detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
+  / kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
+  / plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
+  $[any `getlvl`sinks`fmts in key logdict;
+    `info`warn`error!(
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
+    logdict]
+  };
+
 sethandlers:{
   / wrap any existing .z.pp/.z.ph so grafana requests are intercepted and every
   / other request falls through to the original handler
@@ -234,27 +246,26 @@ sethandlers:{
 
 init:{[deps]
   / wire the logging dependency and any configuration, then install the handlers
-  / deps - `log!enlist logdict or `log`config!(logdict;configdict)
-  /   logdict    - `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required
-  /   configdict - optional overrides for `timecol`sym`timebackdate`ticks`del
+  / deps - a single dict holding the log dependency and any config overrides
+  /   `log        - `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required
+  /   config keys - optional `timecol`sym`timebackdate`ticks`del, alongside `log
   / examples:
   /   grafana.init[enlist[`log]!enlist mylog]
-  /   grafana.init[`log`config!(mylog;enlist[`ticks]!enlist 500)]
+  /   grafana.init[`log`ticks!(mylog;500)]
   / validate the required log dependency - nested guards, no eager `and`
   if[99h<>type deps;'"di.grafana: deps must be a dict with `log key"];
   if[not`log in key deps;'"di.grafana: log dependency is required; pass `info`warn`error functions keyed on `log"];
   if[99h<>type deps`log;'"di.grafana: log value must be a dict; pass `info`warn`error functions"];
-  if[not all`info`warn`error in key deps`log;'"di.grafana: log dict must have `info`warn`error keys; got: ",", " sv string key deps`log];
-  .z.m.log:deps`log;
-  / overlay any supplied configuration onto the defaults
-  config:$[`config in key deps;deps`config;()!()];
-  if[99h=type config;
-    if[`timecol in key config;.z.m.timecol:config`timecol];
-    if[`sym in key config;.z.m.sym:config`sym];
-    if[`timebackdate in key config;.z.m.timebackdate:config`timebackdate];
-    if[`ticks in key config;.z.m.ticks:config`ticks];
-    if[`del in key config;.z.m.del:config`del];
-   ];
+  / normalise a kx.log instance into the binary {[c;m]} contract; plain dicts pass through
+  lg:normlog deps`log;
+  if[not all`info`warn`error in key lg;'"di.grafana: log dict must have `info`warn`error keys; got: ",", " sv string key lg];
+  .z.m.log:lg;
+  / overlay any supplied config - config values sit alongside `log in deps
+  if[`timecol in key deps;.z.m.timecol:deps`timecol];
+  if[`sym in key deps;.z.m.sym:deps`sym];
+  if[`timebackdate in key deps;.z.m.timebackdate:deps`timebackdate];
+  if[`ticks in key deps;.z.m.ticks:deps`ticks];
+  if[`del in key deps;.z.m.del:deps`del];
   / install the http handlers once, preserving any existing definitions
   if[not wired;sethandlers[]];
   .z.m.log[`info][`grafana;"initialised grafana json datasource adaptor"];

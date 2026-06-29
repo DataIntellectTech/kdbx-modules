@@ -4,7 +4,7 @@
 
 ---
 
-## :sparkles: Features
+## Features
 
 - Register backend servers with servertype, procname, host/port, and attribute dictionaries
 - Track active/inactive state per server, updated on connect and disconnect
@@ -16,7 +16,7 @@
 
 ---
 
-## :gear: Initialisation & Dependencies
+## Initialisation & Dependencies
 
 `init` wires the module's injected dependencies and **must be called before any other function**. The `log` dependency is **required** — there is no fallback, and the module does not load `kx.log` itself. Initialising the logging framework is the job of the start-up script that ties the modules together, or of the user at run time.
 
@@ -46,7 +46,7 @@ srvsel.init[enlist[`log]!enlist mylog]
 
 ---
 
-## :label: Server Table Schema
+## Server Table Schema
 
 Servers are tracked in the `servers` keyed table (keyed on `serverid`):
 
@@ -64,7 +64,7 @@ Servers are tracked in the `servers` keyed table (keyed on `serverid`):
 
 ---
 
-## :wrench: Functions
+## Functions
 
 ### Registration
 
@@ -174,7 +174,7 @@ The reserved key `` `besteffort `` (boolean, default `1b`) controls whether a pa
 
 ---
 
-## :test_tube: Example
+## Example
 
 ```q
 / load and initialise - init must be called before any other function
@@ -201,3 +201,34 @@ h:srvsel.gethandlebytype[`rdb; `roundrobin]
 / inspect registered server pool
 srvsel.getserverstable[]
 ```
+
+---
+
+## Testing
+
+Both test suites require KDB-X (the `use` module system). Set `QPATH` so `di.*` and `kx.*` modules resolve — it must include this repository and the `kx` module directory:
+
+```bash
+export QPATH=/path/to/kx/mod:/path/to/kdbx-modules
+```
+
+### Unit tests (k4unit)
+
+`test.csv` is a k4unit manifest covering every exported function. Run it from a q session (or script):
+
+```q
+k4unit:use`di.k4unit;
+k4unit.moduletest`di.serverselect;   / prints the results table; "All tests passed" on success
+```
+
+The `before` rows load the module and `init` it with a no-op logger, so the tests run standalone with no external logging framework.
+
+### Integration test
+
+`integration.q` is an end-to-end narrative test that drives every exported function through a realistic gateway lifecycle (register → activate/deactivate → query → select → bulk-register → error handling) and prints a `PASS`/`FAIL` summary. Run it directly:
+
+```bash
+QPATH=/path/to/kx/mod:/path/to/kdbx-modules q integration.q
+```
+
+It exits with a non-zero code equal to the number of failed assertions (`0` when all pass).

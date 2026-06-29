@@ -1,191 +1,224 @@
-# asyncdispatch
+# di.asyncdispatch
 
-`asyncdispatch.q` is the async multi-process query coordinator extracted from the TorQ gateway's core engine (`.gw.*`). It queues client queries, dispatches them to available backend ("server") processes, collects the per-server results, applies a join function, and replies to the client — with timeout management and error propagation if a backend disconnects mid-query.
+Async scatter-gather query coordinator for kdb-x gateway processes. Queues client queries, dispatches them to available backend processes by servertype, collects per-server results, applies a join function, and replies to the client — with timeout management and correct error propagation if a backend disconnects mid-query.
 
-**Standalone value:** any process that needs scatter-gather across multiple backend processes (not just a "gateway") can load this module to get queueing, dispatch, join and timeout handling for free.
-
-**Out of scope** (left to other modules in the gateway decomposition):
-- **Routing** — deciding *which* servers satisfy a query is `di.serverselect`'s job. This module is handed a resolved list of servertypes and dispatches to whatever of those is currently idle.
-- **Permissions** — `.pm.*`/`execas`/`valp`-style checks belong in `di.gateway`/`di.permissions`.
-- **EOD / discovery / dashboard & REST handlers** — `di.gateway` concerns.
+Routing (deciding which servertypes satisfy a query) is `di.serverselect`'s responsibility. This module receives a resolved servertype list and dispatches to whatever idle backends of each type are registered.
 
 ---
 
-## Loading
+## Features
+
+- Queue and dispatch async client queries to multiple backend process types simultaneously (scatter-gather)
+- Collect per-server results and apply a caller-supplied join function once all slots are filled
+- Timeout expired queries with configurable per-query timespan via `checktimeout`
+- Handle backend disconnects mid-query — errors in-flight queries and queued queries that can no longer be satisfied
+- Track connected clients and clean up orphaned queries on client disconnect
+- Support synchronous deferred response mode (`-30!`) alongside the default async mode
+- Accept fully pluggable scheduler (`setgetnextqueryid`), routing (`setavailableservers`), reply formatter (`setformatresponse`), and callback symbols (`setcallbacks`) — swap without touching core dispatch logic
+- Detect and normalise `kx.log` instances automatically so callers can pass a logger directly without manual wrapping
+
+---
+
+## Dependencies
+
+| Dependency | Key | Required | Description |
+|---|---|---|---|
+| logger | `` `log `` | yes | `info`, `warn`, `error` — each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
+
+The `log` dependency must be passed to `init` inside the `deps` dict. The module throws immediately if it is absent or missing any of the three required keys. All three are required since the module calls `info`, `warn`, and `error`.
+
+A `kx.log` instance can be passed directly — the module normalises monadic functions to the binary `{[c;m]}` contract automatically via `normlog`. Context is embedded in the output as `"context: message"`:
 
 ```q
+kxlog:use`kx.log
 ad:use`di.asyncdispatch
-```
 
-Returns a handle (`ad`) exposing the exported API, e.g. `ad.execquery[...]`.
+/ minimal
+ad.init[enlist[`log]!enlist kxlog.createLog[]]
+
+/ with config overrides
+ad.init[`log`querykeeptime`synccallsallowed!(kxlog.createLog[];0D01:00;1b)]
+```
 
 ---
 
-## Configuration & pluggable hooks
+## Initialisation
 
-| Variable | Default | Setter | Purpose |
+`init[deps]` takes a single dictionary combining the `log` dependency with any configuration overrides.
+
+| Key | Required | Default | Description |
 |---|---|---|---|
-| `errorprefix` | `"error: "` | — | Prefix added to error strings sent back to clients |
-| `querykeeptime` | `0D00:30` | — | How long `removequeries` keeps finished queries in `queryqueue` |
-| `clearinactivetime` | `0D01:00` | — | How long `removeinactive` keeps records for disconnected servers |
-| `synccallsallowed` | `0b` | — | Whether `execquery[...;1b]` (sync mode) is permitted |
-| `cp` | `{.z.p}` | `setcp` | Current-time function. Override for simulation/backtesting |
-| `formatresponse` | see below | `setformatresponse` | Final transform applied to a result/error before it is sent to the client |
-| `availableservers` | built-in | `setavailableservers` | How "which servers are free" is computed |
-| `getnextqueryid` | `fifo` | `setgetnextqueryid` | Scheduler — picks the next query to dispatch |
-| `resultcallback` / `errorcallback` | `` `addserverresult `` / `` `addservererror `` | `setcallbacks` | Symbols backend servers call back into to report results/errors |
+| `` `log `` | yes | — | Binary log dep — `info`, `warn`, `error` functions each `{[c;m]}` |
+| `` `errorprefix `` | no | `"error: "` | String prepended to all error messages sent back to clients |
+| `` `querykeeptime `` | no | `0D00:30` | How long `removequeries` retains finished query rows |
+| `` `clearinactivetime `` | no | `0D01:00` | How long `removeinactive` retains disconnected server rows |
+| `` `synccallsallowed `` | no | `0b` | Whether `execquery[...;1b]` (deferred sync mode) is permitted |
 
-### `formatresponse[status;sync;result]`
-- `status` — `1b` success, `0b` error.
-- `sync` — `1b` if the client used a deferred-sync call (`execquery[...;1b]`), `0b` for async.
-- Default: on a synchronous error (`not status` and `sync`), **signals** `result` as an error back up the `-30!` deferred response so the client's sync call raises. Otherwise passes `result` through unchanged.
+Housekeeping — `checktimeout`, `removequeries`, and `removeinactive` — is the caller's responsibility. Wire them into your gateway's timer after `init`. The configured default age parameters are accessible as `querykeeptime` and `clearinactivetime` via module state.
 
-### `availableservers[excludeinuse]`
-- `excludeinuse=1b` → only **idle, active** servers.
-- `excludeinuse=0b` → all **active** servers.
-- Override for custom load-balancing.
+---
 
-### `getnextqueryid[]` (scheduler)
-- Default: oldest runnable query first (FIFO) — a runnable query is one where all required servertypes have an idle server available.
-- Override `getnextqueryid` for priority queues. The override receives no arguments and must return a 1-row (or empty) table with the `queryqueue` schema.
+## Exported Functions
 
-### `resultcallback` / `errorcallback`
-`serverexecute` (the function sent to backend servers) posts its outcome back via `(resultcallback;queryid;result)` / `(errorcallback;queryid;error)` over `neg .z.w`. Since this module has no fixed namespace path when used standalone, the consumer must point these symbols at wherever it mounted this module on the **backend** processes, e.g.:
+### `init[deps]`
+Initialise the module. Validates the log dependency and applies config overrides.
+```q
+ad.init[enlist[`log]!enlist logdep]
+```
 
+### `addserver[handle;servertype]`
+Register a backend connection. `handle`: open int handle. `servertype`: symbol identifying the process type (e.g. `` `rdb ``, `` `hdb ``).
+```q
+ad.addserver[hopen`:backend1:5001;`rdb]
+```
+
+### `removeserverhandle[handle]`
+Call from `.z.pc` for **backend** handles. Errors any in-flight or queued queries that depended on this server, marks the server `active:0b`, and triggers `runnextquery`.
+```q
+.z.pc:{ad.removeserverhandle[.z.w];ad.removeclienthandle[.z.w]}
+```
+
+### `addclientdetails[handle]`
+Record client identity on connect. Call from `.z.po`.
+```q
+.z.po:{ad.addclientdetails[.z.w]}
+```
+
+### `removeclienthandle[handle]`
+On client disconnect, mark their pending queries errored so result slots are not leaked. Call from `.z.pc`.
+```q
+.z.pc:{ad.removeserverhandle[.z.w];ad.removeclienthandle[.z.w]}
+```
+
+### `addserverresult[qid;data]`
+Called when a backend posts back a successful result. Fills the result slot, frees the server, triggers `runnextquery`, and — once all slots for the query are received — applies the join function and replies to the client.
+```q
+/ called by serverexecute on the backend; not typically called directly
+```
+
+### `addservererror[qid;err]`
+Called when a backend posts back an error. Sends the error to the client and finishes the query.
+```q
+/ called by serverexecute on the backend; not typically called directly
+```
+
+### `execquery[query;servertype;join;postback;timeout;sync]`
+Public entry point. Validates sync constraints, enqueues the query, and triggers dispatch.
+
+| Argument | Type | Description |
+|---|---|---|
+| `query` | any | Payload passed to `value` on the backend |
+| `servertype` | symbol list | One symbol per required backend type, e.g. `` enlist`rdb `` |
+| `join` | function | Applied to the list of per-server results once all are received |
+| `postback` | list or `()` | `()` for a plain reply; `(function;extra_args...)` to wrap the reply |
+| `timeout` | timespan | `0Wn` for no timeout |
+| `sync` | boolean | `1b` for deferred sync via `-30!`; `0b` for async |
+
+```q
+ad.execquery["select count i by sym from trade";enlist`rdb;raze;();0Wn;0b]
+```
+
+### `checktimeout[]`
+Scan the queue for queries past their timeout, send a timeout error to each client, and mark them complete. Wire into your gateway's timer — every few seconds is typical.
+```q
+/ in gateway timer
+timer.addjob.default[`asyncdispatch.checktimeout;{ad.checktimeout[]};();5i;1]
+```
+
+### `removequeries[age]`
+Purge completed `queryqueue` rows older than `age`. Prevents unbounded growth.
+```q
+/ default age is querykeeptime (0D00:30)
+timer.addjob.default[`asyncdispatch.removequeries;{ad.removequeries[0D00:30]};();300i;1]
+```
+
+### `removeinactive[age]`
+Purge `servers` rows for backends that have been disconnected longer than `age`. Prevents unbounded growth.
+```q
+/ default age is clearinactivetime (0D01:00)
+timer.addjob.default[`asyncdispatch.removeinactive;{ad.removeinactive[0D01:00]};();300i;1]
+```
+
+### `setformatresponse[f]`
+Override the reply formatter applied before a result or error is sent to the client. `f` must be `{[status;sync;result]}`.
+```q
+ad.setformatresponse[{[status;sync;result]result}]
+```
+
+### `setcallbacks[resfn;errfn]`
+Update the callback symbols used by `serverexecute`. Required when the module is mounted under a non-default namespace — point these at wherever `addserverresult` and `addservererror` are visible on the backend processes.
 ```q
 ad.setcallbacks[`.gw.dispatch.addserverresult;`.gw.dispatch.addservererror]
 ```
 
----
+### `setavailableservers[f]`
+Swap in a custom routing strategy. `f` must be `{[excludeinuse]}` returning a table with a `servertype` column.
+```q
+ad.setavailableservers[{[excl]select from servers where active}]
+```
 
-## Core data structures
-
-### `servers` (keyed table, key: `handle`)
-
-| Column | Type | Description |
-|---|---|---|
-| `handle` | `int` | Connection handle to the backend process |
-| `servertype` | `symbol` | e.g. `` `rdb ``, `` `hdb `` |
-| `inuse` | `boolean` | Currently running a query |
-| `active` | `boolean` | Connected (`0b` once disconnected) |
-| `disconnecttime` | `timestamp` | When the server was marked inactive; null while active |
-
-### `queryqueue` (keyed table, key: `queryid`)
-
-| Column | Type | Description |
-|---|---|---|
-| `queryid` | `long` | Allocated by `addquery` |
-| `time` | `timestamp` | When the query was queued |
-| `clienth` | `int` | `.z.w` of the requesting client |
-| `query` | `()` | The query payload — whatever `value` can execute |
-| `servertype` | `()` | List of servertype symbols the query must run on |
-| `join` | `()` | Function applied to the collected per-server results |
-| `postback` | `()` | `()` for a plain reply, else `(function;extra args...)` to wrap the reply |
-| `timeout` | `timespan` | `0Wn` for none |
-| `returntime` | `timestamp` | Set by `finishquery` once complete |
-| `error` | `boolean` | `1b` if the query ended in error |
-| `sync` | `boolean` | `1b` if the client is waiting on a deferred (`-30!`) response |
-
-### `clients` (table)
-
-| Column | Type | Description |
-|---|---|---|
-| `time` | `timestamp` | Connection time |
-| `clienth` | `int` | `.z.w` of the client |
-| `user` | `symbol` | `.z.u` |
-| `ip` | `int` | `.z.a` |
-| `host` | `symbol` | `.z.h` |
-
-### `results` (dict)
-
-`queryid -> (clienth; servertype!(handle;result;received))`
-
-- Keys are the servertype symbols passed to `addquery`.
-- Each value is a 3-list: `(handle assigned; result once it arrives; received flag)`.
-- A query is complete once every `received` flag is `1b`.
-- Entries are removed by `finishquery` once the query completes.
+### `setgetnextqueryid[f]`
+Inject a custom scheduling strategy. `f` must be niladic and return a 0- or 1-row table with the `queryqueue` schema.
+```q
+/ priority queue example - highest-priority query first
+ad.setgetnextqueryid[{1 sublist `priority xdesc 0!select from .z.m.queryqueue where null returntime}]
+```
 
 ---
 
-## Functions
-
-### Server registry
-- **`addserver[handle;servertype]`** — register a backend connection.
-- **`availableservers[excludeinuse]`** — query which servers can take work now (see Pluggable hooks).
-
-### Client tracking
-- **`addclientdetails[h]`** — call from `.z.po` to record a new client connection in `clients`.
-- **`removeclienthandle[h]`** — call from `.z.pc`. Stamps any of that client's unfinished queries as returned/errored and drops their `results` entries.
-
-### Queueing
-- **`addquery[query;servertype;join;postback;timeout;sync]`** — low-level: insert a row into `queryqueue`. Does **not** dispatch — call `runnextquery[]` afterwards (or use `execquery` which does both).
-- **`removequeries[age]`** — purge `queryqueue` rows with `returntime` older than `age`.
-
-### Scheduling
-- **`getnextqueryid[]`** — returns the next runnable query (FIFO by default: oldest query for which all required servertypes have an idle server). Override via `setgetnextqueryid` for priority queues.
-
-### Result collection & joining
-- **`addserverresult[qid;data]`** — called when a backend posts back success. Fills slot, frees server, tries to run the next query; once all slots are received applies `join`, sends the reply, and finishes the query.
-- **`addservererror[qid;err]`** — called when a backend posts back an error. Sends the error to the client and finishes the query.
-
-### Dispatch
-- **`serverexecute[qid;query]`** — **runs on the backend**. Executes `value query`, trapping errors, and posts the outcome back to the dispatcher via `resultcallback`/`errorcallback`.
-- **`runnextquery[]`** — picks the next runnable query via `getnextqueryid`, resolves idle servers, and dispatches.
-
-### Timeouts & disconnects
-- **`checktimeout[]`** — finds queries past their `timeout` with no `returntime`, sends a timeout error, and finishes them.
-- **`removeserverhandle[serverh]`** — call from `.z.pc` for **backend** handles. Errors any in-flight or queued queries that depended on this server, marks the server `active:0b`, and calls `runnextquery[]`.
-- **`removeinactive[age]`** — purge `servers` rows that have been inactive for longer than `age`.
-
-### Public API
-- **`execquery[query;servertype;join;postback;timeout;sync]`** — queue + dispatch. `sync=0b` for async (uses `postback`); `sync=1b` for deferred sync via `-30!` (`postback` ignored, errors if `synccallsallowed` is `0b`).
-
-### Housekeeping
-- **`init[timerrepeat]`** — optionally wires `removequeries`, `checktimeout` and `removeinactive` into a recurring timer. `timerrepeat` should have the signature `.timer.repeat[starttime;endtime;period;(func;params);description]`, or pass `(::)` to skip.
-
----
-
-## Example usage
+## Usage Example
 
 ```q
-/ -- dispatcher process --
+kxlog:use`kx.log
+timer:use`di.timer
+timer.init[()!()]
+
 ad:use`di.asyncdispatch
+ad.init[enlist[`log]!enlist kxlog.createLog[]]
 
 / point backends' callbacks at this module's mount point on this process
 ad.setcallbacks[`ad.addserverresult;`ad.addservererror]
 
 / register backend connections as they connect
-h:hopen`:backend1:5001
-ad.addserver[h;`rdb]
+ad.addserver[hopen`:backend1:5001;`rdb]
+ad.addserver[hopen`:backend2:5002;`hdb]
 
-/ track gateway clients
+/ wire client and server connection/disconnection handlers
 .z.po:{ad.addclientdetails[.z.w]}
-.z.pc:{ad.removeclienthandle[.z.w]; ad.removeserverhandle[.z.w]}
+.z.pc:{ad.removeserverhandle[.z.w];ad.removeclienthandle[.z.w]}
+
+/ wire housekeeping into the gateway timer
+timer.addjob.default[`asyncdispatch.checktimeout;{ad.checktimeout[]};();5i;1]
+timer.addjob.default[`asyncdispatch.removequeries;{ad.removequeries[0D00:30]};();300i;1]
+timer.addjob.default[`asyncdispatch.removeinactive;{ad.removeinactive[0D01:00]};();300i;1]
 
 / a client calls this asynchronously:
-ad.execquery["select count i by sym from trade";enlist`rdb;raze;();0Wn;0b]
-/ -> queues the query, dispatches it to the rdb, and (once the rdb replies)
-/    razes the single result and sends it back to the calling client
+/ execquery dispatches to rdb and hdb in parallel, razes results, replies to client
+ad.execquery[("select count i by sym from trade";"select count i by sym from trade");`rdb`hdb;raze;();0Wn;0b]
 
-/ housekeeping - run periodically (e.g. via di.timer)
-ad.checktimeout[]
-ad.removequeries[ad.querykeeptime]
-ad.removeinactive[ad.clearinactivetime]
+/ synchronous deferred mode (requires synccallsallowed:1b in deps)
+ad.execquery["select count i by sym from trade";enlist`rdb;raze;();0Wn;1b]
 ```
+
+---
+
+## Running Tests
 
 ```q
-/ -- backend process --
-ad:use`di.asyncdispatch
-/ nothing else required: when the dispatcher sends (serverexecute;qid;query),
-/ this process runs value query and posts the result/error back via
-/ ad.addserverresult / ad.addservererror on the dispatcher
+k4unit:use`di.k4unit
+k4unit.moduletest`di.asyncdispatch
 ```
+
+52 tests. Requires a `q` binary in `PATH` — the test suite starts a real backend process on a dynamically selected free port and exercises the full dispatch lifecycle over a live IPC connection. No TorQ installation or special libraries required. Covers: server registry, FIFO scheduling, full IPC round-trip with join and reply, checktimeout, removequeries, removeserverhandle with orphaned query cleanup, client tracking, removeinactive, in-flight server release on client disconnect, and all pluggable hook setters.
 
 ---
 
 ## Notes
 
-- `.z.M.<name>` is used for in-place mutation of tables (`upsert`/`insert`/`update from`/`delete from`), and `.z.m.<name>:value` for whole-variable reassignment — the same convention used by `di.cache`.
-- Module globals referenced inside q-sql expressions (WHERE conditions, UPDATE SET values) must use `.z.m.varname` form, since q-sql evaluates globals in the calling context rather than the module namespace.
-- `servertype` on `queryqueue`/`addquery` is deliberately generic: it is a list of servertype symbols used to look up idle servers of each type. Pass the same servertype list to `addserver` and `addquery` to wire them together.
-- This module does not open or accept any connections itself — `addserver` and the `.z.po`/`.z.pc` wiring are the consumer's responsibility, by design (keeps this module dependency-free and testable in-process).
+- Housekeeping (`checktimeout`, `removequeries`, `removeinactive`) is the caller's responsibility — the gateway process already has a timer running and is better placed to decide intervals. Wire all three after `init`; see the usage example above
+- `.z.M.<name>` is used for in-place mutation of tables (`upsert`, `insert`, `update from`, `delete from`) and `.z.m.<name>:value` for whole-variable reassignment — the same convention used by `di.cache`
+- Module globals referenced inside q-sql expressions (WHERE conditions, UPDATE SET values) must use the `.z.m.varname` form since q-sql evaluates column expressions in the calling context rather than the module namespace
+- `servertype` in `queryqueue` and `addquery` is a list of servertype symbols — one per required backend type. Pass `` enlist`rdb `` for single-server queries, `` `rdb`hdb `` for scatter-gather across two types
+- `setcallbacks` must be called before any queries are dispatched if the module is mounted under a non-default path — `serverexecute` reads `resultcallback` and `errorcallback` by bare name on the backend process and posts back to whatever symbols they resolve to
+- This module opens and accepts no connections itself — `addserver` and the `.z.po`/`.z.pc` wiring are the consumer's responsibility, keeping the module dependency-free and testable in-process
+- All three log keys (`info`, `warn`, `error`) are required — the module calls `info` on server/client connect and init, `warn` on disconnect and timeout, and `error` on backend error and join failure

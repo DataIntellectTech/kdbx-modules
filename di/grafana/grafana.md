@@ -50,9 +50,9 @@ kxlog:use`kx.log
 grafana.init[enlist[`log]!enlist kxlog.createLog[]]
 ```
 
-Configuration keys `timecol`, `sym`, `timebackdate`, `ticks`, and `del` are all
-optional - omit any or all of them and the module falls back to sensible
-defaults. See Initialisation for full details.
+Configuration keys `timecol`, `sym`, `timebackdate`, `ticks`, `del`, and
+`allowfunctions` are all optional - omit any or all of them and the module falls
+back to sensible defaults. See Initialisation for full details.
 
 ---
 
@@ -69,6 +69,7 @@ configuration overrides.
 | `` `timebackdate `` | no | How far back to look when finding distinct syms for the dropdowns. Default: `2D` |
 | `` `ticks `` | no | Number of rows returned for a table request. Default: `1000` |
 | `` `del `` | no | Delimiter separating the arguments within a query target. Default: `"."` |
+| `` `allowfunctions `` | no | Enable `f.` function targets, which evaluate arbitrary q (see Security note). Default: `0b` (disabled) |
 
 `init` must be called before the module will serve any requests. It validates
 the logger, applies config, and installs the `.z.pp`/`.z.ph` handlers - once;
@@ -115,7 +116,7 @@ and arguments, separated by `del` (default `"."`):
 | `g.<table>` | graph panel, one series per numeric column |
 | `g.<table>.<col>` | graph panel, one series per sym for a column |
 | `o.<table>...` | "other" panels (single-stat, gauge, etc.) |
-| `f.<...>` | the target is a function call rather than a table |
+| `f.<...>` | the target is a q expression to evaluate rather than a table - **disabled unless `allowfunctions` is set** (see Security) |
 
 ---
 
@@ -157,6 +158,23 @@ via `getconfig`; the target-parsing helpers (`isfunc`/`istab`/`istype`/`prefix`)
 builders (`tbfunc`, and `tsfunc` including the per-column and per-sym graph
 paths); the live `.z.pp`/`.z.ph` routes including non-Grafana fall-through; and a
 `kx.log` integration test confirming the `normlog` wrapping works end-to-end.
+
+---
+
+## Security
+
+The module answers any HTTP request carrying the `X-Grafana-Org-Id` header, so
+treat its port as a trust boundary - put it behind Grafana's authentication and
+firewall it from untrusted networks.
+
+- **Table targets are resolved by name, never evaluated.** `t.`/`g.`/`o.` and
+  bare targets are looked up as symbols against `tables[]`; an unknown name is
+  rejected. A target string can therefore never be executed as q code through
+  these paths.
+- **`f.` function targets evaluate arbitrary q and are disabled by default.**
+  They run only when `allowfunctions` is set to `1b` in `init`. Enable it solely
+  on processes where every client able to reach the port is trusted, since an
+  `f.` target is, by design, remote code execution.
 
 ---
 

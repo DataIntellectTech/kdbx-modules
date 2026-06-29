@@ -4,7 +4,8 @@
 / the grafana dropdowns and the /query endpoint returns timeseries or table data
 
 / -----------------------------------------------------------------------------
-/ configuration - defaults applied here, overridden via the config dict in init
+/ configuration - load-time defaults; overridden via the deps dict in init and
+/ read back through .z.m at every call site
 / -----------------------------------------------------------------------------
 
 / name of the time column used for timeseries queries
@@ -17,6 +18,8 @@ timebackdate:2D;
 ticks:1000;
 / delimiter separating the arguments within a query target
 del:".";
+/ allow f. function targets to evaluate arbitrary q (off by default - see grafana.md)
+allowfunctions:0b;
 
 / json type for each kdb datatype, keyed by .Q.t character
 types:.Q.t!`array`boolean,(3#`null),(5#`number),11#`string;
@@ -55,19 +58,19 @@ query:{[rqt]
 search:{[rqt]
   / build the grafana dropdown options from the tables available in the process
   tabs:tables[];
-  symtabs:tabs where sym in'cols each tabs;
-  timetabs:tabs where timecol in'cols each tabs;
+  symtabs:tabs where .z.m.sym in'cols each tabs;
+  timetabs:tabs where .z.m.timecol in'cols each tabs;
   rsp:string tabs;
   if[count timetabs;
     rsp,:s1:prefix["t";string timetabs];
     rsp,:s2:prefix["g";string timetabs];
     / suffix the numeric columns for the graph and other panel options
-    rsp,:raze(s2,'del),/:'c1:string {cols[x] where`number=types(0!meta x)`t}each timetabs;
-    rsp,:raze(prefix["o";string timetabs],'del),/:'c1;
+    rsp,:raze(s2,'.z.m.del),/:'c1:string {cols[x] where`number=types(0!meta x)`t}each timetabs;
+    rsp,:raze(prefix["o";string timetabs],'.z.m.del),/:'c1;
     if[count symtabs;
       / suffix the distinct syms for the timeseries and other panel options
-      rsp,:raze(s1,'del),/:'c2:string each finddistinctsyms'[timetabs];
-      rsp,:raze(prefix["o";string timetabs],'del),/:'{x[0]cross del,'string finddistinctsyms x 1}each(enlist each c1),'timetabs;
+      rsp,:raze(s1,'.z.m.del),/:'c2:string each finddistinctsyms'[timetabs];
+      rsp,:raze(prefix["o";string timetabs],'.z.m.del),/:'{x[0]cross .z.m.del,'string finddistinctsyms x 1}each(enlist each c1),'timetabs;
      ];
    ];
   :.h.hy[`json].j.j rsp;
@@ -75,12 +78,12 @@ search:{[rqt]
 
 finddistinctsyms:{[x]
   / distinct syms seen in table x within the configured lookback window
-  :?[x;enlist(>;timecol;(-;.z.p;timebackdate));1b;{x!x}enlist sym]sym;
+  :?[x;enlist(>;.z.m.timecol;(-;.z.p;.z.m.timebackdate));1b;{x!x}enlist .z.m.sym] .z.m.sym;
   };
 
 prefix:{[c;s]
   / prefix string c and the delimiter to each string in s
-  :(c,del),/:s;
+  :(c,.z.m.del),/:s;
   };
 
 / -----------------------------------------------------------------------------
@@ -89,13 +92,13 @@ prefix:{[c;s]
 
 diskvals:{[x]
   / last `ticks` rows of an on-disk partitioned table
-  c:(count[x]-ticks)+til ticks;
+  c:(count[x]-.z.m.ticks)+til .z.m.ticks;
   :get'[.Q.ind[x;c]];
   };
 
 memvals:{[x]
   / last `ticks` rows of an in-memory table
-  :get'[?[x;enlist(within;`i;count[x]-ticks,0);0b;()]];
+  :get'[?[x;enlist(within;`i;count[x]-.z.m.ticks,0);0b;()]];
   };
 
 catchvals:{[x]
@@ -109,10 +112,28 @@ catchvals:{[x]
 
 istype:{[targ;char]
   / test whether the target is prefixed with char followed by the delimiter
-  :(char,del)~2#targ;
+  :(char,.z.m.del)~2#targ;
   };
 isfunc:istype[;"f"];
 istab:istype[;"t"];
+
+resolvetab:{[t]
+  / resolve a table-name symbol to its unkeyed table, rejecting anything that is
+  / not a known table - the name is looked up, never evaluated as code
+  if[not t in tables[];
+    .z.m.log[`error][`grafana;"unknown table: ",string t];
+    '"di.grafana: unknown table ",string t];
+  :0!value t;
+  };
+
+evalfunc:{[s]
+  / evaluate an f. function-target expression - gated behind allowfunctions
+  / because it executes arbitrary q (disabled by default)
+  if[not .z.m.allowfunctions;
+    .z.m.log[`error][`grafana;"function target rejected; allowfunctions is disabled"];
+    '"di.grafana: function targets are disabled (set allowfunctions to enable)"];
+  :value s;
+  };
 
 / -----------------------------------------------------------------------------
 / building json responses
@@ -127,16 +148,15 @@ tbfunc:{[rqt]
   / process a table request and return the json datasource table response
   rqt:raze rqt[`targets]`target;
   symname:0b;
-  / strip the type prefix: f.t.func drops 4, f.func drops 2, t.tab leaves the
-  / table name plus an optional sym
-  rqt:0!value $[isfunc[rqt]&istab 2_rqt;4_rqt;
-                isfunc rqt;2_rqt;
-                istab rqt;[rqt:`$del vs rqt;if[2<count rqt;symname:rqt 2];rqt 1];
-                rqt];
+  / f. targets evaluate a q expression (opt-in); t./bare targets resolve a known
+  / table by name and are never evaluated as code
+  rqt:$[isfunc rqt;0!evalfunc $[istab 2_rqt;4_rqt;2_rqt];
+        istab rqt;[parts:`$.z.m.del vs rqt;if[2<count parts;symname:parts 2];resolvetab parts 1];
+        resolvetab(`$rqt)];
   colname:cols rqt;
   coltype:types(0!meta rqt)`t;
   / filter to a single sym if one was supplied in the target
-  if[-11h=type symname;rqt:?[rqt;enlist(=;sym;enlist symname);0b;()]];
+  if[-11h=type symname;rqt:?[rqt;enlist(=;.z.m.sym;enlist symname);0b;()]];
   :tabresponse[colname;coltype;rqt];
   };
 
@@ -144,18 +164,20 @@ tsfunc:{[x]
   / process a timeseries request and route to the correct panel/sym builder
   targ:raze x[`targets]`target;
   / split the target into its delimited arguments
-  numargs:count args:$[isfunc targ;(0;1+targ?del)cut targ:2_targ;`$del vs targ];
-  tyargs:$[10h=abs type args 0;`$1#;]args 0;
-  coln:cols rqt:0!value args 1;
+  numargs:count args:$[isfunc targ;(0;1+targ?.z.m.del)cut targ:2_targ;`$.z.m.del vs targ];
+  / panel-type indicator (g/t/o) as a symbol - args 0 is a char string on the f.
+  / path (take its first char) and already a symbol otherwise
+  tyargs:$[10h=abs type args 0;`$1#args 0;args 0];
+  coln:cols rqt:$[isfunc targ;0!evalfunc args 1;resolvetab args 1];
   / convert a timestamp to milliseconds since the unix epoch
   mil:{floor epoch+(`long$x)%1000000};
   / ensure the time column is a timestamp
-  if["p"<>meta[rqt][timecol;`t];rqt:@[rqt;timecol;+;.z.D]];
+  if["p"<>meta[rqt][.z.m.timecol;`t];rqt:@[rqt;.z.m.timecol;+;.z.D]];
   / restrict to the time range requested by grafana
   range:"P"$-1_'x[`range]`from`to;
-  rqt:?[rqt;enlist(within;timecol;range);0b;()];
+  rqt:?[rqt;enlist(within;.z.m.timecol;range);0b;()];
   / add the milliseconds-since-epoch column grafana expects
-  rqt:@[rqt;`msec;:;mil rqt timecol];
+  rqt:@[rqt;`msec;:;mil rqt .z.m.timecol];
   / dispatch on the number of arguments and the panel type
   $[(2<numargs)and`g~tyargs;graphsym[args 2;rqt];
     (2<numargs)and`t~tyargs;tablesym[coln;rqt;args 2];
@@ -163,7 +185,7 @@ tsfunc:{[x]
     (2=numargs)and`t~tyargs;tablenosym[coln;rqt];
     (4=numargs)and`o~tyargs;othersym[args;rqt];
     (3=numargs)and`o~tyargs;othernosym[args 2;rqt];
-    (2=numargs)and`o~tyargs;othernosym[coln except timecol;rqt];
+    (2=numargs)and`o~tyargs;othernosym[coln except .z.m.timecol;rqt];
     `$"Wrong input"]
   };
 
@@ -199,22 +221,22 @@ tablenosym:{[coln;rqt]
 othersym:{[args;rqt]
   / timeseries response for a non-specific panel returning a single sym's data
   outcol:args[2],`msec;
-  data:flip value flip?[rqt;enlist(=;sym;enlist args 3);0b;outcol!outcol];
+  data:flip value flip?[rqt;enlist(=;.z.m.sym;enlist args 3);0b;outcol!outcol];
   :.j.j enlist`target`datapoints!(args 3;data);
   };
 
 graphsym:{[colname;rqt]
   / timeseries response for a graph panel returning each sym's data
-  syms:`$string ?[rqt;();1b;{x!x}enlist sym]sym;
+  syms:`$string ?[rqt;();1b;{x!x}enlist .z.m.sym] .z.m.sym;
   outcol:colname,`msec;
-  build:{[outcol;rqt;x;y]data:flip value flip?[rqt;enlist(=;sym;enlist y);0b;outcol!outcol];:x,`target`datapoints!(y;data)};
+  build:{[outcol;rqt;x;y]data:flip value flip?[rqt;enlist(=;.z.m.sym;enlist y);0b;outcol!outcol];:x,`target`datapoints!(y;data)};
   :.j.j build[outcol;rqt]\[();syms];
   };
 
 tablesym:{[coln;rqt;symname]
   / timeseries response for a table panel filtered to a single sym
   coltype:types -1_(0!meta rqt)`t;
-  rqt:?[rqt;enlist(=;sym;enlist symname);0b;()];
+  rqt:?[rqt;enlist(=;.z.m.sym;enlist symname);0b;()];
   :tabresponse[coln;coltype;rqt];
   };
 
@@ -266,12 +288,13 @@ init:{[deps]
   if[`timebackdate in key deps;.z.m.timebackdate:deps`timebackdate];
   if[`ticks in key deps;.z.m.ticks:deps`ticks];
   if[`del in key deps;.z.m.del:deps`del];
+  if[`allowfunctions in key deps;.z.m.allowfunctions:deps`allowfunctions];
   / install the http handlers once, preserving any existing definitions
-  if[not wired;sethandlers[]];
+  if[not .z.m.wired;sethandlers[]];
   .z.m.log[`info][`grafana;"initialised grafana json datasource adaptor"];
   };
 
 getconfig:{
   / return the currently active configuration
-  :`timecol`sym`timebackdate`ticks`del!(timecol;sym;timebackdate;ticks;del);
+  :`timecol`sym`timebackdate`ticks`del`allowfunctions!(.z.m.timecol;.z.m.sym;.z.m.timebackdate;.z.m.ticks;.z.m.del;.z.m.allowfunctions);
   };

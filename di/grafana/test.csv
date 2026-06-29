@@ -13,7 +13,7 @@ comment,,,,,,,Initialisation wires handlers and applies defaults
 run,0,0,q,grafana.init[enlist[`log]!enlist mocklog],1,,initialise with mock logger
 true,0,0,q,.m.di.0grafana.wired,1,,handlers wired after init
 true,0,0,q,1000=.m.di.0grafana.ticks,1,,ticks default applied
-true,0,0,q,(`timecol`sym`timebackdate`ticks`del)~key grafana.getconfig[],1,,getconfig exposes the config keys
+true,0,0,q,(`timecol`sym`timebackdate`ticks`del`allowfunctions)~key grafana.getconfig[],1,,getconfig exposes the config keys
 
 comment,,,,,,,Target parsing helpers
 true,0,0,q,.m.di.0grafana.isfunc "f.x",1,,isfunc detects function prefix
@@ -60,3 +60,15 @@ run,0,0,q,kxlog:`getlvl`sinks`fmts`info`warn`error!((::);(::);(::);{[m]};{[m]};{
 run,0,0,q,grafana.init[enlist[`log]!enlist kxlog],1,,init accepts a kx.log instance via normlog
 true,0,0,q,(`error`info`warn)~asc key .m.di.0grafana.log,1,,normlog wrapped kx.log into the info/warn/error contract
 true,0,0,q,(::)~.m.di.0grafana.log[`info][`ctx;"msg"],1,,wrapped logger is callable as a binary {[c;m]}
+
+comment,,,,,,,Function-target evaluation is gated by allowfunctions (default off)
+true,0,0,q,not .m.di.0grafana.allowfunctions,1,,function targets disabled by default
+run,0,0,q,.test.frqt:enlist[`targets]!enlist (enlist[`target]!enlist "f.1+1"),1,,build an f. function target
+fail,0,0,q,.m.di.0grafana.tbfunc .test.frqt,1,,f. target rejected (not evaluated) when allowfunctions is off
+run,0,0,q,.test.unkrqt:enlist[`targets]!enlist (enlist[`target]!enlist "t.nope"),1,,build a target for a non-existent table
+fail,0,0,q,.m.di.0grafana.tbfunc .test.unkrqt,1,,unknown table rejected rather than evaluated
+run,0,0,q,grafana.init[`log`allowfunctions!(mocklog;1b)],1,,opt in to function targets
+true,0,0,q,.m.di.0grafana.allowfunctions,1,,allowfunctions enabled
+run,0,0,q,.test.fnrqt:enlist[`targets]!enlist (enlist[`target]!enlist "f.trade"),1,,build a function target returning a table
+run,0,0,q,.test.fnr:.m.di.0grafana.tbfunc .test.fnrqt,1,,function target evaluates when enabled
+true,0,0,q,.test.fnr like "*columns*",1,,enabled function target returns a table response

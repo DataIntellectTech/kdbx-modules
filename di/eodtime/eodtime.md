@@ -164,7 +164,7 @@ The test suite injects a no-op mock logger and a capturing logger that records `
 
 ## Notes
 
-- `rolltimeoffset` adjusts the roll time from midnight - e.g. `0D17:00:00.000` produces a 5pm local roll
+- `rolltimeoffset` adjusts the roll time from midnight (e.g. `0D17:00:00.000` produces a 5pm local roll)
 - `getdailyadj` returns the cached offset; `getdailyadjustment` recomputes it live. Always call `getdailyadjustment` after an EOD roll rather than relying on the cached value
 - `"GMT"`, `"UTC"`, and `"Etc/GMT"` are zero-offset shortcuts not passed to `di.tz`. `"Etc/UTC"` is valid and passes through normally
 - Only `info` is required in the log dep - `warn` and `error` are accepted if present (e.g. from a full `kx.log` instance) but never called by this module

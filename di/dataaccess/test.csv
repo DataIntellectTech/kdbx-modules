@@ -1,0 +1,68 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,da:use`di.dataaccess,1,,load module
+before,0,0,q,reqs:{.m.di.0dataaccess.requests},1,,live requests table
+before,0,0,q,sr:{.m.di.0dataaccess.shardresults},1,,live shard results dict
+before,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;value first shards`shardquery]},1,,stub submitshards: evaluate shard query locally and feed result back via shardresult
+
+/ Test 0: execquery fails without dispatch set
+true,0,0,q,.[da.execquery;("";"p"$0;"p"$0;raze;();0Wn;0b);{1b}],1,,execquery signals when dispatch not set
+
+/ Test 1: default getrouting stub returns one hdb shard
+true,0,0,q,`servertype`starttime`endtime~cols da.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,stub routing returns expected columns
+true,0,0,q,(enlist`hdb)~exec servertype from da.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,stub routing returns hdb servertype
+true,0,0,q,1~count da.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,stub routing returns exactly one shard
+
+/ Test 2: buildshardquery stub passes query through unchanged
+run,0,0,q,testq:42,1,,store a test query value
+true,0,0,q,testq~da.buildshardquery[testq;"p"$2000.01.01;"p"$2000.01.02],1,,stub buildshardquery returns query unchanged
+
+/ Test 3: setgetrouting and setbuildshardquery replace stubs
+run,0,0,q,da.setgetrouting[{[st;et]([]servertype:enlist`rdb;starttime:enlist st;endtime:enlist et)}],1,,override routing stub
+true,0,0,q,(enlist`rdb)~exec servertype from .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,overridden routing returns rdb
+run,0,0,q,da.setbuildshardquery[{[q;st;et](q;st;et)}],1,,override buildshardquery to wrap args in a list
+true,0,0,q,(42;"p"$2000.01.01;"p"$2000.01.02)~.m.di.0dataaccess.buildshardquery[42;"p"$2000.01.01;"p"$2000.01.02],1,,overridden buildshardquery transforms query
+run,0,0,q,da.setgetrouting[{[st;et]([]servertype:enlist`hdb;starttime:enlist st;endtime:enlist et)}],1,,restore routing stub
+run,0,0,q,da.setbuildshardquery[{[q;st;et]q}],1,,restore buildshardquery stub
+
+/ Test 4: execquery -> shardresult -> checkresults via stub
+/ stub submitshards (set in before) evaluates the shard query locally and calls shardresult immediately
+run,0,0,q,da.setdispatch[(enlist`execquery)!enlist{[q;st;jf;pb;t;s]1}],1,,set a minimal dispatch (submitshards stub bypasses it)
+run,0,0,q,.[da.execquery;("1+1";"p"$2000.01.01;"p"$2000.01.02;first;();0Wn;0b);{}],1,,submit query - stub fires shardresult with value 2
+true,0,0,q,1~count select from reqs[] where not null returntime,1,,request completed
+true,0,0,q,0b~first exec error from reqs[] where not null returntime,1,,request completed without error
+true,0,0,q,0~count sr[],1,,shard results accumulator cleaned up after join
+
+/ Test 5: two-shard request accumulates both results before joining
+run,0,0,q,da.setgetrouting[{[st;et]([]servertype:`hdb`hdb2;starttime:(st;st);endtime:(et;et))}],1,,routing returns two shards
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,stub submitshards to capture reqid without delivering
+run,0,0,q,.[da.execquery;("3+3";"p"$2000.01.01;"p"$2000.01.02;raze;();0Wn;0b);{}],1,,submit two-shard query
+true,0,0,q,2~first exec remaining from reqs[] where requestid=pendreqid,1,,two shards still outstanding
+run,0,0,q,da.shardresult[pendreqid;enlist 6],1,,deliver first shard result
+true,0,0,q,1~first exec remaining from reqs[] where requestid=pendreqid,1,,one shard still outstanding
+run,0,0,q,da.shardresult[pendreqid;enlist 6],1,,deliver second shard result
+true,0,0,q,0b~first exec error from reqs[] where requestid=pendreqid,1,,two-shard request completed without error
+true,0,0,q,"0~count select from reqs[] where requestid=pendreqid, null returntime",1,,request is finished
+run,0,0,q,da.setgetrouting[{[st;et]([]servertype:enlist`hdb;starttime:enlist st;endtime:enlist et)}],1,,restore single-shard routing
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;value first shards`shardquery]},1,,restore auto-delivering stub
+
+/ Test 6: sharderror errors the request
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,stub to capture reqid
+run,0,0,q,.[da.execquery;("4+4";"p"$2000.01.01;"p"$2000.01.02;first;();0Wn;0b);{}],1,,submit query
+run,0,0,q,da.sharderror[pendreqid;"mock backend failure"],1,,signal a shard error
+true,0,0,q,1b~first exec error from reqs[] where requestid=pendreqid,1,,request flagged as error
+true,0,0,q,not null first exec returntime from reqs[] where requestid=pendreqid,1,,returntime stamped on error
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;value first shards`shardquery]},1,,restore auto-delivering stub
+
+/ Test 7: duplicate shardresult after completion is a no-op
+run,0,0,q,da.shardresult[pendreqid;enlist 0],1,,late shard result on already-finished request
+true,0,0,q,1b~first exec error from reqs[] where requestid=pendreqid,1,,error flag unchanged after duplicate result
+
+/ Test 8: removerequests purges old completed rows
+run,0,0,q,da.setcp[{.z.p+2D}],1,,fast-forward clock past requestkeeptime
+run,0,0,q,da.removerequests[da.requestkeeptime],1,,purge old completed requests
+true,0,0,q,0~count select from reqs[] where requestid in (pendreqid),1,,completed requests purged
+run,0,0,q,da.setcp[{.z.p}],1,,restore real clock
+
+/ Test 9: pluggable clock and callback symbols
+run,0,0,q,da.setshardcallbacks[`myresult;`myerror],1,,override callback symbols
+true,0,0,q,(`myresult;`myerror)~(.m.di.0dataaccess.shardresultcallback;.m.di.0dataaccess.sharderrorcallback),1,,callback symbols updated

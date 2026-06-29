@@ -20,27 +20,29 @@
 
 `init` wires the module's injected dependencies and **must be called before any other function**. The `log` dependency is **required** — there is no fallback, and the module does not load `kx.log` itself. Initialising the logging framework is the job of the start-up script that ties the modules together, or of the user at run time.
 
-| Dependency | Required | Keys | Function signature |
-|---|---|---|---|
-| `log` | yes | `` `info`warn`error `` | `{[m]}` — monadic message logger (a `kx.log` instance); the module folds its own context into each message as a `ctx:` prefix |
+The injected logger is normalised by `normlog` to a binary `` `info`warn`error!{[c;m]} `` dict — each function takes a context symbol `c` and a message string `m`, called as `.z.m.log[\`info][\`ctx;"msg"]`. Pass **either** form:
+
+| Form | What to pass | Behaviour |
+|---|---|---|
+| `kx.log` instance | the full `(use\`kx.log)[\`createLog][]` dict | detected by its `getlvl`/`sinks`/`fmts` keys; its monadic functions are wrapped to `{[c;m]}`, folding the context in as a `"ctx: msg"` prefix |
+| bespoke logger | a `` `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) `` dict | already binary — passed through unchanged |
 
 ```q
 srvsel:use`di.serverselect
 
 / option 1: wire in kx.log (the standard logger; typically done once in the start-up script)
-loginst:(use`kx.log)[`createLog][]
-logdep:`info`warn`error!(loginst`info;loginst`warn;loginst`error)
-srvsel.init[enlist[`log]!enlist logdep]
+/ pass the WHOLE instance so normlog can detect and wrap it - do NOT strip it to a 3-key dict
+srvsel.init[enlist[`log]!enlist (use`kx.log)[`createLog][]]
 
-/ option 2: a bespoke monadic logger of the same shape
+/ option 2: a bespoke binary logger {[c;m]} (context symbol, message string)
 mylog:`info`warn`error!(
-  {[m] .my.log.info  m};
-  {[m] .my.log.warn  m};
-  {[m] .my.log.error m});
+  {[c;m] .my.log.info  string[c],": ",m};
+  {[c;m] .my.log.warn  string[c],": ",m};
+  {[c;m] .my.log.error string[c],": ",m});
 srvsel.init[enlist[`log]!enlist mylog]
 ```
 
-`init` throws with prefix `di.serverselect:` if `deps` is not a dictionary, is missing the `` `log `` key, or the `log` value is not a dictionary exposing `` `info`warn`error ``. All other `di.serverselect:` error conditions are logged via `.z.m.log[\`error]` before being signalled.
+`init` throws with prefix `di.serverselect:` if `deps` is not a dictionary, is missing the `` `log `` key, or the `log` value is not a dictionary exposing `` `info`warn`error ``. All other `di.serverselect:` error conditions are logged via `.z.m.log[\`error]` (with the function as context) before being signalled.
 
 ---
 
@@ -176,9 +178,9 @@ The reserved key `` `besteffort `` (boolean, default `1b`) controls whether a pa
 
 ```q
 / load and initialise - init must be called before any other function
+/ pass the whole kx.log instance; normlog wraps it to the binary {[c;m]} contract
 srvsel:use`di.serverselect
-loginst:(use`kx.log)[`createLog][]
-srvsel.init[enlist[`log]!enlist `info`warn`error!(loginst`info;loginst`warn;loginst`error)]
+srvsel.init[enlist[`log]!enlist (use`kx.log)[`createLog][]]
 
 / register servers as they connect / mark inactive on disconnect
 /   on connect:    srvsel.addserverattr[h; getproctype[h]; getattributes[h]]

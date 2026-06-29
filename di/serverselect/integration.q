@@ -35,7 +35,7 @@ hdr:{[t] -1""; -1"==== ",t," ===="; };
 
 / init must be called before use (log is a required injected dependency, no default).
 / use a no-op logger for the behavioural steps; STEP 13 exercises init itself.
-srvsel.init[enlist[`log]!enlist `info`warn`error!({[m]};{[m]};{[m]})]
+srvsel.init[enlist[`log]!enlist `info`warn`error!({[c;m]};{[c;m]};{[c;m]})]
 
 d1:2024.01.01; d2:2024.01.02; d3:2024.01.03
 
@@ -91,7 +91,8 @@ chk["servertype list rdb,hdb returns 4";4;count srvsel.getservers[`servertype;`r
 chk["procname=gw1 returns the gateway";enlist 8i;exec handle from srvsel.getservers[`procname;`gw1;()!()]]
 chk["unknown servertype returns empty";0;count srvsel.getservers[`servertype;`nope;()!()]]
 chk["attribmatch column present";1b;`attribmatch in cols srvsel.getservers[`;`;()!()]]
-chk["complete date match flagged for some hdb";1b;any {x[`date]0} each (srvsel.getservers[`servertype;`hdb;(enlist`date)!enlist enlist d1])`attribmatch]
+chk["complete date match flagged for some hdb";1b;
+  any {x[`date]0} each (srvsel.getservers[`servertype;`hdb;(enlist`date)!enlist enlist d1])`attribmatch]
 
 / ===========================================================================
 hdr"STEP 7  selector (strategies on a known table)"
@@ -151,7 +152,8 @@ chk["already-active handle 4 skipped, only 12 added";n0+1;count srvsel.getserver
 / proctype filter: only rdb of a mixed table
 conntab3:([]w:20 21i;proctype:`tickerplant`rdb;attributes:(()!();()!()))
 srvsel.addserversfromtable[`rdb;conntab3]
-chk["proctype filter registers only the rdb (handle 21)";1b;(0<count select from srvsel.getserverstable[] where handle=21i) and 0=count select from srvsel.getserverstable[] where handle=20i]
+chk["proctype filter registers only the rdb (handle 21)";1b;
+  (0<count select from srvsel.getserverstable[] where handle=21i) and 0=count select from srvsel.getserverstable[] where handle=20i]
 / `ALL with optional procname + hpup columns
 conntab4:([]w:30 31i;proctype:`rdb`hdb;procname:`p30`p31;hpup:`:h:30`:h:31;attributes:(()!();()!()))
 srvsel.addserversfromtable[`ALL;conntab4]
@@ -176,7 +178,7 @@ chkerr["addserversfromtable rejects missing columns";{srvsel.addserversfromtable
 / ===========================================================================
 hdr"STEP 13  init (required log dependency - kx.log or bespoke)"
 caplog:([]lvl:`symbol$();msg:())
-caplogger:`info`warn`error!({[m]`caplog upsert(`info;m)};{[m]`caplog upsert(`warn;m)};{[m]`caplog upsert(`error;m)})
+caplogger:`info`warn`error!({[c;m]`caplog upsert(`info;m)};{[c;m]`caplog upsert(`warn;m)};{[c;m]`caplog upsert(`error;m)})
 srvsel.init[enlist[`log]!enlist caplogger]
 caplog:0#caplog
 srvsel.addserver[40i;`rdb]
@@ -188,7 +190,7 @@ chk["injected logger captures an error message";1b;0<count select from caplog wh
 chkerr["init rejects non-dictionary deps";{srvsel.init[(::)]}]
 chkerr["init rejects deps missing log key";{srvsel.init[()!()]}]
 chkerr["init rejects log value that is not a dict";{srvsel.init[enlist[`log]!enlist(::)]}]
-chkerr["init rejects log dict missing error key";{srvsel.init[enlist[`log]!enlist(`info`warn!({[m]};{[m]}))]}]
+chkerr["init rejects log dict missing error key";{srvsel.init[enlist[`log]!enlist(`info`warn!({[c;m]};{[c;m]}))]}]
 srvsel.init[enlist[`log]!enlist (use`kx.log)[`createLog][]]
 srvsel.addserver[41i;`rdb]
 chk["kx.log logger wired and usable";1b;41i in exec handle from srvsel.getservers[`servertype;`rdb;()!()]]

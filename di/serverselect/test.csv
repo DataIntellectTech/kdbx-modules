@@ -1,6 +1,6 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,srvsel:use`di.serverselect,1,1,load module
-before,0,0,q,"noop:`info`warn`error!({[m]};{[m]};{[m]})",1,1,define a no-op monadic logger
+before,0,0,q,"noop:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,1,define a no-op binary logger {[c;m]}
 before,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,init the module with the required log dependency before use
 
 / ---- getserverstable: initial state ----
@@ -175,7 +175,7 @@ fail,0,0,q,"srvsel.getserverids[`servertype`date!(`nonexistent;enlist 2024.01.01
 / ---- init: dependency injection (required log) ----
 comment,,,,,,,init - inject and validate the required log dependency
 run,0,0,q,"caplog:([]lvl:`symbol$();msg:())",1,1,initialise log capture table
-run,0,0,q,"caplogger:`info`warn`error!({[m]`caplog upsert(`info;m)};{[m]`caplog upsert(`warn;m)};{[m]`caplog upsert(`error;m)})",1,1,define a bespoke capturing logger (info/warn/error single-arg)
+run,0,0,q,"caplogger:`info`warn`error!({[c;m]`caplog upsert(`info;m)};{[c;m]`caplog upsert(`warn;m)};{[c;m]`caplog upsert(`error;m)})",1,1,define a bespoke capturing binary logger {[c;m]}
 run,0,0,q,srvsel.init[enlist[`log]!enlist caplogger],1,1,re-init with the bespoke capturing logger
 run,0,0,q,caplog:0#caplog,1,1,reset capture
 run,0,0,q,"srvsel.addserver[40i;`rdb]",1,1,register a server while the capturing logger is active
@@ -188,6 +188,6 @@ fail,0,0,q,srvsel.init[(::)],1,1,init rejects a non-dictionary deps
 fail,0,0,q,srvsel.init[()!()],1,1,init rejects deps missing the log key
 fail,0,0,q,srvsel.init[enlist[`other]!enlist noop],1,1,init rejects deps without a log key
 fail,0,0,q,srvsel.init[enlist[`log]!enlist(::)],1,1,init rejects a log value that is not a dict
-fail,0,0,q,"srvsel.init[enlist[`log]!enlist(`info`warn!({[m]};{[m]}))]",1,1,init rejects a log dict missing the error key
+fail,0,0,q,"srvsel.init[enlist[`log]!enlist(`info`warn!({[c;m]};{[c;m]}))]",1,1,init rejects a log dict missing the error key
 true,0,0,q,"""di.serverselect""~15#@[srvsel.init;(::);{x}]",1,1,init error message is prefixed di.serverselect
 run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,restore the no-op logger

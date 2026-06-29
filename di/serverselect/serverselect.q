@@ -15,10 +15,10 @@ servers:([serverid:`u#`int$()]
 serverid:0i;
 
 init:{[deps]
-  / wire injectable dependencies - must be called before any other function
+  / wire injectable dependencies (and any optional config) - must be called before any other function
   / the log dependency is required; there is no fallback
-  / deps: a dict with a `log key; the log value is `info`warn`error!(...) - monadic
-  /   message loggers (a kx.log instance, or a bespoke logger of the same shape)
+  / deps: a dict with a `log key; the log value is either a kx.log instance or a `info`warn`error
+  /   dict of binary {[c;m]} loggers (context symbol, message string) - normalised via normlog
   / example: di.serverselect.init[enlist[`log]!enlist logdep]
   if[99h<>type deps;
     '"di.serverselect: deps must be a dict with `log key"];
@@ -28,13 +28,26 @@ init:{[deps]
     '"di.serverselect: log value must be a dict; pass `info`warn`error functions"];
   if[not all (`info`warn`error) in key deps`log;
     '"di.serverselect: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:deps`log;
+  .z.m.log:normlog deps`log;
   };
 
-raiseerror:{[msg]
-  / internal - log an error then signal it, so failures are observable as well as thrown
-  .z.m.log[`error] msg;
-  'msg;
+normlog:{[logdict]
+  / internal - normalise the injected logger to a binary `info`warn`error!{[c;m]} dict
+  / detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
+  / kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
+  / plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
+  $[any `getlvl`sinks`fmts in key logdict;
+    `info`warn`error!(
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
+    logdict]
+  };
+
+raiseerror:{[ctx;msg]
+  / internal - log an error under ctx then signal it, so failures are observable as well as thrown
+  .z.m.log[`error][ctx;msg];
+  '"di.serverselect: ",string[ctx],": ",msg;
   };
 
 nextserverid:{
@@ -51,9 +64,9 @@ updatestats:{[sid]
 
 addserverfull:{[h;pname;st;hp;att]
   / register a server with full details: handle, procname, servertype, hpup and attribute dictionary
-  if[not -6h=type h;raiseerror"di.serverselect: addserverfull: handle must be an int; got type ",string type h];
-  if[not -11h=type st;raiseerror"di.serverselect: addserverfull: servertype must be a symbol; got type ",string type st];
-  .z.m.log[`info]["addserverfull: registering server: handle=",(string h),", procname=",string[pname],", type=",string st];
+  if[not -6h=type h;raiseerror[`addserverfull;"handle must be an int; got type ",string type h]];
+  if[not -11h=type st;raiseerror[`addserverfull;"servertype must be a symbol; got type ",string type st]];
+  .z.m.log[`info][`addserverfull;"registering server: handle=",(string h),", procname=",string[pname],", type=",string st];
   .z.m.servers:servers upsert (nextserverid[];h;pname;st;hp;1b;0Np;0i;att);
   };
 
@@ -69,9 +82,9 @@ addserver:{[h;st]
 
 setserveractive:{[h;a]
   / mark a registered server active (1b) or inactive (0b); called on connect and disconnect
-  if[not -6h=type h;raiseerror"di.serverselect: setserveractive: handle must be an int; got type ",string type h];
-  if[not -1h=type a;raiseerror"di.serverselect: setserveractive: active flag must be a boolean; got type ",string type a];
-  .z.m.log[`info]["setserveractive: marking handle=",(string h)," active=",string a];
+  if[not -6h=type h;raiseerror[`setserveractive;"handle must be an int; got type ",string type h]];
+  if[not -1h=type a;raiseerror[`setserveractive;"active flag must be a boolean; got type ",string type a]];
+  .z.m.log[`info][`setserveractive;"marking handle=",(string h)," active=",string a];
   .z.m.servers:update active:a from servers where handle=h;
   };
 
@@ -86,13 +99,13 @@ addserversfromtable:{[proctypes;conntable]
   / optional columns: procname (symbol), hpup (symbol) - populated from conntable if present
   / pass proctypes:`ALL to register all process types
   if[not all `w`proctype`attributes in cols conntable;
-    raiseerror"di.serverselect: addserversfromtable: conntable must have columns w, proctype and attributes; got: ",", " sv string cols conntable;
+    raiseerror[`addserversfromtable;"conntable must have columns w, proctype and attributes; got: ",", " sv string cols conntable];
   ];
   activehandles:(0i;0Ni),exec handle from servers where active;
   rows:select from conntable where
     ((proctype in proctypes) or proctypes~`ALL),
     not w in activehandles;
-  .z.m.log[`info]["addserversfromtable: registering ",(string count rows)," servers from connection table"];
+  .z.m.log[`info][`addserversfromtable;"registering ",(string count rows)," servers from connection table"];
   pnames:$[`procname in cols rows; rows`procname; count[rows]#`];
   hpups:$[`hpup in cols rows; rows`hpup; count[rows]#`];
   addserverfull'[rows`w;pnames;rows`proctype;hpups;rows`attributes];
@@ -118,7 +131,7 @@ getservers:{[nameortype;lookups;req]
     select serverid,procname,servertype,hpup,handle,lastp,attributes from servers where active,servertype in lookups;
     nameortype~`procname;
     select serverid,procname,servertype,hpup,handle,lastp,attributes from servers where active,procname in lookups;
-    raiseerror"di.serverselect: getservers: nameortype must be `servertype or `procname; got: ",string nameortype];
+    raiseerror[`getservers;"nameortype must be `servertype or `procname; got: ",string nameortype]];
   if[0=count r;:update attribmatch:attributes from r];
   am:attributematch[req] each r`attributes;
   :update attribmatch:am from r;
@@ -130,7 +143,7 @@ selector:{[servertable;selection]
   :$[selection=`roundrobin; first `lastp xasc servertable;
      selection=`any;        rand servertable;
      selection=`last;       last `lastp xasc servertable;
-     raiseerror"di.serverselect: unknown selection strategy: ",string selection];
+     raiseerror[`selector;"unknown selection strategy: ",string selection]];
   };
 
 getserverbytype:{[ptype;serverval;selection]
@@ -155,7 +168,7 @@ getserverids:{[att]
     raze getserveridstype[delete servertype from att] each (),att`servertype;
     getserveridstype[att;`all]];
   if[all 0=count each serverids;
-    raiseerror"di.serverselect: no servers match requested attributes";
+    raiseerror[`getserverids;"no servers match requested attributes"];
   ];
   :serverids;
   };
@@ -164,21 +177,21 @@ getserveridsbytype:{[att]
   / internal - resolve server IDs for a servertype symbol or symbol list
   / validates each requested type is registered and currently active
   if[not 11h=abs type att;
-    raiseerror"di.serverselect: servertype must be a symbol list (11h) or attribute dict (99h)";
+    raiseerror[`getserveridsbytype;"servertype must be a symbol list (11h) or attribute dict (99h)"];
   ];
   servertype:distinct att,();
   activeservers:exec distinct servertype from servers where active;
   allservers:exec distinct servertype from servers;
   activeserversmsg:". available servers: ",", " sv string activeservers;
   if[any null att;
-    raiseerror"di.serverselect: null servertype passed as argument",activeserversmsg;
+    raiseerror[`getserveridsbytype;"null servertype passed as argument",activeserversmsg];
   ];
   if[count servertype except activeservers;
-    raiseerror"di.serverselect: ",
+    raiseerror[`getserveridsbytype;
       $[max not servertype in allservers;
         "not valid servers: ",", " sv string servertype except allservers;
         "requested servers currently inactive: ",", " sv string servertype except activeservers
-      ],activeserversmsg;
+      ],activeserversmsg];
   ];
   :(exec serverid by servertype from servers where active)[servertype];
   };
@@ -204,7 +217,7 @@ getserveridstype:{[att;typ]
     getserverscross[att;svrs;besteffort]];
   serverids:first value flip $[99h=type res; key res; res];
   if[all 0=count each serverids;
-    raiseerror"di.serverselect: no servers match ",string[typ]," requested attributes";
+    raiseerror[`getserveridstype;"no servers match ",string[typ]," requested attributes"];
   ];
   :serverids;
   };
@@ -217,7 +230,7 @@ getserversinitial:{[req;att]
   / drops servers missing any required attribute key, ranks survivors by coverage
   if[0=count req; :([]serverid:enlist key att)];
   att:(where all each (key req) in/: key each att)#att;
-  if[not count att;raiseerror"di.serverselect: no servers report all requested attributes"];
+  if[not count att;raiseerror[`getserversinitial;"no servers report all requested attributes"]];
   s:update serverid:key att from value req in'/: (key req)#/:att;
   s:s idesc value min each sum each' `serverid xkey s;
   s:`serverid xkey 0!(key req) xgroup s;
@@ -235,7 +248,7 @@ getserverscross:{[req;att;besteffort]
     {[x;y;z] (y[0] except found; y[0] inter found:$[0=count y[0];y[0];buildcross x@'where each z])}[req]\
     )[(reqcross;());value s];
   if[(count last util`remaining) and not besteffort;
-    raiseerror"di.serverselect: cannot satisfy query - cross product of all attributes cannot be matched";
+    raiseerror[`getserverscross;"cannot satisfy query - cross product of all attributes cannot be matched"];
   ];
   s:1!(0!s) w:where not 0=count each util`found;
   :(key s)!distinct each' flip each util[w]`found;
@@ -250,7 +263,7 @@ getserversindependent:{[req;att;besteffort]
   filter:(value s)&not -1 _ (0b&(value s) enlist 0),maxs value s;
   alldone:1+first where all each all each' maxs value s;
   if[(null alldone) and not besteffort;
-    raiseerror"di.serverselect: cannot satisfy query - not all attributes can be matched";
+    raiseerror[`getserversindependent;"cannot satisfy query - not all attributes can be matched"];
   ];
   s:1!(0!s) w:where any each any each' filter;
   :(key s)!{(key x)!(value x)@'where each y key x}[req] each value s&filter w;

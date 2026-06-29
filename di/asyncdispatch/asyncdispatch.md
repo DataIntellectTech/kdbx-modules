@@ -209,7 +209,7 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.asyncdispatch
 ```
 
-52 tests. Requires a `q` binary in `PATH` — the test suite starts a real backend process on a dynamically selected free port and exercises the full dispatch lifecycle over a live IPC connection. No TorQ installation or special libraries required. Covers: server registry, FIFO scheduling, full IPC round-trip with join and reply, checktimeout, removequeries, removeserverhandle with orphaned query cleanup, client tracking, removeinactive, in-flight server release on client disconnect, and all pluggable hook setters.
+82 tests. Requires a `q` binary in `PATH` — the test suite starts two real backend processes on dynamically selected free ports and exercises the full dispatch lifecycle over live IPC connections. No TorQ installation or special libraries required. Covers: server registry, FIFO scheduling, full IPC round-trip with join and reply, backend error path via real IPC callback (`addservererror`), postback wrapping (`tosend` tuple construction), multi-servertype scatter-gather with two backends dispatched in parallel and results joined, checktimeout, removequeries, removeserverhandle with orphaned query cleanup, client tracking, removeinactive, in-flight server release on client disconnect, and all pluggable hook setters.
 
 ---
 

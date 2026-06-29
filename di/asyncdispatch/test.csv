@@ -1,7 +1,9 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,p:first {x where {10h=type @[hopen;`$raze("::";string x);{x}]} each x}[19500+til 100],1,,find first free port in range 19500-19599
-before,0,0,q,system raze("q -p ";string p;" -q &"),1,,start backend process on free port
-before,0,0,q,system"sleep 1",1,,wait for backend to initialise
+before,0,0,q,p2:first {x where {10h=type @[hopen;`$raze("::";string x);{x}]} each x}[19600+til 100],1,,find second free port in range 19600-19699
+before,0,0,q,system raze("q -p ";string p;" -q &"),1,,start first backend process on free port
+before,0,0,q,system raze("q -p ";string p2;" -q &"),1,,start second backend process on free port
+before,0,0,q,system"sleep 1",1,,wait for both backends to initialise
 before,0,0,q,ad:use`di.asyncdispatch,1,,load module
 before,0,0,q,srv:{.m.di.0asyncdispatch.servers},1,,live servers table
 before,0,0,q,qq:{.m.di.0asyncdispatch.queryqueue},1,,live queryqueue table
@@ -12,11 +14,17 @@ before,0,0,q,ad.init[enlist[`log]!enlist mocklog],1,,initialise with mock logger
 before,0,0,q,bh:hopen`$raze("::";string p),1,,open handle to backend
 before,0,0,q,bh".m.di.0asyncdispatch.resultcallback:`.m.di.0asyncdispatch.addserverresult",1,,configure backend result callback to dispatcher
 before,0,0,q,bh".m.di.0asyncdispatch.errorcallback:`.m.di.0asyncdispatch.addservererror",1,,configure backend error callback to dispatcher
-before,0,0,q,ad.addserver[bh;`mock],1,,register backend as mock server
+before,0,0,q,ad.addserver[bh;`mock],1,,register first backend as mock server
+before,0,0,q,bh2:hopen`$raze("::";string p2),1,,open handle to second backend
+before,0,0,q,bh2".m.di.0asyncdispatch.resultcallback:`.m.di.0asyncdispatch.addserverresult",1,,configure second backend result callback
+before,0,0,q,bh2".m.di.0asyncdispatch.errorcallback:`.m.di.0asyncdispatch.addservererror",1,,configure second backend error callback
+before,0,0,q,ad.addserver[bh2;`scatter],1,,register second backend as scatter servertype
 
 / Test 0: server registry
-true,0,0,q,(enlist bh)~exec handle from srv[] where active,1,,backend server is active
-true,0,0,q,(enlist bh)~exec handle from .m.di.0asyncdispatch.availableservers 1b,1,,idle backend server is available
+true,0,0,q,bh in exec handle from srv[] where active,1,,first backend server is active
+true,0,0,q,bh2 in exec handle from srv[] where active,1,,second backend server is active
+true,0,0,q,bh in exec handle from .m.di.0asyncdispatch.availableservers 1b,1,,first backend is available for dispatch
+true,0,0,q,bh2 in exec handle from .m.di.0asyncdispatch.availableservers 1b,1,,second backend is available for dispatch
 
 / Test 1: queueing and FIFO scheduling
 run,0,0,q,.m.di.0asyncdispatch.addquery["2+2";enlist`mock;raze;();0Wn;0b],1,,queue a query for the mock servertype
@@ -84,6 +92,40 @@ run,0,0,q,ad.removeclienthandle[5i],1,,disconnect client mid-flight
 true,0,0,q,0b~first exec inuse from srv[] where handle=99i,1,,in-flight server freed on client disconnect
 run,0,0,q,ad.removeserverhandle[99i],1,,clean up fake server
 
+/ Test 10: addservererror - real backend error path via IPC callback
+run,0,0,q,ad.setcallbacks[`.m.di.0asyncdispatch.addserverresult;`.m.di.0asyncdispatch.addservererror],1,,restore callbacks overridden in test 8
+run,0,0,q,ad.setgetnextqueryid[{r:0!select from .m.di.0asyncdispatch.queryqueue where null returntime;1 sublist select from r where not queryid in key .m.di.0asyncdispatch.results}],1,,restore scheduler overridden in test 8
+run,0,0,q,.m.di.0asyncdispatch.addquery["'errortest";enlist`mock;raze;();0Wn;0b],1,,queue a query that will signal an error on the backend
+run,0,0,q,qid5:exec first queryid from qq[] where query~\:"'errortest",1,,capture the queued query id
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch query to backend
+run,0,0,q,bh"",1,,sync round-trip: ensures backend has processed and sent error callback
+true,0,0,q,1b~first exec error from qq[] where queryid=qid5,1,,backend error callback flagged query as error
+true,0,0,q,not null first exec returntime from qq[] where queryid=qid5,1,,returntime stamped on backend error
+
+/ Test 11: postback wrapping - non-empty postback produces (postback;query;result) tuple
+run,0,0,q,captured::(),1,,global to capture what formatresponse receives
+run,0,0,q,ad.setformatresponse[{[s;sync;r]captured::r;$[not[s]and sync;'r;r]}],1,,intercept formatresponse to verify tosend construction
+run,0,0,q,.m.di.0asyncdispatch.addquery["7+7";enlist`mock;raze;enlist(::);0Wn;0b],1,,queue query with non-empty postback
+run,0,0,q,qid6:exec first queryid from qq[] where query~\:"7+7",1,,capture query id
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch
+run,0,0,q,bh"",1,,sync flush
+true,0,0,q,0b~first exec error from qq[] where queryid=qid6,1,,postback query completed without error
+true,0,0,q,(::;"7+7";enlist 14)~captured,1,,formatresponse received (postback;query;result) tuple
+run,0,0,q,ad.setformatresponse[{[status;sync;result]$[not[status]and sync;'result;result]}],1,,restore default formatresponse
+
+/ Test 12: multi-servertype scatter-gather - two backends dispatched in parallel results joined
+run,0,0,q,ad.setformatresponse[{[s;sync;r]captured::r;$[not[s]and sync;'r;r]}],1,,intercept formatresponse to capture joined result
+run,0,0,q,.m.di.0asyncdispatch.addquery["1+1";`mock`scatter;{sum x};();0Wn;0b],1,,queue scatter-gather query requiring both servertypes
+run,0,0,q,qid7:exec first queryid from qq[] where query~\:"1+1",1,,capture query id
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch to both backends in parallel
+run,0,0,q,bh"",1,,sync flush first backend
+run,0,0,q,bh2"",1,,sync flush second backend
+true,0,0,q,0b~first exec error from qq[] where queryid=qid7,1,,scatter-gather completed without error
+true,0,0,q,4~captured,1,,joined result is sum of both backend results (1+1=2 from each; sum 2 2 = 4)
+run,0,0,q,ad.setformatresponse[{[status;sync;result]$[not[status]and sync;'result;result]}],1,,restore default formatresponse
+
 / Teardown
-run,0,0,q,neg[bh](exit;0);neg[bh](::),1,,send exit to backend process and flush
-run,0,0,q,hclose bh,1,,close backend handle
+run,0,0,q,neg[bh](exit;0);neg[bh](::),1,,send exit to first backend process and flush
+run,0,0,q,hclose bh,1,,close first backend handle
+run,0,0,q,neg[bh2](exit;0);neg[bh2](::),1,,send exit to second backend process and flush
+run,0,0,q,hclose bh2,1,,close second backend handle

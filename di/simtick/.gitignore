@@ -1,0 +1,4 @@
+.venv/
+notebooks/
+testing*.q
+*.ipynb

@@ -24,6 +24,17 @@ This flexibility allows the same module to serve quick prototypes and sophistica
 - **Intraday seasonality** — trading activity is high at open and close, low at midday. Configurable U-shape or J-shape patterns.
 - **Price dynamics** — GBM with optional jump-diffusion captures continuous price movement and occasional discontinuities.
 - **Microstructure** — bid-ask spreads that widen at open/close, quote updates between trades.
+- **Realistic pricing** — trade prices and quote bid/ask rounded to the nearest cent (US equity tick size).
+
+### Market Focus
+
+The default presets and parameter examples are calibrated for **US equity markets** (NVDA on NASDAQ). Key characteristics:
+
+- High liquidity at open and close, quiet midday (J-shape or U-shape)
+- Spreads wider at open/close, tighter at midday
+- Arrival rates and volatility consistent with large-cap tech stocks
+
+**Futures markets** have different microstructure — most liquid in the last 5-10 minutes before close with the tightest spreads, and wider spreads at midday. The parameter system is flexible enough to approximate futures behavior by tuning `openmult`, `midmult`, `closemult`, `spreadopenmult`, `spreadmidmult`, `spreadclosemult`. However, the sharp pre-close liquidity spike typical of futures cannot be fully captured with the current cosine interpolation — the shape function smooths transitions gradually rather than modeling sudden discontinuities.
 
 ### Use Cases
 
@@ -31,7 +42,7 @@ This flexibility allows the same module to serve quick prototypes and sophistica
 
 **Sensitivity and robustness testing** — Vary parameters systematically to understand how strategies respond to changes in volatility, trade frequency, or spread dynamics. Identify breaking points before they occur in production.
 
-**System development** — Stress-test data ingestion pipelines by adjusting trade arrival rates. Increase `baseintensity` (e.g., from 0.5 to 50) and `alpha` to simulate high-frequency bursts. This lets you verify that your database, message queues, and processing logic handle peak loads without data loss or latency spikes.
+**System development** — Stress-test data ingestion pipelines by adjusting trade arrival rates. Increase `baseintensity` (e.g., from 1.0 to 50) and `alpha` to simulate high-frequency bursts. This lets you verify that your database, message queues, and processing logic handle peak loads without data loss or latency spikes.
 
 **Real-time demos** — Feed simulated data to dashboards, visualization tools, or trading interfaces. Useful for demos, training sessions, or testing UI responsiveness without connecting to live markets.
 
@@ -49,9 +60,41 @@ For these advanced use cases, a full limit order book simulator with queue dynam
 
 ### Next Steps
 
-A future module will extend this simulator to support **multi-instrument generation with correlation**. Using KDB-X module hierarchy, a new `di.simmulti` module will build on `di.simtick` as the single-instrument foundation, adding:
+Two future modules will extend this simulator, using the KDB-X module framework's **sibling architecture**. Each module lives at the same level under `di/` and declares dependencies via relative module references.
 
-- Correlated processes
+**Module hierarchy:**
+
+```
+di/
+├── simtick/           # 1 instrument, 1 day (atomic unit)
+├── simcalendar/       # 1 instrument, N days (uses ..simtick)
+└── simbasket/         # M instruments, N days (uses ..simcalendar)
+```
+
+**Dependency chain:**
+
+```
+simtick ← simcalendar ← simbasket
+```
+
+Each module builds on its predecessor. This design allows users to load only what they need while keeping each module focused on a single responsibility.
+
+**Note:** We use absolute module paths (`use`di.simtick`) rather than relative sibling references (`use`..simtick`). The sibling syntax did not work in our testing with KDB-X Community Edition — further investigation needed.
+
+---
+
+**`di.simcalendar`** — Single instrument over multiple trading days
+
+- Accepts a list of trading dates (e.g., NYSE calendar)
+- Orchestrates `di.simtick` for each day
+- Carries forward closing price as next day's opening price (no overnight gap modeling)
+- Optional disk persistence to date-partitioned kdb+ database
+
+---
+
+**`di.simbasket`** — Multiple correlated instruments over multiple trading days
+
+- Correlated price processes across instruments
 - Configurable correlation matrices
 - Synchronized or independent arrival processes
 
@@ -66,10 +109,10 @@ Correlated price paths across assets are essential for:
 
 Simulations are driven by a configuration dictionary containing all model parameters (arrival rates, volatility, spread settings, etc.). Rather than building these manually, the module reads configurations from a **CSV file**.
 
-A ready-to-use file `presets.csv` is included with five market scenarios (default, liquid, illiquid, volatile, jumpy). You can:
+A ready-to-use file `presets.csv` is included with three market scenarios calibrated for NVDA (default, volatile, jumpy). You can:
 
 - Use presets directly: `cfg:cfgs`default`
-- Modify values for specific runs: `cfg[`vol]:0.4`
+- Modify values for specific runs: `cfg[`vol]:0.65`
 - Add new rows to define custom scenarios
 - Create your own CSV following the same schema
 
@@ -109,11 +152,11 @@ q)simtick:use`di.simtick
 q)cfgs:simtick.loadconfig`:di/simtick/presets.csv
 q)cfg:cfgs`default
 q)simtick.run[cfg]
-time                          price    qty
-------------------------------------------
-2026.01.20D09:30:02.487640474 100      43 
-2026.01.20D09:30:03.846514899 100.0011 32 
-2026.01.20D09:30:04.444929571 100.0122 78 
+sym  time                          price    qty
+-----------------------------------------------
+NVDA 2026.01.20D09:30:02.487640474 181.90   43
+NVDA 2026.01.20D09:30:03.846514899 182.01   32
+NVDA 2026.01.20D09:30:04.444929571 182.05   78
 ...
 ```
 
@@ -137,28 +180,30 @@ q)result`quote
 
 ## Presets
 
+Presets are calibrated for NVDA (NASDAQ large-cap tech):
+
 | Preset | Description |
 |--------|-------------|
-| `default` | Standard trading day |
-| `liquid` | High volume, tighter spreads |
-| `illiquid` | Low volume |
-| `volatile` | Higher price volatility |
-| `jumpy` | Jump-diffusion price model |
+| `default` | Baseline NVDA trading day |
+| `volatile` | Higher volatility regime (earnings, macro events) |
+| `jumpy` | Jump-diffusion model (sudden news, guidance) |
 
 ## Configuration Parameters
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
-| `baseintensity` | Base arrival rate (trades/sec) | 0.5 |
+| `sym` | Ticker symbol | `` `NVDA `` |
+| `baseintensity` | Base arrival rate (trades/sec) | 1.0 |
 | `alpha` | Hawkes excitation (0 = Poisson) | 0.3 |
 | `beta` | Hawkes decay (must be > alpha) | 1.0 |
-| `vol` | Annualized volatility | 0.2 |
+| `vol` | Annualized volatility | 0.45 |
 | `drift` | Annualized drift | 0.05 |
 | `transitionpoint` | Intraday shape (0.3=J, 0.5=U) | 0.3 |
 | `pricemodel` | `gbm` or `jump` | `gbm` |
 | `qtymodel` | `lognormal` or `constant` | `lognormal` |
 | `avgqty` | Average trade size | 100 |
-| `basespread` | Base bid-ask spread (fraction) | 0.001 |
+| `seed` | Random seed (`0N` = no seed) | `42` |
+| `basespread` | Base bid-ask spread (fraction) | 0.0001 |
 | `generatequotes` | Generate quotes flag | 0b |
 | `openmult` | Opening intensity multiplier | 1.5 |
 | `midmult` | Midday intensity multiplier | 0.5 |
@@ -167,7 +212,7 @@ q)result`quote
 ## Testing
 
 ```q
-q)k4unit:use`di.k4unit
+q)k4unit:use`local.k4unit
 q)k4unit.moduletest`di.simtick
 ```
 
@@ -175,7 +220,7 @@ q)k4unit.moduletest`di.simtick
 
 | Group | Tests | Description |
 |-------|-------|-------------|
-| Validation | 3 | Bad configs throw correct errors (alpha >= beta, negative intensity, zero multipliers) |
+| Validation | 7 | Bad configs throw correct errors (alpha >= beta, negative intensity, zero multipliers, zero/negative vol, zero/negative startprice) |
 | Arrivals | 5 | Output properties: non-empty, sorted, positive, within duration, correct type |
 | Shape | 3 | Intraday pattern: open > mid, close > mid, J-shape verification |
 | Price | 6 | Positive prices, startprice correct, realized vol within tolerance, jump model works |
@@ -185,7 +230,7 @@ q)k4unit.moduletest`di.simtick
 | Describe | 3 | Returns table, correct columns, correct parameter count |
 | Constant Qty | 2 | All quantities equal, quantity equals avgqty |
 | Reproducibility | 1 | Same seed produces same output |
-| **Total** | **46** | |
+| **Total** | **50** | |
 
 ## Documentation
 

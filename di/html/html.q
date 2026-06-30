@@ -12,6 +12,17 @@ modifier:()!();
 / flag so direct .z handler wiring happens only once across repeated init calls
 zwired:0b;
 
+/ normalise a log dict: if it looks like a kx.log instance (has getlvl/sinks/fmts keys),
+/ wrap each level into a dyadic {[c;m]} function that embeds the context symbol into the message
+normlog:{[logdict]
+  $[any `getlvl`sinks`fmts in key logdict;
+    `info`warn`error!(
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
+      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
+    logdict];
+  };
+
 jstsiso8601:{[x]
   / converts a list of timestamps or datetimes to iso 8601 strings e.g. "2024-01-02T12:00:00Z"
   / vectorised: stringifies the date and time parts in bulk rather than per element; nulls return ""
@@ -107,7 +118,7 @@ addtables:{[tablelist]
   .z.m.subs:subs,new!(count new)#();
   / default modifier applies jsformat then sends kdb+ IPC binary wrapping a json string (c.js binary protocol)
   .z.m.modifier:modifier,new!(count new)#{-8!.j.j `name`data!("upd";`tablename`tabledata!(x 1;jsformat x 2))};
-  if[count new;.z.m.log[`info]["di.html: registered tables: ",", " sv string new]];
+  if[count new;.z.m.log[`info][`di.html;"registered tables: ",", " sv string new]];
   };
 
 pub:{[tbl;data]
@@ -137,7 +148,7 @@ setmodifier:{[tbl;fn]
 
 evaluate:{[inputdict]
   / safely calls execdict on the input, logging then re-throwing any errors with context
-  :@[execdict;inputdict;{[d;e] m:"di.html: failed to execute ",(-3!d)," : ",e;.z.m.log[`error][m];'m}[inputdict]];
+  :@[execdict;inputdict;{[d;e] m:"failed to execute ",(-3!d)," : ",e;.z.m.log[`error][`di.html;m];'"di.html: ",m}[inputdict]];
   };
 
 / module-local functions callable via websocket evaluate
@@ -145,22 +156,23 @@ evaluate:{[inputdict]
 funcmap:`sub`addtables`pub`dataformat!(sub;addtables;pub;dataformat);
 
 init:{[deps]
-  / initialise the module; deps must contain a log key with info/warn/error functions
-  / deps: dict with `log key -> `info`warn`error!(fn;fn;fn) where each fn is {[msg]}
+  / initialise the module; deps must contain a log key
+  / deps: dict with `log key -> dict with at minimum `info!{[c;m]} (dyadic: ctx symbol, msg string)
+  / kx.log instances are normalised automatically via normlog
   / wires .z.ws/.z.wc/.z.pc handlers once; .h.HOME set from KDBHTML env var (else "html")
   if[99h<>type deps;
-    '"di.html: deps must be a dict with a `log key"];
+    '"di.html: deps must be a dict with `log key"];
   if[not `log in key deps;
-    '"di.html: log dependency is required; pass `info`warn`error functions keyed on `log"];
+    '"di.html: log dependency is required; pass at minimum `info!{[c;m]} keyed on `log"];
   if[99h<>type deps`log;
-    '"di.html: log value must be a dict of `info`warn`error functions"];
-  if[not all `info`warn`error in key deps`log;
-    '"di.html: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:deps`log;
+    '"di.html: log value must be a dict; pass at minimum `info!{[c;m]}"];
+  if[not `info in key deps`log;
+    '"di.html: log dict must have at minimum an `info key; got: ",(", " sv string key deps`log)];
+  .z.m.log:normlog deps`log;
   hd:$[count e:getenv`KDBHTML;e;"html"];
   / .h.HOME lets the default http handler serve static assets; set from KDBHTML env var (else "html")
   @[{.h.HOME:x;.h.tx[`non]:{enlist x};.h.ty[`non]:"text/html"};hd;{[e]}];
-  .z.m.log[`info]["di.html: initialised"];
+  .z.m.log[`info][`di.html;"initialised"];
   / wire handlers once; wrap any existing .z.wc/.z.pc to preserve them
   if[zwired;:()];
   .z.ws:wshandler;

@@ -1,6 +1,6 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,html:use`di.html,1,,load di.html module
-before,0,0,q,"mocklog:`info`warn`error!({[m]};{[m]};{[m]})",1,,mock log dep that discards all messages (monadic {[msg]} matching kx.log contract)
+before,0,0,q,"mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,mock log dep that discards all messages (dyadic {[ctx;msg]} matching di.* log contract)
 before,0,0,q,"setenv[`KDBHTML;""/tmp""]",1,,set KDBHTML so init picks up homedir from env
 before,0,0,q,"html.init[enlist[`log]!enlist mocklog]",1,,initialise module with log dep only
 before,0,0,q,htmltestfn:{x-y},1,,helper function for multi-arg evaluate test
@@ -54,5 +54,5 @@ true,0,0,q,"42~(get ` sv hns,`modifier)[`trades]@()",1,,setmodifier replaces the
 fail,0,0,q,"html.init[(::)]",1,,init rejects a non-dict deps arg
 fail,0,0,q,"html.init[enlist[`homedir]!enlist ""/tmp""]",1,,init rejects a dict missing the log key
 fail,0,0,q,"html.init[enlist[`log]!enlist 42]",1,,init rejects a non-dict log value
-fail,0,0,q,"html.init[enlist[`log]!enlist enlist[`info]!enlist {[m]}]",1,,init rejects a log dict missing the warn and error keys
-true,0,0,q,"(@[html.init;(::);{x}]) like ""*log*""",1,,the missing log dependency error message names the log key
+run,0,0,q,"html.init[enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,,log dict with only an info key is accepted (warn/error not required by validation)
+true,0,0,q,"(@[html.init;(::);{x}]) like ""*log*""",1,,init with a non-dict arg signals an error naming log

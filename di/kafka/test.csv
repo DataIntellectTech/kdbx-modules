@@ -6,6 +6,7 @@ before,0,0,q,caplog:`info`warn`error!({[c;m] `.test.cap upsert(`info;m)};{[c;m] 
 before,0,0,q,.test.cap:([] fn:`symbol$();msg:()),1,1,initialise log capture table
 before,0,0,q,.test.kupdk:`,1,1,last key received by the test kupd callback
 before,0,0,q,.test.kupdx:`byte$(),1,1,last payload received by the test kupd callback
+
 comment,,,,,,,init - dep validation
 fail,0,0,q,kafka.init[(::)],1,1,errors when deps is not a dictionary
 fail,0,0,q,kafka.init[()!()],1,1,errors when log dependency is missing
@@ -13,11 +14,14 @@ fail,0,0,q,kafka.init[enlist[`log]!enlist 42],1,1,errors when log value is not a
 fail,0,0,q,kafka.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,errors when log dict is missing the error key
 run,0,0,q,.test.err:@[{kafka.init[()!()]};(::);{x}],1,1,capture error string from init with missing log dep
 true,0,0,q,.test.err like "di.kafka:*",1,1,error is prefixed di.kafka:
+
 comment,,,,,,,init - config validation
 fail,0,0,q,kafka.init[enlist[`log]!enlist logdep],1,1,errors when libpath is missing from deps
+
 comment,,,,,,,init - disabled platform (enabled:0b) - native library skipped; libpath not required
 run,0,0,q,kafka.init[`log`enabled!(logdep;0b)],1,1,init with enabled:0b succeeds without libpath
 true,0,0,q,not .m.di.0kafka.enabled,1,1,module enabled flag reflects disabled state
+
 comment,,,,,,,stubs - functions throw when native library not loaded
 true,0,0,q,.[kafka.initconsumer;(`localhost:9092;()!());{x}] like "*kafka not initialised*",1,1,initconsumer stub throws before init
 true,0,0,q,.[kafka.initproducer;(`localhost:9092;()!());{x}] like "*kafka not initialised*",1,1,initproducer stub throws before init
@@ -25,9 +29,11 @@ true,0,0,q,.[kafka.subscribe;(`test;0);{x}] like "*kafka not initialised*",1,1,s
 true,0,0,q,.[kafka.publish;(`test;0;`;0x68656c6c6f);{x}] like "*kafka not initialised*",1,1,publish stub throws before init
 true,0,0,q,@[{kafka.cleanupconsumer[]};(::);{x}] like "*kafka not initialised*",1,1,cleanupconsumer stub throws when native library not loaded
 true,0,0,q,@[{kafka.cleanupproducer[]};(::);{x}] like "*kafka not initialised*",1,1,cleanupproducer stub throws when native library not loaded
+
 comment,,,,,,,setkupd - replaces the callback stored in module state
 run,0,0,q,kafka.setkupd[{[k;x] .test.kupdk:k;.test.kupdx:x}],1,1,replace the callback via setkupd
 true,0,0,q,.m.di.0kafka.kupd~{[k;x] .test.kupdk:k;.test.kupdx:x},1,1,module-local kupd replaced by setkupd
+
 comment,,,,,,,setkupd - the root .kupd forwarder delegates into module state (wired without loading the native lib)
 before,0,0,q,.m.di.0kafka.kupd:{[k;x] .test.kupdk:k;.test.kupdx:x},1,1,set a capturing callback directly in module state
 before,0,0,q,`.kupd set {[k;x] .m.di.0kafka.kupd[k;x]},1,1,install the forwarder directly as init would without loading the native lib
@@ -35,16 +41,19 @@ run,0,0,q,.test.kupdk:`;.test.kupdx:`byte$(),1,1,reset capture
 run,0,0,q,.kupd[`testkey;`byte$"hello"],1,1,simulate the native library delivering a message
 true,0,0,q,`testkey~.test.kupdk,1,1,forwarder passed the key through to the module callback
 true,0,0,q,(`byte$"hello")~.test.kupdx,1,1,forwarder passed the payload through to the module callback
+
 comment,,,,,,,setkupd - replacing callback via setkupd is reflected in the forwarder immediately
 run,0,0,q,kafka.setkupd[{[k;x] .test.kupdk:`replaced;.test.kupdx:x}],1,1,replace the callback
 run,0,0,q,.test.kupdk:`,1,1,reset capture
 run,0,0,q,.kupd[`;`byte$"x"],1,1,deliver a message through the forwarder
 true,0,0,q,`replaced~.test.kupdk,1,1,new callback invoked - forwarder always delegates to current .z.m.kupd
+
 comment,,,,,,,init - kx.log instance normalised automatically (no manual wrapping required)
 run,0,0,q,kxlogger:use`kx.log,1,1,load kx.log
 run,0,0,q,kxinst:kxlogger.createLog[],1,1,create kx.log instance
 run,0,0,q,kafka.init[`log`enabled!(kxinst;0b)],1,1,bare kx.log instance accepted without wrapping
 run,0,0,q,.m.di.0kafka.log[`info][`kafka;"normalisation test"],1,1,normalised logger accepts binary {[c;m]} call without error
+
 comment,,,,,,,log call verification - capturing logger sees init message with binary {[c;m]} args
 run,0,0,q,.test.cap:0#.test.cap,1,1,reset log capture
 run,0,0,q,.m.di.0kafka.log:caplog,1,1,inject capturing logger directly for log-only tests

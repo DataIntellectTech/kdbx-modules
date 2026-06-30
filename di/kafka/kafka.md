@@ -7,9 +7,9 @@ Wrapper around the `kafkaq` native shared library. Provides consumer and produce
 ## Features
 
 - Wrap the `kafkaq` native C library and expose consumer and producer lifecycle management as clean kdb-x functions
-- Provide a configurable message callback via `setkupd` — the native library always delegates through the current callback without requiring re-initialisation
+- Provide a configurable message callback via `setkupd` - the native library always delegates through the current callback without requiring re-initialisation
 - Detect and normalise `kx.log` instances automatically so callers can pass a logger directly without manual wrapping
-- Gracefully degrade on non-l64 platforms — all native functions remain as informative stubs when `enabled:0b`
+- Gracefully degrade on non-l64 platforms - all native functions remain as informative stubs when `enabled:0b`
 - Distinguish "module not initialised" from genuine broker or argument errors via descriptive stub error messages with `di.kafka:` prefix
 
 ---
@@ -18,11 +18,11 @@ Wrapper around the `kafkaq` native shared library. Provides consumer and produce
 
 | Dependency | Key | Required | Description |
 |---|---|---|---|
-| logger | `` `log `` | yes | `info`, `warn`, `error` — each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
+| logger | `` `log `` | yes | `info`, `warn`, `error` - each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
 The `log` dependency must be passed to `init` inside the `deps` dict. The module throws immediately if it is absent or missing any of the three required keys. All three are required since the module calls `info`, `warn`, and `error`.
 
-A `kx.log` instance can be passed directly — the module normalises monadic functions to the binary `{[c;m]}` contract automatically via `normlog`. Context is embedded in the output as `"context: message"`:
+A `kx.log` instance can be passed directly - the module normalises monadic functions to the binary `{[c;m]}` contract automatically via `normlog`. Context is embedded in the output as `"context: message"`:
 
 ```q
 kxlog:use`kx.log
@@ -46,16 +46,15 @@ kafka.init[`log`enabled!(kxlog.createLog[];0b)]
 
 | Key | Required | Description |
 |---|---|---|
-| `` `log `` | yes | Binary log dep — `info`, `warn`, `error` functions each `{[c;m]}` |
-| `` `libpath `` | yes (when enabled) | Root library directory — the OS-specific subdirectory and `kafkaq` filename are appended automatically (e.g. `/opt/kdb/lib` → `/opt/kdb/lib/l64/kafkaq.so`) |
-| `` `kupd `` | no | Initial message callback `{[k;x]}` — defaults to a no-op; replace via `setkupd` after init |
-| `` `enabled `` | no | Whether to load the native library. Defaults to `1b` on `l64`, `0b` elsewhere. Set to `0b` to suppress library loading on unsupported platforms — all native functions remain stubs |
+| `` `log `` | yes | Binary log dep - `info`, `warn`, `error` functions each `{[c;m]}` |
+| `` `libpath `` | no, if `KDBLIB` is set | Root library directory. Falls back to `$KDBLIB` if omitted. The OS-specific subdirectory and `kafkaq` filename are appended automatically - for example, a root of `/opt/kdb/lib` resolves to `/opt/kdb/lib/l64/kafkaq.so` on Linux |
+| `` `kupd `` | no | Initial message callback `{[k;x]}` - defaults to a no-op; replace via `setkupd` after init |
+| `` `enabled `` | no | Whether to load the native library. Defaults to `1b` on `l64`, `0b` elsewhere. Set to `0b` to suppress library loading on unsupported platforms - all native functions remain stubs |
+
+If `libpath` is omitted and `KDBLIB` is not set in the environment, `init` throws - there is no further fallback.
 
 `init` must be called before any native functions are used. Before `init` is called, all six native functions (`initconsumer`, `initproducer`, `cleanupconsumer`, `cleanupproducer`, `subscribe`, `publish`) are stubs that throw:
-
-```
 'di.kafka: kafka not initialised - call init first
-```
 
 This distinguishes "init not called" from a genuine broker or argument error.
 
@@ -70,7 +69,7 @@ kafka.init[`log`libpath!(logdep;`$/opt/kdb/lib)]
 ```
 
 ### `initconsumer[server;optiondict]`
-Initialise a Kafka consumer. `server`: broker address as symbol. `optiondict`: Kafka config options as a symbol-keyed symbol dict — pass `()!()` for defaults.
+Initialise a Kafka consumer. `server`: broker address as symbol. `optiondict`: Kafka config options as a symbol-keyed symbol dict - pass `()!()` for defaults.
 ```q
 kafka.initconsumer[`localhost:9092;`fetch.wait.max.ms`fetch.error.backoff.ms!`5`5]
 ```
@@ -146,7 +145,7 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.kafka
 ```
 
-34 tests. Runs on any kdb-x machine — no TorQ installation or native library required. Covers dependency validation, `enabled:0b` platform skip, stub behaviour for all six native functions, `setkupd` and the `.kupd` forwarder, log normalisation, and a live `kx.log` instance via `normlog`.
+34 tests. Runs on any kdb-x machine - no TorQ installation or native library required. Covers dependency validation, `enabled:0b` platform skip, stub behaviour for all six native functions, `setkupd` and the `.kupd` forwarder, log normalisation, and a live `kx.log` instance via `normlog`.
 
 ### Integration tests
 
@@ -156,7 +155,13 @@ k4unit:use`di.k4unit
 .m.di.0k4unit.KUrt[]
 ```
 
-7 tests. Runs on any kdb-x machine with a TorQ installation that includes Kafka. Requires `KDBLIB` to be set — the standard TorQ environment variable exported by `setenv.sh` pointing to the root library directory. If `KDBLIB` is not set or `kafkaq.so` is not present at the resolved path, the file exits cleanly and nothing fails.
+7 tests. Runs on any kdb-x machine where `KDBLIB` is set and `kafkaq` is present at the resolved path - TorQ deployments set this up automatically via `setenv.sh`, but it's not a strict requirement. A non-TorQ user with their own `kafkaq.so` build can run these tests by exporting `KDBLIB` themselves to point at it:
+
+```bash
+export KDBLIB=/path/to/your/kafkaq/lib
+```
+
+If `KDBLIB` is not set or `kafkaq.so` is not present at the resolved path, the file exits cleanly and nothing fails.
 
 When the library is present, the tests confirm that `kafka.init` loads `kafkaq.so` successfully and that all six native function bindings are type `112h` (C function) in module state. This proves the library loaded and `bindfunctions` ran correctly. End-to-end testing of consumer and producer operations requires a running Kafka broker and is outside the scope of automated tests.
 
@@ -164,8 +169,8 @@ When the library is present, the tests confirm that `kafka.init` loads `kafkaq.s
 
 ## Notes
 
-- `libpath` is only required when `enabled:1b` (the default on l64). Pass `enabled:0b` to initialise without loading the native library — useful for testing or non-l64 deployments
-- `setkupd` takes effect immediately via the forwarder pattern — the native library always calls `.kupd` in the root namespace, which delegates to whatever `.z.m.kupd` currently holds. However, messages in-flight from the C background thread may briefly invoke the previous handler after the swap. Avoid calling `setkupd` while a subscription is active
-- `init` sets `.kupd` in the root namespace as an unavoidable consequence of the native C library's design — `kafkaq` is compiled to call `kupd` by name in the root namespace
-- All three log keys (`info`, `warn`, `error`) are required — unlike `di.eodtime`, this module calls all three
+- `libpath` is only required when `enabled:1b` (the default on l64) and `KDBLIB` is not set in the environment. Pass `enabled:0b` to initialise without loading the native library - useful for testing or non-l64 deployments
+- `setkupd` takes effect immediately via the forwarder pattern - the native library always calls `.kupd` in the root namespace, which delegates to whatever `.z.m.kupd` currently holds. However, messages in-flight from the C background thread may briefly invoke the previous handler after the swap. Avoid calling `setkupd` while a subscription is active
+- `init` sets `.kupd` in the root namespace as an unavoidable consequence of the native C library's design - `kafkaq` is compiled to call `kupd` by name in the root namespace
+- All three log keys (`info`, `warn`, `error`) are required - unlike `di.eodtime`, this module calls all three
 - Manual verification requires a running `kafkaq.so` and a Kafka broker. A minimal end-to-end test once those are available: initialise with a real `libpath`, call `initconsumer`, `subscribe`, `initproducer`, `publish`, verify the callback fires, then `cleanupconsumer` and `cleanupproducer`

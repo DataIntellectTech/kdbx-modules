@@ -1,48 +1,50 @@
 # di.html
 
-WebSocket pub/sub and HTML page serving module, extracted from TorQ.
+WebSocket pub/sub and HTML page serving module for kdb+.
 
-## Overview
+## Features
 
-This module provides pub/sub over WebSockets — browser clients subscribe to kdb+ tables and receive live updates as data is published. The module also sets `.h.HOME` so the default HTTP handler serves static assets (HTML, JS, CSS) from the configured directory without any additional code.
+- Register kdb+ tables for live pub/sub over WebSockets
+- Push updates to all subscribed browser handles via `pub`
+- Serve static assets (HTML, JS, CSS) from a configurable directory using kdb's built-in HTTP handler — no separate web server required
+- Browser clients subscribe via the `sub` evaluate dispatch and receive an initial snapshot on connection
+- Custom per-table modifier functions to control serialisation (c.js binary or plain JSON text)
+- Connections cleaned up automatically on WebSocket close (`.z.wc`) or IPC port close (`.z.pc`)
 
-## Usage
+## How it works
 
-```q
-html:use`di.html
-log:use`di.log
+A single q process does two jobs on the same port:
 
-/ minimal setup - the log dependency is required
-/ homedir defaults to the KDBHTML env var (else "html")
-logdep:`info`warn`error!(log.info;log.warn;log.error)
-html.init[enlist[`log]!enlist logdep]
+1. **Serves the HTML page** — kdb's built-in HTTP handler serves static files from the directory pointed to by `KDBHTML`. When a browser requests `http://host:port/index.html`, kdb reads and returns the file.
+2. **Handles WebSocket connections** — once the page loads, the browser opens a WebSocket back to the same `host:port`. The `.z.ws` handler receives messages, dispatches via `evaluate`, and sends replies. Live updates are pushed to subscribed handles via `pub`.
 
-/ register tables for pub/sub
-html.addtables[`trades`quotes]
+You need two things:
 
-/ publish data to subscribers
-html.pub[`trades;newdata]
-```
+- A **q process** started with `-p PORT`, with di.html loaded and `init` called
+- **HTML/JS/CSS files** in the directory pointed to by `KDBHTML`
 
-Set `KDBHTML` before calling `init` so static files are served from the right directory.
+## Dependencies
 
-## init
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `` `log `` | dict | yes | Logging functions keyed on at minimum `` `info ``, each `{[ctx;msg]}` where `ctx` is a symbol and `msg` is a string. kx.log instances are normalised automatically. |
+
+The HTML home directory is configured via the `KDBHTML` environment variable (not a deps key). If unset, `"html"` is used. Set it before calling `init`.
+
+## Initialisation
 
 ```q
 html.init[deps]
 ```
 
-`deps` is a dictionary. The `` `log `` key is required — `init` signals an error if it is missing or malformed.
+`deps` is a dictionary containing the `log` key. `init`:
 
-| Key | Type | Description | Default |
-|---|---|---|---|
-| `` `log `` | dict | **Required.** Logging functions keyed on at minimum `` `info ``, each called as `{[ctx;msg]}` where `ctx` is a symbol and `msg` is a string. kx.log instances are normalised automatically. | — |
+- Normalises the log dependency (wraps kx.log monadic functions into the dyadic contract)
+- Sets `.h.HOME` from `KDBHTML` so the default HTTP handler serves static assets
+- Registers `.z.ws`, `.z.wc`, and `.z.pc` handlers — wired once only; any existing `.z.wc`/`.z.pc` handlers are preserved by wrapping
+- Safe to call multiple times; handler wiring is skipped on subsequent calls
 
-The HTML home directory comes from the `KDBHTML` environment variable. If the variable is unset `"html"` is used. There is no `homedir` config key.
-
-`init` also sets `.h.HOME` to the resolved home directory (protected, skipped if `.h` is unavailable) so the default HTTP handler serves static assets (css/js/img) from the same directory. Calling `init` multiple times is safe — the `.z.ws`/`.z.wc`/`.z.pc` handlers are wired only once.
-
-## Exported functions
+## Exported Functions
 
 ### addtables
 
@@ -50,7 +52,7 @@ The HTML home directory comes from the `KDBHTML` environment variable. If the va
 html.addtables[tablelist]
 ```
 
-Registers a list of table names for pub/sub. Can be called multiple times to add new tables. Sets a default modifier that JSON-encodes updates before sending to subscribers.
+Registers a list of table names for pub/sub. Can be called multiple times to add new tables. Sets a default modifier per table that JSON-encodes updates before sending to subscribers.
 
 ### pub
 
@@ -58,7 +60,7 @@ Registers a list of table names for pub/sub. Can be called multiple times to add
 html.pub[tbl;data]
 ```
 
-Publishes `data` for `tbl` to all currently subscribed handles.
+Publishes `data` for `tbl` to all currently subscribed handles, applying the per-table modifier before sending.
 
 ### sub
 
@@ -66,7 +68,15 @@ Publishes `data` for `tbl` to all currently subscribed handles.
 html.sub[tbl;syms]
 ```
 
-Subscribes the current handle (`.z.w`) to `tbl`. Pass `` ` `` as `syms` to receive all data. Pass `` ` `` as `tbl` to subscribe to all registered tables. Returns `(tablename; current data)` so the subscriber can initialise their local copy of the table.
+Subscribes the current handle (`.z.w`) to `tbl`. Pass `` ` `` as `syms` to receive all data. Pass `` ` `` as `tbl` to subscribe to all registered tables. Returns `(tablename; current data)` so the subscriber can initialise their local copy before live updates arrive.
+
+Browser clients call `sub` via the evaluate dispatch:
+
+```json
+{"func": "sub", "arg1": "trades", "arg2": ""}
+```
+
+`arg1` is the table name (empty string = all tables), `arg2` is the sym filter (empty string = all syms). The caller is responsible for converting strings to q symbols before passing to `evaluate`.
 
 ### setmodifier
 
@@ -74,13 +84,12 @@ Subscribes the current handle (`.z.w`) to `tbl`. Pass `` ` `` as `syms` to recei
 html.setmodifier[tbl;fn]
 ```
 
-Sets a custom modifier function for `tbl`. `fn` is called on every `pub` as `fn[(\`upd;tbl;data)]` and must return bytes or a string suitable to send directly to a subscriber handle.
+Sets a custom modifier function for `tbl`. `fn` receives `(\`upd;tbl;data)` and must return bytes or a string to send directly to subscribers.
 
-The default modifier encodes data using the c.js binary protocol (kdb+ IPC-wrapped JSON). Use `setmodifier` to switch a table to plain JSON text — for example when subscribers are plain WebSocket clients without c.js:
+The default modifier uses the c.js binary protocol (kdb+ IPC-wrapped JSON). Switch to plain JSON text for clients without c.js:
 
 ```q
-html.setmodifier[`trades;{-8!.j.j `name`data!("upd";`tablename`tabledata!(x 1;x 2))}]  / default (c.js binary)
-html.setmodifier[`trades;{.j.j `name`data!("upd";`tablename`tabledata!(x 1;x 2))}]      / plain json text
+html.setmodifier[`trades;{.j.j `name`data!("upd";`tablename`tabledata!(x 1;x 2))}]
 ```
 
 Signals an error if `tbl` has not been registered via `addtables`.
@@ -91,7 +100,7 @@ Signals an error if `tbl` has not been registered via `addtables`.
 html.dataformat[msgtype;msgdata]
 ```
 
-Wraps a message into a `` `name`data `` dictionary, javascript-formatting each table in `msgdata` (a list or dictionary of tables). Used by host data functions that the front end requests over the websocket, e.g. TorQ's monitor `start` call returning several tables at once.
+Wraps a message into a `` `name`data `` dictionary, javascript-formatting each table in `msgdata` (a list or dictionary of tables). Useful for request/reply calls where the front end asks for several tables at once.
 
 ### evaluate
 
@@ -99,67 +108,54 @@ Wraps a message into a `` `name`data `` dictionary, javascript-formatting each t
 html.evaluate[inputdict]
 ```
 
-Takes a q dictionary (already deserialised from JSON), extracts the `func` key, calls the named function with any additional keys as arguments, and returns the result. Used internally by the `.z.ws` handler — the handler does the JSON deserialisation before calling this function.
+Extracts the `func` key from a q dictionary, calls the named function with any additional keys as arguments, and returns the result. Used internally by `.z.ws` — the handler deserialises JSON before calling this. Functions in `funcmap` (`sub`, `addtables`, `pub`, `dataformat`) are resolved first; other global functions are reachable by name.
 
-## WebSocket handler
-
-The module registers a `.z.ws` handler that receives bytes from the browser, deserialises them to a q dict, calls `evaluate`, JSON-encodes the result, and sends it back.
-
-Browser clients subscribe by calling `sub` through the evaluate dispatch — the same mechanism used for any funcmap function. There is no separate `wssub` function; `sub` handles both websocket and IPC callers:
-
-```json
-{"func": "sub", "arg1": "trades", "arg2": ""}
-```
-
-`arg1` is the table name (empty string subscribes to all tables), `arg2` is the sym filter (empty string means all syms). The caller is responsible for converting these to q symbols before calling `evaluate` — `integrationtest.q` shows the pattern.
-
-`sub` returns `(tablename; current data)` as the reply, giving the subscriber an initial snapshot to render before live updates arrive.
-
-Subscriptions are cleaned up when a connection closes via both `.z.wc` (websocket) and `.z.pc` (IPC). Any existing `.z.wc`/`.z.pc` handlers are preserved by wrapping, and the wiring happens only once across repeated `init` calls.
-
-## Logging
-
-The module logs at three points:
-
-- On `init`: confirms the module started and which `homedir` was set
-- On `evaluate`: logs at error level when a WebSocket-invoked function fails (the error is also re-thrown to the caller)
-
-The `log` dict must be injected via `init`. Log functions must be dyadic (`{[ctx;msg]}`) — `ctx` is a symbol tag and `msg` is a string. kx.log instances (detected by the presence of `getlvl`/`sinks`/`fmts` keys) are wrapped automatically into the dyadic contract by prepending `string[ctx],": "` to the message. Stored on `.z.m` and called as `.z.m.log[\`info][\`di.html;"message"]`. The module uses all three levels (`info`, `warn`, `error`) internally, though only `info` is required by validation.
-
-## Example with kx.log
+## Usage Example
 
 ```q
-/ wire up logging from the kx.log module
+html:use`di.html
+log:use`di.log
+
+logdep:`info`warn`error!(log.info;log.warn;log.error)
+
+/ set static file directory before init
+setenv[`KDBHTML;"/opt/app/html"]
+html.init[enlist[`log]!enlist logdep]
+
+/ register tables
+html.addtables[`trades`quotes]
+
+/ publish from a timer or upd handler
+html.pub[`trades;newdata]
+```
+
+With kx.log, pass the log instance directly — it is normalised automatically:
+
+```q
 logger:use`kx.log
 kxlog:logger.createLog[]
-logdep:`info`warn`error!(
-  {[m] kxlog.info[m]};
-  {[m] kxlog.warn[m]};
-  {[m] kxlog.error[m]})
-
-/ initialise html module — set KDBHTML before calling init
-setenv[`KDBHTML;"/opt/app/html"]
-html:use`di.html
-html.init[enlist[`log]!enlist logdep]
+html.init[enlist[`log]!enlist kxlog]
 ```
 
-## Browser testing (development)
-
-The default `.z.ws` handler uses kdb+ binary IPC format (`-9!`/`-8!`) and is designed to work with the KX c.js WebSocket library. For development testing without c.js, use the included `modulesetup.q`:
-
-```bash
-q di/html/integrationtest.q -p 5678
-```
-
-This starts a process on the given port with a plain-text JSON websocket handler. Open `test.html` in a browser (or navigate to `http://localhost:5678/test.html`) to connect and interact with the module. Run `tick[\`trades;5]` in the q session to push live data to browser subscribers.
-
-## Testing
+## Running Tests
 
 ```q
 k4unit:use`di.k4unit
 k4unit.moduletest`di.html
 ```
 
-All exported functions are covered. The one path not unit-tested is `pub` physically
-delivering a message over a live WebSocket connection, which requires a real client
-handle.
+All exported functions are covered. The one path not unit-tested is `pub` physically delivering a message over a live WebSocket connection, which requires a real client handle.
+
+For interactive browser testing, use the included integration test script:
+
+```bash
+q di/html/integrationtest.q -p 5678
+```
+
+This starts a process with a plain-text JSON websocket handler (no c.js required). Navigate to `http://localhost:5678/test.html` to subscribe to tables and push live data via `tick[\`trades;5]` in the q session.
+
+## Notes
+
+- The default `.z.ws` handler sends kdb+ binary IPC (`-8!`) and requires the KX c.js library in the browser. Use `setmodifier` to switch individual tables to plain JSON text for clients without c.js.
+- `.z.wc` fires on WebSocket close; `.z.pc` fires on any IPC port close. Both are wired so that `sub` works over plain IPC handles as well as WebSocket connections.
+- `evaluate` resolves function names first from the module `funcmap`, then from the global namespace. Restrict which globals are reachable by controlling what is defined in the process.

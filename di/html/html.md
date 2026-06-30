@@ -36,7 +36,7 @@ html.init[deps]
 
 | Key | Type | Description | Default |
 |---|---|---|---|
-| `` `log `` | dict | **Required.** Logging functions keyed `` `info`warn`error ``, each called as `{[msg]}` — e.g. from `di.log` | — |
+| `` `log `` | dict | **Required.** Logging functions keyed on at minimum `` `info ``, each called as `{[ctx;msg]}` where `ctx` is a symbol and `msg` is a string. kx.log instances are normalised automatically. | — |
 
 The HTML home directory comes from the `KDBHTML` environment variable. If the variable is unset `"html"` is used. There is no `homedir` config key.
 
@@ -103,7 +103,19 @@ Takes a q dictionary (already deserialised from JSON), extracts the `func` key, 
 
 ## WebSocket handler
 
-The module registers a `.z.ws` handler that receives bytes from the browser, deserialises them to a q dict, calls `evaluate`, JSON-encodes the result, and sends it back. Subscriptions are cleaned up when a connection closes via both `.z.wc` (websocket) and `.z.pc` (IPC), as in TorQ — `sub` can also be called over a plain IPC handle. In the direct-assignment path (no `handlers` config) any existing `.z.wc`/`.z.pc` handlers are preserved by wrapping, and the wiring happens only once across repeated `init` calls.
+The module registers a `.z.ws` handler that receives bytes from the browser, deserialises them to a q dict, calls `evaluate`, JSON-encodes the result, and sends it back.
+
+Browser clients subscribe by calling `sub` through the evaluate dispatch — the same mechanism used for any funcmap function. There is no separate `wssub` function; `sub` handles both websocket and IPC callers:
+
+```json
+{"func": "sub", "arg1": "trades", "arg2": ""}
+```
+
+`arg1` is the table name (empty string subscribes to all tables), `arg2` is the sym filter (empty string means all syms). The caller is responsible for converting these to q symbols before calling `evaluate` — `integrationtest.q` shows the pattern.
+
+`sub` returns `(tablename; current data)` as the reply, giving the subscriber an initial snapshot to render before live updates arrive.
+
+Subscriptions are cleaned up when a connection closes via both `.z.wc` (websocket) and `.z.pc` (IPC). Any existing `.z.wc`/`.z.pc` handlers are preserved by wrapping, and the wiring happens only once across repeated `init` calls.
 
 ## Logging
 
@@ -112,7 +124,7 @@ The module logs at three points:
 - On `init`: confirms the module started and which `homedir` was set
 - On `evaluate`: logs at error level when a WebSocket-invoked function fails (the error is also re-thrown to the caller)
 
-There is no built-in default logger — the `log` dict must be injected via `init`, typically from `di.log`. The log functions must be monadic (`{[msg]}`) to match the `kx.log` contract. They are stored on `.z.m` as a single `log` dict and called as `.z.m.log[\`info]["message"]`.
+The `log` dict must be injected via `init`. Log functions must be dyadic (`{[ctx;msg]}`) — `ctx` is a symbol tag and `msg` is a string. kx.log instances (detected by the presence of `getlvl`/`sinks`/`fmts` keys) are wrapped automatically into the dyadic contract by prepending `string[ctx],": "` to the message. Stored on `.z.m` and called as `.z.m.log[\`info][\`di.html;"message"]`. The module uses all three levels (`info`, `warn`, `error`) internally, though only `info` is required by validation.
 
 ## Example with kx.log
 
@@ -136,10 +148,10 @@ html.init[enlist[`log]!enlist logdep]
 The default `.z.ws` handler uses kdb+ binary IPC format (`-9!`/`-8!`) and is designed to work with the KX c.js WebSocket library. For development testing without c.js, use the included `modulesetup.q`:
 
 ```bash
-q di/html/modulesetup.q
+q di/html/integrationtest.q -p 5678
 ```
 
-This starts a process on port 5678 with a plain-text JSON websocket handler. Open `test.html` in a browser (or navigate to `http://localhost:5678/test.html` once the process is running) to connect and interact with the module. Run `tick[\`trades;5]` in the q session to push live data to browser subscribers.
+This starts a process on the given port with a plain-text JSON websocket handler. Open `test.html` in a browser (or navigate to `http://localhost:5678/test.html`) to connect and interact with the module. Run `tick[\`trades;5]` in the q session to push live data to browser subscribers.
 
 ## Testing
 

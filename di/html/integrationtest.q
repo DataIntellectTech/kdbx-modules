@@ -1,15 +1,16 @@
-/ di.html development test server
+/ di.html integration test
 / starts a plain-text-mode websocket process for browser testing without c.js
-/ usage: q di/html/modulesetup.q (from kdbx-modules root, after setting QPATH)
+/ usage: q di/html/integrationtest.q (from kdbx-modules root, after setting QPATH)
+/ pass -p PORT to use a specific port; otherwise the OS assigns a free port
 
-\p 5678
+if[0=system"p"; system"p 0"];
 
 html:use`di.html;
 
 logdep:`info`warn`error!(
-  {-1 "[INFO] ",x};
-  {-1 "[WARN] ",x};
-  {-2 "[ERROR] ",x});
+  {[c;m] -1 "[INFO] ",string[c]," ",m};
+  {[c;m] -1 "[WARN] ",string[c]," ",m};
+  {[c;m] -2 "[ERROR] ",string[c]," ",m});
 
 / set KDBHTML to this file's directory so test.html can be served over http
 / .z.f is the script path; split on "/" and drop the filename component
@@ -28,8 +29,10 @@ hns:` sv `.m.di,first (key `.m.di) where (key `.m.di) like "*html";
 / converts string arg1 to symbol and json numeric arg2 to long for functions that need it
 .z.ws:{
   d:.j.k x;
-  if[(`func in key d) and (d[`func] in ("sub";"wssub";"tick"));
+  if[(`func in key d) and (d[`func] in ("sub";"tick"));
     if[`arg1 in key d; d:@[d;`arg1;`$]]];
+  if[(`func in key d) and (d[`func]~"sub");
+    if[`arg2 in key d; d:@[d;`arg2;`$]]];
   if[(`func in key d) and (d[`func]~"tick");
     if[`arg2 in key d; d:@[d;`arg2;"j"$]]];
   neg[.z.w] .j.j html.evaluate d;
@@ -49,6 +52,7 @@ tick:{[t;n]
   if[count tsubs; {[m;s] (neg s 0) m}[msg;] each tsubs];
   };
 
--1 "di.html dev server ready on port 5678";
--1 "open test.html in browser, or browse to http://localhost:5678/test.html";
+p:system"p";
+-1 "di.html integration test ready on port ",p;
+-1 "open test.html in browser, or browse to http://localhost:",p,"/test.html";
 -1 "q commands: tick[`trades;5] , tick[`quotes;5]";

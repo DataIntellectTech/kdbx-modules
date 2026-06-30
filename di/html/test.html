@@ -66,7 +66,7 @@
     <button onclick="triggerTick('trades',5)">tick trades (5 rows)</button>
     <button onclick="triggerTick('quotes',5)">tick quotes (5 rows)</button>
     <button onclick="triggerTick('trades',20)">tick trades (20 rows)</button>
-    <span style="color:#555;font-size:11px;margin-left:8px">calls tick[] in modulesetup.q via evaluate — subscribe first</span>
+    <span style="color:#555;font-size:11px;margin-left:8px">calls tick[] in integrationtest.q via evaluate — subscribe first</span>
     <div id="pub-tables" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
       <div class="result empty" style="width:100%">no updates yet — subscribe to a table first, then click a tick button above</div>
     </div>
@@ -169,17 +169,16 @@ function send(obj, cb) {
 
 // section 2: subscribe
 function wssubTo(tbl) {
-  send({func:"wssub", arg1:tbl}, function(r) {
+  send({func:"sub", arg1:tbl, arg2:""}, function(r) {
     var tables = Array.isArray(r[0]) ? r : [r];
     tables.forEach(function(pair) {
       if (!pair || !pair[0]) return;
       var name = pair[0];
       subscribed[name] = true;
       updateSubBadges();
-      var snap = pair[1];
-      setResult("sub-result",
-        name+": snapshot "+JSON.stringify(snap).slice(0,80)+(JSON.stringify(snap).length>80?"...":""),
-        "ok");
+      var snap = Array.isArray(pair[1]) ? pair[1] : [];
+      renderTable({name:"upd", data:{tablename:name, tabledata:snap}});
+      setResult("sub-result", name+": subscribed (snapshot: "+snap.length+" rows)", "ok");
     });
   });
 }

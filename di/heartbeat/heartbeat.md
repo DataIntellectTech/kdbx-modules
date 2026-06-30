@@ -2,7 +2,7 @@
 
 Periodic process-liveness signalling over pub/sub for kdb-x. Every process can publish a regular heartbeat so that downstream monitors detect when a process has stopped beating - i.e. it is stalled or blocked - even when the underlying connection is still valid. The module covers both sides: publishing heartbeats, and on the monitoring side storing received beats and raising a warning then an error when a process stops within configurable grace periods.
 
----
+--- 
 
 ## Features
 

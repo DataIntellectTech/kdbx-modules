@@ -1,13 +1,13 @@
 # dataaccess
 
-`dataaccess.q` is the data access query layer in the TorQ gateway decomposition. It accepts a client query with a time range, routes it to the appropriate process types based on which partitions they cover, splits the query across those shards to avoid time-range overlap, and reduces the results back to the client via a user-supplied join function.
+`di.dataaccess` is the data access query layer in the TorQ gateway decomposition. It accepts a client query with a time range, routes it to the appropriate process types based on which partitions they cover, splits the query across those shards to avoid time-range overlap, and reduces the results back to the client via a user-supplied join function.
 
-**Standalone value:** any gateway-style process that needs to fan queries across time-partitioned backends (rdb, hdb, etc.) can load this module to get routing, query splitting, scatter-gather, and map-reduce aggregation without reimplementing them.
+**Standalone value:** any gateway-style process that needs to fan queries across time-partitioned backends (rdb, hdb, etc.) can load this module to get query splitting, scatter-gather and map-reduce aggregation without reimplementing them.
 
 **Out of scope:**
-- **Execution** — dispatching to backend processes is `di.asyncdispatch`'s job; this module calls `dispatch.execquery`.
-- **Routing** — deciding which server types cover which date ranges is `di.serverselect`'s job; this module calls `getrouting` (currently a stub, see below).
-- **Permissions** — belong in `di.gateway`/`di.permissions`.
+- **Execution** — dispatching to backend processes is `di.asyncdispatch`'s job; this module calls `asyncdispatch.execquery`.
+- **Routing** — deciding which server types cover which date ranges is `di.serverselect`'s job; this module calls `serverselect.getrouting` / `serverselect.buildshardquery`.
+- **Permissions** — belong in `di.gateway` / `di.permissions`.
 
 ---
 
@@ -17,64 +17,42 @@
 da:use`di.dataaccess
 ```
 
+Loading the module pulls in its two **hard dependencies** (`di.asyncdispatch`, `di.serverselect`) via `use`, so both must be resolvable on `QPATH`.
+
 ---
 
 ## Dependencies
 
-| Dep | How to wire |
-|---|---|
-| `di.asyncdispatch` | `da.setdispatch[ad]` where `ad:use\`di.asyncdispatch` |
-| `di.serverselect` | `da.setgetrouting[ss.getrouting]` and `da.setbuildshardquery[ss.buildshardquery]` *(once available)* |
+### Hard dependencies (resolved via `use` at load)
 
----
+| Dep | Used for | Assumed contract |
+|---|---|---|
+| `di.asyncdispatch` | dispatching each shard query | `execquery[query;servertypes;joinfn;postback;timeout;sync]` |
+| `di.serverselect` | routing + per-shard query rewriting | `getrouting[starttime;endtime]` → routing table; `buildshardquery[query;starttime;endtime]` → rewritten sub-query |
 
-## Configuration & pluggable hooks
+> The exact `execquery` / `getrouting` / `buildshardquery` signatures above are this module's **assumed** contract and should be reconciled once `di.asyncdispatch` / `di.serverselect` land.
 
-| Variable | Default | Setter | Purpose |
+### Injected dependencies (passed to `init`)
+
+All injectables are passed in a single `deps` dictionary. **`log` and `timer` are required** — `init` errors immediately if either is missing or malformed. There is no silent fallback.
+
+| Key | Required | Default | Purpose |
 |---|---|---|---|
-| `requestkeeptime` | `0D00:30` | — | How long `removerequests` retains completed rows in `requests` |
-| `synccallsallowed` | `0b` | — | Whether `execquery[...;1b]` (deferred sync) is permitted |
-| `cp` | `{.z.p}` | `setcp` | Current-time function — override for simulation/backtesting |
-| `dispatch` | `(::)` | `setdispatch` | Handle to a loaded `di.asyncdispatch` instance |
-| `logfn` | stderr | `setlogfn` | Logging function `{[lvl;msg]}` |
-| `shardresultcallback` | `` `shardresult `` | `setshardcallbacks` | Symbol asyncdispatch postbacks resolve to for shard success |
-| `sharderrorcallback` | `` `sharderror `` | `setshardcallbacks` | Symbol asyncdispatch postbacks resolve to for shard errors |
-| `getrouting` | stub | `setgetrouting` | `{[starttime;endtime]}` — returns routing table (see below) |
-| `buildshardquery` | stub | `setbuildshardquery` | `{[query;starttime;endtime]}` — injects time range into query |
+| `log` | ✅ | — | `kx.log` instance, or a binary `` `info`warn`error!{[c;m]} `` dict |
+| `timer` | ✅ | — | `di.timer` instance; `init` uses `addjob` to schedule housekeeping |
+| `cp` | — | `{.z.p}` | current-time function (override for simulation / backtesting) |
+| `synccallsallowed` | — | `0b` | whether `execquery[...;1b]` (deferred sync) is permitted |
+| `requestkeeptime` | — | `0D00:30` | how long completed `requests` rows are retained before purge |
+| `resultcallback` | — | `` `shardresult `` | postback symbol that `asyncdispatch` resolves to for shard success |
+| `errorcallback` | — | `` `sharderror `` | postback symbol that `asyncdispatch` resolves to for shard errors |
 
-### `getrouting[starttime;endtime]` (di.serverselect stub)
-Returns a table `([] servertype:`symbol$(); starttime:`timestamp$(); endtime:`timestamp$())`. Each row is one shard: the process type to dispatch to, and the time range it covers. Multiple rows with the same `servertype` produce multiple dispatches to that type (useful when several hdb processes each cover a different date range).
-
-**Stub behaviour:** returns a single row `(hdb; starttime; endtime)` — i.e. routes everything to a single hdb without splitting.
-
-Replace via `setgetrouting` once `di.serverselect` is available:
-```q
-da.setgetrouting[ss.getrouting]
-```
-
-### `buildshardquery[query;starttime;endtime]`
-Given the user query and a shard's time range, returns the modified sub-query with appropriate date/time filters applied. The real implementation (in `di.serverselect`) will modify the functional form's where clause.
-
-**Stub behaviour:** returns `query` unchanged.
-
-Replace via `setbuildshardquery`:
-```q
-da.setbuildshardquery[ss.buildshardquery]
-```
-
-### `shardresultcallback` / `sharderrorcallback`
-`submitshards` passes these symbols as the `postback` to `dispatch.execquery`. When asyncdispatch delivers a shard result, it sends `(shardresultcallback;reqid;result)` to this process's local handle, which evaluates to `shardresult[reqid;result]`.
-
-After mounting, update these to match the module's path on the gateway process:
-```q
-da.setshardcallbacks[`da.shardresult;`da.sharderror]
-```
+After mounting the module under a path (e.g. `da`), set `resultcallback` / `errorcallback` to that path's exported callbacks so async postbacks resolve correctly, e.g. `` `da.shardresult `` / `` `da.sharderror ``.
 
 ---
 
 ## Core data structures
 
-### `requests` (keyed table, key: `requestid`)
+### `requests` (keyed table, key: `requestid`) — `.z.m.requests`
 
 | Column | Type | Description |
 |---|---|---|
@@ -89,28 +67,21 @@ da.setshardcallbacks[`da.shardresult;`da.sharderror]
 | `error` | `boolean` | `1b` if the request ended in error |
 | `sync` | `boolean` | `1b` if the client is waiting on a deferred (`-30!`) response |
 
-### `shardresults` (dict)
+### `shardresults` (dict) — `.z.m.shardresults`
 
-`requestid -> list of shard results`
-
-Populated one entry at a time by `shardresult`. Removed immediately by `finishrequest` once all shards are joined and the reply is sent. The `requests` table row is retained for `requestkeeptime` for audit purposes.
+`requestid -> list of shard results`. Populated one entry at a time by `shardresult`, removed by `finishrequest` once all shards are joined and the reply is sent. The `requests` row is retained for `requestkeeptime` for audit.
 
 ---
 
-## Functions
+## Functions (export)
 
-### Public
-- **`execquery[query;starttime;endtime;joinfn;postback;timeout;sync]`** — main entry point. Routes the query, builds per-shard sub-queries, submits each to `dispatch.execquery`, and (when all shards reply) reduces with `joinfn` and replies to the client.
-- **`shardresult[reqid;result]`** — shard success callback. Called by asyncdispatch via postback when a shard completes. Accumulates the result and triggers join once all shards are in.
-- **`sharderror[reqid;err]`** — shard error callback. Short-circuits the request, sends the error to the client, and stamps the request as errored.
+- **`init[deps]`** — wire injectables and optional config (see table above), then schedule recurring request housekeeping on the injected timer. **Must be called before any other function.**
+- **`execquery[query;starttime;endtime;joinfn;postback;timeout;sync]`** — main entry point. Routes the query, builds per-shard sub-queries, submits each to `asyncdispatch.execquery`, and (when all shards reply) reduces with `joinfn` and replies to the client.
+- **`shardresult[reqid;result]`** — shard success callback. Invoked by asyncdispatch via postback when a shard completes; accumulates the result and triggers the join once all shards are in.
+- **`sharderror[reqid;err]`** — shard error callback. Short-circuits the request, logs the error, sends it to the client, and stamps the request as errored.
+- **`removerequests[age]`** — purge `requests` rows whose `returntime` is older than `age`. Wired onto the injected timer by `init`; also callable manually.
 
-### Routing stubs (replace with di.serverselect)
-- **`getrouting[starttime;endtime]`** — see above.
-- **`buildshardquery[query;starttime;endtime]`** — see above.
-
-### Housekeeping
-- **`removerequests[age]`** — purge `requests` rows with `returntime` older than `age`.
-- **`init[timerrepeat]`** — wire `removerequests` into a recurring timer. Pass `(::)` to skip. `timerrepeat` signature: `.timer.repeat[starttime;endtime;period;(func;params);description]`.
+Internal helpers (`checkresults`, `sendreply`, `finishrequest`, `submitshards`, `normlog`, `raiseerror`, `getopt`) are **not** exported.
 
 ---
 
@@ -118,41 +89,35 @@ Populated one entry at a time by `shardresult`. Removed immediately by `finishre
 
 ```q
 / -- gateway process --
-ad:use`di.asyncdispatch
 da:use`di.dataaccess
 
-/ wire dependencies
-da.setdispatch[ad]
-da.setshardcallbacks[`da.shardresult;`da.sharderror]
-ad.setcallbacks[`ad.addserverresult;`ad.addservererror]
+/ build the required log dependency from kx.log (pass the WHOLE instance)
+logger:use`kx.log
+loginst:logger.createLog[]
 
-/ register backend connections
-ad.addserver[hopen`:hdb1:5001;`hdb]
-ad.addserver[hopen`:rdb1:5002;`rdb]
+/ the injected timer
+tmr:use`di.timer
+tmr.init[(::)]
 
-/ wire connection handlers
-.z.po:{ad.addclientdetails[.z.w]}
-.z.pc:{ad.removeclienthandle[.z.w]; ad.removeserverhandle[.z.w]}
+/ init: log + timer required; point the callbacks at the mounted path
+da.init[`log`timer`resultcallback`errorcallback!(loginst;tmr;`da.shardresult;`da.sharderror)]
 
-/ a client query spanning rdb and hdb - once di.serverselect is wired,
-/ getrouting will split this into two shards automatically
+/ a client query spanning rdb and hdb - di.serverselect splits it into shards automatically
 da.execquery["select count i by sym from trade";
              2000.01.01D00:00:00.000000000;
              .z.p;
-             raze;    / join: raze the two result tables together
+             raze;    / join: raze the shard result tables together
              ();      / no postback wrapping
              0Wn;     / no timeout
              0b]      / async
-
-/ housekeeping (e.g. via di.timer)
-da.removerequests[da.requestkeeptime]
 ```
 
 ---
 
 ## Notes
 
-- Each shard is submitted to `dispatch.execquery` as an independent async query (`sync:0b`). The per-shard asyncdispatch join is `first` (unwraps the single-element result list). The user-supplied `joinfn` is applied by dataaccess across the full list of shard results.
+- Each shard is submitted to `asyncdispatch.execquery` as an independent async query (`sync:0b`). The per-shard asyncdispatch join is `first` (unwraps the single-element result list); the user-supplied `joinfn` is applied by dataaccess across the full list of shard results.
 - `shardresult` and `sharderror` guard against late or duplicate deliveries via the `returntime` null check. Once a request is finished, further callbacks for that `requestid` are silently dropped.
-- The first shard error short-circuits the whole request. Any subsequently-delivered shard results are ignored.
-- `getrouting` and `buildshardquery` are thin stubs that will be replaced by `di.serverselect`. All other module logic (accumulation, join, dispatch wiring) is independent of the routing implementation.
+- The first shard error short-circuits the whole request; any subsequently-delivered shard results are ignored.
+- All mutable state lives on `.z.m` (`.z.m.requests`, `.z.m.shardresults`, `.z.m.requestid`, etc.); the module declares no namespaces and never assigns `.z.M`.
+- Domain errors are routed through an internal log-then-signal helper, so failures appear in the injected log as well as being thrown. The only exception is `init`'s own dependency validation, which signals plainly because the logger is not yet wired.

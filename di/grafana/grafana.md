@@ -182,6 +182,7 @@ firewall it from untrusted networks.
 
 - The module installs `.z.pp`/`.z.ph` by closure-wrapping any pre-existing handler: Grafana requests (those carrying the `X-Grafana-Org-Id` header) are routed to the adaptor, and every other request falls through to the captured handler - so adding the module to a process that already serves HTTP does not break existing endpoints. This follows the `di.timer` precedent of a module owning a `.z.*` callback.
 - The intended end-state is to register the handlers through an injected `di.handlers` dependency rather than assigning `.z.*` directly. That is deferred until `di.handlers` exists and supports return-yielding `.z.pp`/`.z.ph` chains - a side-effect-only chain cannot return the HTTP response. `di.handlers` is not implemented yet.
+- A panel with multiple queries works: each target in the request is dispatched by its own type and the per-target results are merged into one JSON array
 - Table panels return the last `ticks` rows (default 1000); raise `ticks` via config if a panel needs more
 - Sym dropdowns list only syms seen within `timebackdate` (default 2 days)
 - Data tables must expose the configured `timecol` and `sym` columns (defaults `` `time ``/`` `sym ``)

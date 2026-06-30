@@ -35,7 +35,9 @@ wired:0b;
 
 zpp:{[x]
   / parse a grafana http post request and dispatch to the matching handler
-  / cut at the first whitespace to isolate the api url from any function params
+  / kdb passes .z.pp (requeststring;headers); requeststring is "<endpoint> <body>"
+  / (method and leading / already stripped), so cut at the first space gives
+  / (endpoint;body) - e.g. "query {...}" -> ("query";"{...}")
   r:(0;n?" ")cut n:first x;
   rqt:.j.k r 1;
   .z.m.log[`info][`grafana;"received ",(r 0)," request"];
@@ -50,9 +52,17 @@ annotation:{[rqt]
   };
 
 query:{[rqt]
-  / dispatch a /query request to the timeseries or table builder by target type
-  rqtype:raze rqt[`targets]`type;
-  :.h.hy[`json]$[rqtype~"timeserie";tsfunc rqt;tbfunc rqt];
+  / dispatch each target to the timeseries or table builder by its own type and
+  / merge the per-target json arrays - grafana can send several targets at once
+  tgts:rqt`targets;
+  / a single target may arrive as a bare dict; normalise to a list of targets
+  tgts:$[99h=type tgts;enlist tgts;tgts];
+  / iterate by index so a list or a table of targets is handled the same way
+  build:{[rqt;tgts;i]t:tgts i;r:@[rqt;`targets;:;t];$[t[`type]~"timeserie";tsfunc r;tbfunc r]};
+  / strip the [ ] from each per-target array, drop empties, re-wrap as one array
+  inners:{1_-1_x}each build[rqt;tgts]each til count tgts;
+  inners:inners where 0<count each inners;
+  :.h.hy[`json]"[",(","sv inners),"]";
   };
 
 search:{[rqt]
@@ -173,8 +183,9 @@ tsfunc:{[x]
   mil:{floor epoch+(`long$x)%1000000};
   / ensure the time column is a timestamp
   if["p"<>meta[rqt][.z.m.timecol;`t];rqt:@[rqt;.z.m.timecol;+;.z.D]];
-  / restrict to the time range requested by grafana
-  range:"P"$-1_'x[`range]`from`to;
+  / restrict to the time range requested by grafana - grafana sends iso-8601 utc;
+  / strip a trailing Z only if present rather than blindly dropping the last char
+  range:"P"${$["Z"=last x;-1_x;x]}each x[`range]`from`to;
   rqt:?[rqt;enlist(within;.z.m.timecol;range);0b;()];
   / add the milliseconds-since-epoch column grafana expects
   rqt:@[rqt;`msec;:;mil rqt .z.m.timecol];

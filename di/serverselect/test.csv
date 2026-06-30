@@ -171,6 +171,7 @@ true,0,0,q,"0<count srvsel.getserverids[`rdb`hdb]",1,1,getserverids with multipl
 true,0,0,q,"0<count srvsel.getserverids[`date`attributetype!(enlist 2024.01.01;`independent)]",1,1,getserverids supports independent attribute matching strategy
 fail,0,0,q,"srvsel.getserverids[`date`besteffort!(enlist 1990.01.01;0b)]",1,1,getserverids throws when no servers have requested attribute value
 fail,0,0,q,"srvsel.getserverids[`servertype`date!(`nonexistent;enlist 2024.01.01)]",1,1,getserverids throws for unknown servertype in attribute dict
+fail,0,0,q,"srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01 2024.01.02]",1,1,getserverids rejects a nested/malformed attribute requirement value with a clear error
 
 / ---- init: dependency injection (required log) ----
 comment,,,,,,,init - inject and validate the required log dependency

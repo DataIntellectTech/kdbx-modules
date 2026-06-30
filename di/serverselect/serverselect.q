@@ -164,6 +164,11 @@ getserverids:{[att]
   / att: symbol list of servertypes, or dict of attribute requirements (optionally keyed on `servertype)
   / dispatch the symbol-list path to getserveridsbytype and the dict path to getserveridstype
   if[99h<>type att; :getserveridsbytype att];
+  / validate attribute-requirement values are atoms or simple vectors (control keys excepted);
+  / a nested/general-list value (type 0h) would otherwise crash the cross matcher with a raw 'type
+  reqkeys:key[att] except `servertype`attributetype`besteffort;
+  if[count badkeys:reqkeys where 0h=type each att reqkeys;
+    raiseerror[`getserverids;"attribute requirement values must be atoms or simple vectors; nested/mixed for: ",", " sv string badkeys]];
   serverids:$[`servertype in key att;
     raze getserveridstype[delete servertype from att] each (),att`servertype;
     getserveridstype[att;`all]];

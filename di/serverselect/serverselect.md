@@ -147,7 +147,7 @@ Throws if any requested type is null, unregistered, or all-inactive.
 
 #### Attribute dict path
 
-Pass a dictionary of attribute requirements. Servers whose attribute dictionaries satisfy the requirements are returned.
+Pass a dictionary of attribute requirements. Servers whose attribute dictionaries satisfy the requirements are returned. Each requirement value must be an **atom or a simple (flat) vector** of the attribute's type — a nested/general-list value (e.g. from a stray `enlist`, giving `` `date!enlist enlist 2024.01.01 2024.01.02 ``) is rejected with a clear `di.serverselect:` error rather than failing deep in the matcher.
 
 ```q
 / cross match (default): every date must be available for every sym
@@ -225,10 +225,15 @@ The `before` rows load the module and `init` it with a no-op logger, so the test
 
 ### Integration test
 
-`integration.q` is an end-to-end narrative test that drives every exported function through a realistic gateway lifecycle (register → activate/deactivate → query → select → bulk-register → error handling) and prints a `PASS`/`FAIL` summary. Run it directly:
+`integration.q` is an end-to-end test that drives every exported function against **real backend processes**. It spawns a fleet of child `q` listeners, opens genuine IPC handles to them, and exercises a realistic gateway lifecycle (register → query → select → **route a live query to the selected handle** → bulk-register → disconnect → error handling → init). Because the handle returned by `gethandlebytype`/`getserverids` is actually queried, the assertions prove queries reach the *expected* backend process — e.g. round-robin alternates between the live rdbs, attribute selection routes to the hdb whose attributes match, and a killed/deactivated server drops out of selection. Run it directly:
 
 ```bash
 QPATH=/path/to/kx/mod:/path/to/kdbx-modules q integration.q
 ```
 
-It exits with a non-zero code equal to the number of failed assertions (`0` when all pass).
+It exits with a non-zero code equal to the number of failed assertions (`0` when all pass), and prints a `PASS`/`FAIL` summary.
+
+The test is self-contained — no helper files: child backends are bare `q` listeners whose identity and `ping` api are injected over IPC, and the test launches and tears them down itself (cleanup is guaranteed via `.z.exit`, even on failure). It additionally requires:
+
+- a `q` on `PATH` to launch the child listeners (override with `$QBIN`);
+- some free TCP ports. There are **no hardcoded ports**: the test derives a base from its own pid (so concurrent runs don't collide) and scans upward for ports that are actually free. Set `$SSPORT` to pin the base if you need a known range.

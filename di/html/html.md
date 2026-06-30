@@ -29,7 +29,7 @@ You need two things:
 |---|---|---|---|
 | `` `log `` | dict | yes | Logging functions keyed on at minimum `` `info ``, each `{[ctx;msg]}` where `ctx` is a symbol and `msg` is a string. kx.log instances are normalised automatically. |
 
-The HTML home directory is configured via the `KDBHTML` environment variable (not a deps key). If unset, `"html"` is used. Set it before calling `init`.
+The HTML home directory is configured via the `KDBHTML` environment variable (not a deps key). kdb-x sets `KDBHTML` by default to the `analyst/html` directory in the kdb-x installation, which contains the KX Analyst UI. If `KDBHTML` is unset, `"html"` (relative to the working directory) is used as a fallback. Set or override `KDBHTML` before calling `init` to point at your own HTML files.
 
 ## Initialisation
 

@@ -12,9 +12,9 @@ modifier:()!();
 / flag so direct .z handler wiring happens only once across repeated init calls
 zwired:0b;
 
-/ normalise a log dict: if it looks like a kx.log instance (has getlvl/sinks/fmts keys),
-/ wrap each level into a dyadic {[c;m]} function that embeds the context symbol into the message
 normlog:{[logdict]
+  / normalise a log dict: if it looks like a kx.log instance (has getlvl/sinks/fmts keys),
+  / wrap each level into a dyadic {[c;m]} function that embeds the context symbol into the message
   $[any `getlvl`sinks`fmts in key logdict;
     `info`warn`error!(
       {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];

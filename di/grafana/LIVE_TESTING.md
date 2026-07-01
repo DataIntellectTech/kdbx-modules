@@ -1,14 +1,14 @@
-# di.grafana — Live verification (manual)
+# di.grafana - Live verification (manual)
 
 An end-to-end check of `di.grafana` against a **real** Grafana instance: browser →
 Grafana → HTTP (with the `X-Grafana-Org-Id` header) → the module's `.z.pp`/`.z.ph`
 handlers → `search`/`query` → JSON → a rendered panel.
 
-This is a **manual** procedure for confidence/demos — it is **not** part of the
+This is a **manual** procedure for confidence/demos - it is **not** part of the
 automated test suite (`k4unit.moduletest\`di.grafana`), which already covers the
 module's logic in-process. Use this to see it work in the real UI.
 
-> **Verified working:** 2026-07-01 — Grafana **10.4.14** + `grafana-simple-json-datasource`
+> **Verified working:** 2026-07-01 - Grafana **10.4.14** + `grafana-simple-json-datasource`
 > v1.4.2, KDB-X 5.0, module on `di.grafana-pr`. Live panel rendered a moving
 > per-sym price series driven by a kdb feed.
 
@@ -16,33 +16,33 @@ module's logic in-process. Use this to see it work in the real UI.
 
 ## ⚠️ Grafana version compatibility (read this first)
 
-The module implements the **classic Grafana SimpleJSON protocol** — `/search`,
+The module implements the **classic Grafana SimpleJSON protocol** - `/search`,
 `/query`, `/annotations`, and a `GET /` health check. The only Grafana datasource
 plugin that speaks this protocol natively is **`grafana-simple-json-datasource`**,
 which is **Angular-based and deprecated**. Grafana has been phasing Angular out:
 
 | Grafana version | Status of the plugin |
 |---|---|
-| **≤ 10.x** | Angular enabled by default — plugin works out of the box ✅ |
-| **11.x** | Angular disabled by default — plugin loads **only** if Angular is re-enabled (`[plugins] angular_support_enabled = true`, or env `GF_PLUGINS_ANGULAR_SUPPORT_ENABLED=true`) ⚠️ |
-| **≥ 12.x** | Angular support **removed entirely** — the plugin will not load at all ❌ |
+| **≤ 10.x** | Angular enabled by default - plugin works out of the box ✅ |
+| **11.x** | Angular disabled by default - plugin loads **only** if Angular is re-enabled (`[plugins] angular_support_enabled = true`, or env `GF_PLUGINS_ANGULAR_SUPPORT_ENABLED=true`) ⚠️ |
+| **≥ 12.x** | Angular support **removed entirely** - the plugin will not load at all ❌ |
 
-**This guide pins Grafana 10.4.14** because Angular is on by default there — the
+**This guide pins Grafana 10.4.14** because Angular is on by default there - the
 least friction. On Grafana 11 you must re-enable Angular (see Troubleshooting).
 
-### Future note — when you must move to Grafana ≥ 12
+### Future note - when you must move to Grafana ≥ 12
 
 `grafana-simple-json-datasource` is a dead end from Grafana 12 onward. Options then:
 
 - **Infinity** (`yesoreyeram-infinity-datasource`, React, actively maintained):
   point it at `POST http://<host>:<port>/query` with a JSON body and a custom
   `X-Grafana-Org-Id: 1` header, and configure its parser to read the `datapoints`.
-  Works, but it's manual per-panel config — no metric dropdown from `/search`.
+  Works, but it's manual per-panel config - no metric dropdown from `/search`.
 - **SimPod** (`simpod-json-datasource`, React): non-Angular, but newer versions
   call `/metrics` instead of `/search`, so the metric dropdown won't populate
   (the module serves `/search`); a manually-typed target may still hit `/query`.
 - **Extend the module** to also serve the endpoints a modern React plugin expects
-  (e.g. `/metrics`) — a code change; weigh against keeping the module lean.
+  (e.g. `/metrics`) - a code change; weigh against keeping the module lean.
 
 The module itself is protocol-correct; this is purely about which Grafana plugin
 can consume it. If this doc stops working after a Grafana upgrade, the cause is
@@ -91,7 +91,7 @@ Leave this session running. (`.z.ts` is yours; the module only owns `.z.pp`/`.z.
 
 ## 2. Grafana 10.4 (Terminal 2, no root required)
 
-Runs entirely from your home directory — no Docker, no `sudo`:
+Runs entirely from your home directory - no Docker, no `sudo`:
 
 ```bash
 cd ~
@@ -132,7 +132,7 @@ can't reach directly. Forward the UI port:
 
 Only the **Grafana UI port** needs forwarding. The datasource URL
 `http://localhost:6702` is resolved by Grafana's **backend on the server** (that's
-what "Access: Server" means), so kdb's port never leaves the server — do **not**
+what "Access: Server" means), so kdb's port never leaves the server - do **not**
 forward 6702.
 
 ---
@@ -142,7 +142,7 @@ forward 6702.
 1. `http://localhost:3000` → login **admin / admin** (skip the password prompt).
 2. **Connections → Data sources → Add data source →** search **"SimpleJson"** → select it.
 3. **URL:** `http://localhost:6702` · **Access: Server (default)**.
-   - **Access must be Server** — that is what makes Grafana's backend attach the
+   - **Access must be Server** - that is what makes Grafana's backend attach the
      `X-Grafana-Org-Id` header the module keys on.
 4. **Save & Test** → expect green **"Data source is working"** (a `GET /` → `.z.ph`
    → `200 OK`; visible in the q console).
@@ -158,9 +158,9 @@ forward 6702.
    (optionally auto-refresh 5s to watch the live feed).
 
 Exercise the other paths too:
-- **`g.trade`** — one line per numeric column
-- **`t.trade`** — switch the panel type to **Table** for the whole table
-- **`t.trade.AAPL`** — table filtered to one sym
+- **`g.trade`** - one line per numeric column
+- **`t.trade`** - switch the panel type to **Table** for the whole table
+- **`t.trade.AAPL`** - table filtered to one sym
 
 ---
 
@@ -186,11 +186,11 @@ Exercise the other paths too:
 
 | Symptom | Cause / fix |
 |---|---|
-| `Refusing to initialize plugin … Angular` in the Grafana log | You're on Grafana 11 — use the 10.4 tarball here, or set `GF_PLUGINS_ANGULAR_SUPPORT_ENABLED=true` (config `[plugins] angular_support_enabled = true`). On Grafana ≥ 12 it can't be enabled — see "Future note" above. |
+| `Refusing to initialize plugin … Angular` in the Grafana log | You're on Grafana 11 - use the 10.4 tarball here, or set `GF_PLUGINS_ANGULAR_SUPPORT_ENABLED=true` (config `[plugins] angular_support_enabled = true`). On Grafana ≥ 12 it can't be enabled - see "Future note" above. |
 | `docker: permission denied … docker.sock` | Not in the `docker` group. Use the **binary** method here (no Docker), or `sudo docker …`. |
-| `bind: address already in use` on start | UI port taken — set `GF_SERVER_HTTP_PORT` to a free port (e.g. `6905`). |
-| Plugin install: `permission denied … /var/lib/grafana/plugins` | The CLI defaulted to the system dir — pass `--pluginsDir "$PWD/data/plugins"`. |
-| Browser: page won't load (remote server) | Forward the UI port over SSH — see section 3. |
-| **Save & Test: "Bad Gateway"** | Grafana's backend couldn't reach/parse kdb. From the server: `curl -i -H "X-Grafana-Org-Id: 1" http://localhost:6702/` — `Connection refused` means the kdb session isn't listening on 6702 (restart it); anything non-`200` means the wrong handler is wired. |
-| Panel empty / "No data" | Time range doesn't overlap the data — use **Last 15 minutes** (data is `.z.p`-recent). |
-| Metric dropdown empty | Wrong plugin — must be **SimpleJson** (`/search`+`/query`), not the newer SimPod (`/metrics`). |
+| `bind: address already in use` on start | UI port taken - set `GF_SERVER_HTTP_PORT` to a free port (e.g. `6905`). |
+| Plugin install: `permission denied … /var/lib/grafana/plugins` | The CLI defaulted to the system dir - pass `--pluginsDir "$PWD/data/plugins"`. |
+| Browser: page won't load (remote server) | Forward the UI port over SSH - see section 3. |
+| **Save & Test: "Bad Gateway"** | Grafana's backend couldn't reach/parse kdb. From the server: `curl -i -H "X-Grafana-Org-Id: 1" http://localhost:6702/` - `Connection refused` means the kdb session isn't listening on 6702 (restart it); anything non-`200` means the wrong handler is wired. |
+| Panel empty / "No data" | Time range doesn't overlap the data - use **Last 15 minutes** (data is `.z.p`-recent). |
+| Metric dropdown empty | Wrong plugin - must be **SimpleJson** (`/search`+`/query`), not the newer SimPod (`/metrics`). |

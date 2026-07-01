@@ -1,8 +1,8 @@
 / di.dataaccess - data access query layer.
-/ routes queries to appropriate processes based on partition ranges, splits
-/ queries across shards to avoid time-range overlap, and reduces the shard
-/ results back to the client via a user-supplied join function.
-/ hard deps: di.asyncdispatch (execution), di.serverselect (routing).
+/ routes a time-ranged client query across partitions (one shard per servertype/sub-range),
+/ rewrites each shard's query string with its time filter, scatters the shards via di.asyncdispatch,
+/ then gathers and reduces the shard results back to the client via a user-supplied join function.
+/ hard deps: di.asyncdispatch (execution), di.serverselect (which servertypes are reachable).
 / injected via init: log (required), timer (required), plus optional config.
 
 / --- hard dependencies ---
@@ -11,6 +11,9 @@ serverselect:use`di.serverselect;
 
 / --- constants ---
 errorprefix:"error: ";
+
+/ default partition coverage - one hdb covering all time; override via init `partitions
+defaultpartitions:([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp);
 
 / keyed-table schema template (constant); the live mutable copy is .z.m.requests, set in init
 schema:([requestid:`u#`long$()]
@@ -50,10 +53,33 @@ getopt:{[deps;k;dflt]
   $[k in key deps;deps k;dflt]
   };
 
+/ --- routing and query rewriting (dataaccess's own domain logic) ---
+
+getrouting:{[starttime;endtime]
+  / split [starttime;endtime] across the configured partitions, keeping only reachable servertypes;
+  / each surviving partition yields one shard clipped to the overlap of its coverage and the request
+  active:exec distinct servertype from serverselect.getservers[`servertype;`;()!()];
+  parts:select from .z.m.partitions where servertype in active;
+  shards:select servertype,rangestart:coverfrom|starttime,rangeend:coverto&endtime from parts;
+  select from shards where rangestart<rangeend
+  };
+
+buildshardquery:{[query;rangestart;rangeend]
+  / inject the shard's time range into the qSQL query string as a within filter on the time column;
+  / appended as the last clause, so it works whether or not the query already has a where clause.
+  / string-based by design - assumes a flat select string; not robust to subqueries or "where" in literals
+  clause:(string .z.m.timecolumn)," within (",(string rangestart),";",(string rangeend),")";
+  $[query like "*where*";query," , ",clause;query," where ",clause]
+  };
+
 / --- shard result accumulation ---
 
-shardresult:{[reqid;result]
-  / fill one shard slot; when all slots are filled, apply the join function and reply to the client
+shardresult:{[reqid;query;result]
+  / asyncdispatch postback callback - it delivers (reqid;query;result); query is echoed and unused.
+  / asyncdispatch routes backend errors through this same postback as an errorprefix-prefixed string,
+  / so detect that and short-circuit via the error path; otherwise accumulate the shard result
+  if[(10h=type result) and errorprefix~(count errorprefix) sublist result;
+    :sharderror[reqid;(count errorprefix) _ result]];
   if[not reqid in key .z.m.requests;:()];
   req:.z.m.requests reqid;
   if[not null req`returntime;:()];
@@ -102,7 +128,8 @@ finishrequest:{[reqid;err]
 / --- dispatch ---
 
 submitshards:{[reqid;shards;timeout]
-  / fan out one asyncdispatch query per shard; results return via the shardresult/sharderror postbacks
+  / fan out one asyncdispatch query per shard; results return via the resultcallback postback.
+  / NOTE: asyncdispatch replies to the postback's clienth (.z.w at call time) - see dataaccess.md
   {[reqid;timeout;stype;q]
     asyncdispatch.execquery[q;enlist stype;first;(.z.m.resultcallback;reqid);timeout;0b]
     }[reqid;timeout]'[shards`servertype;shards`shardquery];
@@ -116,14 +143,14 @@ execquery:{[query;starttime;endtime;joinfn;postback;timeout;sync]
   if[sync;
     if[not .z.m.synccallsallowed;raiseerror[`execquery;"synchronous calls are not allowed"]];
     if[not @[{-30!x;1b};(::);0b];raiseerror[`execquery;"deferred response not supported on this connection"]]];
-  shards:serverselect.getrouting[starttime;endtime];
+  shards:getrouting[starttime;endtime];
   if[0=count shards;
     tosend:$[()~postback;();postback,enlist enlist[]];
     $[sync;@[-30!;(.z.w;0b;());{}];@[neg .z.w;tosend;()]];
     .z.m.requestid:1+.z.m.requestid;
     :.z.m.requestid];
   postback:{$[11h=type x;enlist x;x]}postback;
-  shardqueries:serverselect.buildshardquery[query;;]'[shards`starttime;shards`endtime];
+  shardqueries:buildshardquery[query;;]'[shards`rangestart;shards`rangeend];
   shards:shards,'flip(enlist`shardquery)!enlist shardqueries;
   reqid:.z.m.requestid;
   .z.m.requests:.z.m.requests upsert (reqid;.z.m.cp[];.z.w;count shards;joinfn;postback;timeout;0Np;0b;sync);
@@ -145,8 +172,9 @@ init:{[deps]
   /   cp               (optional) current-time fn, default {.z.p} (override for sim/backtest)
   /   synccallsallowed (optional) allow deferred-sync execquery, default 0b
   /   requestkeeptime  (optional) retain completed rows for this long, default 0D00:30
-  /   resultcallback   (optional) postback symbol for shard success, default `shardresult
-  /   errorcallback    (optional) postback symbol for shard error,   default `sharderror
+  /   resultcallback   (optional) postback symbol for shard replies, default `shardresult
+  /   partitions       (optional) table (servertype;coverfrom;coverto) of partition coverage
+  /   timecolumn       (optional) time column rewritten into shard queries, default `time
   if[99h<>type deps;
     '"di.dataaccess: deps must be a dict with `log and `timer keys"];
   if[not `log in key deps;
@@ -157,13 +185,17 @@ init:{[deps]
     '"di.dataaccess: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
   if[not `timer in key deps;
     '"di.dataaccess: timer dependency is required; pass a di.timer instance keyed on `timer"];
+  if[`partitions in key deps;
+    if[not all `servertype`coverfrom`coverto in cols deps`partitions;
+      '"di.dataaccess: partitions config must have columns servertype, coverfrom, coverto"]];
   .z.m.log:normlog deps`log;
   .z.m.timer:deps`timer;
   .z.m.cp:getopt[deps;`cp;{.z.p}];
   .z.m.synccallsallowed:getopt[deps;`synccallsallowed;0b];
   .z.m.requestkeeptime:getopt[deps;`requestkeeptime;0D00:30];
   .z.m.resultcallback:getopt[deps;`resultcallback;`shardresult];
-  .z.m.errorcallback:getopt[deps;`errorcallback;`sharderror];
+  .z.m.partitions:getopt[deps;`partitions;defaultpartitions];
+  .z.m.timecolumn:getopt[deps;`timecolumn;`time];
   .z.m.requests:schema;
   .z.m.shardresults:()!();
   .z.m.requestid:0;

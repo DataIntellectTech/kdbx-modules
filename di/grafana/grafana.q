@@ -267,13 +267,19 @@ normlog:{[logdict]
     logdict]
   };
 
+isgrafana:{[x]
+  / true if the request's header dict carries the X-Grafana-Org-Id header; guard
+  / the type so a non-dict last element (malformed/non-http arg) falls through
+  $[99h=type h:last x;(`$"X-Grafana-Org-Id")in key h;0b]
+  };
+
 sethandlers:{
   / wrap any existing .z.pp/.z.ph so grafana requests are intercepted and every
   / other request falls through to the original handler
   .z.m.prevpp:$[@[{value x;1b};`.z.pp;0b];.z.pp;{[x]}];
-  .z.pp:{[x]$[(`$"X-Grafana-Org-Id")in key last x;.z.m.zpp x;.z.m.prevpp x]};
+  .z.pp:{[x]$[.z.m.isgrafana x;.z.m.zpp x;.z.m.prevpp x]};
   .z.m.prevph:$[@[{value x;1b};`.z.ph;0b];.z.ph;{[x]}];
-  .z.ph:{[x]$[(`$"X-Grafana-Org-Id")in key last x;"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";.z.m.prevph x]};
+  .z.ph:{[x]$[.z.m.isgrafana x;"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";.z.m.prevph x]};
   .z.m.wired:1b;
   };
 

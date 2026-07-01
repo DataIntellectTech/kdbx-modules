@@ -51,6 +51,7 @@ run,0,0,q,.test.qresp:.z.pp (("" sv ("query ";.test.qbody));(enlist `$"X-Grafana
 true,0,0,q,.test.qresp like "*columns*",1,,query dispatched to the table builder not annotation
 run,0,0,q,.m.di.0grafana.prevpp:{"fellthrough"},1,,install a sentinel as the pre-existing post handler
 true,0,0,q,.z.pp[(("ignored");()!())]~"fellthrough",1,,non-grafana post falls through to the pre-existing handler
+true,0,0,q,.z.pp["rawstring"]~"fellthrough",1,,malformed (non-dict header) request falls through without erroring
 run,0,0,q,.test.ph:.z.ph (`;(enlist `$"X-Grafana-Org-Id")!enlist ""),1,,get routed through installed .z.ph
 true,0,0,q,.test.ph~"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n",1,,get returns an alive response
 
@@ -76,6 +77,13 @@ true,0,0,q,.m.di.0grafana.allowfunctions,1,,allowfunctions enabled
 run,0,0,q,.test.fnrqt:enlist[`targets]!enlist (enlist[`target]!enlist "f.trade"),1,,build a function target returning a table
 run,0,0,q,.test.fnr:.m.di.0grafana.tbfunc .test.fnrqt,1,,function target evaluates when enabled
 true,0,0,q,.test.fnr like "*columns*",1,,enabled function target returns a table response
+
+comment,,,,,,,Bare (unprefixed) targets resolve by name and are never evaluated
+run,0,0,q,.test.bareok:.m.di.0grafana.tbfunc enlist[`targets]!enlist (enlist[`target]!enlist "trade"),1,,bare table name resolves via lookup
+true,0,0,q,.test.bareok like "*columns*",1,,bare valid target returns the table
+run,0,0,q,.test.pwned:0b,1,,sentinel to detect code execution
+run,0,0,q,@[.m.di.0grafana.tbfunc;enlist[`targets]!enlist (enlist[`target]!enlist ".test.pwned:1b");{x}],1,,bare q-expression target is rejected
+true,0,0,q,not .test.pwned,1,,the bare target string was not executed
 
 comment,,,,,,,Multi-target query requests (grafana sends targets as an array)
 run,0,0,q,.test.mt:`target`type!("t.trade";"table"),1,,a single target object

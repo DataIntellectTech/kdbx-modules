@@ -1,21 +1,21 @@
-/ kafka - wrapper around the kafkaq native library
-/ provides consumer and producer lifecycle management plus a configurable message callback
-/ the native library calls .kupd in the root namespace on message receipt; init sets a forwarder
-/ into .z.m.kupd so the callback can be replaced at runtime via setkupd without re-initialising
-/ the log dependency is required - init errors immediately if absent or malformed
-/ log functions are binary {[c;m]} where c is a symbol context and m is a string
+// kafka - wrapper around the kafkaq native library
+// provides consumer and producer lifecycle management plus a configurable message callback
+// the native library calls .kupd in the root namespace on message receipt; init sets a forwarder
+// into .z.m.kupd so the callback can be replaced at runtime via setkupd without re-initialising
+// the log dependency is required - init errors immediately if absent or malformed
+// log functions are binary {[c;m]} where c is a symbol context and m is a string
 
-/ default message callback - no-op; replace with setkupd after init
+// default message callback - no-op; replace with setkupd after init
 defaultkupd:{[k;x] (::)};
 
-/ configuration defaults
+// configuration defaults
 kupd:defaultkupd;
 enabled:.z.o in `l64;
 
-/ ============================================================
-/ native function internals - stubs replaced by bindfunctions when library loads
-/ exported forwarders delegate to these by bare name so bindfunctions updates are reflected immediately
-/ ============================================================
+// ============================================================
+// native function internals - stubs replaced by bindfunctions when library loads
+// exported forwarders delegate to these by bare name so bindfunctions updates are reflected immediately
+// ============================================================
 
 nativeinitconsumer:{[s;o]'"di.kafka: kafka not initialised - call init first"};
 nativeinitproducer:{[s;o]'"di.kafka: kafka not initialised - call init first"};
@@ -24,7 +24,7 @@ nativecleanupproducer:{'"di.kafka: kafka not initialised - call init first"};
 nativesubscribe:{[t;p]'"di.kafka: kafka not initialised - call init first"};
 nativepublish:{[t;p;k;m]'"di.kafka: kafka not initialised - call init first"};
 
-/ exported forwarders - captured at use time, delegate to native* internals dynamically
+// exported forwarders - captured at use time, delegate to native* internals dynamically
 initconsumer:{[s;o] nativeinitconsumer[s;o]};
 initproducer:{[s;o] nativeinitproducer[s;o]};
 cleanupconsumer:{nativecleanupconsumer[]};
@@ -32,15 +32,15 @@ cleanupproducer:{nativecleanupproducer[]};
 subscribe:{[t;p] nativesubscribe[t;p]};
 publish:{[t;p;k;m] nativepublish[t;p;k;m]};
 
-/ ============================================================
-/ internal helpers
-/ ============================================================
+// ============================================================
+// internal helpers
+// ============================================================
 
 normlog:{[logdict]
-  / detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
-  / kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
-  / plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
-  $[any `getlvl`sinks`fmts in key logdict;
+  // detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
+  // kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
+  // plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
+  $[all `getlvl`sinks`fmts in key logdict;
     `info`warn`error!(
       {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
       {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
@@ -49,15 +49,15 @@ normlog:{[logdict]
   };
 
 setconfig:{[deps]
-  / apply recognised configuration overrides; dep keys (log etc.) are ignored
+  // apply recognised configuration overrides; dep keys (log etc.) are ignored
   cfg:$[99h=type deps;deps;()!()];
   if[`enabled in key cfg; .z.m.enabled:cfg`enabled];
   if[`kupd in key cfg; .z.m.kupd:cfg`kupd];
   };
 
 loadlib:{[libpath]
-  / resolve and validate the native kafkaq shared library path - actual binding happens in bindfunctions
-  / the os-appropriate extension (.so or .dll) is appended automatically
+  // resolve and validate the native kafkaq shared library path - actual binding happens in bindfunctions
+  // the os-appropriate extension (.so or .dll) is appended automatically
   lib:`$string[libpath],"/",string[.z.o],"/kafkaq";
   libfile:hsym ` sv lib,$[.z.o like "w*";`dll;`so];
   libexists:@[{not ()~key x};libfile;{0b}];
@@ -69,10 +69,10 @@ loadlib:{[libpath]
   };
 
 bindfunctions:{[]
-  / bind the six c functions from the loaded kafkaq library into the native* internal targets
-  / the exported forwarders (initconsumer etc.) delegate to these by bare name, so updates here
-  / are immediately reflected in all subsequent calls through the exported api
-  / rawcleanupconsumer and rawcleanupproducer are unary in the c interface - wrapped as niladic
+  // bind the six c functions from the loaded kafkaq library into the native* internal targets
+  // the exported forwarders (initconsumer etc.) delegate to these by bare name, so updates here
+  // are immediately reflected in all subsequent calls through the exported api
+  // rawcleanupconsumer and rawcleanupproducer are unary in the c interface - wrapped as niladic
   .z.m.nativeinitconsumer:.z.m.lib 2:(`initconsumer;2);
   .z.m.nativeinitproducer:.z.m.lib 2:(`initproducer;2);
   .z.m.rawcleanupconsumer:.z.m.lib 2:(`cleanupconsumer;1);
@@ -83,25 +83,25 @@ bindfunctions:{[]
   .z.m.nativepublish:.z.m.lib 2:(`publish;4);
   };
 
-/ ============================================================
-/ public api
-/ ============================================================
+// ============================================================
+// public api
+// ============================================================
 
 setkupd:{[f]
-  / replace the message callback invoked when a subscribed message arrives
-  / f must be a binary function {[k;x]} where k is the message key (symbol) and x is the payload (bytes)
-  / the root .kupd forwarder always delegates to the current value - swap takes effect immediately
-  / note: messages in-flight from the c background thread may briefly invoke the previous handler
+  // replace the message callback invoked when a subscribed message arrives
+  // f must be a binary function {[k;x]} where k is the message key (symbol) and x is the payload (bytes)
+  // the root .kupd forwarder always delegates to the current value - swap takes effect immediately
+  // note: messages in-flight from the c background thread may briefly invoke the previous handler
   .z.m.kupd:f;
   };
 
 init:{[deps]
-  / initialise the kafka module - validate deps, apply config, load native library
-  / deps: dict containing `log (required) plus optional `libpath, `enabled, `kupd
-  / log dep: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - binary, c=context symbol, m=string
-  / examples:
-  /   kafka.init[`log`libpath!(logdep;`$/opt/kdb/lib)]
-  /   kafka.init[`log`libpath`enabled!(logdep;`$/opt/kdb/lib;0b)]
+  // initialise the kafka module - validate deps, apply config, load native library
+  // deps: dict containing `log (required) plus optional `libpath, `enabled, `kupd
+  // log dep: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - binary, c=context symbol, m=string
+  // examples:
+  //   kafka.init[`log`libpath!(logdep;`$/opt/kdb/lib)]
+  //   kafka.init[`log`libpath`enabled!(logdep;`$/opt/kdb/lib;0b)]
   if[99h<>type deps;
     '"di.kafka: deps must be a dict with `log key"];
   if[not `log in key deps;

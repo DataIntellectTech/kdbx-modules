@@ -40,7 +40,7 @@ normlog:{[logdict]
   // detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
   // kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
   // plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
-  $[all `getlvl`sinks`fmts in key logdict;
+  $[any `getlvl`sinks`fmts in key logdict;
     `info`warn`error!(
       {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
       {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];

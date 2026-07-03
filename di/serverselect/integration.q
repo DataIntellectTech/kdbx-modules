@@ -56,7 +56,10 @@ pids:`int$();
 / no hardcoded ports: derive a starting point from this pid (so concurrent runs
 / on a shared host don't collide) - or take an explicit base from $SSPORT - then
 / scan upward for ports that are actually free. nothing assumes a fixed port.
-inuse:{[p] @[{hclose hopen x; 1b}; (`$":localhost:",string p;200); 0b]};
+/ probe whether a localhost port is in use: a free port refuses instantly, so this short
+/ timeout only bounds the wait for a filtered (silently-dropped) port - keep it small so a
+/ full scan of 10*count names candidates cannot stall for many seconds
+inuse:{[p] @[{hclose hopen x; 1b}; (`$":localhost:",string p;50); 0b]};
 baseport:$[0<count s:getenv`SSPORT; "I"$s; 20000+`int$.z.i mod 20000];
 findfree:{[start;n]
   / take the first n free ports from a generous candidate window above start
@@ -69,8 +72,10 @@ findfree:{[start;n]
 ports:findfree[baseport;count names];
 
 launch:{[port]
-  / start a bare q listener detached (no script needed - identity is injected over IPC)
-  system qbin," -p ",string[port]," -q </dev/null >/dev/null 2>&1 &";
+  / start a bare q listener detached and capture its shell background pid ($!) - so every
+  / child can be reaped by exact pid later, whether or not we ever connect to it, and with
+  / no dependence on the qbin path (identity/api are injected over IPC once connected)
+  :"I"$first system qbin," -p ",string[port]," -q </dev/null >/dev/null 2>&1 & echo $!";
   };
 
 connect:{[port]
@@ -81,20 +86,20 @@ connect:{[port]
   };
 
 teardown:{[]
-  / always-run cleanup. first kill by captured pid (exact); then a port-based
-  / fallback so children are reaped even when we never connected (no pid).
-  / the [-]p bracket keeps the pattern from matching this very kill command.
+  / always-run cleanup. kill every launched child by its captured pid (exact). the pkill
+  / fallback is a last resort for the rare case a pid was never captured - keyed on our own
+  / unique port and -q flag (NOT the qbin path, which is configurable), so a custom qbin
+  / cannot break it. the [-]p bracket keeps the pattern from matching this very kill command.
   live:pids where not null pids;
   if[count live; @[system;"kill ",(" " sv string live)," 2>/dev/null; true";{}]];
-  {@[system;"pkill -f \"bin/q [-]p ",string[x],"\" 2>/dev/null; true";{}]} each ports;
+  {@[system;"pkill -f \"[-]p ",string[x]," -q\" 2>/dev/null; true";{}]} each ports;
   @[hclose;;{}] each handles where not null handles;
   };
 
-/ launch the fleet, connect, capture each child's own pid (.z.i) for exact-pid teardown
+/ launch the fleet (capturing each child's shell pid for exact-pid teardown), then connect
 -1 "selected free ports: ",.Q.s1 ports;
-launch each ports;
+pids:launch each ports;
 handles:connect each ports;
-pids:{$[null x; 0Ni; @[x;".z.i";{0Ni}]]} each handles;
 / guarantee the fleet is reaped on ANY exit (normal, error-abort, or exit code)
 .z.exit:{teardown[]};
 if[any null handles;
@@ -212,6 +217,10 @@ chk["already-active handle skipped (no new row)";n0;count srvsel.getserverstable
 / =========================================================================
 hdr"STEP 9  disconnect: kill a backend, deactivate it, prove routing adapts";
 / a real gateway's .z.pc handler would call setserveractive[h;0b] on the dropped handle
+/ guard: the kill is only a genuine test if rdb1's pid was captured. if pids 0 were null,
+/ string 0Ni -> "0Ni" and the kill silently no-ops, degrading STEP 9 into a deactivation-only
+/ test. fail loudly here rather than pass on a half-exercised path.
+chk["rdb1 pid captured (so the kill below is real)";1b;not null pids 0];
 @[system;"kill ",string[pids 0]," 2>/dev/null; true";{}]; system"sleep 0.3";
 srvsel.setserveractive[handles 0;0b];
 / active rdbs are now rdb2 (live) and rdb3 (live); the dead rdb1 must never be picked

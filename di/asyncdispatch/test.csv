@@ -124,6 +124,53 @@ true,0,0,q,0b~first exec error from qq[] where queryid=qid7,1,,scatter-gather co
 true,0,0,q,4~captured,1,,joined result is sum of both backend results (1+1=2 from each; sum 2 2 = 4)
 run,0,0,q,ad.setformatresponse[{[status;sync;result]$[not[status]and sync;'result;result]}],1,,restore default formatresponse
 
+/ Test 13: execqueryto local path - successful result delivered in-process
+run,0,0,q,ad.setcallbacks[`.m.di.0asyncdispatch.addserverresult;`.m.di.0asyncdispatch.addservererror],1,,restore callbacks
+run,0,0,q,ad.setgetnextqueryid[{r:0!select from .m.di.0asyncdispatch.queryqueue where null returntime;1 sublist select from r where not queryid in key .m.di.0asyncdispatch.results}],1,,restore scheduler
+run,0,0,q,.test.localcap:(::),1,,reset local capture
+run,0,0,q,.test.localfn:{[reqid;qry;res] .test.localcap:(reqid;qry;res)},1,,define local capturing callback in root namespace
+run,0,0,q,ad.execqueryto[0Ni;"2+2";enlist`mock;{sum x};(.test.localfn;`req1);0Wn;0b],1,,dispatch via local path with postback (sum collapses single-element result to scalar)
+run,0,0,q,bh"",1,,sync flush - wait for backend result callback
+true,0,0,q,(`req1;"2+2";4)~.test.localcap,1,,postback invoked in-process with (reqid;query;result)
+
+/ Test 14: execqueryto local path - backend error delivered in-process via postback
+run,0,0,q,.test.localcap:(::),1,,reset local capture
+run,0,0,q,ad.execqueryto[0Ni;"'errortest";enlist`mock;raze;(.test.localfn;`req2);0Wn;0b],1,,dispatch erroring query via local path
+run,0,0,q,bh"",1,,sync flush - wait for backend error callback
+true,0,0,q,`req2~.test.localcap[0],1,,reqid correct
+true,0,0,q,.test.localcap[2] like "error:*",1,,error string delivered as result via postback
+
+/ Test 15: execqueryto local path - timeout delivered in-process via postback
+run,0,0,q,.test.localcap:(::),1,,reset local capture
+run,0,0,q,ad.execqueryto[0Ni;"3+3";enlist`mock;raze;(.test.localfn;`req3);0D00:00:00.000000001;0b],1,,dispatch with near-zero timeout
+run,0,0,q,ad.checktimeout[],1,,trigger timeout sweep
+true,0,0,q,`req3~.test.localcap[0],1,,reqid correct
+true,0,0,q,.test.localcap[2] like "error:*",1,,timeout error delivered in-process via postback
+
+/ Test 16: removeclients purges stale client audit rows
+run,0,0,q,ad.addclientdetails[7i],1,,record a client for the cleanup test
+true,0,0,q,1~count select from cl[] where clienth=7i,1,,client audit row exists
+run,0,0,q,.m.di.0asyncdispatch.setcp[{.z.p+2D}],1,,fast-forward clock two days past the audit age
+run,0,0,q,ad.removeclients[0D00:01],1,,purge client rows older than one minute
+true,0,0,q,0~count select from cl[] where clienth=7i,1,,client audit row purged
+run,0,0,q,.m.di.0asyncdispatch.setcp[{.z.p}],1,,restore the real clock
+
+/ Test 17: join-failure path - join function throws, client receives error and query is finished
+/ dispatched to the scatter backend (bh2): the mock backend (bh) is left inuse by the in-flight timeout in test 15
+run,0,0,q,.m.di.0asyncdispatch.addquery["2+2";enlist`scatter;{'"joinboom"};();0Wn;0b],1,,queue a query whose join function throws
+run,0,0,q,qid8:exec first queryid from qq[] where join~\:{'"joinboom"},1,,capture the query id
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch to the scatter backend
+run,0,0,q,bh2"",1,,sync flush - wait for the result callback and join attempt
+true,0,0,q,1b~first exec error from qq[] where queryid=qid8,1,,join failure correctly flagged as error
+true,0,0,q,not null first exec returntime from qq[] where queryid=qid8,1,,returntime stamped after join failure
+
+/ Test 18: execqueryto with a non-null explicit replyto stores it as clienth with local=0b
+run,0,0,q,ad.execqueryto[99i;"1+1";enlist`scatter;{sum x};();0Wn;0b],1,,dispatch with explicit replyto handle 99i
+run,0,0,q,qid9:exec first queryid from qq[] where (clienth=99i)&query~\:"1+1",1,,capture the query id
+true,0,0,q,99i~first exec clienth from qq[] where queryid=qid9,1,,replyto stored as clienth
+true,0,0,q,0b~first exec local from qq[] where queryid=qid9,1,,local flag is 0b for a non-null replyto
+run,0,0,q,bh2"",1,,sync flush - completes the backend round-trip (reply to fake 99i fails silently)
+
 / Teardown
 run,0,0,q,neg[bh](exit;0);neg[bh](::),1,,send exit to first backend process and flush
 run,0,0,q,hclose bh,1,,close first backend handle

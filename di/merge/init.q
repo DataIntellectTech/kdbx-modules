@@ -1,0 +1,8 @@
+/ load core functionality into the module
+\l ::merge.q
+
+/ module version - compared against dependants' minimum requirements by di.depcheck. Removed for now until PR merged
+/version:"0.1.0";
+
+/ public api - only the functions intended to be called externally are exported
+export:([init;getpartchunks;mergebypart;mergebycol;mergehybrid;trackpartition;clearpartsizes;getpartsizes;checkpartitiontype;checkenumerabletype;getextrapartitions;getfirstcharpartitions])

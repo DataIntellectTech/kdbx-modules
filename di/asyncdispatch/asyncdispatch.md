@@ -2,7 +2,7 @@
 
 Async scatter-gather query coordinator for kdb-x gateway processes. Queues client queries, dispatches them to available backend processes by servertype, collects per-server results, applies a join function, and replies to the client — with timeout management and correct error propagation if a backend disconnects mid-query.
 
-Routing (deciding which servertypes satisfy a query) is `di.serverselect`'s responsibility. This module receives a resolved servertype list and dispatches to whatever idle backends of each type are registered.
+Routing (deciding which servertypes satisfy a query) is `di.serverselect`'s responsibility, but **`di.serverselect` is not a dependency** — this module dispatches a resolved servertype list to whatever backends its *server source* reports. That source is pluggable with a default: by default it is asyncdispatch's own registry (populate it with `addserver`), or you point it at `di.serverselect`'s output via `setavailableservers`. Either works standalone; neither is required.
 
 ---
 
@@ -14,6 +14,7 @@ Routing (deciding which servertypes satisfy a query) is `di.serverselect`'s resp
 - Handle backend disconnects mid-query — errors in-flight queries and queued queries that can no longer be satisfied
 - Track connected clients and clean up orphaned queries on client disconnect
 - Support synchronous deferred response mode (`-30!`) alongside the default async mode
+- Pluggable server source with a default — dispatch against the built-in registry (`addserver`) by default, or point it at `di.serverselect`'s output (or any source) via `setavailableservers`; `di.serverselect` is a composable option, never a dependency
 - Accept fully pluggable scheduler (`setgetnextqueryid`), routing (`setavailableservers`), reply formatter (`setformatresponse`), and callback symbols (`setcallbacks`) — swap without touching core dispatch logic
 - Detect and normalise `kx.log` instances automatically so callers can pass a logger directly without manual wrapping
 
@@ -26,6 +27,8 @@ Routing (deciding which servertypes satisfy a query) is `di.serverselect`'s resp
 | logger | `` `log `` | yes | `info`, `warn`, `error` — each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
 The `log` dependency must be passed to `init` inside the `deps` dict. The module throws immediately if it is absent or missing any of the three required keys. All three are required since the module calls `info`, `warn`, and `error`.
+
+> **`di.serverselect` is not a dependency.** asyncdispatch never imports or calls it. The server source is pluggable (`setavailableservers`) and defaults to the built-in registry (`addserver`), so you run standalone out of the box; to dispatch against serverselect's live view instead, inject its `getservers` output as the source (see `setavailableservers`). No registry copying, no dependency.
 
 A `kx.log` instance can be passed directly — the module normalises monadic functions to the binary `{[c;m]}` contract automatically via `normlog`. Context is embedded in the output as `"context: message"`:
 
@@ -67,7 +70,7 @@ ad.init[enlist[`log]!enlist logdep]
 ```
 
 ### `addserver[handle;servertype]`
-Register a backend connection. `handle`: open int handle. `servertype`: symbol identifying the process type (e.g. `` `rdb ``, `` `hdb ``).
+Register a backend connection into the **built-in (default) server source**. `handle`: open int handle. `servertype`: symbol identifying the process type (e.g. `` `rdb ``, `` `hdb ``). Use this when asyncdispatch owns the server list; to source servers from `di.serverselect` instead, leave `addserver` unused and inject via `setavailableservers`.
 ```q
 ad.addserver[hopen`:backend1:5001;`rdb]
 ```
@@ -177,10 +180,16 @@ ad.setcallbacks[`.gw.dispatch.addserverresult;`.gw.dispatch.addservererror]
 ```
 
 ### `setavailableservers[f]`
-Swap in a custom routing strategy. `f` must be `{[excludeinuse]}` returning a table with a `servertype` column.
+Replace the **server source** — the function dispatch uses to find backends. `f` is `{[excludeinuse]}` and must return a table with `handle` and `servertype` columns. This is the seam for running against `di.serverselect` (or any external source) **without a dependency and without copying its registry**: by default the source reads asyncdispatch's own registry (`addserver`), and you override it to read serverselect instead.
 ```q
-ad.setavailableservers[{[excl]select from servers where active}]
+// default (built-in registry) — equivalent to not calling this at all
+ad.setavailableservers[{[eu] $[eu; select from servers where active, not inuse; select from servers where active]}]
+
+// compose with di.serverselect (not a dependency — just its output as the source)
+srvsel:use`di.serverselect
+ad.setavailableservers[{[eu] select handle, servertype from srvsel.getservers[`servertype;`;()!()]}]
 ```
+Result routing does **not** depend on the source — a returning handle is matched to its servertype from the query's own dispatch record — so an injected source needs no registration in asyncdispatch. Note `inuse` throttling applies only to the built-in registry; an external source is expected to do its own idle/selection (e.g. serverselect's `roundrobin`), and the `excludeinuse` flag is a hint such a source may ignore.
 
 ### `setgetnextqueryid[f]`
 Inject a custom scheduling strategy. `f` must be niladic and return a 0- or 1-row table with the `queryqueue` schema.

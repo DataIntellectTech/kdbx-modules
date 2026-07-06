@@ -197,7 +197,9 @@ setgetnextqueryid:{[f]
   };
 
 addserver:{[h;st]
-  // register a backend handle and servertype so it becomes eligible for dispatch
+  // register a backend handle and servertype so it becomes eligible for dispatch.
+  // this is the default (built-in) server source; to dispatch against di.serverselect's view instead,
+  // inject it via setavailableservers - no registration and no di.serverselect dependency required
   .z.m.log[`info][`asyncdispatch;"server registered: ",string[st]," handle ",string h];
   .z.M.servers upsert (h;st;0b;1b;0Np);
   };
@@ -246,8 +248,10 @@ addserverresult:{[qid;data]
   // fill one result slot - once all slots for a query are filled, run the join and reply
   // bare indexed assignment on results propagates through to .z.m in kdb-x (empirically verified)
   if[not qid in key results;:()];
-  st:first exec servertype from .z.m.servers where handle=.z.w;
   slots:results[qid;1];
+  // map the responding handle to its servertype from THIS query's own dispatch record, not a server
+  // registry - so any server source (built-in or an injected di.serverselect view) works unchanged
+  st:first where .z.w=slots[;0];
   slots[st]:(.z.w;data;1b);
   results[qid]:(results[qid;0];slots);
   update inuse:0b from .z.M.servers where handle in .z.w;

@@ -171,6 +171,18 @@ true,0,0,q,99i~first exec clienth from qq[] where queryid=qid9,1,,replyto stored
 true,0,0,q,0b~first exec local from qq[] where queryid=qid9,1,,local flag is 0b for a non-null replyto
 run,0,0,q,bh2"",1,,sync flush - completes the backend round-trip (reply to fake 99i fails silently)
 
+/ Test 19: pluggable server source - dispatch against an injected source whose servertype is not in the
+/ internal registry; result routing uses the query's dispatch record so no internal registration is needed
+run,0,0,q,savedavail:.m.di.0asyncdispatch.availableservers,1,,save the default (internal-registry) server source
+run,0,0,q,ad.setavailableservers[{[eu]([]handle:enlist bh;servertype:enlist`ext)}],1,,inject a source presenting bh under servertype ext (bh is registered as mock)
+run,0,0,q,.m.di.0asyncdispatch.addquery["6*7";enlist`ext;raze;();0Wn;0b],1,,queue a query for the external-only servertype
+run,0,0,q,qidx:exec first queryid from qq[] where query~\:"6*7",1,,capture the query id
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch to bh via the injected source
+run,0,0,q,bh"",1,,sync flush - wait for the backend result callback
+true,0,0,q,0b~first exec error from qq[] where queryid=qidx,1,,query completed without error via the injected source
+true,0,0,q,not null first exec returntime from qq[] where queryid=qidx,1,,result routed via the dispatch record (servertype ext) not the servers table (mock)
+run,0,0,q,ad.setavailableservers[savedavail],1,,restore the default internal-registry source
+
 / Teardown
 run,0,0,q,neg[bh](exit;0);neg[bh](::),1,,send exit to first backend process and flush
 run,0,0,q,hclose bh,1,,close first backend handle

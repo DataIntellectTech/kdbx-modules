@@ -5,13 +5,13 @@
 ## Usage
 
 ```q
-log:use`di.log
-log.trace[`mymodule;"entering function"]
-log.debug[`mymodule;"value is 42"]
-log.info[`mymodule;"starting up"]
-log.warn[`mymodule;"disk usage above 80%"]
-log.error[`mymodule;"connection failed"]
-log.fatal[`mymodule;"unrecoverable error, shutting down"]
+logger:use`di.log
+logger.trace[`mymodule;"entering function"]
+logger.debug[`mymodule;"value is 42"]
+logger.info[`mymodule;"starting up"]
+logger.warn[`mymodule;"disk usage above 80%"]
+logger.error[`mymodule;"connection failed"]
+logger.fatal[`mymodule;"unrecoverable error, shutting down"]
 ```
 
 Output format:
@@ -30,17 +30,27 @@ Output format:
 All `di.*` modules that accept a log dependency expect a dictionary with keys `` `info`warn`error ``, each a function with signature `{[ctx;msg]}`.
 
 ```q
-log:use`di.log
-logdep:`info`warn`error!(log.info;log.warn;log.error)
+logger:use`di.log
+logdep:`info`warn`error!(logger.info;logger.warn;logger.error)
 
 email:use`di.email
-email.init[emailconfig;`log`send!(logdep;::)]
+email.init[enlist[`log]!enlist logdep]
 ```
 
 You can extend the injected dictionary with `trace`, `debug`, and `fatal` for modules that support them:
 
 ```q
-logdep:`trace`debug`info`warn`error`fatal!(log.trace;log.debug;log.info;log.warn;log.error;log.fatal)
+logdep:`trace`debug`info`warn`error`fatal!(logger.trace;logger.debug;logger.info;logger.warn;logger.error;logger.fatal)
+```
+
+`di.log` has no dependencies of its own, so there's no `init` to call on it first — use
+`defaultdict` to skip building the dict by hand. It's the dependency already wrapped
+as `` `log!enlist logdict ``, ready to pass straight into any `di.*` module's `init`:
+
+```q
+mylog:use`di.log
+email:use`di.email
+email.init[mylog.defaultdict]
 ```
 
 ## createLog
@@ -48,8 +58,8 @@ logdep:`trace`debug`info`warn`error`fatal!(log.trace;log.debug;log.info;log.warn
 `createLog` is a factory that returns an independent logger instance with level filtering, multiple output sinks, and configurable format templates. Each call to `createLog` produces a separate instance with its own state.
 
 ```q
-log:use`di.log
-mylog:log.createLog[]
+logger:use`di.log
+mylog:logger.createLog[]
 
 mylog.setlvl `warn                        / suppress trace, debug, info
 mylog.info "this is suppressed"           / returns () silently
@@ -122,6 +132,13 @@ Write an error-level message to stdout.
 Parameters: `[ctx; msg]`
 
 Write a fatal-level message to stdout.
+
+### `defaultdict`
+A dictionary, not a function.
+
+`` `log!enlist(`info`warn`error!(info;warn;error))`` — the log dependency dict pre-wrapped
+exactly as any `di.*` module's `init` expects `deps`, so it can be passed straight through
+without building it by hand.
 
 ### `createLog`
 Parameters: none

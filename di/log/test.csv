@@ -141,3 +141,22 @@ true,0,0,q,"()~log4.error ""suppressed""",1,,error suppressed at fatal level
 true,0,0,q,0=count fcaptured,1,,no messages captured below fatal level
 run,0,0,q,"log4.fatal ""fatal passes through""",1,,fatal level passes through
 true,0,0,q,0<count fcaptured,1,,fatal level message was captured
+
+/ Test 24: defaultdict is a dictionary pre-wrapped under a single `log` key
+true,0,0,q,99h=type lg.defaultdict,1,,defaultdict is a dictionary
+true,0,0,q,enlist[`log]~key lg.defaultdict,1,,defaultdict has a single `log key
+
+/ Test 25: defaultdict`log holds the info/warn/error contract dict
+true,0,0,q,`info`warn`error~key lg.defaultdict`log,1,,defaultdict log dict has info/warn/error keys
+true,0,0,q,lg.info~(lg.defaultdict`log)`info,1,,defaultdict info matches lg.info
+true,0,0,q,lg.warn~(lg.defaultdict`log)`warn,1,,defaultdict warn matches lg.warn
+true,0,0,q,lg.error~(lg.defaultdict`log)`error,1,,defaultdict error matches lg.error
+
+/ Test 26: functions in defaultdict conform to {[ctx;msg]} contract signature
+true,0,0,q,2=count (value (lg.defaultdict`log)`info)1,1,,defaultdict info takes 2 parameters
+true,0,0,q,2=count (value (lg.defaultdict`log)`warn)1,1,,defaultdict warn takes 2 parameters
+true,0,0,q,2=count (value (lg.defaultdict`log)`error)1,1,,defaultdict error takes 2 parameters
+
+/ Test 27: defaultdict can be passed straight into a consumer's init unmodified
+before,0,0,q,"mockinit:{[deps] not ()~deps[`log]`info}",1,,define mock consumer init that checks log dep wiring
+true,0,0,q,mockinit[lg.defaultdict],1,,defaultdict satisfies a typical consumer init signature

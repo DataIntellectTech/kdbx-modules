@@ -1,0 +1,86 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load module and init with a capturing logger
+before,0,0,q,handlers:use`di.handlers,1,1,load di.handlers module
+before,0,0,q,.hh.captbl:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,log capture table for assertions
+before,0,0,q,caplog:`info`warn`error!({[c;m] `.hh.captbl insert (`info;c;m)};{[c;m] `.hh.captbl insert (`warn;c;m)};{[c;m] `.hh.captbl insert (`error;c;m)}),1,1,capturing binary logger {[c;m]}
+before,0,0,q,handlers.init[enlist[`log]!enlist caplog],1,1,init with the capturing logger
+before,0,0,q,.hh.ev:([]who:`symbol$()),1,1,dispatch-order capture table
+
+comment,,,,,,,init - dependency validation
+fail,0,0,q,handlers.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,handlers.init[()!()],1,1,init rejects missing log key
+fail,0,0,q,handlers.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
+fail,0,0,q,handlers.init[enlist[`log]!enlist `info`warn!(caplog`info;caplog`warn)],1,1,init rejects a log dict missing the error key
+run,0,0,q,.hh.errstr:@[{handlers.init[()!()]};(::);{x}],1,1,capture the error string from a bad init
+true,0,0,q,.hh.errstr like "di.handlers:*",1,1,init error is prefixed di.handlers:
+
+comment,,,,,,,observer - fan-out order and the captured original runs last (.z.wo)
+run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
+run,0,0,q,.z.wo:{[w] `.hh.ev insert `orig},1,1,bind a pre-existing .z.wo to become the captured original
+run,0,0,q,handlers.register[`.z.wo;`a;{[w] `.hh.ev insert `a}],1,1,register first observer a
+run,0,0,q,handlers.register[`.z.wo;`b;{[w] `.hh.ev insert `b}],1,1,register second observer b
+run,0,0,q,(value `.z.wo) 999,1,1,invoke the installed dispatcher with a synthetic handle
+true,0,0,q,(exec who from .hh.ev)~`a`b`orig,1,1,observers run in registration order then the original last
+true,0,0,q,2=count handlers.list[`.z.wo],1,1,list shows the two registered observers
+
+comment,,,,,,,observer - duplicate name replaces in place (.z.wo)
+run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
+run,0,0,q,handlers.register[`.z.wo;`a;{[w] `.hh.ev insert `a2}],1,1,re-register name a with a new body
+run,0,0,q,(value `.z.wo) 1,1,1,invoke the dispatcher again
+true,0,0,q,(exec who from .hh.ev)~`a2`b`orig,1,1,a replaced in place keeping its position
+true,0,0,q,2=count handlers.list[`.z.wo],1,1,duplicate registration did not grow the registry
+
+comment,,,,,,,observer - remove drops a handler while the captured original keeps firing (.z.wo)
+run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
+run,0,0,q,handlers.remove[`.z.wo;`b],1,1,remove observer b
+run,0,0,q,(value `.z.wo) 7,1,1,invoke the dispatcher
+true,0,0,q,`orig in exec who from .hh.ev,1,1,the captured original still fires after a removal
+true,0,0,q,not `b in exec who from .hh.ev,1,1,the removed observer no longer runs
+true,0,0,q,1=count handlers.list[`.z.wo],1,1,only observer a remains registered
+
+comment,,,,,,,observer - one handler throwing does not stop the rest and is logged at warn (.z.wc)
+run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
+run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
+run,0,0,q,handlers.register[`.z.wc;`bad;{[w] '`boom}],1,1,register a throwing observer first
+run,0,0,q,handlers.register[`.z.wc;`good;{[w] `.hh.ev insert `good}],1,1,register a well-behaved observer second
+run,0,0,q,(value `.z.wc) 1,1,1,invoke the dispatcher
+true,0,0,q,(exec who from .hh.ev)~enlist `good,1,1,the good observer still ran despite the earlier throw
+true,0,0,q,any `warn = exec lvl from .hh.captbl,1,1,the isolated throw was logged at warn
+
+comment,,,,,,,decider - single owner claim reclaim and reject (.z.pg)
+run,0,0,q,handlers.register[`.z.pg;`owner1;{x}],1,1,first claim installs the owner directly
+true,0,0,q,`owner1~exec first name from handlers.list[`.z.pg],1,1,list names the current owner
+true,0,0,q,42~(value `.z.pg) 42,1,1,the installed owner function is bound to the event
+run,0,0,q,handlers.register[`.z.pg;`owner1;{2*x}],1,1,same-name reclaim replaces the function in place
+true,0,0,q,42~(value `.z.pg) 21,1,1,the reclaimed function is now in effect
+fail,0,0,q,handlers.register[`.z.pg;`owner2;{x}],1,1,a different name is rejected while the event is owned
+
+comment,,,,,,,decider - remove requires ownership and restores the kdb+ default (.z.ps)
+run,0,0,q,handlers.register[`.z.ps;`only;{x}],1,1,claim the async decider
+fail,0,0,q,handlers.remove[`.z.ps;`someoneelse],1,1,removing under a non-owning name is rejected
+run,0,0,q,handlers.remove[`.z.ps;`only],1,1,the owner removes and restores the kdb+ default
+true,0,0,q,0=count handlers.list[`.z.ps],1,1,ownership is cleared after removal
+
+comment,,,,,,,scope - .z.ph and unknown events are rejected loudly
+fail,0,0,q,handlers.register[`.z.ph;`x;{x}],1,1,.z.ph HTTP GET is out of scope
+fail,0,0,q,handlers.register[`.z.zz;`x;{x}],1,1,unknown event rejected by register
+fail,0,0,q,handlers.list[`.z.zz],1,1,unknown event rejected by list
+fail,0,0,q,handlers.remove[`.z.zz;`x],1,1,unknown event rejected by remove
+
+comment,,,,,,,input validation on register
+fail,0,0,q,handlers.register[42;`x;{x}],1,1,event must be a symbol
+fail,0,0,q,handlers.register[`.z.wo;"x";{x}],1,1,name must be a symbol
+fail,0,0,q,handlers.register[`.z.wo;`x;42],1,1,func must be a function
+
+comment,,,,,,,domain errors are logged at error before being signalled
+run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
+run,0,0,q,.hh.trap:@[{handlers.register[`.z.zz;`x;{x}]};(::);{x}],1,1,trap a rejected registration
+true,0,0,q,any `error = exec lvl from .hh.captbl,1,1,the domain error was logged at error
+
+comment,,,,,,,init is idempotent and preserves live registrations
+run,0,0,q,handlers.register[`.z.wo;`persist;{[w] `.hh.ev insert `persist}],1,1,register a handler before re-init
+run,0,0,q,handlers.init[enlist[`log]!enlist caplog],1,1,re-init the module
+true,0,0,q,`persist in exec name from handlers.list[`.z.wo],1,1,the registration survived re-initialisation
+
+comment,,,,,,,cleanup - relinquish the decider so the process is left with kdb+ defaults
+run,0,0,q,handlers.remove[`.z.pg;`owner1],1,1,restore the default .z.pg handler

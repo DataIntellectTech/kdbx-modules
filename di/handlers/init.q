@@ -1,5 +1,5 @@
-/ di.handlers - central registry for kdb+ .z.* connection-lifecycle callbacks
+/ di.handlers - central registry for KDB-X .z.* connection-lifecycle callbacks
 
 \l ::handlers.q
 
-export:([init;register;remove;list])
+export:([init;register;remove;list;version])

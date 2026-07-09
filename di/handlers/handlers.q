@@ -1,15 +1,18 @@
-/ central registry for kdb+ .z.* connection-lifecycle callbacks
+/ central registry for KDB-X .z.* connection-lifecycle callbacks
 / the single sanctioned place to hook .z.* events - replaces per-file hand-rolled closure wrapping
 / observer events fan out to any number of registrants; decider events allow exactly one owner
+
+/ module version - placeholder only; no project-wide version / di.depcheck convention exists yet
+version:"0.1.0";
 
 / ============================================================
 / constants (load-time)
 / ============================================================
 
-/ observer events - kdb+ discards the return value, so any number of side-effect-only handlers can coexist
+/ observer events - KDB-X discards the return value, so any number of side-effect-only handlers can coexist
 observerevents:`.z.pc`.z.po`.z.exit`.z.wo`.z.wc;
 
-/ decider events - kdb+ uses the return value as the outcome, so only one owner can coherently exist
+/ decider events - KDB-X uses the return value as the outcome, so only one owner can coherently exist
 / .z.ph is deliberately absent - HTTP GET permissioning uses .h.val, not .z.*, and is out of scope (see register)
 deciderevents:`.z.pg`.z.ps`.z.pi`.z.pp`.z.pw`.z.ws;
 
@@ -51,7 +54,7 @@ dispatchobs:{[event;arg]
   };
 
 installobserver:{[event]
-  / on first registration for an event, capture whatever is currently bound (kdb+ default if unset) and install the dispatcher
+  / on first registration for an event, capture whatever is currently bound (KDB-X default if unset) and install the dispatcher
   .z.m.original[event]:@[value;event;{(::)}];
   .z.m.registry[event]:registryschema;
   set[event;dispatchobs[event;]];
@@ -82,7 +85,7 @@ removeobserver:{[event;nm]
   };
 
 removedecider:{[event;nm]
-  / relinquish ownership only if this name owns it, then restore the kdb+ built-in default via \x
+  / relinquish ownership only if this name owns it, then restore the KDB-X built-in default via \x
   if[not event in key .z.m.owner;:(::)];
   if[not nm~.z.m.owner event;
     raiseerror[`remove;(string event)," is owned by ",string[.z.m.owner event],", not ",string nm]];
@@ -101,14 +104,14 @@ register:{[event;nm;func]
   if[not -11h=type nm;raiseerror[`register;"name must be a symbol"]];
   if[not (type func) within 100 112h;raiseerror[`register;"func must be a function"]];
   if[event~`.z.ph;
-    raiseerror[`register;".z.ph is out of scope - HTTP GET permissioning uses .h.val (see di.permissions), not .z.*"]];
+    raiseerror[`register;".z.ph is not managed by di.handlers - HTTP GET permissioning uses .h.val, not .z.*"]];
   $[event in observerevents; registerobserver[event;nm;func];
     event in deciderevents;  registerdecider[event;nm;func];
     raiseerror[`register;"unsupported event ",string event]];
   };
 
 remove:{[event;nm]
-  / remove a handler - observers drop from the fan-out, deciders relinquish ownership and restore the kdb+ default
+  / remove a handler - observers drop from the fan-out, deciders relinquish ownership and restore the KDB-X default
   if[not -11h=type event;raiseerror[`remove;"event must be a symbol"]];
   if[not -11h=type nm;raiseerror[`remove;"name must be a symbol"]];
   $[event in observerevents; removeobserver[event;nm];

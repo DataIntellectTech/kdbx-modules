@@ -1,7 +1,8 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,integration test - stands up a real child q process and drives a real connection close
 comment,,,,,,,requires a q binary reachable via QHOME (or q on PATH); skips cleanly if the child never comes up
-comment,,,,,,,port is chosen at runtime - nothing hardcoded
+comment,,,,,,,the child port is OS-assigned via \p 0W - no env var no hardcoded port no configuration step
+comment,,,,,,,cleanup is robust to mid-suite failure - the child self-exits when the parent connection drops for any reason
 comment,,,,,,,note k4unit runs every before row first then the asserts - so results are captured in befores and checked in trues
 
 before,0,0,q,handlers:use`di.handlers,1,1,load di.handlers module
@@ -11,17 +12,26 @@ before,0,0,q,.hh.iev:([]who:`symbol$()),1,1,capture table for observer firings
 before,0,0,q,handlers.register[`.z.pc;`itest;{[w] `.hh.iev insert `closed}],1,1,register a real .z.pc observer through di.handlers
 before,0,0,q,qcands:$[count qh:getenv[`QHOME];(raze(qh;"/bin/q");raze(qh;"/";string .z.o;"/q"));()],1,1,candidate q binary locations for kdbx and classic layouts
 before,0,0,q,qbin:$[count ex:qcands where {not ()~key hsym `$x} each qcands;first ex;"q"],1,1,pick the first candidate that exists else fall back to q on PATH
-before,0,0,q,cport:9000+rand 2000,1,1,pick a runtime port for the child
-before,0,0,q,system "" sv (qbin;" -q -p ";string cport;" </dev/null >/dev/null 2>&1 &"),1,1,launch a blank child q listening on the port
 before,0,0,q,.it.tryopen:{[p] @[{hopen (`$"" sv (":localhost:";string x);500)};p;0Ni]},1,1,attempt one connection returning a null handle on failure
 before,0,0,q,.it.wait:{[p;n] $[n<=0;0Ni;not null hh:.it.tryopen p;hh;[system"sleep 0.3";.it.wait[p;n-1]]]},1,1,poll for the child to accept connections
+before,0,0,q,system"p 0W",1,1,ask the OS for a free ephemeral port on this process
+before,0,0,q,cport:system"p",1,1,read the OS-assigned port
+before,0,0,q,system"p 0",1,1,release the listener so the child can bind that port
+before,0,0,q,cpid:"J"$last system "" sv (qbin;" -q -p ";string cport;" </dev/null >/dev/null 2>&1 & echo $!"),1,1,launch a blank child q on the OS-assigned port and capture its PID
 before,0,0,q,h:.it.wait[cport;20],1,1,connect to the child with a bounded retry
-before,0,0,q,if[null h;exit 0],1,1,skip the whole suite cleanly if the child never came up
+before,0,0,q,if[null h;@[{system "" sv ("kill -9 ";string cpid)};::;{x}];exit 0],1,1,if the child never came up kill it by PID and skip cleanly
+before,0,0,q,@[{h ".z.pc:{exit 0}"};::;{x}],1,1,backstop - tell the child to self-exit whenever its connection to this process drops
 before,0,0,q,.it.roundtrip:@[{4=h "2+2"};::;{0b}],1,1,capture a real synchronous round-trip while still connected
 before,0,0,q,.it.closed:@[h;"exit 0";{x}],1,1,synchronous exit request - the child dies mid-reply so the parent detects the close and .z.pc fires
+before,0,0,q,@[{system "" sv ("kill -9 ";string cpid)};::;{x}],1,1,forceful kill by PID as a belt in case graceful shutdown did not take
+before,0,0,q,system"sleep 0.3",1,1,give the OS a moment to reap the child
+before,0,0,q,.it.gone:0=count @[{system "" sv ("ps -p ";string cpid;" -o pid=")};::;{()}],1,1,verify the child process is actually gone (ps errors when absent so the probe is protected)
 
 comment,,,,,,,a real IPC round-trip works while di.handlers is loaded
 true,0,0,q,.it.roundtrip,1,1,synchronous query to the real child process returned the expected result
 
 comment,,,,,,,closing the real connection drives the registered .z.pc observer
 true,0,0,q,`closed in exec who from .hh.iev,1,1,the .z.pc observer fired on the real disconnect
+
+comment,,,,,,,the child process is fully cleaned up
+true,0,0,q,.it.gone,1,1,the child process is gone after the test

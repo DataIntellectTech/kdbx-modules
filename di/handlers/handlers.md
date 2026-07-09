@@ -1,15 +1,18 @@
 # di.handlers
 
-The single sanctioned place to hook kdb+ `.z.*` connection-lifecycle callbacks. It replaces the per-file, hand-rolled closure-wrapping that TorQ processes use (where load order silently decides who wins) with one explicit, testable registry. Once this module is in use, nothing else should assign `.z.*` directly.
+Central registry for a KDB-X process's `.z.*` connection-lifecycle callbacks — connection open and close, websocket open and close, process exit, and the message, auth and console handlers. It lets multiple independent components hook the same event without silently overwriting one another, and is the single place in a process that assigns `.z.*` directly.
 
 ---
 
-## The core distinction: observer vs decider
+## Features
 
-A `.z.*` callback can only ever hold one function, so two things wanting to hook the same event conflict. How that conflict is resolved depends entirely on **what kdb+ does with the callback's return value**:
+- Register any number of **observer** handlers on an event whose return value KDB-X discards (connection open/close, websocket open/close, process exit). Every handler runs, in registration order, and each call is isolated — one handler throwing is logged and does not stop the rest.
+- Register a single **owner** for a **decider** event whose return value KDB-X uses as the outcome (query, async, console, HTTP POST, auth, websocket message). A second registrant under a different name is rejected rather than silently replacing the first.
+- Whatever was bound to an observer event before the first registration is preserved and still runs, last, after every registered handler.
+- Remove a handler by name; removing a decider restores the KDB-X built-in default.
+- Inspect what is registered on any event with `list`.
 
-- **Observer events** — kdb+ **discards** the return value. The callback runs purely for side effects (record a connection, drop a session on close). Because nobody reads the result, any number of registrants can coexist safely. `di.handlers` runs them all (fan-out).
-- **Decider events** — kdb+ **uses** the return value as the outcome delivered to the caller (the query result, allow/deny). A return value is singular, so only one function can coherently own the decision. `di.handlers` enforces exactly one owner and rejects a competing claim.
+Managed events, by whether KDB-X consumes the callback's return value:
 
 | Event | Mode | Meaning |
 |---|---|---|
@@ -18,14 +21,12 @@ A `.z.*` callback can only ever hold one function, so two things wanting to hook
 | `.z.exit` | observer | process exit |
 | `.z.wo` | observer | websocket opened |
 | `.z.wc` | observer | websocket closed |
-| `.z.pg` | decider | sync message (query) |
-| `.z.ps` | decider | async message |
+| `.z.pg` | decider | synchronous message (query) |
+| `.z.ps` | decider | asynchronous message |
 | `.z.pi` | decider | console input |
 | `.z.pp` | decider | HTTP POST |
 | `.z.pw` | decider | password / connection check |
 | `.z.ws` | decider | websocket message |
-
-`.z.ts` is **not** managed here — it belongs to `di.timer`. `.z.ph` is **out of scope** — see below.
 
 ---
 
@@ -35,9 +36,9 @@ A `.z.*` callback can only ever hold one function, so two things wanting to hook
 |---|---|---|---|
 | logger | `` `log `` | yes | dict with `info`, `warn`, and `error`, each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
-`di.handlers` has **no hard dependencies** on other `di.*` modules and works standalone.
+**No hard dependencies** on other `di.*` modules — the module works standalone.
 
-All three log keys are required: `info` (register/remove confirmations), `warn` (an isolated observer or original that threw during dispatch), and `error` (domain errors, logged before they are signalled). `init` throws immediately if `log` is absent, is not a dict, or is missing any of the three keys. The module performs no adaptation — pass a dict that already conforms to the `{[c;m]}` contract (e.g. built from `di.log`).
+The `log` dependency is passed to `init` keyed on `` `log ``. It must be a dict containing all three of `info`, `warn`, and `error`: `info` records register/remove activity, `warn` reports an isolated handler that threw during dispatch, and `error` reports a rejected call before it is signalled. `init` throws immediately if `log` is absent, is not a dict, or is missing any key. No adaptation is performed — pass a dict that already conforms to the `{[c;m]}` contract (for example one built from `di.log`).
 
 ---
 
@@ -46,7 +47,7 @@ All three log keys are required: `info` (register/remove confirmations), `warn` 
 ```q
 handlers:use`di.handlers
 
-/ build a conforming log dict (or take one from di.log)
+/ a conforming log dict (or one supplied by di.log)
 logdep:`info`warn`error!(
   {[c;m] -1 string[c],": INFO  ",m;};
   {[c;m] -1 string[c],": WARN  ",m;};
@@ -55,74 +56,73 @@ logdep:`info`warn`error!(
 handlers.init[enlist[`log]!enlist logdep]
 ```
 
-`init` must be called before any other function — there is no default logger. It is **idempotent**: calling it again re-wires the log dependency but leaves any live registrations and installed dispatchers untouched, so a process can safely re-initialise.
+`init` must be called before any other function — there is no default logger. It is idempotent: calling it again re-wires the log dependency and leaves existing registrations and installed dispatchers intact.
 
 ---
 
 ## Exported Functions
 
 ### `init[deps]`
-Validate the required `log` dependency and set up the empty registries. Idempotent. `deps` is a dict with a `` `log `` key.
+Validate the required `log` dependency and set up the registries. `deps` is a dict with a `` `log `` key. Idempotent.
 ```q
 handlers.init[enlist[`log]!enlist logdep]
 ```
 
 ### `register[event;name;func]`
-Register `func` under `name` for a `.z.*` `event`. Behaviour depends on the event's mode.
+Register `func` under `name` for a `.z.*` `event`.
 
-**Observer** — `func` is added to the fan-out for `event` in registration order. On the first registration for an event, whatever is currently bound to it is captured as the *original* and installed to run **last**, after every registered handler. Re-registering the same `[event;name]` replaces that entry in place. Each handler (and the original) is called under protection: if one throws, the error is logged at `warn` tagged with its `name` and the rest of the chain still runs.
+For an **observer** event, `func` is added to the fan-out in registration order; re-registering the same `[event;name]` replaces that entry in place. For a **decider** event, `func` becomes the single owner; re-registering under the same `name` replaces it, while a different `name` on an already-owned event throws.
 ```q
-handlers.register[`.z.pc;`mytracker;{[w] .track.onclose w}]
-```
-
-**Decider** — the first `register` for an event installs `func` directly as the sole owner. Re-registering under the **same** `name` replaces it (idempotent re-init). Registering under a **different** `name` while the event is already owned **throws**, naming the current owner:
-```q
-handlers.register[`.z.pw;`myauth;{[u;p] .auth.check[u;p]}]
-handlers.register[`.z.pw;`other;{[u;p] 1b}]
-/ 'di.handlers: register: .z.pw already owned by myauth - call remove first
+handlers.register[`.z.pc;`mytracker;{[w] .track.onclose w}]   / observer
+handlers.register[`.z.pw;`myauth;{[u;p] .auth.check[u;p]}]     / decider
 ```
 
 ### `remove[event;name]`
-Remove a previously registered handler.
-
-- **Observer** — deletes the named entry from the fan-out. The dispatcher and the captured original keep firing regardless of how many registrants remain.
-- **Decider** — if `name` owns the event, relinquishes ownership and restores the kdb+ built-in default via `\x`. Throws if `name` does not own the event.
+Remove a previously registered handler. Removing an observer deletes its entry from the fan-out; removing a decider relinquishes ownership and restores the KDB-X built-in default.
 ```q
 handlers.remove[`.z.pc;`mytracker]
-handlers.remove[`.z.pw;`myauth]
 ```
 
 ### `list[event]`
-Return the registrations for a single `event` (monadic only — there is no all-events overload). Observers return a `name`/`func` table in registration order; deciders return a one-row table naming the owner (empty if unowned).
+Return the registrations for a single `event`: observers as a `name`/`func` table in registration order, a decider as a one-row table naming its owner (empty if unowned).
 ```q
-handlers.list[`.z.pc]
-/ name       func
-/ ---------------
-/ mytracker  {[w]..}
+exec name from handlers.list[`.z.pc]
+```
+
+### `version`
+The module version string.
+```q
+handlers.version   / "0.1.0"
 ```
 
 ---
 
-## `.z.ph` / HTTP GET is out of scope
-
-On any current kdb+ (3.5+), HTTP GET permissioning is applied by setting **`.h.val`** — a hook in the `.h` namespace, entirely outside `.z.*`. `.z.ph` itself is not the real gate on a modern deployment. Because `di.handlers` manages `.z.*` events only, `register[`.z.ph;...]` **throws** with a clear message rather than silently installing a handler that would do nothing:
+## Usage Example
 
 ```q
-handlers.register[`.z.ph;`x;{[r] r}]
-/ 'di.handlers: register: .z.ph is out of scope - HTTP GET permissioning uses .h.val (see di.permissions), not .z.*
+handlers:use`di.handlers
+
+/ a no-op log dep for illustration (di.log would supply a real one)
+logdep:`info`warn`error!(3#{[c;m]});
+handlers.init[enlist[`log]!enlist logdep]
+
+/ observer event - two independent close handlers, both run in order
+handlers.register[`.z.pc;`audit;  {[w] }]
+handlers.register[`.z.pc;`metrics;{[w] }]
+exec name from handlers.list[`.z.pc]        / `audit`metrics
+
+/ decider event - a single owner for the connection auth check
+handlers.register[`.z.pw;`auth;{[u;p] 1b}]
+exec name from handlers.list[`.z.pw]        / ,`auth
+
+/ a different owner on an already-owned decider is rejected
+handlers.register[`.z.pw;`other;{[u;p] 1b}] / signals: already owned by auth
+
+/ remove them again - decider remove restores the built-in default
+handlers.remove[`.z.pc;`audit]
+handlers.remove[`.z.pc;`metrics]
+handlers.remove[`.z.pw;`auth]
 ```
-
-A module that needs to gate HTTP GET should own `.h.val` directly (this is what a permissions module does). Folding `.h.val` into `di.handlers` was considered and rejected: it would drag the module outside its `.z.*` remit and hide a `.h`-namespace assignment behind a `.z.ph`-shaped call.
-
----
-
-## Known limitation: observers on decider events
-
-**This is a real, deliberately-deferred gap — not an oversight.** In production TorQ, a decider event such as `.z.pg` is not owned by exactly one thing: it is owned by one *decision-maker* (permissions) **and** wrapped by one or more pure *observers* — query logging and per-client byte-counting both layer themselves around the same `.z.pg`/`.z.ps` and pass the return value through untouched. `di.handlers` currently models decider events as **single-owner only**, so there is no slot for an observer that wants to watch a decider event without owning its outcome.
-
-**Consequence.** A future `di.querylog` or `di.clienttracking` cannot, through `di.handlers` alone, observe `.z.pg`/`.z.ps` while a permissions module owns them. The interim workaround is for the decider owner to invoke the logging/tracking itself — which reintroduces exactly the coupling `di.handlers` exists to remove, so it is a stopgap, not the intended end state.
-
-**Follow-up design task (for whoever builds `di.querylog` / `di.clienttracking`):** extend the decider model so an event keeps exactly one owner for the *outcome* but also supports an unlimited, side-effect-only observer layer around it (return value untouched). This deserves the same dedicated design scrutiny the observer/decider split itself required and should not be improvised at implementation time.
 
 ---
 
@@ -133,14 +133,16 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.handlers
 ```
 
-The unit suite (`test.csv`) injects no-op and capturing mock loggers and drives dispatch by invoking the function actually bound to each `.z.*` event with synthetic arguments — no sockets required. It covers observer fan-out order, throw-isolation, original-runs-last, and in-place replacement; decider claim / same-name reclaim / different-name rejection and default-restoring removal; the `.z.ph` and unknown-event rejections; and `init` dependency validation.
-
-A separate, environment-gated integration suite (`test_integration.csv`) stands up a second blank q process on a runtime-chosen ephemeral port, opens and closes a real connection, and confirms the registered `.z.po`/`.z.pc` observers actually fired. It skips cleanly when no q binary is available.
+The unit suite needs no sockets — it drives dispatch by invoking the function bound to each `.z.*` event with synthetic arguments. A separate integration suite (`test_integration.csv`) stands up a real child q process, opens and closes a connection, and confirms a registered observer actually fired. It needs no configuration and skips cleanly when no usable q binary is available; the unit suite needs neither.
 
 ---
 
 ## Notes
 
-- The captured *original* for an observer is whatever was bound the instant the first handler registers — capture is lazy and per-event, so `di.handlers` never installs a dispatcher on an event that has no registrants.
-- Decider `remove` restores the kdb+ built-in default, not whatever happened to be bound before `di.handlers` took ownership — deciders capture no original by design.
-- All post-`init` domain errors are logged at `error` before being signalled, so failures are observable in the log and not only as a thrown exception.
+- `init` must be called before any other function, and is idempotent.
+- `register` on `.z.ph` throws — HTTP GET permissioning uses `.h.val`, not `.z.*`, and is not managed by this module.
+- Decider events have exactly one owner; there is currently no way to also observe one without owning it.
+- `.z.ts` is not managed here — it belongs to `di.timer`.
+- The handler bound to an observer event before its first registration is captured once and always runs last, after every registered handler.
+- Removing a decider restores the KDB-X built-in default, not any handler that happened to be bound before the module took ownership.
+- All errors raised after `init` are logged at `error` before being signalled.

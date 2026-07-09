@@ -14,6 +14,10 @@ fail,0,0,q,handlers.init[enlist[`log]!enlist `info`warn!(caplog`info;caplog`warn
 run,0,0,q,.hh.errstr:@[{handlers.init[()!()]};(::);{x}],1,1,capture the error string from a bad init
 true,0,0,q,.hh.errstr like "di.handlers:*",1,1,init error is prefixed di.handlers:
 
+comment,,,,,,,module metadata - exported version
+true,0,0,q,10h=type handlers.version,1,1,version is a string
+true,0,0,q,0<count handlers.version,1,1,version is non-empty
+
 comment,,,,,,,observer - fan-out order and the captured original runs last (.z.wo)
 run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
 run,0,0,q,.z.wo:{[w] `.hh.ev insert `orig},1,1,bind a pre-existing .z.wo to become the captured original
@@ -55,10 +59,10 @@ run,0,0,q,handlers.register[`.z.pg;`owner1;{2*x}],1,1,same-name reclaim replaces
 true,0,0,q,42~(value `.z.pg) 21,1,1,the reclaimed function is now in effect
 fail,0,0,q,handlers.register[`.z.pg;`owner2;{x}],1,1,a different name is rejected while the event is owned
 
-comment,,,,,,,decider - remove requires ownership and restores the kdb+ default (.z.ps)
+comment,,,,,,,decider - remove requires ownership and restores the KDB-X default (.z.ps)
 run,0,0,q,handlers.register[`.z.ps;`only;{x}],1,1,claim the async decider
 fail,0,0,q,handlers.remove[`.z.ps;`someoneelse],1,1,removing under a non-owning name is rejected
-run,0,0,q,handlers.remove[`.z.ps;`only],1,1,the owner removes and restores the kdb+ default
+run,0,0,q,handlers.remove[`.z.ps;`only],1,1,the owner removes and restores the KDB-X default
 true,0,0,q,0=count handlers.list[`.z.ps],1,1,ownership is cleared after removal
 
 comment,,,,,,,scope - .z.ph and unknown events are rejected loudly
@@ -82,5 +86,5 @@ run,0,0,q,handlers.register[`.z.wo;`persist;{[w] `.hh.ev insert `persist}],1,1,r
 run,0,0,q,handlers.init[enlist[`log]!enlist caplog],1,1,re-init the module
 true,0,0,q,`persist in exec name from handlers.list[`.z.wo],1,1,the registration survived re-initialisation
 
-comment,,,,,,,cleanup - relinquish the decider so the process is left with kdb+ defaults
+comment,,,,,,,cleanup - relinquish the decider so the process is left with KDB-X defaults
 run,0,0,q,handlers.remove[`.z.pg;`owner1],1,1,restore the default .z.pg handler

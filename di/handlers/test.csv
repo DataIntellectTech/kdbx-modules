@@ -88,3 +88,75 @@ true,0,0,q,`persist in exec name from handlers.list[`.z.wo],1,1,the registration
 
 comment,,,,,,,cleanup - relinquish the decider so the process is left with KDB-X defaults
 run,0,0,q,handlers.remove[`.z.pg;`owner1],1,1,restore the default .z.pg handler
+
+comment,,,,,,,decider observers - observe requires the event to have an owner first
+fail,0,0,q,handlers.observe[`.z.pg;`ql;{[r;a]}],1,1,observe before register throws
+
+comment,,,,,,,decider observers - .z.pw owner sees the real password observer sees ***
+run,0,0,q,handlers.register[`.z.pw;`auth;{[u;p] .oo.ownerpw::p;1b}],1,1,owner records the password it receives and allows
+run,0,0,q,handlers.observe[`.z.pw;`audit;{[r;a] .oo.obspw::a}],1,1,observer records the args it receives
+run,0,0,q,.oo.pwres:(value `.z.pw)[`alice;"secret"],1,1,drive the installed .z.pw dispatcher
+true,0,0,q,.oo.pwres~1b,1,1,the owner result flows back to the caller unchanged
+true,0,0,q,.oo.ownerpw~"secret",1,1,the owner sees the real password
+true,0,0,q,.oo.obspw~(`alice;"***"),1,1,the observer sees the redacted args never the password
+true,0,0,q,`owner`observer~exec role from handlers.list[`.z.pw],1,1,list shows an owner row then an observer row
+true,0,0,q,`auth`audit~exec name from handlers.list[`.z.pw],1,1,owner name first then observer name
+
+comment,,,,,,,decider observers - owner throw means observers never run and the error propagates
+run,0,0,q,.oo.ran:0b,1,1,reset the observer-ran flag
+run,0,0,q,handlers.register[`.z.pg;`dec;{[q] '`denied}],1,1,owner that always throws
+run,0,0,q,handlers.observe[`.z.pg;`watch;{[r;a] .oo.ran::1b}],1,1,observer that records whether it ran
+fail,0,0,q,(value `.z.pg)"2+2",1,1,the owner throw propagates through the dispatcher
+true,0,0,q,not .oo.ran,1,1,the observer never ran because the owner threw
+
+comment,,,,,,,decider observers - register reclaim after observe swaps the owner and keeps the dispatcher
+run,0,0,q,handlers.register[`.z.pg;`dec;{[q] 100}],1,1,reclaim the same owner name with a new function
+true,0,0,q,100~(value `.z.pg)"ignored",1,1,the dispatcher now calls the reclaimed owner function
+true,0,0,q,not {[q] 100}~value `.z.pg,1,1,reclaim updated the owner in place and left the dispatcher installed
+
+comment,,,,,,,decider observers - a decider never observed is bound directly with no dispatcher
+run,0,0,q,handlers.register[`.z.pi;`raw;{x}],1,1,register a decider and never observe it
+true,0,0,q,{x}~value `.z.pi,1,1,.z.pi is bound to the owner function itself not a dispatcher
+
+comment,,,,,,,decider observers - removing an observed owner clears all state and a fresh register starts clean
+run,0,0,q,handlers.register[`.z.ws;`o1;{x}],1,1,claim a decider
+run,0,0,q,handlers.observe[`.z.ws;`w1;{[r;a]}],1,1,attach an observer which installs the dispatcher
+run,0,0,q,handlers.remove[`.z.ws;`o1],1,1,remove the owner
+true,0,0,q,0=count handlers.list[`.z.ws],1,1,list is empty after owner removal
+true,0,0,q,not `.z.ws in key .m.di.0handlers.ownerfunc,1,1,the owner function entry is cleared
+true,0,0,q,not `.z.ws in key .m.di.0handlers.deciderobs,1,1,the observer registry entry is cleared
+run,0,0,q,handlers.register[`.z.ws;`o2;{2*x}],1,1,register a fresh owner on the same event
+true,0,0,q,{2*x}~value `.z.ws,1,1,fresh register is a direct set with no leftover dispatcher
+
+comment,,,,,,,decider observers - duplicate-name observe replaces in place
+run,0,0,q,handlers.register[`.z.pp;`owner;{x}],1,1,claim a decider
+run,0,0,q,handlers.observe[`.z.pp;`dup;{[r;a] `.oo.d insert `first}],1,1,attach observer dup
+run,0,0,q,handlers.observe[`.z.pp;`dup;{[r;a] `.oo.d insert `second}],1,1,re-attach the same name with a new body
+run,0,0,q,.oo.d:([]v:`symbol$()),1,1,reset the observer capture table
+run,0,0,q,(value `.z.pp)"x",1,1,drive the dispatcher once
+true,0,0,q,(exec v from .oo.d)~enlist `second,1,1,only the replacement body ran
+true,0,0,q,1=count select from handlers.list[`.z.pp] where role=`observer,1,1,one observer row not two
+
+comment,,,,,,,decider observers - unobserve removes an observer and leaves the dispatcher installed
+run,0,0,q,handlers.unobserve[`.z.pp;`neverattached],1,1,unobserve an unknown name is a silent no-op
+true,0,0,q,1=count select from handlers.list[`.z.pp] where role=`observer,1,1,the real observer is unaffected
+run,0,0,q,handlers.unobserve[`.z.pp;`dup],1,1,detach the real observer
+true,0,0,q,0=count select from handlers.list[`.z.pp] where role=`observer,1,1,no observers remain
+true,0,0,q,not {x}~value `.z.pp,1,1,the dispatcher stays installed after the last observer is removed
+run,0,0,q,handlers.unobserve[`.z.pi;`anything],1,1,unobserve on a never-observed decider is a silent no-op
+
+comment,,,,,,,decider observers - observe and unobserve reject bad argument types
+fail,0,0,q,handlers.observe[42;`x;{[r;a]}],1,1,observe event must be a symbol
+fail,0,0,q,handlers.observe[`.z.pg;"x";{[r;a]}],1,1,observe name must be a symbol
+fail,0,0,q,handlers.observe[`.z.pg;`x;42],1,1,observe func must be a function
+fail,0,0,q,handlers.observe[`.z.ph;`x;{[r;a]}],1,1,observe rejects .z.ph
+fail,0,0,q,handlers.observe[`.z.pc;`x;{[r;a]}],1,1,observe rejects observer events
+fail,0,0,q,handlers.unobserve[42;`x],1,1,unobserve event must be a symbol
+fail,0,0,q,handlers.unobserve[`.z.pg;"x"],1,1,unobserve name must be a symbol
+
+comment,,,,,,,decider observers - cleanup restores kdb-x defaults on the touched deciders
+run,0,0,q,handlers.remove[`.z.pw;`auth],1,1,restore default .z.pw
+run,0,0,q,handlers.remove[`.z.pg;`dec],1,1,restore default .z.pg
+run,0,0,q,handlers.remove[`.z.pi;`raw],1,1,restore default .z.pi
+run,0,0,q,handlers.remove[`.z.ws;`o2],1,1,restore default .z.ws
+run,0,0,q,handlers.remove[`.z.pp;`owner],1,1,restore default .z.pp

@@ -2,4 +2,4 @@
 
 \l ::handlers.q
 
-export:([init;register;remove;list;version])
+export:([init;register;remove;list;version;observe;unobserve])

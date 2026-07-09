@@ -8,6 +8,7 @@ Central registry for a KDB-X process's `.z.*` connection-lifecycle callbacks —
 
 - Register any number of **observer** handlers on an event whose return value KDB-X discards (connection open/close, websocket open/close, process exit). Every handler runs, in registration order, and each call is isolated — one handler throwing is logged and does not stop the rest.
 - Register a single **owner** for a **decider** event whose return value KDB-X uses as the outcome (query, async, console, HTTP POST, auth, websocket message). A second registrant under a different name is rejected rather than silently replacing the first.
+- Attach any number of side-effect-only **observers** to a decider event (`observe`/`unobserve`) — they run after the single owner, receive its result and the call arguments, and cannot change the outcome.
 - Whatever was bound to an observer event before the first registration is preserved and still runs, last, after every registered handler.
 - Remove a handler by name; removing a decider restores the KDB-X built-in default.
 - Inspect what is registered on any event with `list`.
@@ -78,13 +79,25 @@ handlers.register[`.z.pw;`myauth;{[u;p] .auth.check[u;p]}]     / decider
 ```
 
 ### `remove[event;name]`
-Remove a previously registered handler. Removing an observer deletes its entry from the fan-out; removing a decider relinquishes ownership and restores the KDB-X built-in default.
+Remove a previously registered handler. Removing an observer deletes its entry from the fan-out; removing a decider relinquishes ownership, restores the KDB-X built-in default, and drops any attached decider observers.
 ```q
 handlers.remove[`.z.pc;`mytracker]
 ```
 
+### `observe[event;name;func]`
+Attach a side-effect-only observer to a **decider** `event` that already has an owner (`observe` before `register` throws). After the owner returns, `func` is called as `func[result;args]` — `result` is the owner's outcome and `args` is the call's arguments as a list. Observers never change the outcome, and each is isolated: one throwing is logged at `warn` and affects neither the result nor the other observers. Re-observing the same `[event;name]` replaces it in place. For `.z.pw`, `args` is `(user;"***")` — the password is redacted, so only the owner ever sees it.
+```q
+handlers.observe[`.z.pg;`querylog;{[result;args] .log.query[first args;result]}]
+```
+
+### `unobserve[event;name]`
+Detach an observer from a decider event. The dispatcher stays installed even after the last observer is removed (the owner still runs). Detaching a name that was never attached is a silent no-op.
+```q
+handlers.unobserve[`.z.pg;`querylog]
+```
+
 ### `list[event]`
-Return the registrations for a single `event`: observers as a `name`/`func` table in registration order, a decider as a one-row table naming its owner (empty if unowned).
+Return the registrations for a single `event`: observers as a `name`/`func` table in registration order; a decider as a `role`/`name` table — the owner row first, then any attached observers (empty if unowned).
 ```q
 exec name from handlers.list[`.z.pc]
 ```
@@ -113,12 +126,17 @@ exec name from handlers.list[`.z.pc]        / `audit`metrics
 
 / decider event - a single owner for the connection auth check
 handlers.register[`.z.pw;`auth;{[u;p] 1b}]
-exec name from handlers.list[`.z.pw]        / ,`auth
+exec name from handlers.list[`.z.pw]        / owner: ,`auth
+
+/ attach a side-effect-only observer - runs after the owner, sees (result;args), never changes the outcome
+handlers.observe[`.z.pw;`audit;{[result;args] }]
+exec role from handlers.list[`.z.pw]        / `owner`observer
 
 / a different owner on an already-owned decider is rejected
 handlers.register[`.z.pw;`other;{[u;p] 1b}] / signals: already owned by auth
 
-/ remove them again - decider remove restores the built-in default
+/ remove them again - decider remove restores the built-in default and drops observers
+handlers.unobserve[`.z.pw;`audit]
 handlers.remove[`.z.pc;`audit]
 handlers.remove[`.z.pc;`metrics]
 handlers.remove[`.z.pw;`auth]
@@ -141,7 +159,9 @@ The unit suite needs no sockets — it drives dispatch by invoking the function 
 
 - `init` must be called before any other function, and is idempotent.
 - `register` on `.z.ph` throws — HTTP GET permissioning uses `.h.val`, not `.z.*`, and is not managed by this module.
-- Decider events have exactly one owner; there is currently no way to also observe one without owning it.
+- A decider event has exactly one owner that produces the outcome; any number of side-effect-only observers can be attached with `observe` to watch the result without owning it.
+- Observers on a decider run synchronously after the owner and before its result is returned, so they add to that event's response time — unlike observer-event handlers, where nothing awaits the return.
+- A decider observer runs in the decider's own execution context; under multithreaded input (a negative `\p` port) that is not the main thread, so an observer that writes a global hits kdb's `'noupdate` restriction, as any `.z.pg` code would. di.handlers' own dispatch only reads its registries and is unaffected.
 - `.z.ts` is not managed here — it belongs to `di.timer`.
 - The handler bound to an observer event before its first registration is captured once and always runs last, after every registered handler.
 - Removing a decider restores the KDB-X built-in default, not any handler that happened to be bound before the module took ownership.

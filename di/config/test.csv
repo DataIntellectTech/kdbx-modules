@@ -3,77 +3,35 @@ before,0,0,q,cfg:use`di.config,1,1,load the module
 before,0,0,q,"logtab:([]lvl:`symbol$();ctx:`symbol$();msg:())",1,1,capturing log table
 before,0,0,q,"mocklog:`info`warn`error!({[c;m]`logtab upsert(`info;c;m)};{[c;m]`logtab upsert(`warn;c;m)};{[c;m]`logtab upsert(`error;c;m)})",1,1,define a capturing binary logger
 before,0,0,q,cfg.init[enlist[`log]!enlist mocklog],1,1,init with the required log dependency
-before,0,0,q,"(`:/tmp/diconfigtest.q) 0: enlist ""diconfigtestvar:42;diconfigcount:1+@[value;`diconfigcount;0];""",1,1,write a temp config file that sets a var and counts loads
-before,0,0,q,diconfigorder:`$(),1,1,tracker for the order files load in
-before,0,0,q,"system""mkdir -p /tmp/diconfigloaddir""",1,1,make a directory with an order.txt
-before,0,0,q,"(`:/tmp/diconfigloaddir/a.q) 0: enlist ""diconfiga:1;diconfigorder,:`a;""",1,1,dir file a.q
-before,0,0,q,"(`:/tmp/diconfigloaddir/b.q) 0: enlist ""diconfigb:1;diconfigorder,:`b;""",1,1,dir file b.q
-before,0,0,q,"(`:/tmp/diconfigloaddir/d.k) 0: enlist """"",1,1,dir file d.k (proves .k pickup)
-before,0,0,q,"(`:/tmp/diconfigloaddir/notes.txt) 0: enlist ""not a q file""",1,1,non-q file that must be ignored
-before,0,0,q,"(`:/tmp/diconfigloaddir/order.txt) 0: (""b.q"";""a.q"")",1,1,order.txt loads b before a
-before,0,0,q,"system""mkdir -p /tmp/diconfignoorder""",1,1,make a directory without an order.txt
-before,0,0,q,"(`:/tmp/diconfignoorder/p.q) 0: enlist ""diconfigp:1;""",1,1,noorder file p.q
-before,0,0,q,"(`:/tmp/diconfignoorder/q.q) 0: enlist ""diconfigq:1;""",1,1,noorder file q.q
-before,0,0,q,"system""mkdir -p /tmp/diconfigcascade""",1,1,make a cascade settings directory
-before,0,0,q,"(`:/tmp/diconfigcascade/default.q) 0: enlist ""diconfigdefault:99;""",1,1,cascade default.q
 before,0,0,q,diconfigtrace:`symbol$(),1,1,tracer for cascade load order
 before,0,0,q,"system""mkdir -p /tmp/diconfigc1""",1,1,cascade directory one
 before,0,0,q,"system""mkdir -p /tmp/diconfigc2""",1,1,cascade directory two
 before,0,0,q,"(`:/tmp/diconfigc1/default.q) 0: enlist ""diconfigcx:1;diconfigtrace,:`c1default;""",1,1,c1 default.q
 before,0,0,q,"(`:/tmp/diconfigc1/rdb.q) 0: enlist ""diconfigcx:10;diconfigtrace,:`c1rdb;""",1,1,c1 rdb.q
-before,0,0,q,"(`:/tmp/diconfigc2/default.q) 0: enlist ""diconfigcx:2;diconfigtrace,:`c2default;""",1,1,c2 default.q (no c2 rdb.q)
+before,0,0,q,"(`:/tmp/diconfigc2/default.q) 0: enlist ""diconfigcx:2;diconfigtrace,:`c2default;""",1,1,c2 default.q (no c2 rdb.q - a missing cascade file)
 before,0,0,q,"system""mkdir -p /tmp/diconfigstore""",1,1,cascade dir for the config-store tests
 before,0,0,q,"(`:/tmp/diconfigstore/default.q) 0: enlist "".diconfigq.subscribeto:`trade`quote;.diconfigq.rows:100;""",1,1,settings file populating the .diconfigq namespace
 before,0,0,q,.diconfigtest.enabled:0b,1,1,override target - boolean
 before,0,0,q,.diconfigtest.rows:100,1,1,override target - long
 before,0,0,q,.diconfigtest.syms:`a`b,1,1,override target - symbol list
 before,0,0,q,.diconfigtest.tab:([]a:`long$()),1,1,override target - non-basic (table)
-before,0,0,q,"(`:/tmp/diconfigkxreal.q) 0: enlist ""diconfigkxvar:1;""",1,1,file to load through a real kx.log
+before,0,0,q,"system""mkdir -p /tmp/diconfigkxdir""",1,1,dir for the kx.log emission test
+before,0,0,q,"(`:/tmp/diconfigkxdir/default.q) 0: enlist ""diconfigkxvar:1;""",1,1,file loaded through the real logger
 comment,,,,,,,init - dependency validation
 fail,0,0,q,cfg.init[(::)],1,1,init rejects a non-dictionary deps
 fail,0,0,q,cfg.init[enlist[`foo]!enlist 1],1,1,init rejects deps without a log key
 fail,0,0,q,cfg.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
 fail,0,0,q,cfg.init[enlist[`log]!enlist ((enlist`info)!enlist {[c;m]})],1,1,init rejects a log dict missing warn/error
-comment,,,,,,,loadfile - missing file is a warning
-true,0,0,q,"""/tmp/diconfignope.q""~cfg.loadfile[""/tmp/diconfignope.q""]",1,1,missing file returns its path
-true,0,0,q,`warn in exec lvl from logtab,1,1,missing file logged a warning
-comment,,,,,,,loadfile - real load and dedup
-true,0,0,q,"""/tmp/diconfigtest.q""~cfg.loadfile[""/tmp/diconfigtest.q""]",1,1,real file returns its path
-true,0,0,q,42=diconfigtestvar,1,1,loaded file executed and set its global
-true,0,0,q,1=diconfigcount,1,1,file was loaded exactly once
-run,0,0,q,"cfg.loadfile[""/tmp/diconfigtest.q""]",1,1,re-load the same file
-true,0,0,q,1=diconfigcount,1,1,re-load is skipped (counter unchanged)
-comment,,,,,,,loadfile - input validation
-fail,0,0,q,cfg.loadfile[42],1,1,loadfile rejects a non-string path
-comment,,,,,,,loaddir - ordered load honouring order.txt
-run,0,0,q,"cfg.loaddir[""/tmp/diconfigloaddir""]",1,1,load the directory (first time)
-true,0,0,q,"3=count cfg.loaddir[""/tmp/diconfigloaddir""]",1,1,three q/k files loaded (notes.txt ignored)
-true,0,0,q,`b`a~diconfigorder,1,1,order.txt loaded b before a
-true,0,0,q,"any (cfg.loaddir[""/tmp/diconfigloaddir""]) like ""*d.k""",1,1,.k files are picked up
-true,0,0,q,"not any (cfg.loaddir[""/tmp/diconfigloaddir""]) like ""*.txt""",1,1,non-q/k files are excluded
-true,0,0,q,2=diconfiga+diconfigb,1,1,directory files actually executed
-comment,,,,,,,loaddir - directory without order.txt
-true,0,0,q,"2=count cfg.loaddir[""/tmp/diconfignoorder""]",1,1,loads all q files when no order.txt present
-comment,,,,,,,loaddir - missing directory and validation
-true,0,0,q,"()~cfg.loaddir[""/tmp/diconfignodir""]",1,1,missing directory returns an empty list
-true,0,0,q,"any (exec msg from logtab) like ""*directory not found*""",1,1,missing directory logged a warning
-fail,0,0,q,cfg.loaddir[42],1,1,loaddir rejects a non-string path
-comment,,,,,,,loadconfig - named cascade file
-true,0,0,q,"""/tmp/diconfigcascade/default.q""~cfg.loadconfig[""/tmp/diconfigcascade"";`default]",1,1,named file returns its constructed path
-true,0,0,q,99=diconfigdefault,1,1,named file was executed
-true,0,0,q,"""/tmp/diconfigcascade/nosuch.q""~cfg.loadconfig[""/tmp/diconfigcascade"";`nosuch]",1,1,missing named file returns its path without erroring
-true,0,0,q,"any (exec msg from logtab where lvl=`info) like ""*no config file*""",1,1,missing cascade file logged at info not warn
-fail,0,0,q,cfg.loadconfig[42;`default],1,1,loadconfig rejects a non-string dir
-fail,0,0,q,"cfg.loadconfig[""/tmp/diconfigcascade"";""default""]",1,1,loadconfig rejects a non-symbol name
-comment,,,,,,,load - full cascade over directories and names
+comment,,,,,,,loadcascade - full cascade over directories and names
 run,0,0,q,"cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]",1,1,run the cascade
 true,0,0,q,"4=count cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]",1,1,one path per dir-name pair (skipped files included)
 true,0,0,q,10=diconfigcx,1,1,most-specific name wins over dir layer (c1/rdb loads last)
-true,0,0,q,`c1default`c2default`c1rdb~diconfigtrace,1,1,cascade order is name-major (each name across all dirs)
-true,0,0,q,"any (cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]) like ""*diconfigc2/rdb.q""",1,1,returned paths include skipped files
+true,0,0,q,`c1default`c2default`c1rdb~diconfigtrace,1,1,name-major order; and re-runs don't re-execute (dedup)
+true,0,0,q,"any (cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]) like ""*diconfigc2/rdb.q""",1,1,returned paths include skipped (missing) files
+true,0,0,q,"any (exec msg from logtab where lvl=`info) like ""*no config file*""",1,1,a missing cascade file is skipped at info (internal loadconfig)
 true,0,0,q,"1=count cfg.loadcascade[""/tmp/diconfigc1"";`default]",1,1,accepts a single string dir and single symbol name
-fail,0,0,q,cfg.loadcascade[42;`default],1,1,load rejects non-string dirs
-fail,0,0,q,"cfg.loadcascade[""/tmp/diconfigc1"";""default""]",1,1,load rejects non-symbol names
+fail,0,0,q,cfg.loadcascade[42;`default],1,1,loadcascade rejects non-string dirs
+fail,0,0,q,"cfg.loadcascade[""/tmp/diconfigc1"";""default""]",1,1,loadcascade rejects non-symbol names
 comment,,,,,,,overrideconfig - parse and apply command-line overrides
 run,0,0,q,"cfg.overrideconfig[`.diconfigtest.enabled`.diconfigtest.rows!(enlist""1"";enlist""500"")]",1,1,override a bool and a long
 true,0,0,q,1b~.diconfigtest.enabled,1,1,bool parsed and set from string
@@ -101,15 +59,15 @@ run,0,0,q,"cfg.overrideconfig[enlist[`.diconfigq.rows]!enlist enlist""500""]",1,
 true,0,0,q,500~cfg.get[`diconfigq;`rows;0],1,1,get reflects overrideconfig changes
 fail,0,0,q,cfg.get[42;`k;0],1,1,get rejects a non-symbol namespace
 fail,0,0,q,cfg.getmodule[42],1,1,getmodule rejects a non-symbol namespace
-comment,,,,,,,kx.log - real emission via a caller-side binary wrapper (must run last; re-inits cfg)
+comment,,,,,,,logger emission - real logger via a caller-side binary wrapper (must run last; re-inits cfg)
 run,0,0,q,kxlogger:use`kx.log,1,1,load the kx.log module
 run,0,0,q,kxinst:kxlogger.createLog[],1,1,create a real kx.log instance
 run,0,0,q,kxh:hopen `:/tmp/diconfigkxsink.txt,1,1,open a file sink to capture output
 run,0,0,q,kxinst.add[kxh;`info],1,1,route info-level output to the file sink
-run,0,0,q,"kxbinary:`info`warn`error!({[c;m]kxinst[`info][string[c],"": "",m]};{[c;m]kxinst[`warn][string[c],"": "",m]};{[c;m]kxinst[`error][string[c],"": "",m]})",1,1,wrap monadic kx.log into a binary dict (what di.log will do)
+run,0,0,q,"kxbinary:`info`warn`error!({[c;m]kxinst[`info][string[c],"": "",m]};{[c;m]kxinst[`warn][string[c],"": "",m]};{[c;m]kxinst[`error][string[c],"": "",m]})",1,1,wrap the monadic logger into the binary {[c;m]} contract
 run,0,0,q,cfg.init[enlist[`log]!enlist kxbinary],1,1,re-init di.config with the conforming binary logger
-run,0,0,q,"cfg.loadfile[""/tmp/diconfigkxreal.q""]",1,1,drive a real info-level log through kx.log
+run,0,0,q,"cfg.loadcascade[""/tmp/diconfigkxdir"";`default]",1,1,drive a real info-level log through the wrapped logger
 run,0,0,q,hclose kxh,1,1,flush and close the file sink
-true,0,0,q,1=diconfigkxvar,1,1,the real load executed the file
-true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*loadfile: loading*""",1,1,kx.log emitted the wrapped context and message
-true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*diconfigkxreal.q*""",1,1,emitted message includes the file path
+true,0,0,q,1=diconfigkxvar,1,1,the cascade executed the file
+true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*loadconfig: loading*""",1,1,the internal loader emitted through the real logger
+true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*diconfigkxdir/default.q*""",1,1,emitted message includes the file path

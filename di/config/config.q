@@ -1,16 +1,14 @@
 / configuration loading and cascade resolution for the modular torq world.
-/ replaces torq.q's in-process config handling (loadf, loaddir, loadconfig,
-/ loadaddconfig, overrideconfig). the logger is an injected dependency wired via
-/ init; the module reads no environment variables or process identity itself -
-/ the caller (di.torq) supplies the settings directories, name sequence and any
-/ command-line overrides. layered lowest to highest priority:
-/   loadfile  - load one file by path (deduplicated)
-/   loadconfig - load one cascade file dir/{name}.q (missing is normal)
-/   loaddir   - load every .q/.k file in a directory (honours order.txt)
-/   loadcascade   - resolve the full cascade over dirs x names (name-major)
+/ replaces torq.q's in-process config handling (loadf, loadconfig, loadaddconfig,
+/ overrideconfig). the logger is an injected dependency wired via init; the module
+/ reads no environment variables or process identity itself - the caller (di.torq)
+/ supplies the settings directories, name sequence and any command-line overrides.
+/ public api:
+/   loadcascade    - resolve the full cascade over dirs x names (name-major)
 /   overrideconfig - apply command-line-style overrides after the cascade
 /   get / getmodule - query the resolved config store (di.torq partitions per
 /     module with getmodule and injects each slice via that module's init)
+/ internal helper loadconfig handles per-file loading behind loadcascade.
 
 raiseerror:{[ctx;msg]
   / internal - log an error under ctx then signal it, so failures are observable
@@ -22,9 +20,10 @@ raiseerror:{[ctx;msg]
 init:{[deps]
   / wire injectable dependencies - log is required, there is no silent fallback.
   / deps: a dict with a `log key; log must already be a binary `info`warn`error
-  / dict of {[c;m]} loggers (from di.log once it ships, or hand-rolled). no
-  / adaptation is performed here - a raw monadic kx.log instance must be wrapped
-  / by the caller before being passed. examples:
+  / dict of {[c;m]} loggers - build it from di.log (the standard logger, which
+  / exports binary info/warn/error) or hand-roll one. no adaptation is performed
+  / here, so a non-conforming logger (e.g. a raw monadic kx.log instance) must be
+  / wrapped by the caller first. examples:
   /   config.init[enlist[`log]!enlist logdep]
   /   config.init[`log`timer!(logdep;timerdep)]
   if[99h<>type deps;
@@ -40,31 +39,11 @@ init:{[deps]
   .z.m.log[`info][`init;"di.config initialised"];
   };
 
-loadfile:{[file]
-  / load a single q config file if it exists, tracking it so it is not re-loaded.
-  / returns the file path; a missing file is a logged warning, not an error.
-  if[not 10h=abs type file;
-    raiseerror[`loadfile;"file must be a string path"];
-  ];
-  if[file in .z.m.loaded;
-    .z.m.log[`info][`loadfile;"already loaded ",file];
-    :file;
-  ];
-  if[()~key hsym `$file;
-    .z.m.log[`warn][`loadfile;"config file not found: ",file];
-    :file;
-  ];
-  .z.m.log[`info][`loadfile;"loading ",file];
-  .[system;enlist"l ",file;{[f;e] raiseerror[`loadfile;"failed to load ",f,": ",e]}[file;]];
-  .z.m.loaded,:enlist file;
-  :file;
-  };
-
 loadconfig:{[dir;name]
-  / load a single cascade config file dir/{name}.q if it is present. a missing
-  / file is normal in the cascade (not every proctype/procname has one), so its
-  / absence is logged at info and skipped, NOT warned. present files load via
-  / loadfile, so they are tracked and de-duplicated. returns the file path.
+  / internal - load one cascade config file dir/{name}.q if present, tracking it
+  / so it is not re-loaded. a missing file is normal in the cascade (not every
+  / proctype/procname has one), so its absence is logged at info and skipped, not
+  / warned. returns the file path.
   if[not 10h=abs type dir;
     raiseerror[`loadconfig;"dir must be a string path"];
   ];
@@ -72,37 +51,18 @@ loadconfig:{[dir;name]
     raiseerror[`loadconfig;"name must be a symbol"];
   ];
   file:dir,"/",string[name],".q";
+  if[file in .z.m.loaded;
+    .z.m.log[`info][`loadconfig;"already loaded ",file];
+    :file;
+  ];
   if[()~key hsym `$file;
     .z.m.log[`info][`loadconfig;"no config file (skipping): ",file];
     :file;
   ];
-  :loadfile file;
-  };
-
-loaddir:{[dir]
-  / load every .q and .k file in a directory, honouring an optional order.txt.
-  / files listed in order.txt load first, in that order; the rest follow in the
-  / order key returns them. returns the ordered list of file paths processed;
-  / a missing directory is a logged warning returning (). each load is delegated
-  / to loadfile, so files already loaded are skipped.
-  if[not 10h=abs type dir;
-    raiseerror[`loaddir;"dir must be a string path"];
-  ];
-  if[()~files:key hsym `$dir;
-    .z.m.log[`warn][`loaddir;"directory not found: ",dir];
-    :();
-  ];
-  haveorder:`order.txt in files;
-  if[haveorder;
-    .z.m.log[`info][`loaddir;"found order.txt in ",dir];
-  ];
-  order:$[haveorder;(`$read0 hsym `$dir,"/order.txt") inter files;`symbol$()];
-  files:files where any files like/:("*.q";"*.k");
-  files:order,files except order;
-  paths:(dir,"/"),/:string files;
-  .z.m.log[`info][`loaddir;"loading ",(string count paths)," file(s) from ",dir];
-  loadfile each paths;
-  :paths;
+  .z.m.log[`info][`loadconfig;"loading ",file];
+  .[system;enlist"l ",file;{[f;e] raiseerror[`loadconfig;"failed to load ",f,": ",e]}[file;]];
+  .z.m.loaded,:enlist file;
+  :file;
   };
 
 loadcascade:{[dirs;names]

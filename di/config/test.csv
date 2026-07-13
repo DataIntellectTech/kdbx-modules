@@ -46,18 +46,14 @@ true,0,0,q,"any (exec msg from logtab) like ""*not a basic type*""",1,1,non-basi
 true,0,0,q,0=count cfg.overrideconfig[()!()],1,1,empty params is a no-op
 fail,0,0,q,cfg.overrideconfig[42],1,1,overrideconfig rejects a non-dict
 fail,0,0,q,"cfg.overrideconfig[enlist[1]!enlist enlist""x""]",1,1,overrideconfig rejects non-symbol keys
-comment,,,,,,,get / getmodule - queryable config store
+comment,,,,,,,getmodule - queryable config store
 run,0,0,q,"cfg.loadcascade[""/tmp/diconfigstore"";`default]",1,1,load a settings file into the store
-true,0,0,q,`trade`quote~cfg.get[`diconfigq;`subscribeto;`],1,1,get returns a loaded config value
-true,0,0,q,42~cfg.get[`diconfigq;`missing;42],1,1,get returns the default for an unset key
-true,0,0,q,999~cfg.get[`nosuchns;`x;999],1,1,get returns the default for an unknown namespace
 true,0,0,q,2=count cfg.getmodule[`diconfigq],1,1,getmodule returns the whole namespace slice
 true,0,0,q,`trade`quote~cfg.getmodule[`diconfigq]`subscribeto,1,1,getmodule slice carries the values
 true,0,0,q,100~cfg.getmodule[`diconfigq]`rows,1,1,getmodule slice carries the second value
 true,0,0,q,0=count cfg.getmodule[`nosuchns],1,1,getmodule returns an empty dict for an unknown namespace
 run,0,0,q,"cfg.overrideconfig[enlist[`.diconfigq.rows]!enlist enlist""500""]",1,1,override a stored value
-true,0,0,q,500~cfg.get[`diconfigq;`rows;0],1,1,get reflects overrideconfig changes
-fail,0,0,q,cfg.get[42;`k;0],1,1,get rejects a non-symbol namespace
+true,0,0,q,500~cfg.getmodule[`diconfigq]`rows,1,1,getmodule reflects overrideconfig changes
 fail,0,0,q,cfg.getmodule[42],1,1,getmodule rejects a non-symbol namespace
 comment,,,,,,,logger emission - real logger via a caller-side binary wrapper (must run last; re-inits cfg)
 run,0,0,q,kxlogger:use`kx.log,1,1,load the kx.log module

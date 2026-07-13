@@ -42,9 +42,8 @@ caller first — di.config does no wrapping: `` `info`warn`error!({[c;m]inst[`in
 |---|---|---|
 | `init` | `init[deps]` | Wire the injected logger. `deps` is a dict with a required `log` key — an already-conforming binary `` `info`warn`error `` dict of `{[c;m]}` functions. Errors immediately if the log dependency is missing or malformed. |
 | `loadcascade` | `loadcascade[dirs;names]` | Resolve the config cascade **name-major**: for each name (least→most specific) load `dir/{name}.q` from each directory in turn. `dirs` is a string path or list of paths (low→high priority); `names` is a symbol or symbol list (least→most specific). A more specific name wins over the directory layer; within a name the later directory overrides. Missing files are skipped (logged at *info*); already-loaded files are de-duplicated. Returns the flat list of constructed paths, in load order. |
-| `overrideconfig` | `overrideconfig[params]` | Apply command-line-style overrides after the cascade. `params` is a dict keyed by variable name (symbol) with string (or list-of-string) values, each parsed into that variable's **existing** type. Only already-defined, basic-typed variables can be overridden; undefined names, non-basic types, and unparseable values are logged and skipped. Returns the list of variables actually overridden. |
-| `get` | `get[namespace;key;default]` | Query the resolved config store: return the value of `.{namespace}.{key}`, or `default` if unset. `namespace` and `key` are **bare** symbols (no leading dot), e.g. `get[\`rdb;\`subscribeto;\`]`. (`get` is a reserved word, so the implementation function is named `getcfg` and exported under the `get` key.) |
-| `getmodule` | `getmodule[namespace]` | Return a namespace's whole resolved config as a bare-keyed value dict — the slice di.torq passes to a module's `init`. `namespace` is a bare symbol; an unconfigured namespace yields an empty dict. |
+| `overrideconfig` | `overrideconfig[params]` | Apply the **command-line-argument layer** on top of the file cascade — di.torq parses the process command line (`.Q.opt .z.x`) and calls this at startup, so launch-time flags (e.g. `-loglevel info`, `-tablelist trade quote`) win over the settings files. This is the automatic top layer of the cascade, **not** an interactive/by-hand step. `params` is a dict keyed by variable name (symbol) with string (or list-of-string) values, each parsed into that variable's **existing** type. Only already-defined, basic-typed variables can be overridden; undefined names, non-basic types, and unparseable values are logged and skipped. Returns the list of variables actually overridden. |
+| `getmodule` | `getmodule[namespace]` | Return a namespace's whole resolved config as a bare-keyed value dict — the slice di.torq passes to a module's `init`. `namespace` is a bare symbol; an unconfigured namespace yields an empty dict. Callers read a single setting by indexing the returned dict inline (e.g. `getmodule[\`rdb]\`subscribeto`). |
 
 Internal helpers — `loadconfig` (the per-file loader behind `loadcascade`), `raiseerror`,
 `applyoverride`, and the load-tracking state — are deliberately not exported.
@@ -58,12 +57,14 @@ config.overrideconfig[`.myproc.enabled`.myproc.rows!(enlist"1";enlist"5000")]
 / then partition per module and hand each slice to that module's init:
 rdbcfg:config.getmodule[`rdb]              / -> `subscribeto`hdbtypes!(...) etc.
 rdb.init[rdbcfg;`log`timer!(logdep;timerdep)]
-/ or read a single value with a fallback:
-config.get[`rdb;`subscribeto;`trade`quote]
+/ read a single setting by indexing the slice inline (configs are booted with defaults,
+/ so the key is always present — no fallback needed):
+rdbcfg`subscribeto
 ```
 
-`overrideconfig` runs after `loadcascade` so command-line values win over file config.
-di.config is deliberately generic — it does not read environment variables or process
+`overrideconfig` runs after `loadcascade` so command-line values win over file config — it is the
+top (command-line) layer of the cascade, applied automatically by di.torq at startup, not a manual
+step. di.config is deliberately generic — it does not read environment variables or process
 identity itself; the caller (di.torq) supplies the settings directories, the ordered
 name sequence, and the override params, then uses `getmodule` to partition the resolved
 store per module.
@@ -72,10 +73,10 @@ store per module.
 
 `loadcascade` loads settings `.q` files that assign into root namespaces
 (`.rdb.subscribeto:...`); those resolved namespaces **are** the config store, and
-`get`/`getmodule` query them (so anything `overrideconfig` changes is reflected too).
+`getmodule` queries them (so anything `overrideconfig` changes is reflected too).
 Additional config sources (env vars, k8s config maps) are out of scope for v1 but would
-plug in by populating the same namespaces before the store is queried — the `get`/
-`getmodule` contract stays unchanged. See the EXTENSION POINT comment in `config.q`.
+plug in by populating the same namespaces before the store is queried — the `getmodule`
+contract stays unchanged. See the EXTENSION POINT comment in `config.q`.
 
 > **Note:** avoid `-` in config file paths — a source-level backtick symbol literal
 > containing `-` parses as subtraction (`` `:/a-b.q `` → `` `:/a `` `- b.q`), not one
@@ -101,9 +102,14 @@ None — `di.config` is a standalone module.
   `{procname}` files won't exist).
 - **Dedup / idempotency.** `loadconfig` tracks loaded paths in `.z.m.loaded` and skips re-loads, so
   the cascade is safe to re-run and `init` is safe to call again.
-- **`overrideconfig` deviates from TorQ deliberately.** Per-variable problems (undefined name,
-  non-basic type, value that won't parse to the target type) are logged and skipped — a single bad
-  override never aborts the batch and a null is never written into config.
+- **`overrideconfig` is the command-line layer, applied by di.torq — not a manual step.** It mirrors
+  TorQ's `overrideconfig`/`override[]` (`torq.q`), which TorQ runs at startup off `.Q.opt .z.x` so
+  launch-time flags beat the settings files. In the modular world di.torq owns that command-line parse
+  and calls this after `loadcascade`; di.config just does the type-aware apply (which is why it stays
+  env-free and never reads `.z.x` itself). It *deviates from TorQ deliberately* on error handling:
+  per-variable problems (undefined name, non-basic type, value that won't parse to the target type)
+  are logged and skipped — a single bad override never aborts the batch and a null is never written
+  into config.
 - **Entry point is `loadcascade[dirs;names]`, NOT a zero-arg `load[]`.** The Plan sketches
   `di.config.load[]`, but that predates the integration design. Config loading happens once at
   startup, so a blank call buys nothing and would force the cascade inputs into hidden `.z.m` state
@@ -112,10 +118,17 @@ None — `di.config` is a standalone module.
   `load` is a reserved word, so the Plan's literal name is unusable anyway.) If di.torq ever wants a
   blank trigger it's a one-line wrapper on its side — not di.config's concern.
 - **Config store is live namespace globals, not an explicit internal store (1a, deliberate).** Settings
-  files assign globals when executed, so those namespaces *are* the store; `get`/`getmodule` read them.
+  files assign globals when executed, so those namespaces *are* the store; `getmodule` reads them.
   An explicit store with provenance / cross-source precedence (1b) is deferred until a second config
-  source (env, k8s) exists — the `get`/`getmodule` contract is storage-independent, so that swap won't
+  source (env, k8s) exists — the `getmodule` contract is storage-independent, so that swap won't
   touch consumers. See the `EXTENSION POINT` comment in `config.q`.
+- **No single-key getter — `getmodule` is the only query.** An earlier draft exported a
+  `get[namespace;key;default]` convenience. It was removed: `getmodule` already returns the whole
+  namespace as a dict, and the intended flow fetches that slice once (di.torq → each module's `init`)
+  and indexes it inline (`rdbcfg\`subscribeto`), so a per-key getter added a second query path for no
+  gain. The `default` fallback was dropped with it — every config is booted with a default, so a
+  requested key is always present and a fallback arg is dead weight. A missing key is now a caller
+  bug (surfaced as a q null on the inline index), not something the config layer silently papers over.
 
 Open gaps / not implemented:
 
@@ -129,9 +142,10 @@ Open gaps / not implemented:
   wired end-to-end with no code change (`init`/`loadcascade`/`loadconfig` all emit through it). The
   committed kx.log-wrapper test proves the same binary-`{[c;m]}`-dict contract `di.log` satisfies. Add
   a `di.log` integration test once `di.log` merges.
-- **Logger storage follows the skill's single-dict pattern** (`.z.m.log[\`info][…]`), which diverges
-  from `consistency.md`'s three-flat-var example (`.z.m.loginfo`/`…`). `di.log` is now built and the
-  single-dict pattern is the directed one; `consistency.md` still needs reconciling to match.
+- **Logging uses the three-flat-var convention** — `.z.m.loginfo`/`.z.m.logwarn`/`.z.m.logerr`,
+  called as `.z.m.loginfo[\`ctx;"msg"]` — matching `consistency.md` and `di.compression`. The injected
+  `log` value is still the same `` `info`warn`error `` dict; `init` just fans it out into the three
+  module-local vars.
 
 ## Tests
 
@@ -145,6 +159,15 @@ k4unit.moduletest`di.config
 di.config is complete for v1 in isolation. The items below are intentionally deferred;
 each is keyed to the module or milestone that unblocks it. Do these **when the trigger
 lands**, not before.
+
+### ⚠️ Logging call convention — NOT set in stone (ask before changing)
+
+di.config uses the **three-flat-var** convention (`.z.m.loginfo`/`.z.m.logwarn`/`.z.m.logerr`),
+matching `consistency.md` and `di.compression`. But the project hasn't finalised this versus the
+**single-dict** form (`.z.m.log[\`info][…]`) that an earlier skill revision directed. **Before
+changing di.config's logging — or wiring logging in another module — stop and ask the user which
+convention is authoritative.** If the project settles on single-dict, switching di.config back is
+mechanical (storage + call sites only; the injected input contract is identical either way).
 
 ### When `di.log` merges to main
 
@@ -182,5 +205,5 @@ lands**, not before.
 
 - **Implement the 1b explicit store.** Replace the live-namespace-globals store with an
   internal store carrying provenance / cross-source precedence, behind the unchanged
-  `get`/`getmodule` contract (so consumers don't change). See the `EXTENSION POINT`
+  `getmodule` contract (so consumers don't change). See the `EXTENSION POINT`
   comment in `config.q`.

@@ -6,14 +6,14 @@
 / public api:
 /   loadcascade    - resolve the full cascade over dirs x names (name-major)
 /   overrideconfig - apply command-line-style overrides after the cascade
-/   get / getmodule - query the resolved config store (di.torq partitions per
-/     module with getmodule and injects each slice via that module's init)
+/   getmodule      - query the resolved config store as a per-namespace dict; di.torq
+/     partitions config per module with it and injects each slice via that module's init
 / internal helper loadconfig handles per-file loading behind loadcascade.
 
 raiseerror:{[ctx;msg]
   / internal - log an error under ctx then signal it, so failures are observable
   / in the log as well as thrown to the caller.
-  .z.m.log[`error][ctx;msg];
+  .z.m.logerr[ctx;msg];
   '"di.config: ",string[ctx],": ",msg;
   };
 
@@ -34,9 +34,11 @@ init:{[deps]
     '"di.config: log value must be a dict; pass `info`warn`error functions"];
   if[not all (`info`warn`error) in key deps`log;
     '"di.config: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:deps`log;
+  .z.m.loginfo:deps[`log]`info;
+  .z.m.logwarn:deps[`log]`warn;
+  .z.m.logerr:deps[`log]`error;
   .z.m.loaded:enlist"";
-  .z.m.log[`info][`init;"di.config initialised"];
+  .z.m.loginfo[`init;"di.config initialised"];
   };
 
 loadconfig:{[dir;name]
@@ -52,14 +54,14 @@ loadconfig:{[dir;name]
   ];
   file:dir,"/",string[name],".q";
   if[file in .z.m.loaded;
-    .z.m.log[`info][`loadconfig;"already loaded ",file];
+    .z.m.loginfo[`loadconfig;"already loaded ",file];
     :file;
   ];
   if[()~key hsym `$file;
-    .z.m.log[`info][`loadconfig;"no config file (skipping): ",file];
+    .z.m.loginfo[`loadconfig;"no config file (skipping): ",file];
     :file;
   ];
-  .z.m.log[`info][`loadconfig;"loading ",file];
+  .z.m.loginfo[`loadconfig;"loading ",file];
   .[system;enlist"l ",file;{[f;e] raiseerror[`loadconfig;"failed to load ",f,": ",e]}[file;]];
   .z.m.loaded,:enlist file;
   :file;
@@ -87,7 +89,7 @@ loadcascade:{[dirs;names]
   if[not 11h=abs type names;
     raiseerror[`loadcascade;"names must be a symbol or a symbol list"];
   ];
-  .z.m.log[`info][`loadcascade;"resolving cascade: ",(string count dirs)," dir(s) x ",(string count names)," name(s)"];
+  .z.m.loginfo[`loadcascade;"resolving cascade: ",(string count dirs)," dir(s) x ",(string count names)," name(s)"];
   :raze {[ds;nm] loadconfig[;nm] each ds}[dirs;] each names;
   };
 
@@ -98,17 +100,17 @@ applyoverride:{[name;raw]
   / must already exist - its current type drives the parse.
   t:type value name;
   if[not (abs t) within (1;-1+count .Q.t);
-    .z.m.log[`error][`overrideconfig;"cannot override ",(string name),": not a basic type"];
+    .z.m.logerr[`overrideconfig;"cannot override ",(string name),": not a basic type"];
     :0b;
   ];
   raw:$[10h=type raw;enlist raw;raw];
   vals:(upper .Q.t abs t)$'raw;
   if[t<0;vals:first vals];
   if[any null vals;
-    .z.m.log[`error][`overrideconfig;"cannot override ",(string name),": value did not parse"];
+    .z.m.logerr[`overrideconfig;"cannot override ",(string name),": value did not parse"];
     :0b;
   ];
-  .z.m.log[`info][`overrideconfig;"setting ",(string name)," to ",-3!vals];
+  .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
   set[name;vals];
   :1b;
   };
@@ -132,7 +134,7 @@ overrideconfig:{[params]
   defined:vars where {@[{value x;1b};x;0b]} each vars;
   undefined:vars except defined;
   if[count undefined;
-    .z.m.log[`warn][`overrideconfig;"skipping undefined variable(s): ",", " sv string undefined];
+    .z.m.logwarn[`overrideconfig;"skipping undefined variable(s): ",", " sv string undefined];
   ];
   applied:{[params;v] applyoverride[v;params v]}[params;] each defined;
   :defined where applied;
@@ -140,31 +142,15 @@ overrideconfig:{[params]
 
 / --- queryable config store ---
 / the store is the set of root namespaces populated by the settings files that
-/ loadcascade loads (plus anything overrideconfig changes). getcfg/getmodule
-/ query it; di.torq uses getmodule to partition config per module and pass each
-/ slice to that module's init.
+/ loadcascade loads (plus anything overrideconfig changes). getmodule queries it;
+/ di.torq uses getmodule to partition config per module and pass each slice to that
+/ module's init.
 / EXTENSION POINT (out of scope for v1, flagged per the modularisation plan):
 / additional config sources - environment variables, k8s config maps, external
 / key-value stores - would plug in by populating the same root namespaces before
 / the store is queried. keep source reading (loadcascade et al.) separate from
 / querying (below) so a new source is an additive step, not a change to the
-/ get/getmodule contract.
-
-getcfg:{[ns;k;dflt]
-  / query the resolved config store: return the value of the loaded config
-  / variable .{ns}.{k}, or dflt if it is not set. ns and k are bare symbols with
-  / no leading dot (e.g. getcfg[`rdb;`subscribeto;`]). exported under the `get`
-  / key. NB: params are ns/k/dflt because key and default are reserved words -
-  / used as parameter names they throw 'match when the function is called (and
-  / neither is listed in .Q.res).
-  if[not -11h=type ns;
-    raiseerror[`get;"namespace must be a symbol (no leading dot)"];
-  ];
-  if[not -11h=type k;
-    raiseerror[`get;"key must be a symbol"];
-  ];
-  :@[value;`$".",(string ns),".",string k;dflt];
-  };
+/ getmodule contract.
 
 getmodule:{[namespace]
   / return all resolved config for a namespace as a bare-keyed value dict, for

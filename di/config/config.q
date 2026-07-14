@@ -1,34 +1,16 @@
-/ configuration loading and cascade resolution for the modular torq world.
-/ replaces torq.q's in-process config handling (loadf, loadconfig, loadaddconfig,
-/ overrideconfig). the logger is an injected dependency wired via init; the module
-/ reads no environment variables or process identity itself - the caller (di.torq)
-/ supplies the settings directories, name sequence and any command-line overrides.
-/ public api:
-/   loadcascade    - resolve the full cascade over dirs x names (name-major)
-/   overrideconfig - apply command-line-style overrides after the cascade
-/   getmodule      - query the resolved config store as a per-namespace dict; di.torq
-/     partitions config per module with it and injects each slice via that module's init
-/ internal helper loadconfig handles per-file loading behind loadcascade.
-
-raiseerror:{[ctx;msg]
-  / internal - log an error under ctx then signal it, so the domain error is always
-  / observable. the logger is unset until init runs, so log only when it is actually
-  / wired (checked without calling it) - a public fn misused before init still signals
-  / the real message instead of a name error on logerr. a wired logger is called
-  / directly, as everywhere else in the module, so its own errors are not swallowed.
-  if[@[{.z.m.logerr;1b};::;0b];.z.m.logerr[ctx;msg]];
-  '"di.config: ",string[ctx],": ",msg;
-  };
+/ configuration loading and cascade resolution for the modular torq world - replaces
+/ torq.q's loadf/loadconfig/loadaddconfig/overrideconfig. the logger is injected via init;
+/ the module reads no env/identity - the caller (di.torq) supplies dirs, names and overrides.
+/ public api: loadcascade (resolve cascade over dirs x names, name-major), overrideconfig
+/ (command-line overrides, applied after), getmodule (query the store as a per-namespace
+/ dict; di.torq partitions config per module with it). loadconfig is the internal per-file
+/ loader behind loadcascade.
 
 init:{[deps]
-  / wire injectable dependencies - log is required, there is no silent fallback.
-  / deps: a dict with a `log key; log must already be a binary `info`warn`error
-  / dict of {[c;m]} loggers - build it from di.log (the standard logger, which
-  / exports binary info/warn/error) or hand-roll one. no adaptation is performed
-  / here, so a non-conforming logger (e.g. a raw monadic kx.log instance) must be
-  / wrapped by the caller first. examples:
-  /   config.init[enlist[`log]!enlist logdep]
-  /   config.init[`log`timer!(logdep;timerdep)]
+  / wire the injected logger - required, no silent fallback. deps: a dict with a `log key
+  / holding a binary `info`warn`error dict of {[c;m]} loggers (from di.log or hand-rolled).
+  / no adaptation here, so a monadic kx.log instance must be wrapped first.
+  / e.g. config.init[enlist[`log]!enlist logdep]
   if[99h<>type deps;
     '"di.config: deps must be a dict with `log key"];
   if[not `log in key deps;
@@ -45,15 +27,16 @@ init:{[deps]
   };
 
 loadconfig:{[dir;name]
-  / internal - load one cascade config file dir/{name}.q if present, tracking it
-  / so it is not re-loaded. a missing file is normal in the cascade (not every
-  / proctype/procname has one), so its absence is logged at info and skipped, not
-  / warned. returns the file path.
+  / internal - load cascade file dir/{name}.q if present, tracking it so it is not
+  / re-loaded. a missing file is normal in the cascade, so logged at info and skipped.
+  / returns the file path.
   if[not 10h=abs type dir;
-    raiseerror[`loadconfig;"dir must be a string path"];
+    .z.m.logerr[`loadconfig;err:"di.config: dir must be a string path"];
+    'err;
   ];
   if[not -11h=type name;
-    raiseerror[`loadconfig;"name must be a symbol"];
+    .z.m.logerr[`loadconfig;err:"di.config: name must be a symbol"];
+    'err;
   ];
   file:dir,"/",string[name],".q";
   if[file in .z.m.loaded;
@@ -65,32 +48,30 @@ loadconfig:{[dir;name]
     :file;
   ];
   .z.m.loginfo[`loadconfig;"loading ",file];
-  .[system;enlist"l ",file;{[f;e] raiseerror[`loadconfig;"failed to load ",f,": ",e]}[file;]];
+  .[system;enlist"l ",file;{[f;e] .z.m.logerr[`loadconfig;err:"di.config: failed to load ",f,": ",e];'err}[file;]];
   .z.m.loaded,:enlist file;
   :file;
   };
 
 loadcascade:{[dirs;names]
-  / resolve a configuration cascade name-major: for each config name (least to
-  / most specific) load it from every directory in turn. files load in sequence,
-  / so a more specific name always wins over a less specific one regardless of
-  / directory, and within a single name the later (higher-priority) directory
-  / overrides the earlier. dirs is a directory path or list of paths (strings),
-  / ordered lowest->highest priority; names is a config name or list of names
-  / (symbols), ordered least->most specific. missing files are skipped (by
-  / loadconfig). returns the flat list of constructed paths, in load order.
-  / typical caller (di.torq resolves the dirs and process identity):
-  /   config.loadcascade[(kdbconfig;appconfig);`default,proctype,procname]
+  / resolve a cascade name-major: for each name (least->most specific) load it from every
+  / dir in turn, so a more specific name always wins and, within a name, the later (higher-
+  / priority) dir overrides. dirs is a path or list of paths (low->high priority); names a
+  / symbol or symbol list (least->most specific). missing files are skipped. returns the
+  / constructed paths in load order. e.g. loadcascade[(kdbconfig;appconfig);`default,proctype,procname]
   dirs:$[10h=type dirs;enlist dirs;dirs];
   names:(),names;
   if[not 0h=type dirs;
-    raiseerror[`loadcascade;"dirs must be a string path or a list of string paths"];
+    .z.m.logerr[`loadcascade;err:"di.config: dirs must be a string path or a list of string paths"];
+    'err;
   ];
   if[not all 10h=type each dirs;
-    raiseerror[`loadcascade;"dirs must be a string path or a list of string paths"];
+    .z.m.logerr[`loadcascade;err:"di.config: dirs must be a string path or a list of string paths"];
+    'err;
   ];
   if[not 11h=abs type names;
-    raiseerror[`loadcascade;"names must be a symbol or a symbol list"];
+    .z.m.logerr[`loadcascade;err:"di.config: names must be a symbol or a symbol list"];
+    'err;
   ];
   .z.m.loginfo[`loadcascade;"resolving cascade: ",(string count dirs)," dir(s) x ",(string count names)," name(s)"];
   :raze {[ds;nm] loadconfig[;nm] each ds}[dirs;] each names;
@@ -99,20 +80,18 @@ loadcascade:{[dirs;names]
 hexchars:"0123456789abcdefABCDEF";
 
 parsefailed:{[t;raw;vals]
-  / internal - true if any raw string failed to parse to type t. boolean (1h) and byte
-  / (4h) are the only in-scope basic types with no null, so a bad parse ("B"$"bad" -> 0b,
-  / "X"$"gg" -> 0x00) slips past a null check and would silently corrupt config - validate
-  / their raw string form explicitly. every other type yields a null on a bad parse.
+  / internal - true if any raw string failed to parse to type t. boolean (1h) and byte (4h)
+  / have no null, so a bad parse ("B"$"bad"->0b, "X"$"gg"->0x00) slips past a null check and
+  / would corrupt config - validate their string form explicitly. other types null on failure.
   :$[1h=abs t;not all raw in (enlist"0";enlist"1");
      4h=abs t;not all {(0=count[x] mod 2) and all x in hexchars} each raw;
      any null vals];
   };
 
 applyoverride:{[name;raw]
-  / internal - parse raw command-line value(s) into name's current type and set it. raw
-  / is a string or a list of strings. returns 1b if applied, 0b if the variable is not a
-  / basic type or a value failed to parse. the variable must already exist - its current
-  / type drives the parse.
+  / internal - parse raw value(s) into name's current type and set it. raw is a string or
+  / list of strings. returns 1b if applied, 0b if name is not a basic type or a value failed
+  / to parse. name must already exist - its type drives the parse.
   t:type value name;
   if[not (abs t) within (1;-1+count .Q.t);
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": not a basic type"];
@@ -124,9 +103,8 @@ applyoverride:{[name;raw]
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": value did not parse"];
     :0b;
   ];
-  / reduce to a scalar only after parsefailed - it validates the full per-element list
-  / (its null check spans every parsed value); this runs before the log and set below,
-  / so both use the scalar form.
+  / reduce to scalar only after parsefailed (which checks the full per-element list); runs
+  / before the log and set, so both use the scalar form.
   if[t<0;vals:first vals];
   .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
   set[name;vals];
@@ -134,19 +112,19 @@ applyoverride:{[name;raw]
   };
 
 overrideconfig:{[params]
-  / apply command-line-style overrides to already-defined variables, parsing each
-  / value into the variable's existing type. params is a dict keyed by variable
-  / name (symbol) with string (or list-of-string) values. only defined variables
-  / can be overridden (their type drives the parse); undefined names are logged
-  / and skipped. returns the list of variables actually overridden. call after
-  / loadcascade to let the command line win over file config.
+  / apply command-line-style overrides to defined variables, parsing each value into the
+  / variable's existing type. params is a dict of variable name (symbol) -> string (or list
+  / of strings). only defined names are overridden; undefined ones are logged and skipped.
+  / returns the variables actually overridden. call after loadcascade so the command line wins.
   if[99h<>type params;
-    raiseerror[`overrideconfig;"params must be a dict keyed by variable name"];
+    .z.m.logerr[`overrideconfig;err:"di.config: params must be a dict keyed by variable name"];
+    'err;
   ];
   vars:key params;
   if[0<count vars;
     if[not 11h=abs type vars;
-      raiseerror[`overrideconfig;"params keys must be symbols (variable names)"];
+      .z.m.logerr[`overrideconfig;err:"di.config: params keys must be symbols (variable names)"];
+      'err;
     ];
   ];
   defined:vars where {@[{value x;1b};x;0b]} each vars;
@@ -159,31 +137,26 @@ overrideconfig:{[params]
   };
 
 / --- queryable config store ---
-/ the store is the set of root namespaces populated by the settings files that
-/ loadcascade loads (plus anything overrideconfig changes). getmodule queries it;
-/ di.torq uses getmodule to partition config per module and pass each slice to that
-/ module's init.
-/ EXTENSION POINT (out of scope for v1, flagged per the modularisation plan):
-/ additional config sources - environment variables, k8s config maps, external
-/ key-value stores - would plug in by populating the same root namespaces before
-/ the store is queried. keep source reading (loadcascade et al.) separate from
-/ querying (below) so a new source is an additive step, not a change to the
-/ getmodule contract.
+/ the store is the root namespaces the settings files populate (plus overrideconfig
+/ changes); getmodule queries them and di.torq uses it to partition config per module.
+/ EXTENSION POINT (out of scope for v1): other sources (env vars, k8s config maps) plug in
+/ by populating the same namespaces before the store is queried - keep source reading
+/ separate from querying so a new source is additive, not a getmodule contract change.
 
 getmodule:{[namespace]
-  / return all resolved config for a namespace as a bare-keyed value dict, for
-  / di.torq to partition and pass to a module's init. namespace is a bare symbol
-  / with no leading dot; an unconfigured namespace yields an empty dict.
+  / return a namespace's whole resolved config as a bare-keyed dict, for di.torq to
+  / partition and inject via a module's init. namespace is a bare symbol (no leading dot);
+  / an unconfigured namespace yields an empty dict.
   if[not -11h=type namespace;
-    raiseerror[`getmodule;"namespace must be a symbol (no leading dot)"];
+    .z.m.logerr[`getmodule;err:"di.config: namespace must be a symbol (no leading dot)"];
+    'err;
   ];
   ns:`$".",string namespace;
   vars:@[{system"v ",x};".",string namespace;`$()];
-  / \v lists child namespaces alongside settings, so drop them - a module's config slice
-  / is flat setting->value pairs, not nested namespaces. ask kdb+ directly whether each
-  / name is itself a namespace (\v succeeds on a namespace, signals on a plain variable);
-  / this is more robust than inspecting the dict for a null-symbol self-reference key,
-  / which a plain dict-valued setting could coincidentally carry (or a namespace lack).
+  / \v lists child namespaces alongside settings; drop them so the slice is flat
+  / setting->value pairs. ask kdb+ whether each name is itself a namespace (\v succeeds on a
+  / namespace, signals on a plain variable) - more robust than checking for a null-symbol
+  / self-key, which a dict-valued setting could carry or a namespace lack.
   issub:{[ns;v] @[{system"v ",x;1b};string ` sv (ns;v);0b]};
   vars:vars where not issub[ns;] each vars;
   :vars!{[ns;v] value ` sv (ns;v)}[ns;] each vars;

@@ -45,8 +45,8 @@ caller first — di.config does no wrapping: `` `info`warn`error!({[c;m]inst[`in
 | `overrideconfig` | `overrideconfig[params]` | Apply the **command-line-argument layer** on top of the file cascade — di.torq parses the process command line (`.Q.opt .z.x`) and calls this at startup, so launch-time flags (e.g. `-loglevel info`, `-tablelist trade quote`) win over the settings files. This is the automatic top layer of the cascade, **not** an interactive/by-hand step. `params` is a dict keyed by variable name (symbol) with string (or list-of-string) values, each parsed into that variable's **existing** type. Only already-defined, basic-typed variables can be overridden; undefined names, non-basic types, and unparseable values are logged and skipped. Returns the list of variables actually overridden. |
 | `getmodule` | `getmodule[namespace]` | Return a namespace's whole resolved config as a bare-keyed value dict — the slice di.torq passes to a module's `init`. `namespace` is a bare symbol; an unconfigured namespace yields an empty dict. Callers read a single setting by indexing the returned dict inline (e.g. `getmodule[\`rdb]\`subscribeto`). |
 
-Internal helpers — `loadconfig` (the per-file loader behind `loadcascade`), `raiseerror`,
-`applyoverride`, and the load-tracking state — are deliberately not exported.
+Internal helpers — `loadconfig` (the per-file loader behind `loadcascade`),
+`applyoverride`, `parsefailed`, and the load-tracking state — are deliberately not exported.
 
 `loadcascade` is the top-level entry point. A caller (e.g. `di.torq`, which resolves the
 process identity and directory paths) drives it as:

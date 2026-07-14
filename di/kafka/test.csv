@@ -48,11 +48,9 @@ run,0,0,q,.test.kupdk:`,1,1,reset capture
 run,0,0,q,.kupd[`;`byte$"x"],1,1,deliver a message through the forwarder
 true,0,0,q,`replaced~.test.kupdk,1,1,new callback invoked - forwarder always delegates to current .z.m.kupd
 
-comment,,,,,,,init - kx.log instance normalised automatically (no manual wrapping required)
-run,0,0,q,kxlogger:use`kx.log,1,1,load kx.log
-run,0,0,q,kxinst:kxlogger.createLog[],1,1,create kx.log instance
-run,0,0,q,kafka.init[`log`enabled!(kxinst;0b)],1,1,bare kx.log instance accepted without wrapping
-run,0,0,q,.m.di.0kafka.log[`info][`kafka;"normalisation test"],1,1,normalised logger accepts binary {[c;m]} call without error
+comment,,,,,,,init - accepts any dict already shaped to the binary {[c;m]} contract (e.g. di.log's logdict)
+run,0,0,q,sixlvllog:`trace`debug`info`warn`error`fatal!({[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]}),1,1,hand-built six-level dict matching di.log's logdict shape
+run,0,0,q,kafka.init[`log`enabled!(sixlvllog;0b)],1,1,superset log dict accepted as-is - only info/warn/error are used
 
 comment,,,,,,,log call verification - capturing logger sees init message with binary {[c;m]} args
 run,0,0,q,.test.cap:0#.test.cap,1,1,reset log capture

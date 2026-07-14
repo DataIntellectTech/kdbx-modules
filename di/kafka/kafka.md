@@ -8,7 +8,6 @@ Wrapper around the `kafkaq` native shared library. Provides consumer and produce
 
 - Wrap the `kafkaq` native C library and expose consumer and producer lifecycle management as clean kdb-x functions
 - Provide a configurable message callback via `setkupd` - the native library always delegates through the current callback without requiring re-initialisation
-- Detect and normalise `kx.log` instances automatically so callers can pass a logger directly without manual wrapping
 - Gracefully degrade on non-l64 platforms - all native functions remain as informative stubs when `enabled:0b`
 - Distinguish "module not initialised" from genuine broker or argument errors via descriptive stub error messages with `di.kafka:` prefix
 
@@ -20,23 +19,7 @@ Wrapper around the `kafkaq` native shared library. Provides consumer and produce
 |---|---|---|---|
 | logger | `` `log `` | yes | `info`, `warn`, `error` - each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
-The `log` dependency must be passed to `init` inside the `deps` dict. The module throws immediately if it is absent or missing any of the three required keys. All three are required since the module calls `info`, `warn`, and `error`.
-
-A `kx.log` instance can be passed directly - the module normalises monadic functions to the binary `{[c;m]}` contract automatically via `normlog`. Context is embedded in the output as `"context: message"`:
-
-```q
-kxlog:use`kx.log
-kafka:use`di.kafka
-
-/ minimal - log and libpath only
-kafka.init[`log`libpath!(kxlog.createLog[];`$/opt/kdb/lib)]
-
-/ with custom message callback
-kafka.init[`log`libpath`kupd!(kxlog.createLog[];`$/opt/kdb/lib;{[k;x] upd[`kafkadata;(enlist .z.p;enlist k;enlist "c"$x)]})]
-
-/ disabled platform - no libpath required
-kafka.init[`log`enabled!(kxlog.createLog[];0b)]
-```
+The `log` dependency must be passed to `init` inside the `deps` dict. The module throws immediately if it is absent or missing any of the three required keys. All three are required since the module calls `info`, `warn`, and `error`. The dict passed in must already match the binary `{[c;m]}` contract - the module does not detect or adapt other shapes (e.g. a raw `kx.log` instance, which is monadic). If you want to use `kx.log`, load it and write your own `{[c;m]}` wrapper around it before passing it in.
 
 ---
 
@@ -115,10 +98,13 @@ kafka.setkupd[{[k;x] upd[`kafkadata;(enlist .z.p;enlist k;enlist "c"$x)]}]
 ## Usage Example
 
 ```q
-kxlog:use`kx.log
+/ log dep must already match the binary {[c;m]} contract - write your own, or use di.log:
+/   logging:use`di.log
+/   kafka.init[logging.logdict]
+logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
 
 kafka:use`di.kafka
-kafka.init[`log`libpath!(kxlog.createLog[];`$/opt/kdb/lib)]
+kafka.init[`log`libpath!(logdep;`$/opt/kdb/lib)]
 
 / consume messages with a custom callback
 kafka.setkupd[{[k;x] upd[`kafkadata;(enlist .z.p;enlist k;enlist "c"$x)]}]
@@ -145,7 +131,7 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.kafka
 ```
 
-34 tests. Runs on any kdb-x machine - no TorQ installation or native library required. Covers dependency validation, `enabled:0b` platform skip, stub behaviour for all six native functions, `setkupd` and the `.kupd` forwarder, log normalisation, and a live `kx.log` instance via `normlog`.
+34 tests. Runs on any kdb-x machine - no TorQ installation or native library required. Covers dependency validation, `enabled:0b` platform skip, stub behaviour for all six native functions, `setkupd` and the `.kupd` forwarder, and a six-level log dict (matching `di.log`'s `logdict` shape) accepted as-is by `init`.
 
 ### Integration tests
 

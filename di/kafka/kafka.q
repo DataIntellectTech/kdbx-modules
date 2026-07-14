@@ -36,18 +36,6 @@ publish:{[t;p;k;m] nativepublish[t;p;k;m]};
 // internal helpers
 // ============================================================
 
-normlog:{[logdict]
-  // detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
-  // kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
-  // plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
-  $[any `getlvl`sinks`fmts in key logdict;
-    `info`warn`error!(
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
-    logdict]
-  };
-
 setconfig:{[deps]
   // apply recognised configuration overrides; dep keys (log etc.) are ignored
   cfg:$[99h=type deps;deps;()!()];
@@ -110,7 +98,7 @@ init:{[deps]
     '"di.kafka: log value must be a dict; pass `info`warn`error functions"];
   if[not all `info`warn`error in key deps`log;
     '"di.kafka: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:normlog deps`log;
+  .z.m.log:deps`log;
   setconfig deps;
   if[enabled;
     if[not `libpath in key deps;

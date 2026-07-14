@@ -32,3 +32,36 @@ Only export the functions which should be called externally.
 ## Namespaces
 
 Avoid `\d` namespace switches.
+
+## Injectable Dependencies
+
+Pass dependencies as a single dict to `init` — this keeps the signature stable as more injectables are added. All dependencies are required; `init` must error immediately with a clear message if any are absent. Store each injected function in `.z.m` and always call it through `.z.m` at call sites.
+
+```q
+/ mymodule.q
+init:{[deps]
+  / deps - `log!(logdict) or `log`timer!(logdict;timerdict)
+  /   `log: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required
+  / examples:
+  /   mymodule.init[enlist[`log]!enlist logdep]
+  logdict:$[99h=type deps;$[(`log in key deps) and not (::)~deps`log;deps`log;()!()];()!()];
+  if[not count logdict;
+    '"di.mymodule: log dependency is required; pass `info`warn`error functions - see di.log or refer to confluence documentation";
+  ];
+  .z.m.loginfo:logdict`info;
+  .z.m.logwarn:logdict`warn;
+  .z.m.logerr:logdict`error;
+  };
+
+myfunc:{[x]
+  .z.m.loginfo[`mymodule;"processing ",string x];
+  };
+```
+
+Callers provide a dict of functions. Use `di.log` if no custom logger is needed:
+
+```q
+log:use`di.log
+logdep:`info`warn`error!(log.info;log.warn;log.error)
+mymodule.init[enlist[`log]!enlist logdep]
+```

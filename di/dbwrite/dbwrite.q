@@ -69,30 +69,12 @@ readerr:{[file;e]
   'm;
   };
 
-/ internal - validate the header and data rows, then parse csv lines into a config table
+/ internal - parse csv lines into a config table
 parsecsv:{[lines]
-  / parse field-by-field rather than via 0:, which silently pads/truncates/coerces malformed rows
-  / map columns by header name so order does not matter; runs outside the readfile i/o trap
-  if[0=count lines;
-    .z.m.logerr[`parsecsv;err:"di.dbwrite: csv has no header row"];
-    'err;
-  ];
-  hdr:`$"," vs first lines;
-  if[not (asc distinct hdr)~`att`column`sort`tabname;
-    .z.m.logerr[`parsecsv;err:"di.dbwrite: csv header must be exactly tabname,att,column,sort; got: ",", " sv string hdr];
-    'err;
-  ];
-  rows:"," vs/: 1 _ lines;
-  if[count bad:where (count each rows)<>count hdr;
-    .z.m.logerr[`parsecsv;err:"di.dbwrite: csv data row(s) ",(", " sv string 1+bad)," must have ",(string count hdr)," fields"];
-    'err;
-  ];
-  c:hdr!$[count rows; flip rows; (count hdr)#enlist ()];
-  if[not all (c`sort) in enlist each "01";
-    .z.m.logerr[`parsecsv;err:"di.dbwrite: the sort column must contain only 0 or 1"];
-    'err;
-  ];
-  :([] tabname:`$c`tabname; att:`$c`att; column:`$c`column; sort:"B"$c`sort);
+  / load via 0: - the header row (enlist delim) names the columns, so column order does not
+  / matter; cast sort to boolean if present. structural validation is left to checkconfig.
+  t:((count "," vs first lines)#"S";enlist",") 0: lines;
+  :$[`sort in cols t; update sort:"B"$string sort from t; t];
   };
 
 / internal - validate a sort-config table, signalling a clear error if it is malformed
@@ -145,25 +127,25 @@ sort:{[tabname;dirs]
   ];
   st:string tabname;
   .z.m.loginfo[`sort;"sorting the ",st," table"];
-  sp:getsortparams[config;tabname;st];
+  sp:getsortparams[config;tabname];
   if[not count sp; :()];
   sortdir[sp] each distinct (),dirs;
   .z.m.loginfo[`sort;"finished sorting the ",st," table"];
   };
 
 / internal - resolve which config rows apply to a table
-getsortparams:{[config;tab;st]
+getsortparams:{[config;tab]
   / tab is the table-name symbol (NOT a table); named to avoid clashing with the tabname column
   / a table uses its own rows; unlisted tables fall back to the default row, else are skipped
   if[count tabsp:select from config where tabname=tab;
-    .z.m.loginfo[`getsortparams;"sort params found for: ",st];
+    .z.m.loginfo[`getsortparams;"sort params found for: ",string[tab]];
     :tabsp;
   ];
   if[count defsp:select from config where tabname=`default;
-    .z.m.loginfo[`getsortparams;"no sort params for: ",st,"; using defaults"];
+    .z.m.loginfo[`getsortparams;"no sort params for: ",string[tab],"; using defaults"];
     :defsp;
   ];
-  .z.m.logwarn[`getsortparams;"no sort params for: ",st,"; skipping sort"];
+  .z.m.logwarn[`getsortparams;"no sort params for: ",string[tab],"; skipping sort"];
   :0#config;
   };
 

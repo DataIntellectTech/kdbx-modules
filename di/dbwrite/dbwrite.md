@@ -92,7 +92,7 @@ Read a config CSV and store it in module state (equivalent to calling `setconfig
 |---|---|---|
 | `file` | symbol/hsym/string | Path to the CSV. Symbols are coerced with `hsym`; strings are converted via `hsym `$`. Errors (`di.dbwrite:`) if not a symbol or string. |
 
-The CSV is parsed field-by-field and fully validated before storing — it does **not** silently pad, truncate, or coerce malformed rows. A clear `di.dbwrite:` error is raised if: the header is not exactly `tabname,att,column,sort` (any order); any data row does not have exactly four fields; any `sort` value is not `0` or `1`; or any `att` value is not in `` ` `p`s`g`u ``. Column order is normalised to canonical.
+The CSV is loaded with `0:` — the header row names the columns, so their order does not matter — and the resulting table is validated by `checkconfig` before storing. A clear `di.dbwrite:` error is raised if the columns are not exactly `tabname`,`att`,`column`,`sort`, any `tabname`/`column` is null, `sort` is not boolean, or any `att` value is not in `` ` `p`s`g`u ``. Config CSVs are expected to be well-formed: `0:` silently pads/truncates ragged rows and coerces non-`0`/`1` sort values, so those are not separately rejected.
 
 ```q
 dbwrite.readcsv `:config/sort.csv

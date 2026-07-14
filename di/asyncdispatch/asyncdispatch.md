@@ -16,7 +16,6 @@ Routing (deciding which servertypes satisfy a query) is `di.serverselect`'s resp
 - Support synchronous deferred response mode (`-30!`) alongside the default async mode
 - Pluggable server source with a default — dispatch against the built-in registry (`addserver`) by default, or point it at `di.serverselect`'s output (or any source) via `setavailableservers`; `di.serverselect` is a composable option, never a dependency
 - Accept fully pluggable scheduler (`setgetnextqueryid`), routing (`setavailableservers`), reply formatter (`setformatresponse`), and callback symbols (`setcallbacks`) — swap without touching core dispatch logic
-- Detect and normalise `kx.log` instances automatically so callers can pass a logger directly without manual wrapping
 
 ---
 
@@ -26,22 +25,7 @@ Routing (deciding which servertypes satisfy a query) is `di.serverselect`'s resp
 |---|---|---|---|
 | logger | `` `log `` | yes | `info`, `warn`, `error` — each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
-The `log` dependency must be passed to `init` inside the `deps` dict. The module throws immediately if it is absent or missing any of the three required keys. All three are required since the module calls `info`, `warn`, and `error`.
-
-> **`di.serverselect` is not a dependency.** asyncdispatch never imports or calls it. The server source is pluggable (`setavailableservers`) and defaults to the built-in registry (`addserver`), so you run standalone out of the box; to dispatch against serverselect's live view instead, inject its `getservers` output as the source (see `setavailableservers`). No registry copying, no dependency.
-
-A `kx.log` instance can be passed directly — the module normalises monadic functions to the binary `{[c;m]}` contract automatically via `normlog`. Context is embedded in the output as `"context: message"`:
-
-```q
-kxlog:use`kx.log
-ad:use`di.asyncdispatch
-
-// minimal
-ad.init[enlist[`log]!enlist kxlog.createLog[]]
-
-// with config overrides
-ad.init[`log`querykeeptime`synccallsallowed!(kxlog.createLog[];0D01:00;1b)]
-```
+The `log` dependency must be passed to `init` inside the `deps` dict. The module throws immediately if it is absent or missing any of the three required keys. All three are required since the module calls `info`, `warn`, and `error`. The dict passed in must already match the binary `{[c;m]}` contract — the module does not detect or adapt other shapes (e.g. a raw `kx.log` instance, which is monadic). If you want to use `kx.log`, load it and write your own `{[c;m]}` wrapper around it before passing it in.
 
 ---
 
@@ -203,12 +187,16 @@ ad.setgetnextqueryid[{1 sublist `priority xdesc 0!select from .z.m.queryqueue wh
 ## Usage Example
 
 ```q
-kxlog:use`kx.log
+// log dep must already match the binary {[c;m]} contract - write your own, or use di.log:
+//   logging:use`di.log
+//   ad.init[logging.logdict]
+logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
+
 timer:use`di.timer
 timer.init[()!()]
 
 ad:use`di.asyncdispatch
-ad.init[enlist[`log]!enlist kxlog.createLog[]]
+ad.init[enlist[`log]!enlist logdep]
 
 // point backends' callbacks at this module's mount point on this process
 ad.setcallbacks[`ad.addserverresult;`ad.addservererror]

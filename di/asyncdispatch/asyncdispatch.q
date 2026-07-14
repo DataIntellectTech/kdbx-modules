@@ -69,18 +69,6 @@ queryid:0;
 // internal helpers
 // ============================================================
 
-normlog:{[logdict]
-  // detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
-  // kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
-  // plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
-  $[all `getlvl`sinks`fmts in key logdict;
-    `info`warn`error!(
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
-    logdict]
-  };
-
 sendclientreply:{[qid;result;status]
   // deliver result or error to the client, handling sync vs async send and postback wrapping
   // local path invokes value tosend directly - formatresponse is not applied (it is a pass-through
@@ -322,7 +310,7 @@ init:{[deps]
     '"di.asyncdispatch: log value must be a dict; pass `info`warn`error functions"];
   if[not all `info`warn`error in key deps`log;
     '"di.asyncdispatch: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:normlog deps`log;
+  .z.m.log:deps`log;
   if[`errorprefix in key deps; .z.m.errorprefix:deps`errorprefix];
   if[`querykeeptime in key deps; .z.m.querykeeptime:deps`querykeeptime];
   if[`clearinactivetime in key deps; .z.m.clearinactivetime:deps`clearinactivetime];

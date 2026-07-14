@@ -129,13 +129,23 @@ None — `di.config` is a standalone module.
   gain. The `default` fallback was dropped with it — every config is booted with a default, so a
   requested key is always present and a fallback arg is dead weight. A missing key is now a caller
   bug (surfaced as a q null on the inline index), not something the config layer silently papers over.
+- **`getmodule` returns leaf settings only — child namespaces are excluded.** `\v .rdb` lists any
+  child namespace (e.g. `.rdb.sub`) alongside the real settings, so `getmodule` filters them out —
+  a module's config slice should be flat setting→value pairs, not a nested namespace. A child
+  namespace is detected as a `99h` dict carrying a null-symbol self-reference key; a genuine
+  dict-valued setting has no such key and is kept, so it is not misidentified as a namespace.
 
 Open gaps / not implemented:
 
 - **No runtime reload.** TorQ's `reloadf` (force-reload an already-loaded file) is not ported —
   `loadconfig` always dedups. Adequate for startup; revisit if runtime config reload is needed.
-- **`overrideconfig`'s null-parse guard targets scalar/vector basic types**; a string-typed (`10h`)
-  config var is an uncommon edge where the per-element null check is loose.
+- **`overrideconfig` parse-failure detection is type-aware.** Most basic types parse to a null on a
+  bad value, which `applyoverride` rejects via a null check. Boolean (`1h`) and byte (`4h`) are the
+  only in-scope basic types with **no null** — `"B"$"bad"` yields `0b`, `"X"$"gg"` yields `0x00`, both
+  non-null — so a bad value would slip past a null check and silently corrupt config. `parsefailed`
+  handles these two explicitly (boolean must be `"0"`/`"1"`; byte must be even-length hex); anything
+  else is rejected and logged, never written. A string-typed (`10h`) config var still can't be
+  overridden (its per-element char cast is rejected as non-parsing) — this fails safe and is a rare edge.
 - **No committed `di.log` integration test yet.** `di.log` (the standard logger) currently lives on
   the `feature-logging` branch and isn't merged, so a committed `use\`di.log` test would fail on this
   branch. di.config's contract match with `di.log` is **verified manually** — the real `di.log` was

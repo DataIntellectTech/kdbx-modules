@@ -15,6 +15,10 @@ before,0,0,q,.diconfigtest.enabled:0b,1,1,override target - boolean
 before,0,0,q,.diconfigtest.rows:100,1,1,override target - long
 before,0,0,q,.diconfigtest.syms:`a`b,1,1,override target - symbol list
 before,0,0,q,.diconfigtest.tab:([]a:`long$()),1,1,override target - non-basic (table)
+before,0,0,q,.diconfigtest.byte:0x01,1,1,override target - byte (a no-null basic type)
+before,0,0,q,.diconfiggm.rows:100,1,1,getmodule target - flat scalar setting
+before,0,0,q,.diconfiggm.limits:`lo`hi!1 2,1,1,getmodule target - dict-valued setting (99h - must be kept)
+before,0,0,q,.diconfiggm.sub.x:1,1,1,getmodule target - child namespace (must be excluded)
 before,0,0,q,"system""mkdir -p /tmp/diconfigkxdir""",1,1,dir for the kx.log emission test
 before,0,0,q,"(`:/tmp/diconfigkxdir/default.q) 0: enlist ""diconfigkxvar:1;""",1,1,file loaded through the real logger
 comment,,,,,,,init - dependency validation
@@ -26,7 +30,11 @@ comment,,,,,,,loadcascade - full cascade over directories and names
 run,0,0,q,"cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]",1,1,run the cascade
 true,0,0,q,"4=count cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]",1,1,one path per dir-name pair (skipped files included)
 true,0,0,q,10=diconfigcx,1,1,most-specific name wins over dir layer (c1/rdb loads last)
-true,0,0,q,`c1default`c2default`c1rdb~diconfigtrace,1,1,name-major order; and re-runs don't re-execute (dedup)
+run,0,0,q,cfg.init[enlist[`log]!enlist mocklog],1,1,re-init to reset the dedup set so the trace check is independent of any prior load (order/re-run safe)
+run,0,0,q,diconfigtrace:`symbol$(),1,1,reset the tracer here in the assert phase - a before-row reset is batched once and cannot isolate this
+run,0,0,q,"cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]",1,1,load once - populates the tracer
+run,0,0,q,"cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]",1,1,re-run - dedup must NOT re-execute the files
+true,0,0,q,`c1default`c2default`c1rdb~diconfigtrace,1,1,name-major order AND dedup (tracer unchanged by the re-run)
 true,0,0,q,"any (cfg.loadcascade[(""/tmp/diconfigc1"";""/tmp/diconfigc2"");`default`rdb]) like ""*diconfigc2/rdb.q""",1,1,returned paths include skipped (missing) files
 true,0,0,q,"any (exec msg from logtab where lvl=`info) like ""*no config file*""",1,1,a missing cascade file is skipped at info (internal loadconfig)
 true,0,0,q,"1=count cfg.loadcascade[""/tmp/diconfigc1"";`default]",1,1,accepts a single string dir and single symbol name
@@ -36,6 +44,13 @@ comment,,,,,,,overrideconfig - parse and apply command-line overrides
 run,0,0,q,"cfg.overrideconfig[`.diconfigtest.enabled`.diconfigtest.rows!(enlist""1"";enlist""500"")]",1,1,override a bool and a long
 true,0,0,q,1b~.diconfigtest.enabled,1,1,bool parsed and set from string
 true,0,0,q,500=.diconfigtest.rows,1,1,long parsed and set from string
+true,0,0,q,"0=count cfg.overrideconfig[enlist[`.diconfigtest.enabled]!enlist ""bad""]",1,1,unparseable boolean is rejected (no null - must not slip through)
+true,0,0,q,1b~.diconfigtest.enabled,1,1,rejected boolean override leaves the variable unchanged (not silently set to 0b)
+true,0,0,q,"any (exec msg from logtab) like ""*did not parse*""",1,1,rejected boolean override is logged
+true,0,0,q,"(enlist`.diconfigtest.byte)~cfg.overrideconfig[enlist[`.diconfigtest.byte]!enlist ""ff""]",1,1,valid hex byte parsed and applied
+true,0,0,q,0xff~.diconfigtest.byte,1,1,byte set from valid hex string
+true,0,0,q,"0=count cfg.overrideconfig[enlist[`.diconfigtest.byte]!enlist ""gg""]",1,1,invalid hex byte is rejected (no null - must not slip through as 0x00)
+true,0,0,q,0xff~.diconfigtest.byte,1,1,rejected byte override leaves the variable unchanged
 run,0,0,q,"cfg.overrideconfig[enlist[`.diconfigtest.syms]!enlist (""xx"";""yy"")]",1,1,override a symbol list
 true,0,0,q,`xx`yy~.diconfigtest.syms,1,1,symbol list parsed and set from strings
 true,0,0,q,"(enlist`.diconfigtest.rows)~cfg.overrideconfig[enlist[`.diconfigtest.rows]!enlist enlist""7""]",1,1,returns the variables actually overridden
@@ -52,6 +67,9 @@ true,0,0,q,2=count cfg.getmodule[`diconfigq],1,1,getmodule returns the whole nam
 true,0,0,q,`trade`quote~cfg.getmodule[`diconfigq]`subscribeto,1,1,getmodule slice carries the values
 true,0,0,q,100~cfg.getmodule[`diconfigq]`rows,1,1,getmodule slice carries the second value
 true,0,0,q,0=count cfg.getmodule[`nosuchns],1,1,getmodule returns an empty dict for an unknown namespace
+true,0,0,q,`limits`rows~asc key cfg.getmodule[`diconfiggm],1,1,getmodule excludes child namespaces but keeps flat and dict-valued settings
+true,0,0,q,not `sub in key cfg.getmodule[`diconfiggm],1,1,child namespace excluded from the config slice
+true,0,0,q,(`lo`hi!1 2)~cfg.getmodule[`diconfiggm]`limits,1,1,dict-valued setting preserved (not misidentified as a namespace)
 run,0,0,q,"cfg.overrideconfig[enlist[`.diconfigq.rows]!enlist enlist""500""]",1,1,override a stored value
 true,0,0,q,500~cfg.getmodule[`diconfigq]`rows,1,1,getmodule reflects overrideconfig changes
 fail,0,0,q,cfg.getmodule[42],1,1,getmodule rejects a non-symbol namespace

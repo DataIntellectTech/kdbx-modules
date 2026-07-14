@@ -11,9 +11,10 @@
 / internal helper loadconfig handles per-file loading behind loadcascade.
 
 raiseerror:{[ctx;msg]
-  / internal - log an error under ctx then signal it, so failures are observable
-  / in the log as well as thrown to the caller.
-  .z.m.logerr[ctx;msg];
+  / internal - log an error under ctx then signal it, so failures are observable.
+  / guard the log call: the logger is unset until init runs, so a public fn misused
+  / before init still signals the real message rather than a name error on logerr.
+  .[{.z.m.logerr[x;y]};(ctx;msg);{}];
   '"di.config: ",string[ctx],": ",msg;
   };
 
@@ -93,11 +94,23 @@ loadcascade:{[dirs;names]
   :raze {[ds;nm] loadconfig[;nm] each ds}[dirs;] each names;
   };
 
+hexchars:"0123456789abcdefABCDEF";
+
+parsefailed:{[t;raw;vals]
+  / internal - true if any raw string failed to parse to type t. boolean (1h) and byte
+  / (4h) are the only in-scope basic types with no null, so a bad parse ("B"$"bad" -> 0b,
+  / "X"$"gg" -> 0x00) slips past a null check and would silently corrupt config - validate
+  / their raw string form explicitly. every other type yields a null on a bad parse.
+  :$[1h=abs t;not all raw in (enlist"0";enlist"1");
+     4h=abs t;not all {(0=count[x] mod 2) and all x in hexchars} each raw;
+     any null vals];
+  };
+
 applyoverride:{[name;raw]
-  / internal - parse raw command-line value(s) into name's current type and set
-  / it. raw is a string or a list of strings. returns 1b if applied, 0b if the
-  / variable is not a basic type or a value failed to parse (null). the variable
-  / must already exist - its current type drives the parse.
+  / internal - parse raw command-line value(s) into name's current type and set it. raw
+  / is a string or a list of strings. returns 1b if applied, 0b if the variable is not a
+  / basic type or a value failed to parse. the variable must already exist - its current
+  / type drives the parse.
   t:type value name;
   if[not (abs t) within (1;-1+count .Q.t);
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": not a basic type"];
@@ -105,11 +118,11 @@ applyoverride:{[name;raw]
   ];
   raw:$[10h=type raw;enlist raw;raw];
   vals:(upper .Q.t abs t)$'raw;
-  if[t<0;vals:first vals];
-  if[any null vals;
+  if[parsefailed[t;raw;vals];
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": value did not parse"];
     :0b;
   ];
+  if[t<0;vals:first vals];
   .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
   set[name;vals];
   :1b;
@@ -161,5 +174,11 @@ getmodule:{[namespace]
   ];
   ns:`$".",string namespace;
   vars:@[{system"v ",x};".",string namespace;`$()];
-  :vars!{[ns;v] value ` sv (ns;v)}[ns;] each vars;
+  cfg:vars!{[ns;v] value ` sv (ns;v)}[ns;] each vars;
+  / \v lists child namespaces alongside settings, so drop them - only leaf settings
+  / belong in a module's config slice. a child namespace is a 99h dict carrying a
+  / null-symbol self-reference key; a genuine dict-valued setting has no such key and
+  / is kept. guard the key lookup with a cond (not `and`, which evaluates eagerly and
+  / would run `key` on non-dict values).
+  :(where {$[99h=type x;(`) in key x;0b]} each cfg) _ cfg;
   };

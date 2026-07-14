@@ -1,6 +1,9 @@
 # Log
 
-`log.q` is the default logging implementation for `di.*` modules. It writes formatted lines to stdout and satisfies the log dependency contract expected by modules such as `di.email`.
+`log.q` is the default logging implementation for `di.*` modules. It writes formatted lines to
+stdout and satisfies the log dependency contract expected by modules such as `di.email`. It also
+provides `createlog`, a factory for rich structured logger instances with level filtering,
+multiple output sinks, and configurable format templates.
 
 ## Usage
 
@@ -44,26 +47,28 @@ logdep:`trace`debug`info`warn`error`fatal!(logger.trace;logger.debug;logger.info
 ```
 
 `di.log` has no dependencies of its own, so there's no `init` to call on it first — use
-`defaultdict` to skip building the dict by hand. It's the dependency already wrapped
-as `` `log!enlist logdict ``, ready to pass straight into any `di.*` module's `init`:
+`logdict` to skip building the dict by hand. It's the dependency already wrapped as
+`` `log!enlist logdict ``, ready to pass straight into any `di.*` module's `init`:
 
 ```q
 mylog:use`di.log
 email:use`di.email
-email.init[mylog.defaultdict]
+email.init[mylog.logdict]
 ```
 
-## createLog
+## createlog
 
-`createLog` is a factory that returns an independent logger instance with level filtering, multiple output sinks, and configurable format templates. Each call to `createLog` produces a separate instance with its own state.
+`createlog` is a factory that returns an independent logger instance with level filtering, multiple output sinks, and configurable format templates. Each call to `createlog` produces a separate instance with its own state.
+
+Instance-level functions (`trace`..`fatal`) take the same `{[ctx;msg]}` signature as the plain top-level functions, so an instance satisfies the log dependency contract directly. None of the built-in format templates have a slot for `ctx`, so it's folded into the message text as `[ctx] msg`.
 
 ```q
 logger:use`di.log
-mylog:logger.createLog[]
+mylog:logger.createlog[]
 
-mylog.setlvl `warn                        / suppress trace, debug, info
-mylog.info "this is suppressed"           / returns () silently
-mylog.warn "this appears"
+mylog.setlvl `warn                                  / suppress trace, debug, info
+mylog.info[`mymodule;"this is suppressed"]          / returns () silently
+mylog.warn[`mymodule;"this appears"]
 
 mylog.setfmt `syslog                      / switch to syslog format
 mylog.addfmt[`compact;"$l $m"]           / add a custom format
@@ -75,13 +80,22 @@ mylog.remove[1i;`trace]                  / remove stdout from trace level
 
 ### Sinks
 
-A sink is a handle (integer file descriptor or function) passed to `add`. If a function is provided it is called with the formatted line string. Built-in handles follow standard q conventions: `1i` is stdout, `2i` is stderr.
+A sink is a handle (integer file descriptor or function) passed to `add`. If a function is provided it is called with the formatted line string. Built-in handles follow standard q conventions: `1i` is stdout, `2i` is stderr. Since a sink can be any open handle, `hopen` a real file to log to disk:
+
+```q
+fh:hopen`:/path/to/app.log
+mylog.add[fh;lvls]              / route every level to the file
+mylog.remove[1i;lvls]           / optionally drop the default stdout sink
+mylog.info[`mymodule;"this now goes to app.log"]
+```
+
+Or use a plain function sink to capture output in memory:
 
 ```q
 buf:();
 capture:{[msg] buf,:enlist msg};         / function sink - captures output
 mylog.add[capture;`info`warn`error]
-mylog.info "captured"
+mylog.info[`mymodule;"captured"]
 buf                                      / ("2026-...captured\n")
 mylog.remove[capture;`info]
 ```
@@ -133,14 +147,17 @@ Parameters: `[ctx; msg]`
 
 Write a fatal-level message to stdout.
 
-### `defaultdict`
+### `logdict`
 A dictionary, not a function.
 
-`` `log!enlist(`info`warn`error!(info;warn;error))`` — the log dependency dict pre-wrapped
+`` `log!enlist(`trace`debug`info`warn`error`fatal!(...))`` — the log dependency dict pre-wrapped
 exactly as any `di.*` module's `init` expects `deps`, so it can be passed straight through
-without building it by hand.
+without building it by hand. It includes all six levels, a superset of the `info`/`warn`/`error`
+contract minimum, since the underlying `createlog[]` instance computes them anyway — a module
+that supports the optional extended levels gets them for free. Backed by its own independent
+`createlog[]` instance, separate from the plain `trace`..`fatal` functions above.
 
-### `createLog`
+### `createlog`
 Parameters: none
 
 Returns an independent logger instance as a dictionary of functions. Each call returns a new instance with isolated state.
@@ -149,14 +166,14 @@ Returned keys: `` `trace`debug`info`warn`error`fatal`add`remove`setfmt`getfmt`ad
 
 | Function | Parameters | Description |
 |---|---|---|
-| `trace`..`fatal` | `[msg]` | Write a message at the given level (filtered by active level) |
+| `trace`..`fatal` | `[ctx;msg]` | Write a message at the given level (filtered by active level) |
 | `setlvl` | `[lvl]` | Set minimum level; one of `` `trace`debug`info`warn`error`fatal `` |
 | `getlvl` | `[_]` | Return current minimum level |
 | `setfmt` | `[name]` | Switch to a named format template |
 | `getfmt` | `[_]` | Return current format name |
 | `addfmt` | `[name;template]` | Register a new named format template |
 | `add` | `[handle;lvls]` | Add a sink for one or more levels; returns the handle |
-| `remove` | `[handle;lvl]` | Remove a sink from a level |
+| `remove` | `[handle;lvl]` | Remove a sink from a level. `handle` may be a bare handle (removes every sink registered with it) or a `(handle;fn)` pair matching what was passed to `add` (removes only that exact sink) |
 
 ## Log dependency contract
 
@@ -167,3 +184,10 @@ The log dependency contract used across `di.*` modules requires a dictionary:
 ```
 
 `di.log` satisfies this contract. You can also supply any custom implementation with the same signatures.
+
+## Testing
+
+```q
+q)k4unit:use`di.k4unit
+q)k4unit.moduletest`di.log
+```

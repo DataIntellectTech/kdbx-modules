@@ -261,7 +261,13 @@ chkerr["init rejects non-dictionary deps";{srvsel.init[(::)]}];
 chkerr["init rejects deps missing log key";{srvsel.init[()!()]}];
 chkerr["init rejects log value that is not a dict";{srvsel.init[enlist[`log]!enlist(::)]}];
 chkerr["init rejects log dict missing error key";{srvsel.init[enlist[`log]!enlist(`info`warn!({[c;m]};{[c;m]}))]}];
-srvsel.init[enlist[`log]!enlist (use`kx.log)[`createLog][]];
+/ the module does no adaptation, so wrap the monadic kx.log instance into a binary {[c;m]} dict caller-side
+kxinst:(use`kx.log)[`createLog][];
+kxbinary:`info`warn`error!(
+  {[c;m]kxinst[`info][string[c],": ",m]};
+  {[c;m]kxinst[`warn][string[c],": ",m]};
+  {[c;m]kxinst[`error][string[c],": ",m]});
+srvsel.init[enlist[`log]!enlist kxbinary];
 srvsel.addserver[41i;`rdb];
 chk["kx.log logger wired and usable";1b;41i in exec handle from srvsel.getservers[`servertype;`rdb;()!()]];
 

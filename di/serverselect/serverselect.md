@@ -12,7 +12,7 @@
 - Query servers by servertype list or attribute requirement dictionary
 - Attribute matching supports cross-product and independent strategies with configurable best-effort mode
 - Bulk registration from a TorQ-compatible connection table
-- Injected logging — supply your own logger (a `kx.log` instance or bespoke) via `init`; required, no default
+- Injected logging — supply your own binary `` `info`warn`error `` logger via `init`; required, no default
 
 ---
 
@@ -20,19 +20,15 @@
 
 `init` wires the module's injected dependencies and **must be called before any other function**. The `log` dependency is **required** — there is no fallback, and the module does not load `kx.log` itself. Initialising the logging framework is the job of the start-up script that ties the modules together, or of the user at run time.
 
-The injected logger is normalised by `normlog` to a binary `` `info`warn`error!{[c;m]} `` dict — each function takes a context symbol `c` and a message string `m`, called as `.z.m.log[\`info][\`ctx;"msg"]`. Pass **either** form:
-
-| Form | What to pass | Behaviour |
-|---|---|---|
-| `kx.log` instance | the full `(use\`kx.log)[\`createLog][]` dict | detected by its `getlvl`/`sinks`/`fmts` keys; its monadic functions are wrapped to `{[c;m]}`, folding the context in as a `"ctx: msg"` prefix |
-| bespoke logger | a `` `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) `` dict | already binary — passed through unchanged |
+The `log` value must **already** be a binary `` `info`warn`error!{[c;m]} `` dict — each function takes a context symbol `c` and a message string `m`. `init` performs **no** adaptation and fans the dict out into `.z.m.loginfo`/`.z.m.logwarn`/`.z.m.logerr`, called as `.z.m.loginfo[\`ctx;"msg"]`. Build it from `di.log` (the standard logger, which exports binary `info`/`warn`/`error`) or hand-roll one. A raw monadic `kx.log` instance must be wrapped by the caller first — the module will not do it.
 
 ```q
 srvsel:use`di.serverselect
 
-/ option 1: wire in kx.log (the standard logger; typically done once in the start-up script)
-/ pass the WHOLE instance so normlog can detect and wrap it - do NOT strip it to a 3-key dict
-srvsel.init[enlist[`log]!enlist (use`kx.log)[`createLog][]]
+/ option 1: di.log (the standard logger) - build the dict from its exports
+logger:use`di.log
+logdep:`info`warn`error!(logger.info;logger.warn;logger.error)
+srvsel.init[enlist[`log]!enlist logdep]
 
 / option 2: a bespoke binary logger {[c;m]} (context symbol, message string)
 mylog:`info`warn`error!(
@@ -40,9 +36,13 @@ mylog:`info`warn`error!(
   {[c;m] .my.log.warn  string[c],": ",m};
   {[c;m] .my.log.error string[c],": ",m});
 srvsel.init[enlist[`log]!enlist mylog]
+
+/ a raw kx.log instance is monadic - wrap it to binary {[c;m]} before passing:
+/   kxinst:(use`kx.log)[`createLog][]
+/   `info`warn`error!({[c;m]kxinst[`info][string[c],": ",m]};…)
 ```
 
-`init` throws with prefix `di.serverselect:` if `deps` is not a dictionary, is missing the `` `log `` key, or the `log` value is not a dictionary exposing `` `info`warn`error ``. All other `di.serverselect:` error conditions are logged via `.z.m.log[\`error]` (with the function as context) before being signalled.
+`init` throws with prefix `di.serverselect:` if `deps` is not a dictionary, is missing the `` `log `` key, or the `log` value is not a dictionary exposing `` `info`warn`error ``. All other `di.serverselect:` error conditions are logged via `.z.m.logerr` (with the function as context) before being signalled.
 
 ---
 
@@ -104,7 +104,7 @@ srvsel.addserversfromtable[`rdb`hdb; .servers.SERVERS]
 
 `getservers` returns a table including an `attribmatch` column — a dictionary of `attrname!(complete_match_bool;matched_values)` per attribute key in `req`. When `lookups` is not `` ` ``, `nameortype` must be `` `servertype `` or `` `procname ``; any other value throws (and logs) a `di.serverselect:` error rather than silently falling through to a `procname` lookup.
 
-All `di.serverselect:` error conditions — including the input-type checks on `addserverfull`/`setserveractive` and the connection-table column check on `addserversfromtable` — are logged via `.z.m.log[\`error]` before being signalled.
+All `di.serverselect:` error conditions — including the input-type checks on `addserverfull`/`setserveractive` and the connection-table column check on `addserversfromtable` — are logged via `.z.m.logerr` before being signalled.
 
 `selector` supports three strategies:
 
@@ -178,9 +178,10 @@ The reserved key `` `besteffort `` (boolean, default `1b`) controls whether a pa
 
 ```q
 / load and initialise - init must be called before any other function
-/ pass the whole kx.log instance; normlog wraps it to the binary {[c;m]} contract
+/ pass an already-binary `info`warn`error logger (from di.log or hand-rolled)
 srvsel:use`di.serverselect
-srvsel.init[enlist[`log]!enlist (use`kx.log)[`createLog][]]
+logger:use`di.log
+srvsel.init[enlist[`log]!enlist `info`warn`error!(logger.info;logger.warn;logger.error)]
 
 / register servers as they connect / mark inactive on disconnect
 /   on connect:    srvsel.addserverattr[h; getproctype[h]; getattributes[h]]

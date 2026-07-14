@@ -184,7 +184,7 @@ true,0,0,q,0<count select from caplog where lvl=`info,1,1,injected logger receiv
 true,0,0,q,"any caplog[`msg] like ""*registering server*""",1,1,injected logger received the registration message text
 run,0,0,q,caplog:0#caplog,1,1,reset capture
 run,0,0,q,"@[{srvsel.selector[([]handle:1 2i;lastp:2#.z.p);`bogus]};();{}]",1,1,trigger an error path (signal swallowed)
-true,0,0,q,0<count select from caplog where lvl=`error,1,1,injected logger received the error message via .z.m.log[`error]
+true,0,0,q,0<count select from caplog where lvl=`error,1,1,injected logger received the error message via .z.m.logerr
 fail,0,0,q,srvsel.init[(::)],1,1,init rejects a non-dictionary deps
 fail,0,0,q,srvsel.init[()!()],1,1,init rejects deps missing the log key
 fail,0,0,q,srvsel.init[enlist[`other]!enlist noop],1,1,init rejects deps without a log key

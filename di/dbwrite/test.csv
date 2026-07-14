@@ -1,8 +1,8 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,dbwrite:use`di.dbwrite,1,1,load module
-before,0,0,q,mylog:`info`warn`error!({[m]};{[m]};{[m]}),1,1,define no-op monadic mock logger (kx.log-style)
-before,0,0,q,"caplog:([] fn:`symbol$();msg:())",1,1,initialise log capture table
-before,0,0,q,logcap:`info`warn`error!({[m] `caplog upsert(`info;m)};{[m] `caplog upsert(`warn;m)};{[m] `caplog upsert(`error;m)}),1,1,define capturing monadic mock logger
+before,0,0,q,mylog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op binary mock logger {[c;m]}
+before,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,1,initialise log capture table
+before,0,0,q,logcap:`info`warn`error!({[c;m] `caplog upsert(`info;c;m)};{[c;m] `caplog upsert(`warn;c;m)};{[c;m] `caplog upsert(`error;c;m)}),1,1,define capturing binary mock logger {[c;m]}
 before,0,0,q,"rmrf:{[d] if[11h=type k:key d; rmrf each ` sv/:d,/:k]; @[hdel;d;{}]}",1,1,recursive delete helper for on-disk cleanup
 before,0,0,q,"`:tmp_dbw_valid.csv 0: (""tabname,att,column,sort"";""trade,p,sym,1"";""trade,,time,0"";""default,p,sym,1"")",1,1,write valid sort csv
 before,0,0,q,"`:tmp_dbw_badcols.csv 0: (""tabname,attr,col,sort"";""trade,p,sym,1"")",1,1,write csv with bad column names
@@ -193,7 +193,7 @@ run,0,0,q,dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,call readcsv with capturing lo
 true,0,0,q,2=count select from caplog where fn=`info,1,1,readcsv emits exactly two info entries
 true,0,0,q,"any caplog[`msg] like ""*reading sort config*""",1,1,readcsv logs read start message
 true,0,0,q,"any caplog[`msg] like ""*read 3 sort config*""",1,1,readcsv logs the row count read
-true,0,0,q,"all (select from caplog where fn=`info)[`msg] like ""dbwrite: *""",1,1,readcsv logs are tagged with the dbwrite context prefix
+true,0,0,q,all not null (select from caplog where fn=`info)[`ctx],1,1,readcsv logs are tagged with a context symbol
 true,0,0,q,not any caplog[`fn]=`error,1,1,readcsv logs no errors on success
 
 comment,,,,,,,log call verification - readcsv error logging on file read failure
@@ -211,7 +211,7 @@ true,0,0,q,"any caplog[`msg] like ""*sort params found for: trade*""",1,1,sort l
 true,0,0,q,"any caplog[`msg] like ""*finished sorting the trade table*""",1,1,sort logs completion
 true,0,0,q,"any caplog[`msg] like ""*failed to sort*""",1,1,sort logs the partition sort failure
 true,0,0,q,"any caplog[`msg] like ""*unable to apply*""",1,1,sort logs the attribute application failure
-true,0,0,q,"all (select from caplog where fn in `info`warn`error)[`msg] like ""dbwrite: *""",1,1,all log entries carry the dbwrite context prefix
+true,0,0,q,all not null (select from caplog where fn in `info`warn`error)[`ctx],1,1,all log entries carry a context symbol
 
 comment,,,,,,,log call verification - default fallback and skip warning
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
@@ -227,7 +227,8 @@ true,0,0,q,"any caplog[`msg] like ""*skipping sort*""",1,1,warn message indicate
 comment,,,,,,,kx.log integration - wire a real kx.log instance (system module) and actually format+emit
 run,0,0,q,kxlogger:use`kx.log,1,1,load the system kx.log module
 run,0,0,q,kxinst:kxlogger.createLog[],1,1,create a kx.log instance (default info level so messages truly format+emit)
-run,0,0,q,dbwrite.init[enlist[`log]!enlist `info`warn`error!(kxinst`info;kxinst`warn;kxinst`error)],1,1,init with a real kx.log-backed logger
+run,0,0,q,"kxbinary:`info`warn`error!({[c;m]kxinst[`info][string[c],"": "",m]};{[c;m]kxinst[`warn][string[c],"": "",m]};{[c;m]kxinst[`error][string[c],"": "",m]})",1,1,wrap the monadic kx.log into the binary {[c;m]} contract
+run,0,0,q,dbwrite.init[enlist[`log]!enlist kxbinary],1,1,init with the wrapped real kx.log-backed logger
 run,0,0,q,dbwrite.readcsv `:tmp_dbw_valid.csv,1,1,readcsv works end-to-end and emits real info logs through kx.log
 true,0,0,q,3=count dbwrite.getconfig[],1,1,readcsv stored 3 rows via the real kx.log path
 run,0,0,q,@[dbwrite.readcsv;`:nonexistent_file.csv;{x}],1,1,error path formats+emits a real error log through kx.log without crashing

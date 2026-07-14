@@ -11,7 +11,7 @@ End-of-day time management for kdb+ tickerplant processes. Resolves the current 
 - Compute a live UTC offset for a configurable data timezone, refreshable after each roll to capture DST changes
 - Store and expose the current trading date, next roll timestamp, and daily adjustment offset as inspectable module state
 - State setters allow tickerplant and segmented tickerplant processes to advance state after a roll without re-initialising
-- `"GMT"`, `"UTC"`, and `"Etc/GMT"` are handled as zero-offset shortcuts without a timezone lookup - the module works out of the box with TorQ defaults
+- `"GMT"`, `"UTC"`, and `"Etc/GMT"` are handled as zero-offset shortcuts without a timezone lookup — the module works out of the box with TorQ defaults
 
 ---
 
@@ -19,29 +19,13 @@ End-of-day time management for kdb+ tickerplant processes. Resolves the current 
 
 | Dependency | Key | Required | Description |
 |---|---|---|---|
-| logger | `` `log `` | yes | `info` - binary `{[c;m]}` where `c` is a symbol context and `m` is a string. `warn` and `error` are accepted if present but never called by this module |
+| logger | `` `log `` | yes | `info` — binary `{[c;m]}` where `c` is a symbol context and `m` is a string. `warn` and `error` are accepted if present but never called by this module |
 
-**Hard dependency:** `di.tz` - loaded automatically when the module is imported.
+**Hard dependency:** `di.tz` — loaded automatically when the module is imported.
 
-The `log` dependency must be passed to `init` inside the `configs` dict keyed on `` `log ``. The module throws immediately if `log` is absent or `info` is missing. `warn` and `error` are optional - a full `kx.log` instance or a complete `info`/`warn`/`error` dict both work without any changes from the caller.
+The `log` dependency must be passed to `init` inside the `configs` dict keyed on `` `log ``. The module throws immediately if `log` is absent or `info` is missing. `warn` and `error` are optional, but the dict passed in must already match the binary `{[c;m]}` contract — the module does not detect or adapt other shapes (e.g. a raw `kx.log` instance, which is monadic). If you want to use `kx.log`, load it and write your own `{[c;m]}` wrapper around it before passing it in.
 
-Configuration keys `rolltimezone`, `datatimezone`, and `rolltimeoffset` are all optional - omit any or all of them and the module falls back to sensible defaults (GMT timezone, midnight roll). See Initialisation for full details.
-
-A `kx.log` instance can be passed directly - the module normalises monadic functions to the binary `{[c;m]}` contract automatically:
-
-```q
-kxlog:use`kx.log
-eodtime:use`di.eodtime
-
-/ minimal - just the log dep, all config defaults
-eodtime.init[enlist[`log]!enlist kxlog.createLog[]]
-
-/ with timezone override
-eodtime.init[`log`rolltimezone!(kxlog.createLog[];`$"Europe/London")]
-
-/ fully specified
-eodtime.init[`log`rolltimezone`datatimezone`rolltimeoffset!(kxlog.createLog[];`$"Europe/London";`$"Europe/London";0D17:00:00.000)]
-```
+Configuration keys `rolltimezone`, `datatimezone`, and `rolltimeoffset` are all optional — omit any or all of them and the module falls back to sensible defaults (GMT timezone, midnight roll). See Initialisation for full details.
 
 ---
 
@@ -51,7 +35,7 @@ eodtime.init[`log`rolltimezone`datatimezone`rolltimeoffset!(kxlog.createLog[];`$
 
 | Key | Required | Description |
 |---|---|---|
-| `` `log `` | yes | Log dep - at minimum `info` function `{[c;m]}` |
+| `` `log `` | yes | Log dep — at minimum `info` function `{[c;m]}` |
 | `` `rolltimezone `` | no | Timezone for EOD roll scheduling. Default: `` `$"GMT" `` |
 | `` `datatimezone `` | no | Timezone for stamping incoming data. Default: `` `$"GMT" `` |
 | `` `rolltimeoffset `` | no | Offset from midnight for the EOD roll (e.g. `0D17:00:00.000` for a 5pm roll). Default: `0D` |
@@ -87,14 +71,14 @@ eodtime.getnextroll[]
 ```
 
 ### `getdailyadj[]`
-Return the **cached** UTC offset for the data timezone - the value stored at the last `init` or `setdailyadj` call.
+Return the **cached** UTC offset for the data timezone — the value stored at the last `init` or `setdailyadj` call.
 ```q
 eodtime.getdailyadj[]
 / 0D01:00:00.000000000
 ```
 
 ### `getdailyadjustment[]`
-**Recompute** the UTC offset for the data timezone at the current time. Call after an EOD roll to get a fresh offset - important when the data timezone observes DST.
+**Recompute** the UTC offset for the data timezone at the current time. Call after an EOD roll to get a fresh offset — important when the data timezone observes DST.
 ```q
 eodtime.getdailyadjustment[]
 / 0D01:00:00.000000000
@@ -130,11 +114,14 @@ eodtime.setd[1+eodtime.getd[]]
 ## Usage Example
 
 ```q
-kxlog:use`kx.log
+/ log dep must already match the binary {[c;m]} contract - write your own, or use di.log:
+/   logging:use`di.log
+/   eodtime.init[logging.logdict]
+logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
 
 / load and initialise for a London-based system rolling at midnight
 eodtime:use`di.eodtime
-eodtime.init[`log`rolltimezone`datatimezone`rolltimeoffset!(kxlog.createLog[];`$"Europe/London";`$"GMT";0D)]
+eodtime.init[`log`rolltimezone`datatimezone`rolltimeoffset!(logdep;`$"Europe/London";`$"GMT";0D)]
 
 / check current state
 eodtime.getd[]           / today's trading date in London time
@@ -158,13 +145,13 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.eodtime
 ```
 
-The test suite injects a no-op mock logger and a capturing logger that records `(level;msg)` pairs for assertion. It covers: dependency validation (non-dict deps throws; missing `log` key throws; non-dict log value throws; missing `info` key throws; `info`-only log dict succeeds); config defaults and overrides; `getroll` with GMT and non-GMT roll timezones including DST transitions (London winter vs summer); `getdailyadjustment` with UTC shortcuts and DST-aware timezones; state setters (`setnextroll`, `setdailyadj`, `setd`) and their corresponding getters; and a real `kx.log` integration test confirming the `normlog` wrapping works end-to-end.
+The test suite injects a no-op mock logger and a capturing logger that records `(level;msg)` pairs for assertion. It covers: dependency validation (non-dict deps throws; missing `log` key throws; non-dict log value throws; missing `info` key throws; `info`-only log dict succeeds); config defaults and overrides; `getroll` with GMT and non-GMT roll timezones including DST transitions (London winter vs summer, and an overnight DST-transition rollover); `getdailyadjustment` with UTC shortcuts and DST-aware timezones; state setters (`setnextroll`, `setdailyadj`, `setd`) and their corresponding getters; and a six-level log dict (matching `di.log`'s `logdict` shape) accepted as-is by `init`.
 
 ---
 
 ## Notes
 
-- `rolltimeoffset` adjusts the roll time from midnight (e.g. `0D17:00:00.000` produces a 5pm local roll)
+- `rolltimeoffset` adjusts the roll time from midnight — e.g. `0D17:00:00.000` produces a 5pm local roll
 - `getdailyadj` returns the cached offset; `getdailyadjustment` recomputes it live. Always call `getdailyadjustment` after an EOD roll rather than relying on the cached value
 - `"GMT"`, `"UTC"`, and `"Etc/GMT"` are zero-offset shortcuts not passed to `di.tz`. `"Etc/UTC"` is valid and passes through normally
-- Only `info` is required in the log dep - `warn` and `error` are accepted if present (e.g. from a full `kx.log` instance) but never called by this module
+- Only `info` is required in the log dep — `warn` and `error` are accepted if present but never called by this module. The dep must already match the binary `{[c;m]}` contract; the module does not adapt other shapes

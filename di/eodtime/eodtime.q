@@ -29,18 +29,6 @@ dailyadj:0D00:00:00.000;
 / internal helpers
 / ============================================================
 
-normlog:{[logdict]
-  / detect kx.log instance by presence of kx.log-specific keys (getlvl, sinks, fmts)
-  / kx.log functions are monadic - wrap each into binary {[c;m]} and embed context in the message
-  / plain {[c;m]} log dicts (info`warn`error only) pass through unchanged
-  $[any `getlvl`sinks`fmts in key logdict;
-    `info`warn`error!(
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
-      {[fn;c;m] fn[string[c],": ",m]}[logdict`error;]);
-    logdict]
-  };
-
 / returns timespan offset from utc for rolltimezone at timestamp p
 adjtime:{[p]
   / utc-equivalent timezones have zero offset
@@ -63,13 +51,15 @@ getdailyadjustment:{
   `timespan$tz.gmttolocal[datatimezone;.z.p]-.z.p
   };
 
+/ returns normalised roll time-of-day (utc) for the zone offset at timestamp p, wrapped to [0D,1D)
+rolltod:{[p]`timespan$(mod) . "j"$(rolltimeoffset-adjtime[p]),1D};
+
 / returns utc timestamp of next eod roll after utc timestamp p
 getroll:{[p]
-  / mod[z,1D] normalises the roll time to [0D,1D) to handle timezone offsets crossing midnight
-  z:rolltimeoffset-adjtime[p];
-  z:`timespan$(mod) . "j"$z,1D;
+  z:rolltod[p];
   / kdb-x 5.0: comparing timespan to timestamp checks against p's time-of-day component - true means roll has already passed
-  ("d"$p)+$[z<=p;z+1D;z]
+  / recompute the offset at p+1D on rollover - a dst transition overnight can shift it between today and tomorrow
+  $[z<=p;("d"$p+1D)+rolltod[p+1D];("d"$p)+z]
   };
 
 / state getters
@@ -97,12 +87,12 @@ init:{[deps]
     '"di.eodtime: log value must be a dict; pass at minimum `info!{[c;m]}"];
   if[not `info in key deps`log;
     '"di.eodtime: log dict must have at minimum an `info key; got: ",(", " sv string key deps`log)];
-  .z.m.log:normlog deps`log;
+  .z.m.log:deps`log;
   .z.m.rolltimezone:$[`rolltimezone in key deps;deps`rolltimezone;`$"GMT"];
   .z.m.datatimezone:$[`datatimezone in key deps;deps`datatimezone;`$"GMT"];
   .z.m.rolltimeoffset:$[`rolltimeoffset in key deps;deps`rolltimeoffset;0D00:00:00.000];
   .z.m.dailyadj:getdailyadjustment[];
   .z.m.d:getday[.z.p];
   .z.m.nextroll:getroll[.z.p];
-  .z.m.log[`info][`eodtime;"initialised with rolltimezone=",string[rolltimezone]," datatimezone=",string[datatimezone]," rolltimeoffset=",string rolltimeoffset];
+  .z.m.log[`info][`eodtime;"initialised with rolltimezone=",string[.z.m.rolltimezone]," datatimezone=",string[.z.m.datatimezone]," rolltimeoffset=",string .z.m.rolltimeoffset];
   };

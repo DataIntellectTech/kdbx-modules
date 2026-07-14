@@ -149,18 +149,24 @@ createlog:{[]
   add:{[id;gv;h;sinklvls]
     handle:$[0h=type h;first h;h];
     sender:$[0h=type h;last h;h];
+    sl:(),sinklvls;
+    if[count bad:sl where not sl in lvls;'`$"invalid level(s): ",", " sv string bad];
     {[id;handle;sender;lvl]
       .z.m.inst[id;`sink;lvl],:enlist(handle;sender);
-    }[id;handle;sender;] each (),sinklvls;
+    }[id;handle;sender;] each sl;
     handle
   }[id;gv;;];
 
-  / remove a handle from a log level's sink list
+  / remove a handle from a log level's sink list, or from one or more levels if lvl is a list
   / h may be a bare handle (removes every sink registered with that handle) or a
   / (handle;fn) pair matching what was passed to add (removes only that exact sink)
   remove:{[id;h;lvl]
+    sl:(),lvl;
+    if[count bad:sl where not sl in lvls;'`$"invalid level(s): ",", " sv string bad];
     filt:{[h;snk] snk where {[h;p] not $[0h=type h;h~p;h~first p]}[h;] each snk}[h;];
-    .z.m.inst[id;`sink;lvl]:filt .z.m.inst[id;`sink;lvl];
+    {[id;filt;lvl]
+      .z.m.inst[id;`sink;lvl]:filt .z.m.inst[id;`sink;lvl];
+    }[id;filt;] each sl;
     h
   }[id;;];
 

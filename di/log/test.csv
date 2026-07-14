@@ -198,3 +198,21 @@ true,0,0,q,`info`warn`error~key logdep,1,,hand-built logdep has the required con
 
 / Test 31: logdict has its own independent createlog instance, separate from the bare functions
 true,0,0,q,not lg.info~(lg.logdict`log)`info,1,,bare info and logdict's info are distinct implementations
+
+/ Test 32: add rejects an invalid level symbol instead of silently creating an orphaned sink key
+true,0,0,q,.[log1.add;(1i;`notalevel);{1b}],1,,add throws on an unrecognised level symbol
+true,0,0,q,.[log1.add;(1i;`info`notalevel);{1b}],1,,add throws when any level in a mixed list is invalid, not just when all are
+
+/ Test 33: remove accepts a list of levels, mirroring add, and removes the sink from each
+before,0,0,q,log7:lg.createlog[],1,,create logger for multi-level remove test
+before,0,0,q,mcaptured:(),1,,initialise capture buffer for multi-level sink
+before,0,0,q,"mfn:{mcaptured::mcaptured,enlist x}",1,,define capture sink for multi-level test
+run,0,0,q,"log7.add[mfn;`info`warn]",1,,add sink across two levels in one call
+run,0,0,q,"log7.remove[mfn;`info`warn]",1,,remove sink from both levels in one call
+run,0,0,q,log7.info[`test;"should not be captured after multi-level remove"],1,,trigger info after multi-level remove
+run,0,0,q,log7.warn[`test;"should not be captured after multi-level remove"],1,,trigger warn after multi-level remove
+true,0,0,q,0=count mcaptured,1,,sink received nothing after being removed from both levels in one call
+
+/ Test 34: remove rejects an invalid level symbol, same validation as add
+true,0,0,q,.[log1.remove;(2i;`notalevel);{1b}],1,,remove throws on an unrecognised level symbol
+true,0,0,q,.[log1.remove;(2i;`info`notalevel);{1b}],1,,remove throws when any level in a mixed list is invalid, not just when all are

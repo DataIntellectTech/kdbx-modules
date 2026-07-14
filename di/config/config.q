@@ -11,10 +11,12 @@
 / internal helper loadconfig handles per-file loading behind loadcascade.
 
 raiseerror:{[ctx;msg]
-  / internal - log an error under ctx then signal it, so failures are observable.
-  / guard the log call: the logger is unset until init runs, so a public fn misused
-  / before init still signals the real message rather than a name error on logerr.
-  .[{.z.m.logerr[x;y]};(ctx;msg);{}];
+  / internal - log an error under ctx then signal it, so the domain error is always
+  / observable. the logger is unset until init runs, so log only when it is actually
+  / wired (checked without calling it) - a public fn misused before init still signals
+  / the real message instead of a name error on logerr. a wired logger is called
+  / directly, as everywhere else in the module, so its own errors are not swallowed.
+  if[@[{.z.m.logerr;1b};::;0b];.z.m.logerr[ctx;msg]];
   '"di.config: ",string[ctx],": ",msg;
   };
 
@@ -122,6 +124,9 @@ applyoverride:{[name;raw]
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": value did not parse"];
     :0b;
   ];
+  / reduce to a scalar only after parsefailed - it validates the full per-element list
+  / (its null check spans every parsed value); this runs before the log and set below,
+  / so both use the scalar form.
   if[t<0;vals:first vals];
   .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
   set[name;vals];
@@ -174,11 +179,12 @@ getmodule:{[namespace]
   ];
   ns:`$".",string namespace;
   vars:@[{system"v ",x};".",string namespace;`$()];
-  cfg:vars!{[ns;v] value ` sv (ns;v)}[ns;] each vars;
-  / \v lists child namespaces alongside settings, so drop them - only leaf settings
-  / belong in a module's config slice. a child namespace is a 99h dict carrying a
-  / null-symbol self-reference key; a genuine dict-valued setting has no such key and
-  / is kept. guard the key lookup with a cond (not `and`, which evaluates eagerly and
-  / would run `key` on non-dict values).
-  :(where {$[99h=type x;(`) in key x;0b]} each cfg) _ cfg;
+  / \v lists child namespaces alongside settings, so drop them - a module's config slice
+  / is flat setting->value pairs, not nested namespaces. ask kdb+ directly whether each
+  / name is itself a namespace (\v succeeds on a namespace, signals on a plain variable);
+  / this is more robust than inspecting the dict for a null-symbol self-reference key,
+  / which a plain dict-valued setting could coincidentally carry (or a namespace lack).
+  issub:{[ns;v] @[{system"v ",x;1b};string ` sv (ns;v);0b]};
+  vars:vars where not issub[ns;] each vars;
+  :vars!{[ns;v] value ` sv (ns;v)}[ns;] each vars;
   };

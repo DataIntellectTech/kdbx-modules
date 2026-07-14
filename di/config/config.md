@@ -131,9 +131,12 @@ None — `di.config` is a standalone module.
   bug (surfaced as a q null on the inline index), not something the config layer silently papers over.
 - **`getmodule` returns leaf settings only — child namespaces are excluded.** `\v .rdb` lists any
   child namespace (e.g. `.rdb.sub`) alongside the real settings, so `getmodule` filters them out —
-  a module's config slice should be flat setting→value pairs, not a nested namespace. A child
-  namespace is detected as a `99h` dict carrying a null-symbol self-reference key; a genuine
-  dict-valued setting has no such key and is kept, so it is not misidentified as a namespace.
+  a module's config slice should be flat setting→value pairs, not a nested namespace. Each name is
+  tested by asking kdb+ directly whether it is itself a namespace (`\v` on the qualified name succeeds
+  for a namespace and signals for a plain variable). This is deliberately used over the tempting
+  null-symbol-self-key heuristic (`` (`) in key value ``), which is fragile at the edges — a
+  dict-valued setting could coincidentally carry a null-symbol key (and be wrongly dropped), or a
+  namespace reassigned to a plain dict could lack one (and be wrongly kept).
 
 Open gaps / not implemented:
 

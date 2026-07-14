@@ -19,6 +19,7 @@ before,0,0,q,.diconfigtest.byte:0x01,1,1,override target - byte (a no-null basic
 before,0,0,q,.diconfiggm.rows:100,1,1,getmodule target - flat scalar setting
 before,0,0,q,.diconfiggm.limits:`lo`hi!1 2,1,1,getmodule target - dict-valued setting (99h - must be kept)
 before,0,0,q,.diconfiggm.sub.x:1,1,1,getmodule target - child namespace (must be excluded)
+before,0,0,q,.diconfiggm.nullkey:(enlist `)!enlist 42,1,1,getmodule target - dict setting carrying a null-symbol key (must NOT be treated as a namespace)
 before,0,0,q,"system""mkdir -p /tmp/diconfigkxdir""",1,1,dir for the kx.log emission test
 before,0,0,q,"(`:/tmp/diconfigkxdir/default.q) 0: enlist ""diconfigkxvar:1;""",1,1,file loaded through the real logger
 comment,,,,,,,init - dependency validation
@@ -67,9 +68,10 @@ true,0,0,q,2=count cfg.getmodule[`diconfigq],1,1,getmodule returns the whole nam
 true,0,0,q,`trade`quote~cfg.getmodule[`diconfigq]`subscribeto,1,1,getmodule slice carries the values
 true,0,0,q,100~cfg.getmodule[`diconfigq]`rows,1,1,getmodule slice carries the second value
 true,0,0,q,0=count cfg.getmodule[`nosuchns],1,1,getmodule returns an empty dict for an unknown namespace
-true,0,0,q,`limits`rows~asc key cfg.getmodule[`diconfiggm],1,1,getmodule excludes child namespaces but keeps flat and dict-valued settings
+true,0,0,q,`limits`nullkey`rows~asc key cfg.getmodule[`diconfiggm],1,1,getmodule excludes child namespaces but keeps flat and dict-valued settings
 true,0,0,q,not `sub in key cfg.getmodule[`diconfiggm],1,1,child namespace excluded from the config slice
 true,0,0,q,(`lo`hi!1 2)~cfg.getmodule[`diconfiggm]`limits,1,1,dict-valued setting preserved (not misidentified as a namespace)
+true,0,0,q,42~first cfg.getmodule[`diconfiggm]`nullkey,1,1,dict setting with a null-symbol key kept (namespace test is \v-based not self-key-based)
 run,0,0,q,"cfg.overrideconfig[enlist[`.diconfigq.rows]!enlist enlist""500""]",1,1,override a stored value
 true,0,0,q,500~cfg.getmodule[`diconfigq]`rows,1,1,getmodule reflects overrideconfig changes
 fail,0,0,q,cfg.getmodule[42],1,1,getmodule rejects a non-symbol namespace

@@ -9,7 +9,7 @@ This project provides utilities to manage and convert timestamps across timezone
 Timezone reference data is sourced from https://timezonedb.com/download and must be downloaded and provided to the module in order to function.
 The downloadable .zip archive includes several files, but only time_zone.csv is used for core functionality.
 
-There is a copy of tzinfo already in the module default subdirectory : timezone/config/tzinfo.
+There is a copy of tzinfo already in the module default subdirectory : tz/config/tzinfo.
 Should you need to update can follow the steps below.
 
 Following transformations to save down and be formatted for the module: 
@@ -26,14 +26,14 @@ t:flip `timezoneID`gmtDateTime`gmtOffset`dst!("S  JIB";csv)0:hsym `:time_zone.cs
 Loading the module will automatically initialise using the included tzinfo.
 
 ```q
-q)tz:use`di.timezone
+q)tz:use`di.tz
 ```
 
 If you wish to use an alternative tzinfo file, you can call the init function with
 the path to your file
 
 ```q
-q)tz:use`di.timezone
+q)tz:use`di.tz
 q)tz.init "path/to/tzinfo"
 ```
 

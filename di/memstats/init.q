@@ -1,3 +1,3 @@
-\l ::memusage.q
+\l ::memstats.q
 
 export:([objsize;memusageall;memusagevars])

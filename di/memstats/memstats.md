@@ -1,10 +1,10 @@
-# Memory Usage
+# Memstats
 This module can be used to calculate the approximate size of an object in memory, or for generating a table containing the approximate size of each object in memory.
 
-## Main funtions
+## Main functions
 The module contains two methods for calculating memory usage. 
 
-The `memusage` functions generate a table containing the approximate memoryusage of each object in the kdb session in bytes / megabytes using -22!. This can be useful quick approximations. 
+The `memusage` functions generate a table containing the approximate memory usage of each object in the kdb session in bytes / megabytes using -22!. This can be useful quick approximations. 
 
 `memusagevars[]`:Generates a table of the approximate memory usage statistics of all variables in a kdb session.
 
@@ -16,38 +16,38 @@ The `objsize` function is more computationally expensive, it tries to calculate 
 
 `objsize[]`:Returns the approximate size of an individual kdb object including nested types and attributes.
 
-## memusage table schema
-The memusage table is returned from either the `memusagevars` or `memusageall` functions.
+## Memstats table schema
+The memstats table is returned from either the `memusagevars` or `memusageall` functions.
 
 | Column   | Type        | Description                                 |
 |----------|-------------|---------------------------------------------|
 | variable | `symbol`    | Namespace and name of variable              |
 | size     | `long`      | The approximate size of the object in bytes |
-| sizeMB   | `int`       | The approximatee size of the object in MB   | 
+| sizeMB   | `int`       | The approximate size of the object in MB   | 
 
 ## Example
 Below is an example of loading the module into a session and viewing the size of different objects.
 
 ```q
-\\ Loading the module into a session
-memusage: use `di.memoryusage
+// Loading the module into a session
+memstats: use `di.memstats
 
-\\ View dictionary of functions
-memusage
+// View dictionary of functions
+memstats
 
-\\ Calculating the memory usage of an object
+// Calculating the memory usage of an object
 
 a:1 / - an atom should return 16
 
 b: ([]a:`a`b`c; b:1 2 3)
 
-memusage.objsize[a]
+memstats.objsize[a]
 
-memusage.objsize[b]
+memstats.objsize[b]
 
-// View a and b in the memusage table
+// View a and b in the memstats table
 
-select from memusage.memusagevars[] where  variable in `..a`..b
+select from memstats.memusagevars[] where  variable in `..a`..b
 
 variable size sizeMB
 --------------------

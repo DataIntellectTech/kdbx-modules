@@ -22,28 +22,28 @@ If either of these are carried out via asynchronous broadcast, the request will 
 
 Note, in each of the examples below handles is a list of two handles to different server processes
 
-##### async.deferred
+##### asyncutil.deferred
 Can be used to make deferred synchronous calls via asynchronous broadcast. It will send the query down each of the handles, then block and wait on the handles
 The result set is of the form (successvector each handle; result vector)
 Note, that if there is an issue with any of the handles, the query won't be sent down any handle
 
 ```q
-// async.deferred[handles;query]
-q)async.deferred[handles;"2+2"]
+// asyncutil.deferred[handles;query]
+q)asyncutil.deferred[handles;"2+2"]
 1 1
 4 4
 ```
 
-##### async.postback
+##### asyncutil.postback
 Can be used to make asynchronous postback calls via asynchronous broadcast. 
 Wrap the supplied query in a postback function
 Don't block the handle when waiting
 Success vector is returned that it has been sent correctly
 The result is then returned once executed by the server, although it is not wrapped in the status
-Similar to async.deferred, if there is an issue with any of the handles, the query won't be sent down any handle
+Similar to asyncutil.deferred, if there is an issue with any of the handles, the query won't be sent down any handle
 ```q
-// async.postback[handles;query;postback]
-q)async.postback[handles;"2+2";{show x}]
+// asyncutil.postback[handles;query;postback]
+q)asyncutil.postback[handles;"2+2";{show x}]
 11b
 4
 4

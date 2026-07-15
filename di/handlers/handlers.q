@@ -23,12 +23,6 @@ registryschema:([name:`symbol$()] func:());
 / internal helpers
 / ============================================================
 
-raiseerror:{[ctx;msg]
-  / log the error under ctx then signal it, so failures are observable in the log and not just thrown
-  .z.m.logerr[ctx;msg];
-  '"di.handlers: ",string[ctx],": ",msg;
-  };
-
 initstate:{
   / one-time setup of the empty registries - separated so re-init never wipes live state
   .z.m.registry:(`$())!();
@@ -73,7 +67,7 @@ registerdecider:{[event;nm;func]
   / single owner - a different name claiming an owned event is rejected; the same name reclaims (idempotent re-init)
   if[event in key .z.m.owner;
     if[not nm~.z.m.owner event;
-      raiseerror[`register;(string event)," already owned by ",string[.z.m.owner event]," - call remove first"]]];
+      .z.m.logerr[`register;err:"di.handlers: ",(string event)," already owned by ",string[.z.m.owner event]," - call remove first"];'err]];
   / if a dispatcher is installed (event has observers), update the owner function in place - the dispatcher reads it fresh
   $[event in key .z.m.ownerfunc;.z.m.ownerfunc[event]:func;set[event;func]];
   .z.m.owner[event]:nm;
@@ -91,7 +85,7 @@ removedecider:{[event;nm]
   / relinquish ownership only if this name owns it, restore the KDB-X built-in default via \x, and clear all decider state for the event
   if[not event in key .z.m.owner;:(::)];
   if[not nm~.z.m.owner event;
-    raiseerror[`remove;(string event)," is owned by ",string[.z.m.owner event],", not ",string nm]];
+    .z.m.logerr[`remove;err:"di.handlers: ",(string event)," is owned by ",string[.z.m.owner event],", not ",string nm];'err];
   system"x ",string event;
   .z.m.owner:.z.m.owner _ event;
   / clear the owner function and any attached observers so a later register on this event starts clean (direct set, no dispatcher)
@@ -148,44 +142,44 @@ deciderlist:{[event]
 
 register:{[event;nm;func]
   / register a handler for a .z.* event - fan-out for observers, single-owner for deciders
-  if[not -11h=type event;raiseerror[`register;"event must be a symbol"]];
-  if[not -11h=type nm;raiseerror[`register;"name must be a symbol"]];
-  if[not (type func) within 100 112h;raiseerror[`register;"func must be a function"]];
+  if[not -11h=type event;.z.m.logerr[`register;err:"di.handlers: event must be a symbol"];'err];
+  if[not -11h=type nm;.z.m.logerr[`register;err:"di.handlers: name must be a symbol"];'err];
+  if[not (type func) within 100 112h;.z.m.logerr[`register;err:"di.handlers: func must be a function"];'err];
   if[event~`.z.ph;
-    raiseerror[`register;".z.ph is not managed by di.handlers - HTTP GET permissioning uses .h.val, not .z.*"]];
+    .z.m.logerr[`register;err:"di.handlers: .z.ph is not managed here - HTTP GET permissioning uses .h.val, not .z.*"];'err];
   $[event in observerevents; registerobserver[event;nm;func];
     event in deciderevents;  registerdecider[event;nm;func];
-    raiseerror[`register;"unsupported event ",string event]];
+    [.z.m.logerr[`register;err:"di.handlers: unsupported event ",string event];'err]];
   };
 
 remove:{[event;nm]
   / remove a handler - observers drop from the fan-out, deciders relinquish ownership and restore the KDB-X default
-  if[not -11h=type event;raiseerror[`remove;"event must be a symbol"]];
-  if[not -11h=type nm;raiseerror[`remove;"name must be a symbol"]];
+  if[not -11h=type event;.z.m.logerr[`remove;err:"di.handlers: event must be a symbol"];'err];
+  if[not -11h=type nm;.z.m.logerr[`remove;err:"di.handlers: name must be a symbol"];'err];
   $[event in observerevents; removeobserver[event;nm];
     event in deciderevents;  removedecider[event;nm];
-    raiseerror[`remove;"unsupported event ",string event]];
+    [.z.m.logerr[`remove;err:"di.handlers: unsupported event ",string event];'err]];
   };
 
 list:{[event]
   / return the registered handlers for a single event - observers as a name/func table, deciders as their owner
-  if[not -11h=type event;raiseerror[`list;"event must be a symbol"]];
+  if[not -11h=type event;.z.m.logerr[`list;err:"di.handlers: event must be a symbol"];'err];
   :$[event in observerevents; $[event in key .z.m.registry;0!.z.m.registry event;0!registryschema];
      event in deciderevents;  $[event in key .z.m.owner;deciderlist event;([]role:`symbol$();name:`symbol$())];
-     raiseerror[`list;"unsupported event ",string event]];
+     [.z.m.logerr[`list;err:"di.handlers: unsupported event ",string event];'err]];
   };
 
 observe:{[event;nm;func]
   / attach a side-effect-only observer to a decider event's owner - it runs after a successful owner call and never alters the result
-  if[not -11h=type event;raiseerror[`observe;"event must be a symbol"]];
-  if[not -11h=type nm;raiseerror[`observe;"name must be a symbol"]];
-  if[not (type func) within 100 112h;raiseerror[`observe;"func must be a function"]];
+  if[not -11h=type event;.z.m.logerr[`observe;err:"di.handlers: event must be a symbol"];'err];
+  if[not -11h=type nm;.z.m.logerr[`observe;err:"di.handlers: name must be a symbol"];'err];
+  if[not (type func) within 100 112h;.z.m.logerr[`observe;err:"di.handlers: func must be a function"];'err];
   if[event~`.z.ph;
-    raiseerror[`observe;".z.ph is not managed by di.handlers - HTTP GET permissioning uses .h.val, not .z.*"]];
+    .z.m.logerr[`observe;err:"di.handlers: .z.ph is not managed here - HTTP GET permissioning uses .h.val, not .z.*"];'err];
   if[not event in deciderevents;
-    raiseerror[`observe;"only decider events can be observed; ",(string event)," is not a decider event"]];
+    .z.m.logerr[`observe;err:"di.handlers: only decider events can be observed; ",(string event)," is not a decider event"];'err];
   if[not event in key .z.m.owner;
-    raiseerror[`observe;"cannot observe ",(string event)," before it has an owner - call register first"]];
+    .z.m.logerr[`observe;err:"di.handlers: cannot observe ",(string event)," before it has an owner - call register first"];'err];
   / capture the owner and install the dispatcher on first observe only, then add or replace this observer in registration order
   if[not event in key .z.m.ownerfunc;installdecider event];
   .z.m.deciderobs[event]:.z.m.deciderobs[event] upsert (nm;func);
@@ -194,8 +188,8 @@ observe:{[event;nm;func]
 
 unobserve:{[event;nm]
   / detach an observer from a decider event - the dispatcher stays installed even after the last observer is removed
-  if[not -11h=type event;raiseerror[`unobserve;"event must be a symbol"]];
-  if[not -11h=type nm;raiseerror[`unobserve;"name must be a symbol"]];
+  if[not -11h=type event;.z.m.logerr[`unobserve;err:"di.handlers: event must be a symbol"];'err];
+  if[not -11h=type nm;.z.m.logerr[`unobserve;err:"di.handlers: name must be a symbol"];'err];
   if[not event in key .z.m.deciderobs;:(::)];
   .z.m.deciderobs[event]:.z.m.deciderobs[event] _ nm;
   .z.m.loginfo[`unobserve;"detached observer ",string[nm]," from ",string event];

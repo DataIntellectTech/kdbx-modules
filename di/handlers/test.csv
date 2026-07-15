@@ -81,6 +81,13 @@ run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
 run,0,0,q,.hh.trap:@[{handlers.register[`.z.zz;`x;{x}]};(::);{x}],1,1,trap a rejected registration
 true,0,0,q,any `error = exec lvl from .hh.captbl,1,1,the domain error was logged at error
 
+comment,,,,,,,the signalled string is the house idiom - di.handlers-prefixed with no per-function context tag and equal to the logged message
+run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
+run,0,0,q,.hh.sig:@[{handlers.register[42;`x;{x}]};(::);{x}],1,1,capture the signal from a representative rejected register
+true,0,0,q,.hh.sig like "di.handlers: event must be a symbol",1,1,signal is di.handlers-prefixed with no register: context tag
+true,0,0,q,.hh.sig~last exec msg from .hh.captbl where lvl=`error,1,1,the signalled string equals the logged error message
+true,0,0,q,`register=last exec ctx from .hh.captbl where lvl=`error,1,1,the per-function context is on the log symbol arg not in the signal
+
 comment,,,,,,,init is idempotent and preserves live registrations
 run,0,0,q,handlers.register[`.z.wo;`persist;{[w] `.hh.ev insert `persist}],1,1,register a handler before re-init
 run,0,0,q,handlers.init[enlist[`log]!enlist caplog],1,1,re-init the module

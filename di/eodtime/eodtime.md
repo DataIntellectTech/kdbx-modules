@@ -11,7 +11,7 @@ End-of-day time management for kdb+ tickerplant processes. Resolves the current 
 - Compute a live UTC offset for a configurable data timezone, refreshable after each roll to capture DST changes
 - Store and expose the current trading date, next roll timestamp, and daily adjustment offset as inspectable module state
 - State setters allow tickerplant and segmented tickerplant processes to advance state after a roll without re-initialising
-- `"GMT"`, `"UTC"`, and `"Etc/GMT"` are handled as zero-offset shortcuts without a timezone lookup — the module works out of the box with TorQ defaults
+- `"GMT"`, `"UTC"`, and `"Etc/GMT"` are handled as zero-offset shortcuts without a timezone lookup - the module works out of the box with TorQ defaults
 
 ---
 
@@ -19,13 +19,13 @@ End-of-day time management for kdb+ tickerplant processes. Resolves the current 
 
 | Dependency | Key | Required | Description |
 |---|---|---|---|
-| logger | `` `log `` | yes | `info` — binary `{[c;m]}` where `c` is a symbol context and `m` is a string. `warn` and `error` are accepted if present but never called by this module |
+| logger | `` `log `` | yes | `info` - binary `{[c;m]}` where `c` is a symbol context and `m` is a string. `warn` and `error` are accepted if present but never called by this module |
 
-**Hard dependency:** `di.tz` — loaded automatically when the module is imported.
+**Hard dependency:** `di.tz` - loaded automatically when the module is imported.
 
-The `log` dependency must be passed to `init` inside the `configs` dict keyed on `` `log ``. The module throws immediately if `log` is absent or `info` is missing. `warn` and `error` are optional, but the dict passed in must already match the binary `{[c;m]}` contract — the module does not detect or adapt other shapes (e.g. a raw `kx.log` instance, which is monadic). If you want to use `kx.log`, load it and write your own `{[c;m]}` wrapper around it before passing it in.
+The `log` dependency must be passed to `init` inside the `configs` dict keyed on `` `log ``. The module throws immediately if `log` is absent or `info` is missing. `warn` and `error` are optional, but the dict passed in must already match the binary `{[c;m]}` contract - the module does not detect or adapt other shapes (e.g. a raw `kx.log` instance, which is monadic). If you want to use `kx.log`, load it and write your own `{[c;m]}` wrapper around it before passing it in.
 
-Configuration keys `rolltimezone`, `datatimezone`, and `rolltimeoffset` are all optional — omit any or all of them and the module falls back to sensible defaults (GMT timezone, midnight roll). See Initialisation for full details.
+Configuration keys `rolltimezone`, `datatimezone`, and `rolltimeoffset` are all optional - omit any or all of them and the module falls back to sensible defaults (GMT timezone, midnight roll). See Initialisation for full details.
 
 ---
 
@@ -35,7 +35,7 @@ Configuration keys `rolltimezone`, `datatimezone`, and `rolltimeoffset` are all 
 
 | Key | Required | Description |
 |---|---|---|
-| `` `log `` | yes | Log dep — at minimum `info` function `{[c;m]}` |
+| `` `log `` | yes | Log dep - at minimum `info` function `{[c;m]}` |
 | `` `rolltimezone `` | no | Timezone for EOD roll scheduling. Default: `` `$"GMT" `` |
 | `` `datatimezone `` | no | Timezone for stamping incoming data. Default: `` `$"GMT" `` |
 | `` `rolltimeoffset `` | no | Offset from midnight for the EOD roll (e.g. `0D17:00:00.000` for a 5pm roll). Default: `0D` |
@@ -71,14 +71,14 @@ eodtime.getnextroll[]
 ```
 
 ### `getdailyadj[]`
-Return the **cached** UTC offset for the data timezone — the value stored at the last `init` or `setdailyadj` call.
+Return the **cached** UTC offset for the data timezone - the value stored at the last `init` or `setdailyadj` call.
 ```q
 eodtime.getdailyadj[]
 / 0D01:00:00.000000000
 ```
 
 ### `getdailyadjustment[]`
-**Recompute** the UTC offset for the data timezone at the current time. Call after an EOD roll to get a fresh offset — important when the data timezone observes DST.
+**Recompute** the UTC offset for the data timezone at the current time. Call after an EOD roll to get a fresh offset - important when the data timezone observes DST.
 ```q
 eodtime.getdailyadjustment[]
 / 0D01:00:00.000000000
@@ -151,7 +151,7 @@ The test suite injects a no-op mock logger and a capturing logger that records `
 
 ## Notes
 
-- `rolltimeoffset` adjusts the roll time from midnight — e.g. `0D17:00:00.000` produces a 5pm local roll
+- `rolltimeoffset` adjusts the roll time from midnight - e.g. `0D17:00:00.000` produces a 5pm local roll
 - `getdailyadj` returns the cached offset; `getdailyadjustment` recomputes it live. Always call `getdailyadjustment` after an EOD roll rather than relying on the cached value
 - `"GMT"`, `"UTC"`, and `"Etc/GMT"` are zero-offset shortcuts not passed to `di.tz`. `"Etc/UTC"` is valid and passes through normally
-- Only `info` is required in the log dep — `warn` and `error` are accepted if present but never called by this module. The dep must already match the binary `{[c;m]}` contract; the module does not adapt other shapes
+- Only `info` is required in the log dep - `warn` and `error` are accepted if present but never called by this module. The dep must already match the binary `{[c;m]}` contract; the module does not adapt other shapes

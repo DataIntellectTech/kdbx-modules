@@ -25,7 +25,7 @@ registryschema:([name:`symbol$()] func:());
 
 raiseerror:{[ctx;msg]
   / log the error under ctx then signal it, so failures are observable in the log and not just thrown
-  .z.m.log[`error][ctx;msg];
+  .z.m.logerr[ctx;msg];
   '"di.handlers: ",string[ctx],": ",msg;
   };
 
@@ -40,12 +40,12 @@ initstate:{
 
 runobserver:{[event;nm;func;arg]
   / apply one observer under protection - a throw is logged at warn and swallowed so the chain continues
-  .[func;enlist arg;{[event;nm;e] .z.m.log[`warn][`handlers;"observer ",string[nm]," on ",(string event)," failed: ",e]}[event;nm]];
+  .[func;enlist arg;{[event;nm;e] .z.m.logwarn[`handlers;"observer ",string[nm]," on ",(string event)," failed: ",e]}[event;nm]];
   };
 
 runoriginal:{[event;arg]
   / apply the captured pre-existing handler last, isolated the same way as registered observers
-  .[.z.m.original event;enlist arg;{[event;e] .z.m.log[`warn][`handlers;"original ",(string event)," handler failed: ",e]}[event]];
+  .[.z.m.original event;enlist arg;{[event;e] .z.m.logwarn[`handlers;"original ",(string event)," handler failed: ",e]}[event]];
   };
 
 dispatchobs:{[event;arg]
@@ -66,7 +66,7 @@ registerobserver:{[event;nm;func]
   / lazily install on first use, then add or replace this handler in registration order
   if[not event in key .z.m.original;installobserver event];
   .z.m.registry[event]:.z.m.registry[event] upsert (nm;func);
-  .z.m.log[`info][`register;"registered observer ",string[nm]," on ",string event];
+  .z.m.loginfo[`register;"registered observer ",string[nm]," on ",string event];
   };
 
 registerdecider:{[event;nm;func]
@@ -77,14 +77,14 @@ registerdecider:{[event;nm;func]
   / if a dispatcher is installed (event has observers), update the owner function in place - the dispatcher reads it fresh
   $[event in key .z.m.ownerfunc;.z.m.ownerfunc[event]:func;set[event;func]];
   .z.m.owner[event]:nm;
-  .z.m.log[`info][`register;"registered decider ",string[nm]," on ",string event];
+  .z.m.loginfo[`register;"registered decider ",string[nm]," on ",string event];
   };
 
 removeobserver:{[event;nm]
   / drop the named handler; the dispatcher and captured original keep firing regardless of remaining count
   if[not event in key .z.m.registry;:(::)];
   .z.m.registry[event]:.z.m.registry[event] _ nm;
-  .z.m.log[`info][`remove;"removed observer ",string[nm]," on ",string event];
+  .z.m.loginfo[`remove;"removed observer ",string[nm]," on ",string event];
   };
 
 removedecider:{[event;nm]
@@ -97,7 +97,7 @@ removedecider:{[event;nm]
   / clear the owner function and any attached observers so a later register on this event starts clean (direct set, no dispatcher)
   .z.m.ownerfunc:.z.m.ownerfunc _ event;
   .z.m.deciderobs:.z.m.deciderobs _ event;
-  .z.m.log[`info][`remove;"removed decider ",string[nm]," on ",(string event),"; restored default"];
+  .z.m.loginfo[`remove;"removed decider ",string[nm]," on ",(string event),"; restored default"];
   };
 
 / ------------------------------------------------------------
@@ -106,7 +106,7 @@ removedecider:{[event;nm]
 
 rundeciderobs:{[event;nm;func;result;args]
   / apply one decider observer under protection - side-effect only, never alters the result; a throw is logged at warn and swallowed
-  .[func;(result;args);{[event;nm;e] .z.m.log[`warn][`handlers;"decider observer ",string[nm]," on ",(string event)," failed: ",e]}[event;nm]];
+  .[func;(result;args);{[event;nm;e] .z.m.logwarn[`handlers;"decider observer ",string[nm]," on ",(string event)," failed: ",e]}[event;nm]];
   };
 
 rundeciderobsall:{[event;result;args]
@@ -189,7 +189,7 @@ observe:{[event;nm;func]
   / capture the owner and install the dispatcher on first observe only, then add or replace this observer in registration order
   if[not event in key .z.m.ownerfunc;installdecider event];
   .z.m.deciderobs[event]:.z.m.deciderobs[event] upsert (nm;func);
-  .z.m.log[`info][`observe;"attached observer ",string[nm]," to ",string event];
+  .z.m.loginfo[`observe;"attached observer ",string[nm]," to ",string event];
   };
 
 unobserve:{[event;nm]
@@ -198,7 +198,7 @@ unobserve:{[event;nm]
   if[not -11h=type nm;raiseerror[`unobserve;"name must be a symbol"]];
   if[not event in key .z.m.deciderobs;:(::)];
   .z.m.deciderobs[event]:.z.m.deciderobs[event] _ nm;
-  .z.m.log[`info][`unobserve;"detached observer ",string[nm]," from ",string event];
+  .z.m.loginfo[`unobserve;"detached observer ",string[nm]," from ",string event];
   };
 
 init:{[deps]
@@ -213,8 +213,10 @@ init:{[deps]
     '"di.handlers: log value must be a dict; pass `info`warn`error functions"];
   if[not all `info`warn`error in key deps`log;
     '"di.handlers: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:deps`log;
+  .z.m.loginfo:(deps`log)`info;
+  .z.m.logwarn:(deps`log)`warn;
+  .z.m.logerr:(deps`log)`error;
   / initialise the registries only on first init - a direct (module-rewritten) reference detects prior setup
   if[not @[{.z.m.registry;1b};::;0b];initstate[]];
-  .z.m.log[`info][`init;"di.handlers initialised"];
+  .z.m.loginfo[`init;"di.handlers initialised"];
   };

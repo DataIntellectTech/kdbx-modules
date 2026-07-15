@@ -1,0 +1,36 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,api:use`di.api,1,1,load the module
+before,0,0,q,mylog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define a no-op binary logger {[c;m]}
+before,0,0,q,api.init[enlist[`log]!enlist mylog],1,1,init with the required log dependency
+comment,,,,,,,init - dependency validation
+run,0,0,q,api.init[enlist[`log]!enlist mylog],1,1,init succeeds with a valid log dependency
+fail,0,0,q,api.init[(::)],1,1,init rejects a non-dictionary deps
+fail,0,0,q,api.init[enlist[`other]!enlist mylog],1,1,init rejects deps without a log key
+fail,0,0,q,api.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
+fail,0,0,q,api.init[enlist[`log]!enlist(`info`warn!({[c;m]};{[c;m]}))],1,1,init rejects a log dict missing the error key
+comment,,,,,,,add and getapi - registry
+run,0,0,q,api.init[enlist[`log]!enlist mylog],1,1,re-init to reset the registry to empty
+true,0,0,q,0=count api.getapi[],1,1,registry starts empty after init
+run,0,0,q,"api.add[`.gw.asyncexec;1b;""Execute async"";""[query;servers]"";""result""]",1,1,register a public api entry
+true,0,0,q,1=count api.getapi[],1,1,add stores one entry
+true,0,0,q,1b~(api.getapi[])[`.gw.asyncexec]`public,1,1,public flag stored
+true,0,0,q,"""Execute async""~(api.getapi[])[`.gw.asyncexec]`descrip",1,1,description stored
+run,0,0,q,"api.add[`.gw.asyncexec;0b;""updated"";""[]"";""x""]",1,1,re-add the same name
+true,0,0,q,1=count api.getapi[],1,1,re-adding the same name overwrites (no duplicate)
+true,0,0,q,0b~(api.getapi[])[`.gw.asyncexec]`public,1,1,re-add updates the entry in place
+fail,0,0,q,"api.add[""notasym"";1b;""d"";""p"";""r""]",1,1,add rejects a non-symbol name
+fail,0,0,q,api.add[`.x.f;1;`d;`p;`r],1,1,add rejects a non-boolean public flag
+comment,,,,,,,find / f / p - query the registry
+run,0,0,q,api.init[enlist[`log]!enlist mylog],1,1,re-init to reset the registry
+run,0,0,q,"api.add[`.gw.asyncexec;1b;""a"";""p"";""r""]",1,1,seed a public entry
+run,0,0,q,"api.add[`.gw.syncexec;1b;""a"";""p"";""r""]",1,1,seed another public entry
+run,0,0,q,"api.add[`.api.add;1b;""a"";""p"";""r""]",1,1,seed a public entry with a different name
+run,0,0,q,"api.add[`.internal.helper;0b;""a"";""p"";""r""]",1,1,seed a non-public entry
+true,0,0,q,4=count api.f`,1,1,f with a null symbol returns all entries
+true,0,0,q,3=count api.p`,1,1,p returns only the public entries
+true,0,0,q,2=count api.f`exec,1,1,f matches names containing exec (substring)
+true,0,0,q,2=count api.f`EXEC,1,1,name matching is case-insensitive
+true,0,0,q,"2=count api.f""*gw*""",1,1,f accepts a string glob pattern
+true,0,0,q,`.internal.helper in exec name from api.f`helper,1,1,f includes non-public entries
+true,0,0,q,0=count api.p`helper,1,1,p excludes the non-public helper
+fail,0,0,q,api.find[42;01b],1,1,find rejects a pattern that is not a symbol or string

@@ -87,12 +87,12 @@ init:{[deps]
     '"di.eodtime: log value must be a dict; pass at minimum `info!{[c;m]}"];
   if[not `info in key deps`log;
     '"di.eodtime: log dict must have at minimum an `info key; got: ",(", " sv string key deps`log)];
-  .z.m.log:deps`log;
+  .z.m.loginfo:(deps`log)`info;
   .z.m.rolltimezone:$[`rolltimezone in key deps;deps`rolltimezone;`$"GMT"];
   .z.m.datatimezone:$[`datatimezone in key deps;deps`datatimezone;`$"GMT"];
   .z.m.rolltimeoffset:$[`rolltimeoffset in key deps;deps`rolltimeoffset;0D00:00:00.000];
   .z.m.dailyadj:getdailyadjustment[];
   .z.m.d:getday[.z.p];
   .z.m.nextroll:getroll[.z.p];
-  .z.m.log[`info][`eodtime;"initialised with rolltimezone=",string[.z.m.rolltimezone]," datatimezone=",string[.z.m.datatimezone]," rolltimeoffset=",string .z.m.rolltimeoffset];
+  .z.m.loginfo[`eodtime;"initialised with rolltimezone=",string[.z.m.rolltimezone]," datatimezone=",string[.z.m.datatimezone]," rolltimeoffset=",string .z.m.rolltimeoffset];
   };

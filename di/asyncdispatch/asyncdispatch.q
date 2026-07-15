@@ -79,7 +79,7 @@ sendclientreply:{[qid;result;status]
   $[qd`sync;
     @[-30!;(qd`clienth;not status;$[status;formatresponse[1b;1b;result];result]);{}];
     $[qd`local;
-      @[value;tosend;{.z.m.log[`error][`asyncdispatch;"local postback failed: ",x]}];
+      @[value;tosend;{.z.m.logerr[`asyncdispatch;"local postback failed: ",x]}];
       @[neg qd`clienth;formatresponse[status;0b;tosend];()]]];
   };
 
@@ -149,7 +149,7 @@ checktimeout:{[]
   // periodic scan to error queries that have waited beyond their timeout
   qids:exec queryid from .z.m.queryqueue where not timeout=0Wn, null returntime, .z.m.cp[]>time+timeout;
   if[count qids;
-    .z.m.log[`warn][`asyncdispatch;"queries timed out: ",", " sv string qids];
+    .z.m.logwarn[`asyncdispatch;"queries timed out: ",", " sv string qids];
     sendclientreply[;errorprefix,"query timed out";0b] each qids;
     finishquery[qids;1b]];
   };
@@ -188,7 +188,7 @@ addserver:{[h;st]
   // register a backend handle and servertype so it becomes eligible for dispatch.
   // this is the default (built-in) server source; to dispatch against di.serverselect's view instead,
   // inject it via setavailableservers - no registration and no di.serverselect dependency required
-  .z.m.log[`info][`asyncdispatch;"server registered: ",string[st]," handle ",string h];
+  .z.m.loginfo[`asyncdispatch;"server registered: ",string[st]," handle ",string h];
   .z.M.servers upsert (h;st;0b;1b;0Np);
   };
 
@@ -197,7 +197,7 @@ removeserverhandle:{[serverh]
   // that can no longer be satisfied
   if[null st:first exec servertype from .z.m.servers where handle=serverh;:()];
   err:errorprefix,"backend ",string[st]," server disconnected";
-  .z.m.log[`warn][`asyncdispatch;"backend disconnected: ",string st];
+  .z.m.logwarn[`asyncdispatch;"backend disconnected: ",string st];
   // in-flight: queries where this handle was assigned to a slot
   qids:where {[h;qid]h in value[.z.m.results[qid;1]][;0]}[serverh] each key .z.m.results;
   sendclientreply[;err," during query";0b] each qids;
@@ -214,7 +214,7 @@ removeserverhandle:{[serverh]
 
 addclientdetails:{[h]
   // record client identity on connect for audit and orphan-query cleanup on disconnect
-  .z.m.log[`info][`asyncdispatch;"client connected: handle ",string h];
+  .z.m.loginfo[`asyncdispatch;"client connected: handle ",string h];
   .z.M.clients insert (.z.m.cp[];h;.z.u;.z.a;.z.h);
   };
 
@@ -222,7 +222,7 @@ removeclienthandle:{[h]
   // on client disconnect, mark their pending queries errored so result slots are not leaked
   // free any servers in-flight for this client before removing result slots, then re-dispatch
   // local queries store clienth:0Ni and are not matched here - the in-process caller owns cleanup for its own requests
-  .z.m.log[`info][`asyncdispatch;"client disconnected: handle ",string h];
+  .z.m.loginfo[`asyncdispatch;"client disconnected: handle ",string h];
   inflightqids:(exec queryid from .z.m.queryqueue where clienth=h, null returntime) inter key .z.m.results;
   if[count inflightqids;
     inflighthandles:distinct raze {value[.z.m.results[x;1]][;0]} each inflightqids;
@@ -249,14 +249,14 @@ addserverresult:{[qid;data]
   if[not all vals[;2];:()];
   qd:queryqueue[qid];
   res:@[{(0b;x y)}[qd`join];vals[;1];{(1b;.z.m.errorprefix,"join failed: ",x)}];
-  if[res 0;.z.m.log[`error][`asyncdispatch;"join failed for query ",string qid,": ",last res]];
+  if[res 0;.z.m.logerr[`asyncdispatch;"join failed for query ",string qid,": ",last res]];
   sendclientreply[qid;last res;not res 0];
   finishquery[qid;res 0];
   };
 
 addservererror:{[qid;err]
   // short-circuit a query on backend failure - free the server and notify the client
-  .z.m.log[`error][`asyncdispatch;"backend error for query ",string[qid],": ",err];
+  .z.m.logerr[`asyncdispatch;"backend error for query ",string[qid],": ",err];
   sendclientreply[qid;errorprefix,err;0b];
   update inuse:0b from .z.M.servers where handle in .z.w;
   runnextquery[];
@@ -266,7 +266,7 @@ addservererror:{[qid;err]
 execquery:{[query;servertype;join;postback;timeout;sync]
   // public entry point - validate sync constraints then enqueue and kick dispatch
   if[sync;
-    if[not ()~postback;.z.m.log[`warn][`asyncdispatch;"execquery: postback ignored for sync call"]];
+    if[not ()~postback;.z.m.logwarn[`asyncdispatch;"execquery: postback ignored for sync call"]];
     if[not synccallsallowed;'"syncexec: synchronous calls are not allowed"];
     if[not @[{-30!x;1b};(::);0b];'"syncexec: deferred response not supported on this connection"];
     .[{[q;s;j;t]addquery[q;s;j;();t;1b];runnextquery[]};(query;servertype;join;timeout);{-30!(.z.w;1b;x)}];
@@ -310,10 +310,12 @@ init:{[deps]
     '"di.asyncdispatch: log value must be a dict; pass `info`warn`error functions"];
   if[not all `info`warn`error in key deps`log;
     '"di.asyncdispatch: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:deps`log;
+  .z.m.loginfo:(deps`log)`info;
+  .z.m.logwarn:(deps`log)`warn;
+  .z.m.logerr:(deps`log)`error;
   if[`errorprefix in key deps; .z.m.errorprefix:deps`errorprefix];
   if[`querykeeptime in key deps; .z.m.querykeeptime:deps`querykeeptime];
   if[`clearinactivetime in key deps; .z.m.clearinactivetime:deps`clearinactivetime];
   if[`synccallsallowed in key deps; .z.m.synccallsallowed:deps`synccallsallowed];
-  .z.m.log[`info][`asyncdispatch;"di.asyncdispatch initialised"];
+  .z.m.loginfo[`asyncdispatch;"di.asyncdispatch initialised"];
   };

@@ -50,9 +50,9 @@ loadlib:{[libpath]
   libfile:hsym ` sv lib,$[.z.o like "w*";`dll;`so];
   libexists:@[{not ()~key x};libfile;{0b}];
   if[not libexists;
-    .z.m.log[`error][`kafka;"native library not found at ",string libfile];
+    .z.m.logerr[`kafka;"native library not found at ",string libfile];
     '"di.kafka: native library not found at ",string libfile];
-  .z.m.log[`info][`kafka;"library found at ",string libfile];
+  .z.m.loginfo[`kafka;"library found at ",string libfile];
   .z.m.lib:lib;
   };
 
@@ -98,7 +98,9 @@ init:{[deps]
     '"di.kafka: log value must be a dict; pass `info`warn`error functions"];
   if[not all `info`warn`error in key deps`log;
     '"di.kafka: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
-  .z.m.log:deps`log;
+  .z.m.loginfo:(deps`log)`info;
+  .z.m.logwarn:(deps`log)`warn;
+  .z.m.logerr:(deps`log)`error;
   setconfig deps;
   if[enabled;
     if[not `libpath in key deps;
@@ -107,5 +109,5 @@ init:{[deps]
     bindfunctions[];
     `.kupd set {[k;x] .z.m.kupd[k;x]};
   ];
-  .z.m.log[$[enabled;`info;`warn]][`kafka;"di.kafka initialised",$[enabled;"";" (native library not loaded - platform not supported)"]];
+  $[enabled;.z.m.loginfo;.z.m.logwarn][`kafka;"di.kafka initialised",$[enabled;"";" (native library not loaded - platform not supported)"]];
   };

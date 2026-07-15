@@ -54,7 +54,7 @@ run,0,0,q,kafka.init[`log`enabled!(sixlvllog;0b)],1,1,superset log dict accepted
 
 comment,,,,,,,log call verification - capturing logger sees init message with binary {[c;m]} args
 run,0,0,q,.test.cap:0#.test.cap,1,1,reset log capture
-run,0,0,q,.m.di.0kafka.log:caplog,1,1,inject capturing logger directly for log-only tests
-run,0,0,q,.m.di.0kafka.log[`info][`kafka;"di.kafka initialised"],1,1,simulate the init log call with context and message
+run,0,0,q,.m.di.0kafka.loginfo:caplog`info,1,1,inject capturing info logger directly for log-only tests
+run,0,0,q,.m.di.0kafka.loginfo[`kafka;"di.kafka initialised"],1,1,simulate the init log call with context and message
 true,0,0,q,1=count select from .test.cap where fn=`info,1,1,one info entry captured
 true,0,0,q,any (.test.cap`msg) like "di.kafka *",1,1,log message contains module init confirmation

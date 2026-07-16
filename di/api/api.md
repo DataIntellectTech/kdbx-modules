@@ -61,7 +61,7 @@ see only a process's top-level glue, not the module logic they exist to inspect.
 | `whereami` | Reverse-looks-up a function value to its name via the root scan — returns nothing for a function that lives inside a module (i.e. the usual error-trap case). |
 | `fullapi` (namespace scan) | The scan-and-left-join-`detail` model does not apply; `getapi`/`find` serve the registry directly. |
 | `mem` / `m` | Memory sizing belongs to `di.memstats`. |
-| `exportconfig` / `exportallconfig` | Config lives in `di.config`'s resolved store, not scattered root variables — belongs with `di.config`/`di.torq`. |
+| `exportconfig` / `exportallconfig` / `torqnamespaces` | A faithful port needs config **values** (di.config `getmodule`) joined with **descriptions** (di.api `getapi`/`find`). di.config and di.api are both standalone and don't depend on each other, so the join belongs in **di.torq** (it has both). It is a **di.torq-era task**, not a di.config change: di.config's `getmodule` already returns per-namespace values; the missing piece is pairing them with the api descriptions across namespaces. |
 
 ## Hard dependencies
 

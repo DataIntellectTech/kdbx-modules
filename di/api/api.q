@@ -4,7 +4,7 @@
 / live-namespace scan - module code is not in scannable root namespaces).
 / registration model: di.torq collects the api metadata from each module at startup and registers
 / it here centrally via add. di.api itself has no dependency on other modules.
-/ (built up incrementally - step 1: registry + add + getapi)
+/ public api: add (register an entry), getapi (whole registry), find/f/p (query by name + public).
 
 / empty template for the registry (constant); .z.m.detail is the live, mutable copy
 detailschema:([name:`u#`symbol$()] public:`boolean$(); descrip:(); params:(); return:());
@@ -58,7 +58,7 @@ find:{[s;p]
     .z.m.logerr[`find;err:"di.api: search pattern must be a symbol or string"];
     'err;
   ];
-  :select from getapi[] where (lower[string name] like lower s), public in p;
+  :select from .z.m.detail where lower[string name] like lower s, public in p;
   };
 
 / find all entries (public and non-public)

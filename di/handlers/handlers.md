@@ -176,4 +176,5 @@ Run the integration suite in a fresh q session — running it after `moduletest`
 - `.z.ts` is not managed here — it belongs to `di.timer`.
 - The handler bound to an observer event before its first registration is captured once and always runs last, after every registered handler.
 - Removing a decider restores the KDB-X built-in default, not any handler that happened to be bound before the module took ownership.
+- Removing an observer with `remove` drops it from the fan-out, but the event's dispatcher — installed once on first registration — stays installed permanently; removing the last observer does not revert the event, which keeps running an empty fan-out plus the captured original. Unlike a decider (whose `remove` restores the KDB-X built-in default via `\x`), an observer event has no path back to its pre-di.handlers binding.
 - All errors raised after `init` are logged at `error` before being signalled.

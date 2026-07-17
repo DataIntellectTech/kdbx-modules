@@ -146,12 +146,23 @@ handlers.remove[`.z.pw;`auth]
 
 ## Running Tests
 
+**Unit suite** (`test.csv`) — needs no sockets; it drives dispatch by invoking the function bound to each `.z.*` event with synthetic arguments. `moduletest` loads and runs it:
+
 ```q
 k4unit:use`di.k4unit
 k4unit.moduletest`di.handlers
 ```
 
-The unit suite needs no sockets — it drives dispatch by invoking the function bound to each `.z.*` event with synthetic arguments. A separate integration suite (`test_integration.csv`) stands up a real child q process, opens and closes a connection, and confirms a registered observer actually fired. It needs no configuration and skips cleanly when no usable q binary is available; the unit suite needs neither.
+**Integration suite** (`test_integration.csv`) — stands up a real child q process on an OS-assigned ephemeral port, opens and closes a connection, and confirms a registered `.z.pc` observer actually fired. It needs a q/kdb-x binary reachable via `QHOME`, needs no other configuration, and skips cleanly when no usable binary is available. `moduletest` only ever loads `test.csv`, so load and run this suite directly:
+
+```q
+k4unit:use`di.k4unit
+.m.di.0k4unit.KUltf .Q.dd[hsym`$.Q.m.mp`di.handlers;`test_integration.csv]
+.m.di.0k4unit.KUrt[]
+k4unit.getresults[]                / one row per assertion; ok=1 is a pass
+```
+
+Run the integration suite in a fresh q session — running it after `moduletest` in the same session re-runs the still-loaded unit tests against dirty module state and reports spurious failures.
 
 ---
 

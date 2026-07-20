@@ -91,7 +91,7 @@ handlers.observe[`.z.pg;`querylog;{[result;args] .log.query[first args;result]}]
 ```
 
 ### `unobserve[event;name]`
-Detach an observer from a decider event. The dispatcher stays installed even after the last observer is removed (the owner still runs). Detaching a name that was never attached is a silent no-op.
+Detach an observer from a decider event. The dispatcher stays installed even after the last observer is removed (the owner still runs). Detaching a name that was never attached is a no-op, logged at info.
 ```q
 handlers.unobserve[`.z.pg;`querylog]
 ```

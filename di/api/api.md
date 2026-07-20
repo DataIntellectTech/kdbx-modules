@@ -40,6 +40,7 @@ api.init[enlist[`log]!enlist `info`warn`error!(logger.info;logger.warn;logger.er
 | `find` | `find[s;p]` | Return registry entries whose name matches pattern `s` (a symbol — `` ` `` matches all, else a `*s*` substring — or a string glob) and whose `public` flag is in `p` (`1b` public-only, `01b` all). Case-insensitive; returns an unkeyed table. |
 | `f` | `f[s]` | `find[s;01b]` — all matching entries, public and non-public. |
 | `p` | `p[s]` | `find[s;1b]` — public matching entries only. |
+| `getapimeta` | `getapimeta[]` | Return **this module's own** api metadata — one `(name;public;descrip;params;return)` row per exported function — for di.torq to collect and register. Every module exposes this (the module-owned metadata convention). Names are bare (the module's own); di.torq applies process-wide qualification when registering. |
 
 ### Registry schema
 

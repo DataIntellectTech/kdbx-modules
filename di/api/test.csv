@@ -34,3 +34,8 @@ true,0,0,q,"2=count api.f""*gw*""",1,1,f accepts a string glob pattern
 true,0,0,q,`.internal.helper in exec name from api.f`helper,1,1,f includes non-public entries
 true,0,0,q,0=count api.p`helper,1,1,p excludes the non-public helper
 fail,0,0,q,api.find[42;01b],1,1,find rejects a pattern that is not a symbol or string
+comment,,,,,,,getapimeta - module api metadata
+true,0,0,q,(asc key api)~asc exec name from api.getapimeta[],1,1,getapimeta documents exactly the module's exports
+true,0,0,q,`name`public`descrip`params`return~cols api.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,1b~(1!api.getapimeta[])[`find]`public,1,1,a discovery function (find) is marked public
+true,0,0,q,0b~(1!api.getapimeta[])[`init]`public,1,1,framework plumbing (init) is not public

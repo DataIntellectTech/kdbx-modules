@@ -11,13 +11,10 @@ before,0,0,q,cl:{.m.di.0asyncdispatch.clients},1,,live clients table
 before,0,0,q,res:{.m.di.0asyncdispatch.results},1,,live results dict
 before,0,0,q,mocklog:`info`warn`error!3#enlist{[c;m]},1,,mock log dep - binary {[c;m]} no-op
 before,0,0,q,ad.init[enlist[`log]!enlist mocklog],1,,initialise with mock logger
+before,0,0,q,ad.setcallbacks[`.m.di.0asyncdispatch.addserverresult;`.m.di.0asyncdispatch.addservererror],1,,configure result/error callbacks once on the dispatcher; serverexecute now bakes these into the dispatched call so backends need no pushed callback vars
 before,0,0,q,bh:hopen`$raze("::";string p),1,,open handle to backend
-before,0,0,q,bh".m.di.0asyncdispatch.resultcallback:`.m.di.0asyncdispatch.addserverresult",1,,configure backend result callback to dispatcher
-before,0,0,q,bh".m.di.0asyncdispatch.errorcallback:`.m.di.0asyncdispatch.addservererror",1,,configure backend error callback to dispatcher
 before,0,0,q,ad.addserver[bh;`mock],1,,register first backend as mock server
 before,0,0,q,bh2:hopen`$raze("::";string p2),1,,open handle to second backend
-before,0,0,q,bh2".m.di.0asyncdispatch.resultcallback:`.m.di.0asyncdispatch.addserverresult",1,,configure second backend result callback
-before,0,0,q,bh2".m.di.0asyncdispatch.errorcallback:`.m.di.0asyncdispatch.addservererror",1,,configure second backend error callback
 before,0,0,q,ad.addserver[bh2;`scatter],1,,register second backend as scatter servertype
 
 / Test 0: server registry

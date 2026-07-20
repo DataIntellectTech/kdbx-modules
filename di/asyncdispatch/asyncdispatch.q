@@ -89,16 +89,22 @@ finishquery:{[qid;err]
   update error:err,returntime:.z.m.cp[] from .z.M.queryqueue where queryid in qid;
   };
 
-serverexecute:{[qid;query]
-  // runs on the backend - traps errors so a crash posts an error reply rather than dropping the result
+serverexecute:{[rescb;errcb;qid;query]
+  // runs on the backend - traps errors so a crash posts an error reply rather than dropping the result.
+  // the result/error callback symbols are passed in as parameters (baked by sendquerytoserver on the
+  // dispatching side) rather than read as free variables here: read as free vars they would resolve in
+  // the BACKEND's namespace, forcing every caller to first push the callback vars onto each backend.
+  // baking them in keeps serverexecute fully self-contained, so backends need no cooperating code.
   res:@[{(0b;value x)};query;{(1b;"server ",(string .z.h),":",(string system"p"),": ",x)}];
-  @[neg .z.w;$[res 0;(errorcallback;qid;res 1);(resultcallback;qid;res 1)];
-    {@[neg .z.w;(errorcallback;x;"failed to return result: ",y);()]}[qid]];
+  @[neg .z.w;$[res 0;(errcb;qid;res 1);(rescb;qid;res 1)];
+    {@[neg .z.w;(x;y;"failed to return result: ",z);()]}[errcb;qid]];
   };
 
 sendquerytoserver:{[qid;query;handles]
-  // fan the query out to all required handles and mark them in-use atomically
-  (neg handles,:())@\:(serverexecute;qid;query);
+  // fan the query out to all required handles and mark them in-use atomically.
+  // project the configured callback symbols into serverexecute so they ship to the backend as baked
+  // literals - no backend-side variable lookup required.
+  (neg handles,:())@\:(serverexecute[.z.m.resultcallback;.z.m.errorcallback];qid;query);
   update inuse:1b from .z.M.servers where handle in handles;
   };
 

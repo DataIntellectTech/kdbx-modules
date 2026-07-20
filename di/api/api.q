@@ -63,31 +63,13 @@ p:find[;1b];
 getapimeta:{[]
   / this module's api metadata, one row per exported function, for di.torq to collect and register
   / with di.api. names are bare (the module's own); di.torq applies the process-wide qualification.
-  :([]
-    name:`init`add`getapi`find`f`p`getapimeta;
-    public:0011110b;
-    descrip:(
-      "wire the injected logger and start an empty registry";
-      "register (or overwrite) one api entry, keyed on name";
-      "return the whole registry (keyed table)";
-      "registry entries matching a name pattern and public flag";
-      "find[;01b] - all entries matching a name pattern";
-      "find[;1b] - public entries matching a name pattern";
-      "this module's api metadata rows");
-    params:(
-      "[dict: deps with a `log key]";
-      "[symbol: name; boolean: public; descrip; params; return]";
-      "[]";
-      "[symbol|string: name pattern; boolean(list): public flags]";
-      "[symbol|string: name pattern]";
-      "[symbol|string: name pattern]";
-      "[]");
-    return:(
-      "null";
-      "null";
-      "keyed table: the registry";
-      "table: matching entries";
-      "table: matching entries";
-      "table: matching public entries";
-      "table: metadata rows"));
+  / one self-contained (name;public;descrip;params;return) row per line - flip cols!flip rows.
+  :flip `name`public`descrip`params`return!flip(
+    (`init;       0b; "wire the injected logger and start an empty registry";     "[dict: deps with a `log key]";                               "null");
+    (`add;        0b; "register (or overwrite) one api entry, keyed on name";     "[symbol: name; boolean: public; descrip; params; return]";   "null");
+    (`getapi;     1b; "return the whole registry (keyed table)";                  "[]";                                                         "keyed table: the registry");
+    (`find;       1b; "registry entries matching a name pattern and public flag"; "[symbol|string: name pattern; boolean(list): public flags]"; "table: matching entries");
+    (`f;          1b; "find[;01b] - all entries matching a name pattern";         "[symbol|string: name pattern]";                              "table: matching entries");
+    (`p;          1b; "find[;1b] - public entries matching a name pattern";       "[symbol|string: name pattern]";                              "table: matching public entries");
+    (`getapimeta; 0b; "this module's api metadata rows";                          "[]";                                                         "table: metadata rows"));
   };

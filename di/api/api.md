@@ -48,6 +48,29 @@ api.init[enlist[`log]!enlist `info`warn`error!(logger.info;logger.warn;logger.er
 ([name:`u#`symbol$()] public:`boolean$(); descrip:(); params:(); return:())
 ```
 
+## Design decisions
+
+- **Registry-only, no live scan.** The core departure from TorQ. Module functions live in private
+  `.z.m`, invisible to `\v`/`\f`, so a live-namespace scan would report a process's top-level glue as
+  its API, not the module logic. The registry is populated explicitly instead and is the single
+  source of truth (see "Not ported" for the TorQ functions this drops).
+- **Module-owned metadata (`getapimeta`).** Rather than a central hand-maintained list, each module
+  declares its own API as data — one `(name;public;descrip;params;return)` row per export — and
+  `di.torq` collects and registers them via `add`. Names in `getapimeta` are **bare** (the module's
+  own); `di.torq` applies process-wide qualification. `di.api` dog-foods this: `getapimeta` documents
+  its own seven exports, and a test asserts every `export` name has a matching row.
+- **Metadata is a compact row literal, not resident data.** `getapimeta` is built with the
+  row-oriented `flip cols!flip(rows)` idiom — one self-contained line per function — rather than five
+  parallel column-lists, so it stays terse and a function can't drift out of column alignment. It
+  costs the module nothing at runtime: it's a *function*, materialised once when `di.torq` calls it
+  at startup, then registered centrally; the module keeps no resident copy. This is the form the
+  modularisation skill mandates for every module.
+- **`find` unifies the query surface.** `f` and `p` are just projections `find[;01b]` / `find[;1b]`,
+  so there is one matching implementation. Symbol patterns become `*substring*`, `` ` `` matches all,
+  and strings pass through as globs — all case-insensitive.
+- **Minimal, registered surface.** The public API is small and every entry is something `di.torq`
+  will actually register. TorQ's introspection helpers are dropped, not stubbed (below).
+
 ## Not ported from TorQ's `.api` (deliberate)
 
 TorQ's `.api` marries a registry with **live introspection of the root namespaces** (`\v`/`\f` scans,

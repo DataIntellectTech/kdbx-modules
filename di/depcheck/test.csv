@@ -1,0 +1,80 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load module and a capturing logger
+before,0,0,q,depcheck:use`di.depcheck,1,,load di.depcheck module
+before,0,0,q,.dc.captbl:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,,log capture table for assertions
+before,0,0,q,caplog:`info`warn`error!({[c;m] `.dc.captbl insert (`info;c;m)};{[c;m] `.dc.captbl insert (`warn;c;m)};{[c;m] `.dc.captbl insert (`error;c;m)}),1,,capturing binary logger {[c;m]}
+
+comment,,,,,,,init - dependency validation
+fail,0,0,q,depcheck.init[(::)],1,,init rejects a non-dict deps
+fail,0,0,q,depcheck.init[()!()],1,,init rejects missing log key
+fail,0,0,q,depcheck.init[enlist[`log]!enlist 42],1,,init rejects a non-dict log value
+fail,0,0,q,depcheck.init[enlist[`log]!enlist `info`warn!(caplog`info;caplog`warn)],1,,init rejects a log dict missing the error key
+run,0,0,q,.dc.errstr:@[{depcheck.init[()!()]};(::);{x}],1,,capture the error string from a bad init
+true,0,0,q,.dc.errstr like "di.depcheck:*",1,,init error is prefixed di.depcheck:
+
+comment,,,,,,,module metadata - exported version
+true,0,0,q,10h=type depcheck.version,1,,version is a string
+true,0,0,q,0<count depcheck.version,1,,version is non-empty
+
+comment,,,,,,,semver comparison - internal helper
+true,0,0,q,.m.di.0depcheck.vergte["1.2.3";"1.2.3"],1,,equal versions satisfy the minimum
+true,0,0,q,.m.di.0depcheck.vergte["1.3.0";"1.2.9"],1,,greater major-adjacent version satisfies the minimum
+true,0,0,q,not .m.di.0depcheck.vergte["1.2.0";"1.2.1"],1,,lesser patch fails the minimum
+true,0,0,q,not .m.di.0depcheck.vergte["0.9.9";"1.0.0"],1,,lesser major fails the minimum
+true,0,0,q,.m.di.0depcheck.vergte["0.2.0";"0.2.0"],1,,equal 0.x versions satisfy the minimum
+
+comment,,,,,,,kdb-x engine version check - internal helper, uses .z.K not .z.v
+true,0,0,q,0=count .m.di.0depcheck.kdbxcheck[()!()],1,,no warning when no minimum kdb-x version is configured
+true,0,0,q,0=count .m.di.0depcheck.kdbxcheck[enlist[`minkdbxversion]!enlist 0f],1,,no warning when the configured minimum is at or below the running engine
+true,0,0,q,1=count .m.di.0depcheck.kdbxcheck[enlist[`minkdbxversion]!enlist 999f],1,,warns when the configured minimum exceeds the running kdb-x engine version
+
+comment,,,,,,,live negative/positive controls - real shipped modules not synthetic fixtures. di.timer is merged to
+comment,,,,,,,main so it loads unconditionally; di.kafka and di.handlers are still on open unmerged PRs (#112/#114)
+comment,,,,,,,so their loads are protected and every assertion depending on them gracefully no-ops when absent -
+comment,,,,,,,this suite must pass standalone against a bare main checkout not just this developer's merged QPATH
+before,0,0,q,timer:use`di.timer,1,,load the real di.timer module - always present on main - a live negative control
+before,0,0,q,.dc.havekafka:@[{kafka:use`di.kafka;1b};`;0b],1,,attempt di.kafka - PR #112 unmerged - absent on a bare main checkout
+before,0,0,q,.dc.havehandlers:@[{handlers:use`di.handlers;1b};`;0b],1,,attempt di.handlers - PR #114 unmerged - absent on a bare main checkout
+
+comment,,,,,,,checkonedep - dependency presence and version, exercised directly against live loaded modules
+true,0,0,q,".m.di.0depcheck.checkonedep[`di.doesnotexist;""1.0.0""]~enlist ""di.doesnotexist requires minimum version 1.0.0, not found""",1,,an undeclared/unloaded dependency is reported not found
+true,0,0,q,".m.di.0depcheck.checkonedep[`di.timer;""1.0.0""]~enlist ""di.timer requires minimum version 1.0.0, but di.timer exports no version""",1,,real di.timer (loaded, no version export) is reported as exporting no version
+true,0,0,q,"(not .dc.havekafka) or .m.di.0depcheck.checkonedep[`di.kafka;""1.0.0""]~enlist ""di.kafka requires minimum version 1.0.0, but di.kafka exports no version""",1,,real di.kafka checked when present (PR #112) else a no-op pass
+true,0,0,q,(not .dc.havehandlers) or 0=count .m.di.0depcheck.checkonedep[`di.handlers;"0.1.0"],1,,real di.handlers checked when present (PR #114) else a no-op pass
+true,0,0,q,"(not .dc.havehandlers) or .m.di.0depcheck.checkonedep[`di.handlers;""9.9.9""]~enlist ""di.handlers requires minimum version 9.9.9, found 0.1.0""",1,,real di.handlers checked when present (PR #114) else a no-op pass
+
+comment,,,,,,,di.log negative control - gracefully skips when di.log is not present on this QPATH (see plan notes)
+true,0,0,q,"$[@[{use`di.log;1b};`;0b];.m.di.0depcheck.checkonedep[`di.log;""1.0.0""]~enlist ""di.log requires minimum version 1.0.0, but di.log exports no version"";1b]",1,,di.log is checked for real when present else this assertion is a no-op pass
+
+comment,,,,,,,loaded-but-unreadable-export edge case - constructed via direct namespace manipulation since no real
+comment,,,,,,,module can be made to load successfully and then fail an export read. Caught checkdepversion using an
+comment,,,,,,,eager `or` over a `~(::)` check during manual smoke testing - not by reading the code - see depcheck.q
+before,0,0,q,.m.di.0fakemod.something:1,1,,fabricate a loaded module whose export dict was never actually set
+true,0,0,q,".m.di.0depcheck.checkonecontract[`di.fakemod;`x`y]~enlist ""di.fakemod is loaded but its export dict could not be read""",1,,checkonecontract reports the unreadable-export case distinctly
+true,0,0,q,".m.di.0depcheck.checkonedep[`di.fakemod;""1.0.0""]~enlist ""di.fakemod requires minimum version 1.0.0, but di.fakemod exports no version""",1,,checkonedep no longer throws 'type on this case - regression test for the `or`-eagerness bug
+
+comment,,,,,,,non-di.* vendor dependency resolution - a deps.q may legitimately name an external vendor module (e.g.
+comment,,,,,,,kx.log) as a hard dependency. Fabricated via namespace manipulation since kx.log isn't committed to this
+comment,,,,,,,repo (only vendored locally on this dev machine) - checkonedep must not hardcode `.m.di when resolving
+before,0,0,q,.m.zz.0widget.export:enlist[`version]!enlist "2.0.0",1,,fabricate a loaded non-di.* vendor module with a real version
+true,0,0,q,0=count .m.di.0depcheck.checkonedep[`zz.widget;"1.0.0"],1,,a loaded non-di.* dependency satisfying its minimum passes
+true,0,0,q,".m.di.0depcheck.checkonedep[`zz.widget;""3.0.0""]~enlist ""zz.widget requires minimum version 3.0.0, found 2.0.0""",1,,a loaded non-di.* dependency is version-checked for real not falsely reported not-found
+true,0,0,q,".m.di.0depcheck.checkonedep[`zz.doesnotexist;""1.0.0""]~enlist ""zz.doesnotexist requires minimum version 1.0.0, not found""",1,,a genuinely absent non-di.* vendor namespace still safely reports not found, no crash
+
+comment,,,,,,,checkcontracts - core dependency contract shape, exercised against live loaded modules
+true,0,0,q,any .m.di.0depcheck.checkcontracts[] like "di.timer is missing required contract key(s): cp",1,,real di.timer fails the Timer contract - cp is defined but not exported - always present on main
+true,0,0,q,not any .m.di.0depcheck.checkcontracts[] like "di.handlers is missing*",1,,real di.handlers satisfies the Handlers contract in full when present; vacuously true (no entry to match) when absent
+
+comment,,,,,,,ztscheck - .z.ts ownership, exercised against real .z.ts state
+run,0,0,q,system"x .z.ts",1,,reset .z.ts to the kdb-x built-in default before testing
+true,0,0,q,0=count .m.di.0depcheck.ztscheck[],1,,no warning when .z.ts is unbound
+run,0,0,q,.z.ts:{[x]},1,,directly assign .z.ts outside di.timer for the negative case
+true,0,0,q,.m.di.0depcheck.ztscheck[]~enlist ".z.ts has been directly assigned outside di.timer. This may cause timer conflicts.",1,,warns when .z.ts is bound outside di.timer
+run,0,0,q,system"x .z.ts",1,,restore .z.ts to the kdb-x built-in default after the test
+
+comment,,,,,,,end-to-end init - real loaded modules (di.timer missing cp) drive a real failing report
+run,0,0,q,.dc.captbl:0#.dc.captbl,1,,reset log capture
+run,0,0,q,.dc.initerr:@[{depcheck.init[enlist[`log]!enlist caplog]};(::);{x}],1,,init throws end-to-end because real di.timer fails the Timer contract
+true,0,0,q,.dc.initerr like "di.depcheck: DEPENDENCY CHECK FAILED:*",1,,the signalled error is the di.depcheck-prefixed report block
+true,0,0,q,.dc.initerr like "*di.timer is missing required contract key(s): cp*",1,,the report names the real di.timer contract gap
+true,0,0,q,any `error = exec lvl from .dc.captbl,1,,the failing report was also logged at error before being signalled

@@ -68,6 +68,7 @@ registerdecider:{[event;nm;func]
 removeobserver:{[event;nm]
   / drop the named handler; the dispatcher and captured original keep firing regardless of remaining count
   if[not event in key .z.m.registry;.z.m.loginfo[`remove;"no observers registered on ",string[event],"; nothing to remove for ",string[nm]];:(::)];
+  if[not nm in exec name from .z.m.registry event;.z.m.loginfo[`remove;"observer ",string[nm]," not registered on ",string[event],"; nothing to remove"];:(::)];
   .z.m.registry[event]:.z.m.registry[event] _ nm;
   .z.m.loginfo[`remove;"removed observer ",string[nm]," on ",string[event]];
   };
@@ -182,6 +183,7 @@ unobserve:{[event;nm]
   if[not -11h=type event;.z.m.logerr[`unobserve;err:"di.handlers: event must be a symbol"];'err];
   if[not -11h=type nm;.z.m.logerr[`unobserve;err:"di.handlers: name must be a symbol"];'err];
   if[not event in key .z.m.deciderobs;.z.m.loginfo[`unobserve;"no observers attached to ",string[event],"; nothing to detach for ",string[nm]];:(::)];
+  if[not nm in exec name from .z.m.deciderobs event;.z.m.loginfo[`unobserve;"observer ",string[nm]," not attached to ",string[event],"; nothing to detach"];:(::)];
   .z.m.deciderobs[event]:.z.m.deciderobs[event] _ nm;
   .z.m.loginfo[`unobserve;"detached observer ",string[nm]," from ",string[event]];
   };

@@ -79,7 +79,7 @@ handlers.register[`.z.pw;`myauth;{[u;p] .auth.check[u;p]}]     / decider
 ```
 
 ### `remove[event;name]`
-Remove a previously registered handler. Removing an observer deletes its entry from the fan-out; removing a decider relinquishes ownership, restores the KDB-X built-in default, and drops any attached decider observers.
+Remove a previously registered handler. Removing an observer deletes its entry from the fan-out; removing a decider relinquishes ownership, restores the KDB-X built-in default, and drops any attached decider observers. Removing a name that is not currently registered is a harmless no-op, logged at `info` (removing a decider under a name that does *not* own it is an error, not a no-op — the event has a single owner).
 ```q
 handlers.remove[`.z.pc;`mytracker]
 ```

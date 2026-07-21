@@ -41,6 +41,9 @@ run,0,0,q,(value `.z.wo) 7,1,1,invoke the dispatcher
 true,0,0,q,`orig in exec who from .hh.ev,1,1,the captured original still fires after a removal
 true,0,0,q,not `b in exec who from .hh.ev,1,1,the removed observer no longer runs
 true,0,0,q,1=count handlers.list[`.z.wo],1,1,only observer a remains registered
+run,0,0,q,handlers.remove[`.z.wo;`neverreg],1,1,remove a name never registered while a remains is a no-op
+true,0,0,q,1=count handlers.list[`.z.wo],1,1,the no-op left the registry unchanged
+true,0,0,q,`a in exec name from handlers.list[`.z.wo],1,1,the existing observer a is still present
 
 comment,,,,,,,observer - one handler throwing does not stop the rest and is logged at warn (.z.wc)
 run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
@@ -145,12 +148,12 @@ true,0,0,q,(exec v from .oo.d)~enlist `second,1,1,only the replacement body ran
 true,0,0,q,1=count select from handlers.list[`.z.pp] where role=`observer,1,1,one observer row not two
 
 comment,,,,,,,decider observers - unobserve removes an observer and leaves the dispatcher installed
-run,0,0,q,handlers.unobserve[`.z.pp;`neverattached],1,1,unobserve an unknown name is a silent no-op
+run,0,0,q,handlers.unobserve[`.z.pp;`neverattached],1,1,unobserve an unknown name while an observer is attached is a no-op
 true,0,0,q,1=count select from handlers.list[`.z.pp] where role=`observer,1,1,the real observer is unaffected
 run,0,0,q,handlers.unobserve[`.z.pp;`dup],1,1,detach the real observer
 true,0,0,q,0=count select from handlers.list[`.z.pp] where role=`observer,1,1,no observers remain
 true,0,0,q,not {x}~value `.z.pp,1,1,the dispatcher stays installed after the last observer is removed
-run,0,0,q,handlers.unobserve[`.z.pi;`anything],1,1,unobserve on a never-observed decider is a silent no-op
+run,0,0,q,handlers.unobserve[`.z.pi;`anything],1,1,unobserve on a never-observed decider is a no-op
 
 comment,,,,,,,decider observers - observe and unobserve reject bad argument types
 fail,0,0,q,handlers.observe[42;`x;{[r;a]}],1,1,observe event must be a symbol

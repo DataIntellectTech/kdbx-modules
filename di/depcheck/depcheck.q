@@ -77,10 +77,21 @@ readdepsq:{[modname]
 / ============================================================
 
 parsesemver:{[v]
-  / parse a "major.minor.patch" string into a 3-long int vector; any parse failure yields nulls at that position
+  / parse a "major.minor.patch" string into a 3-long int vector; a version that does not parse cleanly as three
+  / all-numeric parts collapses to a single (0Ni;0Ni;0Ni) "malformed" sentinel, checked via ismalformed, rather
+  / than left to silently participate in numeric comparison one component at a time - a lone bad component (e.g.
+  / a pre-release tag like "1.2.3-rc1") used to null out only itself, which could silently make a real, newer
+  / version compare as lower than it should, or make a typo'd deps.q minver like "abc" silently compare as no
+  / real minimum at all. Caught by direct testing, not by reading the code - see depcheck.md
   parts:"." vs v;
   if[not 3=count parts;:3#0Ni];
-  {@[{"I"$x};x;0Ni]} each parts
+  nums:{@[{"I"$x};x;0Ni]} each parts;
+  $[any null nums;3#0Ni;nums]
+  };
+
+ismalformed:{[v]
+  / true if v does not parse as a clean major.minor.patch triple - see parsesemver
+  (3#0Ni)~parsesemver v
   };
 
 vercmp:{[a;b]
@@ -107,6 +118,12 @@ vergte:{[a;b]
 
 checkfoundversion:{[dep;minver;foundver]
   / dep is loaded and exports a version - compares it against the declared minimum
+  / a malformed minver (a deps.q authoring typo) or malformed foundver (a module exporting a non-semver string)
+  / is reported explicitly here rather than silently entering vergte's numeric comparison - see parsesemver
+  if[ismalformed minver;
+    :enlist string[dep]," has a declared minimum version of ",minver,", which is not a valid major.minor.patch version"];
+  if[ismalformed foundver;
+    :enlist string[dep]," exports version ",foundver,", which is not a valid major.minor.patch version"];
   $[vergte[foundver;minver];();enlist string[dep]," requires minimum version ",minver,", found ",foundver]
   };
 
@@ -244,13 +261,16 @@ init:{[deps]
   failures:checkdeps[],checkcontracts[];
   warnings:ztscheck[],kdbxcheck[deps];
 
+  / warnings are logged unconditionally, before the failures check below - not gated behind "no failures", so a
+  / real warning is never silently dropped just because a failure also happened to signal in the same call.
+  / caught by direct testing, not by reading the code - see depcheck.md
+  if[count warnings;
+    .z.m.logwarn[`depcheck;buildreport["WARNING";warnings]]];
+
   if[count failures;
     report:buildreport["DEPENDENCY CHECK FAILED";failures];
     .z.m.logerr[`depcheck;report];
     '"di.depcheck: ",report];
-
-  if[count warnings;
-    .z.m.logwarn[`depcheck;buildreport["WARNING";warnings]]];
 
   .z.m.loginfo[`depcheck;"dependency check complete: ",(string count failures)," failure(s), ",(string count warnings)," warning(s)"];
   };

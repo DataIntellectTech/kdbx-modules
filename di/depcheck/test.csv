@@ -61,6 +61,28 @@ true,0,0,q,0=count .m.di.0depcheck.checkonedep[`zz.widget;"1.0.0"],1,,a loaded n
 true,0,0,q,".m.di.0depcheck.checkonedep[`zz.widget;""3.0.0""]~enlist ""zz.widget requires minimum version 3.0.0, found 2.0.0""",1,,a loaded non-di.* dependency is version-checked for real not falsely reported not-found
 true,0,0,q,".m.di.0depcheck.checkonedep[`zz.doesnotexist;""1.0.0""]~enlist ""zz.doesnotexist requires minimum version 1.0.0, not found""",1,,a genuinely absent non-di.* vendor namespace still safely reports not found, no crash
 
+comment,,,,,,,malformed semver handling - caught during manual adversarial re-scrutiny (not by reading the code): a
+comment,,,,,,,pre-release-tagged found version used to silently null out its patch component and compare as lower than
+comment,,,,,,,it really is; a typo'd deps.q minver used to silently compare as no real minimum at all. See parsesemver.
+before,0,0,q,.m.zz.0badfound.export:enlist[`version]!enlist "1.2.3-rc1",1,,fabricate a loaded module exporting a version with a pre-release tag
+true,0,0,q,"(3#0Ni)~.m.di.0depcheck.parsesemver[""1.2.3-rc1""]",1,,a version with a non-numeric component parses to the malformed sentinel not a partial triple
+true,0,0,q,".m.di.0depcheck.ismalformed[""1.2.3-rc1""]",1,,ismalformed recognises the pre-release-tagged string
+true,0,0,q,not .m.di.0depcheck.ismalformed["1.2.3"],1,,ismalformed does not flag a well-formed version
+true,0,0,q,".m.di.0depcheck.checkonedep[`zz.badfound;""1.2.0""]~enlist ""zz.badfound exports version 1.2.3-rc1, which is not a valid major.minor.patch version""",1,,a pre-release-tagged found version is reported as invalid rather than silently compared as lower
+true,0,0,q,".m.di.0depcheck.checkonedep[`zz.widget;""abc""]~enlist ""zz.widget has a declared minimum version of abc, which is not a valid major.minor.patch version""",1,,a malformed deps.q minver is reported as invalid rather than silently treated as no real minimum
+
+comment,,,,,,,buildreport - internal report-formatting helper, exercised directly not just indirectly via init's report
+true,0,0,q,.m.di.0depcheck.buildreport["X";("a";"b")]~"X:\n  a\n  b",1,,buildreport formats a header line followed by bulleted indented entries
+
+comment,,,,,,,checkmoduledeps - internal per-module deps.q auditor, exercised directly against real on-disk deps.q files
+comment,,,,,,,rather than only indirectly via checkdeps[] - closes a real gap: finddepsq/readdepsq's actual QPATH file
+comment,,,,,,,discovery and load mechanics had never been exercised by any committed test, only by manual scratch testing
+true,0,0,q,()~.m.di.0depcheck.checkmoduledeps[`0timer],1,,di.timer genuinely ships no deps.q - the real not-found branch against a real module, no crash
+true,0,0,q,()~.m.di.0depcheck.checkmoduledeps[`0depcheck],1,,di.depcheck's own real shipped empty deps.q is found and loaded via the real QPATH file-lookup and system load - proves the real file-discovery-and-load path actually works, not just the in-memory branches
+run,0,0,q,".dc.qroot:first "":"" vs getenv`QPATH; system ""mkdir -p "",.dc.qroot,""/di/zzmalformeddep""; (hsym `$.dc.qroot,""/di/zzmalformeddep/deps.q"") 0: enlist ""deps:42""",1,,"create a real on-disk malformed deps.q (deps defined as an int, not a dict) under a scratch module directory derived from QPATH at runtime - no hardcoded absolute path, no new committed fixture file. deliberately a run action not before: before actions across every accumulated load of this file in one k4unit session run as a single upfront batch, while run/true/fail replay per load in file order - a before here would create the fixture once but the paired cleanup below (a run action) would fire once per load, deleting it out from under a second load's assertion"
+true,0,0,q,any .m.di.0depcheck.checkmoduledeps[`0zzmalformeddep] like "*deps.q is malformed*",1,,a genuinely malformed deps.q found on disk is reported as its own failure line rather than crashing checkdeps - previously only manually verified never committed
+run,0,0,q,"system ""rm -rf "",.dc.qroot,""/di/zzmalformeddep""",1,,remove the scratch fixture directory
+
 comment,,,,,,,checkcontracts - core dependency contract shape, exercised against live loaded modules
 true,0,0,q,any .m.di.0depcheck.checkcontracts[] like "di.timer is missing required contract key(s): cp",1,,real di.timer fails the Timer contract - cp is defined but not exported - always present on main
 true,0,0,q,not any .m.di.0depcheck.checkcontracts[] like "di.handlers is missing*",1,,real di.handlers satisfies the Handlers contract in full when present; vacuously true (no entry to match) when absent
@@ -72,9 +94,15 @@ run,0,0,q,.z.ts:{[x]},1,,directly assign .z.ts outside di.timer for the negative
 true,0,0,q,.m.di.0depcheck.ztscheck[]~enlist ".z.ts has been directly assigned outside di.timer. This may cause timer conflicts.",1,,warns when .z.ts is bound outside di.timer
 run,0,0,q,system"x .z.ts",1,,restore .z.ts to the kdb-x built-in default after the test
 
-comment,,,,,,,end-to-end init - real loaded modules (di.timer missing cp) drive a real failing report
+comment,,,,,,,end-to-end init - real loaded modules (di.timer missing cp) drive a real failing report. minkdbxversion
+comment,,,,,,,is also set above .z.K so a real warning is computed alongside the real failure - regression test for a
+comment,,,,,,,logging bug found during adversarial re-scrutiny: warnings were only ever logged when init did NOT also
+comment,,,,,,,fail, since the failures branch signalled (threw) before the warnings-logging line was reached, silently
+comment,,,,,,,dropping any real warning that happened to coincide with a real failure. Fixed by logging warnings first.
 run,0,0,q,.dc.captbl:0#.dc.captbl,1,,reset log capture
-run,0,0,q,.dc.initerr:@[{depcheck.init[enlist[`log]!enlist caplog]};(::);{x}],1,,init throws end-to-end because real di.timer fails the Timer contract
+run,0,0,q,.dc.initerr:@[{depcheck.init[`log`minkdbxversion!(caplog;999f)]};(::);{x}],1,,init throws end-to-end while a real kdbxcheck warning is also computed
 true,0,0,q,.dc.initerr like "di.depcheck: DEPENDENCY CHECK FAILED:*",1,,the signalled error is the di.depcheck-prefixed report block
 true,0,0,q,.dc.initerr like "*di.timer is missing required contract key(s): cp*",1,,the report names the real di.timer contract gap
 true,0,0,q,any `error = exec lvl from .dc.captbl,1,,the failing report was also logged at error before being signalled
+true,0,0,q,any `warn = exec lvl from .dc.captbl,1,,the coinciding warning was also logged at warn - not silently dropped - regression test for the logging fix
+true,0,0,q,(exec first msg from .dc.captbl where lvl=`warn) like "*is below the configured minimum*",1,,the logged warning is the real kdbxcheck text, not an empty or wrong message

@@ -18,155 +18,172 @@ comment,,,,,,,module metadata - exported version
 true,0,0,q,10h=type handlers.version,1,1,version is a string
 true,0,0,q,0<count handlers.version,1,1,version is non-empty
 
-comment,,,,,,,observer - fan-out order and the captured original runs last (.z.wo)
+comment,,,,,,,simple - fan-out runs in priority order and the captured original runs last (.z.wo)
 run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
 run,0,0,q,.z.wo:{[w] `.hh.ev insert `orig},1,1,bind a pre-existing .z.wo to become the captured original
-run,0,0,q,handlers.register[`.z.wo;`a;{[w] `.hh.ev insert `a}],1,1,register first observer a
-run,0,0,q,handlers.register[`.z.wo;`b;{[w] `.hh.ev insert `b}],1,1,register second observer b
+run,0,0,q,handlers.register[`.z.wo;`;`a;20;{[w] `.hh.ev insert `a}],1,1,register observer a with priority 20
+run,0,0,q,handlers.register[`.z.wo;`;`b;10;{[w] `.hh.ev insert `b}],1,1,register observer b with priority 10
 run,0,0,q,(value `.z.wo) 999,1,1,invoke the installed dispatcher with a synthetic handle
-true,0,0,q,(exec who from .hh.ev)~`a`b`orig,1,1,observers run in registration order then the original last
+true,0,0,q,(exec who from .hh.ev)~`b`a`orig,1,1,lower priority b runs before a then the original last
 true,0,0,q,2=count handlers.list[`.z.wo],1,1,list shows the two registered observers
 
-comment,,,,,,,observer - duplicate name replaces in place (.z.wo)
+comment,,,,,,,simple - duplicate name replaces in place keeping its priority (.z.wo)
 run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
-run,0,0,q,handlers.register[`.z.wo;`a;{[w] `.hh.ev insert `a2}],1,1,re-register name a with a new body
+run,0,0,q,handlers.register[`.z.wo;`;`a;20;{[w] `.hh.ev insert `a2}],1,1,re-register name a with a new body at the same priority
 run,0,0,q,(value `.z.wo) 1,1,1,invoke the dispatcher again
-true,0,0,q,(exec who from .hh.ev)~`a2`b`orig,1,1,a replaced in place keeping its position
+true,0,0,q,(exec who from .hh.ev)~`b`a2`orig,1,1,a replaced in place keeping its priority position
 true,0,0,q,2=count handlers.list[`.z.wo],1,1,duplicate registration did not grow the registry
 
-comment,,,,,,,observer - remove drops a handler while the captured original keeps firing (.z.wo)
+comment,,,,,,,simple - remove drops a handler while the captured original keeps firing (.z.wo)
 run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
-run,0,0,q,handlers.remove[`.z.wo;`b],1,1,remove observer b
+run,0,0,q,handlers.remove[`.z.wo;`;`b],1,1,remove observer b
 run,0,0,q,(value `.z.wo) 7,1,1,invoke the dispatcher
 true,0,0,q,`orig in exec who from .hh.ev,1,1,the captured original still fires after a removal
 true,0,0,q,not `b in exec who from .hh.ev,1,1,the removed observer no longer runs
 true,0,0,q,1=count handlers.list[`.z.wo],1,1,only observer a remains registered
-run,0,0,q,handlers.remove[`.z.wo;`neverreg],1,1,remove a name never registered while a remains is a no-op
+run,0,0,q,handlers.remove[`.z.wo;`;`neverreg],1,1,remove a name never registered is a no-op
 true,0,0,q,1=count handlers.list[`.z.wo],1,1,the no-op left the registry unchanged
 true,0,0,q,`a in exec name from handlers.list[`.z.wo],1,1,the existing observer a is still present
 
-comment,,,,,,,observer - one handler throwing does not stop the rest and is logged at warn (.z.wc)
+comment,,,,,,,simple - one handler throwing does not stop the rest and is logged at warn (.z.wc)
 run,0,0,q,.hh.ev:0#.hh.ev,1,1,reset order capture
 run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
-run,0,0,q,handlers.register[`.z.wc;`bad;{[w] '`boom}],1,1,register a throwing observer first
-run,0,0,q,handlers.register[`.z.wc;`good;{[w] `.hh.ev insert `good}],1,1,register a well-behaved observer second
+run,0,0,q,handlers.register[`.z.wc;`;`bad;0;{[w] '`boom}],1,1,register a throwing observer at priority 0
+run,0,0,q,handlers.register[`.z.wc;`;`good;1;{[w] `.hh.ev insert `good}],1,1,register a well-behaved observer at priority 1
 run,0,0,q,(value `.z.wc) 1,1,1,invoke the dispatcher
 true,0,0,q,(exec who from .hh.ev)~enlist `good,1,1,the good observer still ran despite the earlier throw
 true,0,0,q,any `warn = exec lvl from .hh.captbl,1,1,the isolated throw was logged at warn
 
-comment,,,,,,,decider - single owner claim reclaim and reject (.z.pg)
-run,0,0,q,handlers.register[`.z.pg;`owner1;{x}],1,1,first claim installs the owner directly
-true,0,0,q,`owner1~exec first name from handlers.list[`.z.pg],1,1,list names the current owner
-true,0,0,q,42~(value `.z.pg) 42,1,1,the installed owner function is bound to the event
-run,0,0,q,handlers.register[`.z.pg;`owner1;{2*x}],1,1,same-name reclaim replaces the function in place
-true,0,0,q,42~(value `.z.pg) 21,1,1,the reclaimed function is now in effect
-fail,0,0,q,handlers.register[`.z.pg;`owner2;{x}],1,1,a different name is rejected while the event is owned
+comment,,,,,,,phase validation - simple events reject a phase and phased events require one
+fail,0,0,q,handlers.register[`.z.wo;`pre;`x;0;{x}],1,1,a simple event rejects a non-null phase
+fail,0,0,q,handlers.register[`.z.ws;`;`x;0;{x}],1,1,a phased event rejects a null phase
+fail,0,0,q,handlers.register[`.z.ws;`bogus;`x;0;{x}],1,1,a phased event rejects an unknown phase
 
-comment,,,,,,,decider - remove requires ownership and restores the KDB-X default (.z.ps)
-run,0,0,q,handlers.register[`.z.ps;`only;{x}],1,1,claim the async decider
-fail,0,0,q,handlers.remove[`.z.ps;`someoneelse],1,1,removing under a non-owning name is rejected
-run,0,0,q,handlers.remove[`.z.ps;`only],1,1,the owner removes and restores the KDB-X default
+comment,,,,,,,phased - pre and post cannot attach before an exec owner exists (.z.pi)
+fail,0,0,q,handlers.register[`.z.pi;`pre;`p;0;{x}],1,1,pre before exec is rejected
+fail,0,0,q,handlers.register[`.z.pi;`post;`p;0;{[r;a]}],1,1,post before exec is rejected
+
+comment,,,,,,,phased - single exec owner claim reclaim and reject (.z.pg)
+run,0,0,q,handlers.register[`.z.pg;`exec;`owner1;0;{x}],1,1,first claim installs the dispatcher and owner
+true,0,0,q,`owner1~exec first name from select from handlers.list[`.z.pg] where phase=`exec,1,1,list names the current exec owner
+true,0,0,q,42~(value `.z.pg) 42,1,1,the installed dispatcher runs the owner and returns its result
+run,0,0,q,handlers.register[`.z.pg;`exec;`owner1;0;{2*x}],1,1,same-name reclaim replaces the owner function in place
+true,0,0,q,42~(value `.z.pg) 21,1,1,the reclaimed owner is now in effect through the dispatcher
+fail,0,0,q,handlers.register[`.z.pg;`exec;`owner2;0;{x}],1,1,a different name is rejected while the event is owned
+
+comment,,,,,,,phased - pre transforms the request in priority order and post observes the result (.z.pi)
+run,0,0,q,handlers.register[`.z.pi;`exec;`owner;0;{x}],1,1,exec owner is the identity
+run,0,0,q,handlers.register[`.z.pi;`pre;`add1;10;{x+1}],1,1,pre add1 at priority 10
+run,0,0,q,handlers.register[`.z.pi;`pre;`mul2;20;{2*x}],1,1,pre mul2 at priority 20
+run,0,0,q,handlers.register[`.z.pi;`post;`watch;0;{[r;a] .oo.pr::r; .oo.pa::a}],1,1,post captures the result and the args it receives
+run,0,0,q,.oo.res:(value `.z.pi) 5,1,1,drive the dispatcher with request 5
+true,0,0,q,.oo.res~12,1,1,pre ran add1 then mul2 in priority order giving 12 not 11
+true,0,0,q,.oo.pr~12,1,1,post sees the exec result
+true,0,0,q,.oo.pa~enlist 12,1,1,post sees the transformed request that exec ran on
+
+comment,,,,,,,phased - reclaiming the exec owner in place preserves the attached pre and post handlers
+run,0,0,q,handlers.register[`.z.pi;`exec;`owner;0;{10*x}],1,1,reclaim the same exec name with a new function
+run,0,0,q,.oo.res:(value `.z.pi) 5,1,1,drive the dispatcher after the reclaim
+true,0,0,q,.oo.res~120,1,1,pre chain still applied (5 to 6 to 12) with the reclaimed exec 10*12 in effect
+true,0,0,q,2=count select from handlers.list[`.z.pi] where phase=`pre,1,1,both pre handlers survived the reclaim
+true,0,0,q,1=count select from handlers.list[`.z.pi] where phase=`post,1,1,the post handler survived the reclaim
+true,0,0,q,.oo.pr~120,1,1,the post handler still fired on the reclaimed dispatch
+
+comment,,,,,,,phased - a pre handler runs unprotected and can veto by throwing (.z.pp)
+run,0,0,q,handlers.register[`.z.pp;`exec;`o;0;{x}],1,1,claim the exec owner
+run,0,0,q,handlers.register[`.z.pp;`pre;`veto;0;{'`denied}],1,1,a pre handler that always throws
+run,0,0,q,handlers.register[`.z.pp;`post;`nope;0;{[r;a] .oo.postran::1b}],1,1,a post handler that records whether it ran
+run,0,0,q,.oo.postran:0b,1,1,reset the post-ran flag
+fail,0,0,q,(value `.z.pp)`anything,1,1,the pre throw propagates through the dispatcher
+true,0,0,q,not .oo.postran,1,1,post never ran because pre threw before exec
+
+comment,,,,,,,phased - .z.ph is a normal phased event end to end and remove restores its shipped default handler
+run,0,0,q,.oo.phdef:value `.z.ph,1,1,capture the KDB-X shipped HTTP GET handler before taking ownership
+run,0,0,q,handlers.register[`.z.ph;`exec;`web;0;{[x] `handled}],1,1,claim the .z.ph exec owner
+run,0,0,q,handlers.register[`.z.ph;`pre;`auth;0;{x}],1,1,an identity pre on .z.ph
+run,0,0,q,handlers.register[`.z.ph;`post;`log;0;{[r;a] .oo.phran::1b}],1,1,a post watcher on .z.ph
+run,0,0,q,.oo.phran:0b,1,1,reset the .z.ph post flag
+run,0,0,q,.oo.phres:(value `.z.ph)"GET /",1,1,drive the .z.ph dispatcher
+true,0,0,q,.oo.phres~`handled,1,1,the exec owner produced the result
+true,0,0,q,.oo.phran,1,1,the post watcher fired on .z.ph
+true,0,0,q,`web~exec first name from select from handlers.list[`.z.ph] where phase=`exec,1,1,list names the .z.ph exec owner
+run,0,0,q,handlers.remove[`.z.ph;`exec;`web],1,1,remove the .z.ph owner
+true,0,0,q,.oo.phdef~value `.z.ph,1,1,remove restored the exact shipped GET handler not \\x-to-unset
+true,0,0,q,100h=type value `.z.ph,1,1,and .z.ph is a real handler function again not left unset
+
+comment,,,,,,,phased - .z.pw owner sees the real password post sees *** and pre is rejected
+run,0,0,q,handlers.register[`.z.pw;`exec;`auth;0;{[u;p] .oo.ownerpw::p;1b}],1,1,owner records the password it receives and allows
+run,0,0,q,handlers.register[`.z.pw;`post;`audit;0;{[r;a] .oo.obspw::a}],1,1,post records the args it receives
+fail,0,0,q,handlers.register[`.z.pw;`pre;`x;0;{x}],1,1,.z.pw rejects a pre phase
+run,0,0,q,.oo.pwres:(value `.z.pw)[`alice;"secret"],1,1,drive the installed .z.pw dispatcher
+true,0,0,q,.oo.pwres~1b,1,1,the owner result flows back to the caller unchanged
+true,0,0,q,.oo.ownerpw~"secret",1,1,the owner sees the real password
+true,0,0,q,.oo.obspw~(`alice;"***"),1,1,the post handler sees the redacted args never the password
+true,0,0,q,`exec`post~exec phase from handlers.list[`.z.pw],1,1,list shows an exec row then a post row
+true,0,0,q,`auth`audit~exec name from handlers.list[`.z.pw],1,1,owner name first then post name
+
+comment,,,,,,,phased - duplicate-name post replaces in place and no-op remove is safe (.z.pg)
+run,0,0,q,handlers.register[`.z.pg;`post;`dup;0;{[r;a] `.oo.d insert `first}],1,1,attach post dup
+run,0,0,q,handlers.register[`.z.pg;`post;`dup;0;{[r;a] `.oo.d insert `second}],1,1,re-attach the same name with a new body
+run,0,0,q,.oo.d:([]v:`symbol$()),1,1,reset the post capture table
+run,0,0,q,(value `.z.pg) 5,1,1,drive the dispatcher once
+true,0,0,q,(exec v from .oo.d)~enlist `second,1,1,only the replacement body ran
+true,0,0,q,1=count select from handlers.list[`.z.pg] where phase=`post,1,1,one post row not two
+run,0,0,q,handlers.remove[`.z.pg;`post;`neverattached],1,1,remove an unknown post name is a no-op
+true,0,0,q,1=count select from handlers.list[`.z.pg] where phase=`post,1,1,the real post handler is unaffected
+run,0,0,q,handlers.remove[`.z.pg;`post;`dup],1,1,remove the real post handler
+true,0,0,q,0=count select from handlers.list[`.z.pg] where phase=`post,1,1,no post handlers remain
+
+comment,,,,,,,phased - remove exec requires ownership and restores the KDB-X default (.z.ps)
+run,0,0,q,handlers.register[`.z.ps;`exec;`only;0;{x}],1,1,claim the async decider
+fail,0,0,q,handlers.remove[`.z.ps;`exec;`someoneelse],1,1,removing exec under a non-owning name is rejected
+run,0,0,q,handlers.remove[`.z.ps;`exec;`only],1,1,the owner removes and restores the KDB-X default
 true,0,0,q,0=count handlers.list[`.z.ps],1,1,ownership is cleared after removal
 
-comment,,,,,,,scope - .z.ph and unknown events are rejected loudly
-fail,0,0,q,handlers.register[`.z.ph;`x;{x}],1,1,.z.ph HTTP GET is out of scope
-fail,0,0,q,handlers.register[`.z.zz;`x;{x}],1,1,unknown event rejected by register
+comment,,,,,,,phased - exec install always wraps and removing the owner clears all state for a clean re-register (.z.ws)
+run,0,0,q,handlers.register[`.z.ws;`exec;`o1;0;{x}],1,1,claim a decider
+true,0,0,q,not {x}~value `.z.ws,1,1,the exec install binds a dispatcher not the raw owner function
+run,0,0,q,handlers.register[`.z.ws;`post;`w1;0;{[r;a]}],1,1,attach a post handler
+run,0,0,q,handlers.remove[`.z.ws;`exec;`o1],1,1,remove the owner
+true,0,0,q,0=count handlers.list[`.z.ws],1,1,list is empty after owner removal
+true,0,0,q,not `.z.ws in key .m.di.0handlers.ownerfunc,1,1,the owner function entry is cleared
+true,0,0,q,not `.z.ws in key .m.di.0handlers.pre,1,1,the pre table entry is cleared
+true,0,0,q,not `.z.ws in key .m.di.0handlers.post,1,1,the post table entry is cleared
+run,0,0,q,handlers.register[`.z.ws;`exec;`o2;0;{2*x}],1,1,register a fresh owner on the same event
+true,0,0,q,6~(value `.z.ws) 3,1,1,the fresh owner is in effect through a new dispatcher
+
+comment,,,,,,,scope - unknown events are rejected loudly
+fail,0,0,q,handlers.register[`.z.zz;`;`x;0;{x}],1,1,unknown event rejected by register
 fail,0,0,q,handlers.list[`.z.zz],1,1,unknown event rejected by list
-fail,0,0,q,handlers.remove[`.z.zz;`x],1,1,unknown event rejected by remove
+fail,0,0,q,handlers.remove[`.z.zz;`;`x],1,1,unknown event rejected by remove
 
 comment,,,,,,,input validation on register
-fail,0,0,q,handlers.register[42;`x;{x}],1,1,event must be a symbol
-fail,0,0,q,handlers.register[`.z.wo;"x";{x}],1,1,name must be a symbol
-fail,0,0,q,handlers.register[`.z.wo;`x;42],1,1,func must be a function
+fail,0,0,q,handlers.register[42;`;`x;0;{x}],1,1,event must be a symbol
+fail,0,0,q,handlers.register[`.z.wo;42;`x;0;{x}],1,1,phase must be a symbol
+fail,0,0,q,handlers.register[`.z.wo;`;"x";0;{x}],1,1,name must be a symbol
+fail,0,0,q,handlers.register[`.z.wo;`;`x;`notint;{x}],1,1,priority must be an integer
+fail,0,0,q,handlers.register[`.z.wo;`;`x;0;42],1,1,func must be a function
 
 comment,,,,,,,domain errors are logged at error before being signalled
 run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
-run,0,0,q,.hh.trap:@[{handlers.register[`.z.zz;`x;{x}]};(::);{x}],1,1,trap a rejected registration
+run,0,0,q,.hh.trap:@[{handlers.register[`.z.zz;`;`x;0;{x}]};(::);{x}],1,1,trap a rejected registration
 true,0,0,q,any `error = exec lvl from .hh.captbl,1,1,the domain error was logged at error
 
 comment,,,,,,,the signalled string is the house idiom - di.handlers-prefixed with no per-function context tag and equal to the logged message
 run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
-run,0,0,q,.hh.sig:@[{handlers.register[42;`x;{x}]};(::);{x}],1,1,capture the signal from a representative rejected register
+run,0,0,q,.hh.sig:@[{handlers.register[42;`;`x;0;{x}]};(::);{x}],1,1,capture the signal from a representative rejected register
 true,0,0,q,.hh.sig like "di.handlers: event must be a symbol",1,1,signal is di.handlers-prefixed with no register: context tag
 true,0,0,q,.hh.sig~last exec msg from .hh.captbl where lvl=`error,1,1,the signalled string equals the logged error message
 true,0,0,q,`register=last exec ctx from .hh.captbl where lvl=`error,1,1,the per-function context is on the log symbol arg not in the signal
 
 comment,,,,,,,init is idempotent and preserves live registrations
-run,0,0,q,handlers.register[`.z.wo;`persist;{[w] `.hh.ev insert `persist}],1,1,register a handler before re-init
+run,0,0,q,handlers.register[`.z.wo;`;`persist;5;{[w] `.hh.ev insert `persist}],1,1,register a handler before re-init
 run,0,0,q,handlers.init[enlist[`log]!enlist caplog],1,1,re-init the module
 true,0,0,q,`persist in exec name from handlers.list[`.z.wo],1,1,the registration survived re-initialisation
 
-comment,,,,,,,cleanup - relinquish the decider so the process is left with KDB-X defaults
-run,0,0,q,handlers.remove[`.z.pg;`owner1],1,1,restore the default .z.pg handler
-
-comment,,,,,,,decider observers - observe requires the event to have an owner first
-fail,0,0,q,handlers.observe[`.z.pg;`ql;{[r;a]}],1,1,observe before register throws
-
-comment,,,,,,,decider observers - .z.pw owner sees the real password observer sees ***
-run,0,0,q,handlers.register[`.z.pw;`auth;{[u;p] .oo.ownerpw::p;1b}],1,1,owner records the password it receives and allows
-run,0,0,q,handlers.observe[`.z.pw;`audit;{[r;a] .oo.obspw::a}],1,1,observer records the args it receives
-run,0,0,q,.oo.pwres:(value `.z.pw)[`alice;"secret"],1,1,drive the installed .z.pw dispatcher
-true,0,0,q,.oo.pwres~1b,1,1,the owner result flows back to the caller unchanged
-true,0,0,q,.oo.ownerpw~"secret",1,1,the owner sees the real password
-true,0,0,q,.oo.obspw~(`alice;"***"),1,1,the observer sees the redacted args never the password
-true,0,0,q,`owner`observer~exec role from handlers.list[`.z.pw],1,1,list shows an owner row then an observer row
-true,0,0,q,`auth`audit~exec name from handlers.list[`.z.pw],1,1,owner name first then observer name
-
-comment,,,,,,,decider observers - owner throw means observers never run and the error propagates
-run,0,0,q,.oo.ran:0b,1,1,reset the observer-ran flag
-run,0,0,q,handlers.register[`.z.pg;`dec;{[q] '`denied}],1,1,owner that always throws
-run,0,0,q,handlers.observe[`.z.pg;`watch;{[r;a] .oo.ran::1b}],1,1,observer that records whether it ran
-fail,0,0,q,(value `.z.pg)"2+2",1,1,the owner throw propagates through the dispatcher
-true,0,0,q,not .oo.ran,1,1,the observer never ran because the owner threw
-
-comment,,,,,,,decider observers - register reclaim after observe swaps the owner and keeps the dispatcher
-run,0,0,q,handlers.register[`.z.pg;`dec;{[q] 100}],1,1,reclaim the same owner name with a new function
-true,0,0,q,100~(value `.z.pg)"ignored",1,1,the dispatcher now calls the reclaimed owner function
-true,0,0,q,not {[q] 100}~value `.z.pg,1,1,reclaim updated the owner in place and left the dispatcher installed
-
-comment,,,,,,,decider observers - a decider never observed is bound directly with no dispatcher
-run,0,0,q,handlers.register[`.z.pi;`raw;{x}],1,1,register a decider and never observe it
-true,0,0,q,{x}~value `.z.pi,1,1,.z.pi is bound to the owner function itself not a dispatcher
-
-comment,,,,,,,decider observers - removing an observed owner clears all state and a fresh register starts clean
-run,0,0,q,handlers.register[`.z.ws;`o1;{x}],1,1,claim a decider
-run,0,0,q,handlers.observe[`.z.ws;`w1;{[r;a]}],1,1,attach an observer which installs the dispatcher
-run,0,0,q,handlers.remove[`.z.ws;`o1],1,1,remove the owner
-true,0,0,q,0=count handlers.list[`.z.ws],1,1,list is empty after owner removal
-true,0,0,q,not `.z.ws in key .m.di.0handlers.ownerfunc,1,1,the owner function entry is cleared
-true,0,0,q,not `.z.ws in key .m.di.0handlers.deciderobs,1,1,the observer registry entry is cleared
-run,0,0,q,handlers.register[`.z.ws;`o2;{2*x}],1,1,register a fresh owner on the same event
-true,0,0,q,{2*x}~value `.z.ws,1,1,fresh register is a direct set with no leftover dispatcher
-
-comment,,,,,,,decider observers - duplicate-name observe replaces in place
-run,0,0,q,handlers.register[`.z.pp;`owner;{x}],1,1,claim a decider
-run,0,0,q,handlers.observe[`.z.pp;`dup;{[r;a] `.oo.d insert `first}],1,1,attach observer dup
-run,0,0,q,handlers.observe[`.z.pp;`dup;{[r;a] `.oo.d insert `second}],1,1,re-attach the same name with a new body
-run,0,0,q,.oo.d:([]v:`symbol$()),1,1,reset the observer capture table
-run,0,0,q,(value `.z.pp)"x",1,1,drive the dispatcher once
-true,0,0,q,(exec v from .oo.d)~enlist `second,1,1,only the replacement body ran
-true,0,0,q,1=count select from handlers.list[`.z.pp] where role=`observer,1,1,one observer row not two
-
-comment,,,,,,,decider observers - unobserve removes an observer and leaves the dispatcher installed
-run,0,0,q,handlers.unobserve[`.z.pp;`neverattached],1,1,unobserve an unknown name while an observer is attached is a no-op
-true,0,0,q,1=count select from handlers.list[`.z.pp] where role=`observer,1,1,the real observer is unaffected
-run,0,0,q,handlers.unobserve[`.z.pp;`dup],1,1,detach the real observer
-true,0,0,q,0=count select from handlers.list[`.z.pp] where role=`observer,1,1,no observers remain
-true,0,0,q,not {x}~value `.z.pp,1,1,the dispatcher stays installed after the last observer is removed
-run,0,0,q,handlers.unobserve[`.z.pi;`anything],1,1,unobserve on a never-observed decider is a no-op
-
-comment,,,,,,,decider observers - observe and unobserve reject bad argument types
-fail,0,0,q,handlers.observe[42;`x;{[r;a]}],1,1,observe event must be a symbol
-fail,0,0,q,handlers.observe[`.z.pg;"x";{[r;a]}],1,1,observe name must be a symbol
-fail,0,0,q,handlers.observe[`.z.pg;`x;42],1,1,observe func must be a function
-fail,0,0,q,handlers.observe[`.z.ph;`x;{[r;a]}],1,1,observe rejects .z.ph
-fail,0,0,q,handlers.observe[`.z.pc;`x;{[r;a]}],1,1,observe rejects observer events
-fail,0,0,q,handlers.unobserve[42;`x],1,1,unobserve event must be a symbol
-fail,0,0,q,handlers.unobserve[`.z.pg;"x"],1,1,unobserve name must be a symbol
-
-comment,,,,,,,decider observers - cleanup restores kdb-x defaults on the touched deciders
-run,0,0,q,handlers.remove[`.z.pw;`auth],1,1,restore default .z.pw
-run,0,0,q,handlers.remove[`.z.pg;`dec],1,1,restore default .z.pg
-run,0,0,q,handlers.remove[`.z.pi;`raw],1,1,restore default .z.pi
-run,0,0,q,handlers.remove[`.z.ws;`o2],1,1,restore default .z.ws
-run,0,0,q,handlers.remove[`.z.pp;`owner],1,1,restore default .z.pp
+comment,,,,,,,cleanup - relinquish the deciders so the process is left with KDB-X defaults
+run,0,0,q,handlers.remove[`.z.pg;`exec;`owner1],1,1,restore default .z.pg
+run,0,0,q,handlers.remove[`.z.pi;`exec;`owner],1,1,restore default .z.pi
+run,0,0,q,handlers.remove[`.z.pp;`exec;`o],1,1,restore default .z.pp
+run,0,0,q,handlers.remove[`.z.pw;`exec;`auth],1,1,restore default .z.pw
+run,0,0,q,handlers.remove[`.z.ws;`exec;`o2],1,1,restore default .z.ws

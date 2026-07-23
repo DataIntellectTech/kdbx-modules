@@ -9,7 +9,7 @@ before,0,0,q,handlers:use`di.handlers,1,1,load di.handlers module
 before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent no-op log mock
 before,0,0,q,handlers.init[enlist[`log]!enlist logdep],1,1,init the module
 before,0,0,q,.hh.iev:([]who:`symbol$()),1,1,capture table for observer firings
-before,0,0,q,handlers.register[`.z.pc;`itest;{[w] `.hh.iev insert `closed}],1,1,register a real .z.pc observer through di.handlers
+before,0,0,q,handlers.register[`.z.pc;`;`itest;0;{[w] `.hh.iev insert `closed}],1,1,register a real .z.pc observer through di.handlers
 before,0,0,q,qcands:$[count qh:getenv[`QHOME];(raze(qh;"/bin/q");raze(qh;"/";string .z.o;"/q"));()],1,1,candidate q binary locations for kdbx and classic layouts
 before,0,0,q,qbin:$[count ex:qcands where {not ()~key hsym `$x} each qcands;first ex;"q"],1,1,pick the first candidate that exists else fall back to q on PATH
 before,0,0,q,.it.tryopen:{[p] @[{hopen (`$"" sv (":localhost:";string x);500)};p;0Ni]},1,1,attempt one connection returning a null handle on failure

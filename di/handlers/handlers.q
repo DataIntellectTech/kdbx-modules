@@ -1,6 +1,6 @@
 / central registry for KDB-X .z.* connection-lifecycle callbacks
 / the single sanctioned place to hook .z.* events - replaces per-file hand-rolled closure wrapping
-/ observer events fan out to any number of registrants; decider events allow exactly one owner
+/ simple events fan out to any number of registrants; phased events thread pre -> exec -> post around one owner
 
 / module version - placeholder only; no project-wide version / di.depcheck convention exists yet
 version:"0.1.0";
@@ -9,18 +9,30 @@ version:"0.1.0";
 / constants (load-time)
 / ============================================================
 
-/ observer events - KDB-X discards the return value, so any number of side-effect-only handlers can coexist
+/ simple events - KDB-X discards the return value, so any number of side-effect-only handlers can coexist (phase must be `)
 observerevents:`.z.pc`.z.po`.z.exit`.z.wo`.z.wc;
 
-/ decider events - KDB-X uses the return value as the outcome, so only one owner can coherently exist
-/ .z.ph is deliberately absent - HTTP GET permissioning uses .h.val, not .z.*, and is out of scope (see register)
-deciderevents:`.z.pg`.z.ps`.z.pi`.z.pp`.z.pw`.z.ws;
+/ phased events - pre (transform request) -> exec (single owner produces the outcome) -> post (side-effect watchers)
+/ .z.pw is included but binary and pre-less (see register); .z.ph replaces the built-in HTTP GET handler wholesale (see notes)
+phasedevents:`.z.pg`.z.ps`.z.pi`.z.pp`.z.ph`.z.ws`.z.pw;
 
-/ per-event observer registry template - keyed by handler name in registration order
-registryschema:([name:`symbol$()] func:());
+/ per-phase handler table - name, priority (lower runs first), func; ties break by registration order
+phasetableschema:([]name:`symbol$();priority:`long$();func:());
+
+/ empty list result shape
+emptylist:([]phase:`symbol$();name:`symbol$();priority:`long$());
 
 / ============================================================
-/ internal helpers
+/ internal helpers - shared
+/ ============================================================
+
+upsertphase:{[t;nm;pri;func]
+  / replace any existing row for this name, then append - keeps names unique within a phase
+  (delete from t where name=nm) upsert (nm;pri;func)
+  };
+
+/ ============================================================
+/ internal helpers - simple (fan-out) events
 / ============================================================
 
 runobserver:{[event;nm;func;arg]
@@ -33,159 +45,178 @@ runoriginal:{[event;arg]
   @[.z.m.original event;arg;{[event;e] .z.m.logwarn[`handlers;"original ",string[event]," handler failed: ",e]}[event]];
   };
 
-dispatchobs:{[event;arg]
-  / fan out to every registered observer in registration order, then run the captured original last, each isolated
-  t:0!.z.m.registry event;
+dispatchsimple:{[event;arg]
+  / fan out to every registered observer in priority order, then run the captured original last, each isolated
+  t:`priority xasc .z.m.registry event;
   runobserver[event;;;arg]'[t`name;t`func];
   runoriginal[event;arg];
   };
 
-installobserver:{[event]
+installsimple:{[event]
   / on first registration for an event, capture whatever is currently bound (KDB-X default if unset) and install the dispatcher
   .z.m.original[event]:@[value;event;{(::)}];
-  .z.m.registry[event]:registryschema;
-  set[event;dispatchobs[event;]];
+  .z.m.registry[event]:phasetableschema;
+  set[event;dispatchsimple[event;]];
   };
 
-registerobserver:{[event;nm;func]
-  / lazily install on first use, then add or replace this handler in registration order
-  if[not event in key .z.m.original;installobserver event];
-  .z.m.registry[event]:.z.m.registry[event] upsert (nm;func);
+registersimple:{[event;nm;pri;func]
+  / lazily install on first use, then add or replace this handler; priority orders the fan-out
+  if[not event in key .z.m.original;installsimple event];
+  .z.m.registry[event]:upsertphase[.z.m.registry event;nm;pri;func];
   .z.m.loginfo[`register;"registered observer ",string[nm]," on ",string[event]];
   };
 
-registerdecider:{[event;nm;func]
+removesimple:{[event;nm]
+  / drop the named handler; the dispatcher and captured original keep firing regardless of remaining count
+  if[not event in key .z.m.registry;.z.m.loginfo[`remove;"no observers registered on ",string[event],"; nothing to remove for ",string[nm]];:(::)];
+  if[not nm in exec name from .z.m.registry event;.z.m.loginfo[`remove;"observer ",string[nm]," not registered on ",string[event],"; nothing to remove"];:(::)];
+  .z.m.registry[event]:delete from .z.m.registry event where name=nm;
+  .z.m.loginfo[`remove;"removed observer ",string[nm]," on ",string[event]];
+  };
+
+simplelist:{[event]
+  / uniform ([]phase;name;priority) view - simple events carry a null phase, priority order
+  select phase:`,name,priority from `priority xasc $[event in key .z.m.registry;.z.m.registry event;phasetableschema]
+  };
+
+/ ============================================================
+/ internal helpers - phased (pre -> exec -> post) events
+/ ============================================================
+
+runpost:{[event;nm;func;result;args]
+  / apply one post handler under protection - side-effect only, never alters the result; a throw is logged at warn and swallowed
+  .[func;(result;args);{[event;nm;e] .z.m.logwarn[`handlers;"post handler ",string[nm]," on ",string[event]," failed: ",e]}[event;nm]];
+  };
+
+runpostall:{[event;result;args]
+  / run every post handler for event in priority order, each isolated, with the uniform func[result;args] signature
+  t:`priority xasc .z.m.post event;
+  runpost[event;;;result;args]'[t`name;t`func];
+  };
+
+dispatchphased:{[event;req]
+  / thread the request through pre (transform, unprotected) -> exec owner (unprotected) -> post (observe, protected)
+  pres:exec func from `priority xasc .z.m.pre event;
+  req:{[acc;f] f acc}/[req;pres];
+  r:.z.m.ownerfunc[event] req;
+  runpostall[event;r;enlist req];
+  r
+  };
+
+dispatchpw:{[u;p]
+  / .z.pw is the only binary phased event - the owner sees the real password; post handlers see it redacted to "***"; no pre
+  r:.z.m.ownerfunc[`.z.pw][u;p];
+  runpostall[`.z.pw;r;(u;"***")];
+  r
+  };
+
+installphased:{[event]
+  / install the dispatcher on first exec registration - create the empty pre/post tables and bind the event
+  / .z.ph is the only phased event KDB-X ships a default handler for, and \x cannot restore it - capture it to put back on remove
+  if[event~`.z.ph;.z.m.original[event]:@[value;event;{(::)}]];
+  .z.m.pre[event]:phasetableschema;
+  .z.m.post[event]:phasetableschema;
+  set[event;$[event~`.z.pw;dispatchpw;dispatchphased[event;]]];
+  };
+
+registerexec:{[event;nm;pri;func]
   / single owner - a different name claiming an owned event is rejected; the same name reclaims (idempotent re-init)
   if[event in key .z.m.owner;
     if[not nm~.z.m.owner event;
       .z.m.logerr[`register;err:"di.handlers: ",string[event]," already owned by ",string[.z.m.owner event]," - call remove first"];'err]];
-  / if a dispatcher is installed (event has observers), update the owner function in place - the dispatcher reads it fresh
-  $[event in key .z.m.ownerfunc;.z.m.ownerfunc[event]:func;set[event;func]];
   .z.m.owner[event]:nm;
-  .z.m.loginfo[`register;"registered decider ",string[nm]," on ",string[event]];
+  / update the owner function in place if the dispatcher is installed (it reads ownerfunc fresh), else install on first exec
+  .z.m.ownerfunc[event]:func;
+  .z.m.ownerpri[event]:pri;
+  if[not event in key .z.m.pre;installphased event];
+  .z.m.loginfo[`register;"registered exec owner ",string[nm]," on ",string[event]];
   };
 
-removeobserver:{[event;nm]
-  / drop the named handler; the dispatcher and captured original keep firing regardless of remaining count
-  if[not event in key .z.m.registry;.z.m.loginfo[`remove;"no observers registered on ",string[event],"; nothing to remove for ",string[nm]];:(::)];
-  if[not nm in exec name from .z.m.registry event;.z.m.loginfo[`remove;"observer ",string[nm]," not registered on ",string[event],"; nothing to remove"];:(::)];
-  .z.m.registry[event]:.z.m.registry[event] _ nm;
-  .z.m.loginfo[`remove;"removed observer ",string[nm]," on ",string[event]];
+registerprepost:{[event;phase;nm;pri;func]
+  / pre/post cannot attach before an exec owner exists - the dispatcher is only live once exec is registered
+  if[not event in key .z.m.ownerfunc;
+    .z.m.logerr[`register;err:"di.handlers: cannot register ",string[phase]," on ",string[event]," before an exec owner exists - register the exec phase first"];'err];
+  $[phase~`pre;.z.m.pre[event]:upsertphase[.z.m.pre event;nm;pri;func];
+    .z.m.post[event]:upsertphase[.z.m.post event;nm;pri;func]];
+  .z.m.loginfo[`register;"registered ",string[phase]," handler ",string[nm]," on ",string[event]];
   };
 
-removedecider:{[event;nm]
-  / relinquish ownership only if this name owns it, restore the KDB-X built-in default via \x, and clear all decider state for the event
-  if[not event in key .z.m.owner;.z.m.loginfo[`remove;"no decider owner on ",string[event],"; nothing to remove for ",string[nm]];:(::)];
+removeprepost:{[event;phase;nm]
+  / drop a pre or post handler; the dispatcher stays installed regardless of remaining count
+  tbl:$[phase~`pre;.z.m.pre;.z.m.post];
+  if[not event in key tbl;.z.m.loginfo[`remove;"no ",string[phase]," handlers on ",string[event],"; nothing to remove for ",string[nm]];:(::)];
+  if[not nm in exec name from tbl event;.z.m.loginfo[`remove;string[phase]," handler ",string[nm]," not registered on ",string[event],"; nothing to remove"];:(::)];
+  $[phase~`pre;.z.m.pre[event]:delete from .z.m.pre event where name=nm;
+    .z.m.post[event]:delete from .z.m.post event where name=nm];
+  .z.m.loginfo[`remove;"removed ",string[phase]," handler ",string[nm]," on ",string[event]];
+  };
+
+removeexec:{[event;nm]
+  / relinquish ownership only if this name owns it, restore the KDB-X default, and clear all phased state for the event
+  if[not event in key .z.m.owner;.z.m.loginfo[`remove;"no exec owner on ",string[event],"; nothing to remove for ",string[nm]];:(::)];
   if[not nm~.z.m.owner event;
     .z.m.logerr[`remove;err:"di.handlers: ",string[event]," is owned by ",string[.z.m.owner event],", not ",string[nm]];'err];
-  system"x ",string[event];
+  / .z.ph ships a default handler that \x expunges rather than restores, so put the captured original back; every other phased event \x-restores its built-in default
+  $[(event in key .z.m.original) and not (::)~.z.m.original event;set[event;.z.m.original event];system"x ",string[event]];
   .z.m.owner:.z.m.owner _ event;
-  / clear the owner function and any attached observers so a later register on this event starts clean (direct set, no dispatcher)
   .z.m.ownerfunc:.z.m.ownerfunc _ event;
-  .z.m.deciderobs:.z.m.deciderobs _ event;
-  .z.m.loginfo[`remove;"removed decider ",string[nm]," on ",string[event],"; restored default"];
+  .z.m.ownerpri:.z.m.ownerpri _ event;
+  .z.m.original:.z.m.original _ event;
+  .z.m.pre:.z.m.pre _ event;
+  .z.m.post:.z.m.post _ event;
+  .z.m.loginfo[`remove;"removed exec owner ",string[nm]," on ",string[event],"; restored default"];
   };
 
-/ ------------------------------------------------------------
-/ decider-observer machinery (side-effect-only watchers on a decider event's owner)
-/ ------------------------------------------------------------
-
-rundeciderobs:{[event;nm;func;result;args]
-  / apply one decider observer under protection - side-effect only, never alters the result; a throw is logged at warn and swallowed
-  .[func;(result;args);{[event;nm;e] .z.m.logwarn[`handlers;"decider observer ",string[nm]," on ",string[event]," failed: ",e]}[event;nm]];
-  };
-
-rundeciderobsall:{[event;result;args]
-  / run every attached observer for event in registration order, each isolated, with the uniform func[result;args] signature
-  t:0!.z.m.deciderobs event;
-  rundeciderobs[event;;;result;args]'[t`name;t`func];
-  };
-
-dispatchdeciderunary:{[event;x]
-  / unary decider dispatcher - call the single owner unprotected, then run side-effect observers, return the owner result
-  r:.z.m.ownerfunc[event] x;
-  rundeciderobsall[event;r;enlist x];
-  r
-  };
-
-dispatchdeciderpw:{[u;p]
-  / .z.pw is the only binary decider - the owner sees the real password; observers see it redacted to "***"
-  r:.z.m.ownerfunc[`.z.pw][u;p];
-  rundeciderobsall[`.z.pw;r;(u;"***")];
-  r
-  };
-
-installdecider:{[event]
-  / on first observe for a decider, capture the owner function THEN install the dispatcher - order matters, installing before capturing loses the owner
-  .z.m.ownerfunc[event]:value event;
-  .z.m.deciderobs[event]:registryschema;
-  set[event;$[event~`.z.pw;dispatchdeciderpw;dispatchdeciderunary[event;]]];
-  };
-
-deciderlist:{[event]
-  / owner row first, then any attached observers in registration order
-  obs:$[event in key .z.m.deciderobs;exec name from .z.m.deciderobs event;`symbol$()];
-  ([]role:`owner,(count obs)#`observer;name:(.z.m.owner event),obs)
+phasedlist:{[event]
+  / uniform ([]phase;name;priority) view - pre rows (priority order), the exec owner, then post rows (priority order)
+  pre:select phase:`pre,name,priority from `priority xasc .z.m.pre event;
+  post:select phase:`post,name,priority from `priority xasc .z.m.post event;
+  owner:([]phase:enlist `exec;name:enlist .z.m.owner event;priority:enlist .z.m.ownerpri event);
+  pre,owner,post
   };
 
 / ============================================================
 / public api
 / ============================================================
 
-register:{[event;nm;func]
-  / register a handler for a .z.* event - fan-out for observers, single-owner for deciders
+register:{[event;phase;nm;pri;func]
+  / register a handler for a .z.* event - phase is ` for simple events, one of `pre`exec`post for phased events
   if[not -11h=type event;.z.m.logerr[`register;err:"di.handlers: event must be a symbol"];'err];
+  if[not -11h=type phase;.z.m.logerr[`register;err:"di.handlers: phase must be a symbol (` for simple, `pre`exec`post for phased)"];'err];
   if[not -11h=type nm;.z.m.logerr[`register;err:"di.handlers: name must be a symbol"];'err];
+  if[not type[pri] within -7 -5h;.z.m.logerr[`register;err:"di.handlers: priority must be an integer"];'err];
   if[not type[func] within 100 112h;.z.m.logerr[`register;err:"di.handlers: func must be a function"];'err];
-  if[event~`.z.ph;
-    .z.m.logerr[`register;err:"di.handlers: .z.ph is not managed here - HTTP GET permissioning uses .h.val, not .z.*"];'err];
-  $[event in observerevents; registerobserver[event;nm;func];
-    event in deciderevents;  registerdecider[event;nm;func];
+  pri:"j"$pri;
+  $[event in observerevents;
+    [if[not null phase;.z.m.logerr[`register;err:"di.handlers: ",string[event]," is a simple event - phase must be ` (null)"];'err];
+     registersimple[event;nm;pri;func]];
+    event in phasedevents;
+    [if[not phase in `pre`exec`post;.z.m.logerr[`register;err:"di.handlers: ",string[event]," is a phased event - phase must be one of `pre`exec`post"];'err];
+     if[(event~`.z.pw) and phase~`pre;.z.m.logerr[`register;err:"di.handlers: .z.pw has no pre phase - register exec (owner, real password) or post (redacted watcher)"];'err];
+     $[phase~`exec;registerexec[event;nm;pri;func];registerprepost[event;phase;nm;pri;func]]];
     [.z.m.logerr[`register;err:"di.handlers: unsupported event ",string[event]];'err]];
   };
 
-remove:{[event;nm]
-  / remove a handler - observers drop from the fan-out, deciders relinquish ownership and restore the KDB-X default
+remove:{[event;phase;nm]
+  / remove a handler - phase mirrors register; removing an exec restores the KDB-X default and clears the event's phased state
   if[not -11h=type event;.z.m.logerr[`remove;err:"di.handlers: event must be a symbol"];'err];
+  if[not -11h=type phase;.z.m.logerr[`remove;err:"di.handlers: phase must be a symbol"];'err];
   if[not -11h=type nm;.z.m.logerr[`remove;err:"di.handlers: name must be a symbol"];'err];
-  $[event in observerevents; removeobserver[event;nm];
-    event in deciderevents;  removedecider[event;nm];
+  $[event in observerevents;
+    [if[not null phase;.z.m.logerr[`remove;err:"di.handlers: ",string[event]," is a simple event - phase must be ` (null)"];'err];
+     removesimple[event;nm]];
+    event in phasedevents;
+    [if[not phase in `pre`exec`post;.z.m.logerr[`remove;err:"di.handlers: ",string[event]," is a phased event - phase must be one of `pre`exec`post"];'err];
+     $[phase~`exec;removeexec[event;nm];removeprepost[event;phase;nm]]];
     [.z.m.logerr[`remove;err:"di.handlers: unsupported event ",string[event]];'err]];
   };
 
 list:{[event]
-  / return the registered handlers for a single event - observers as a name/func table, deciders as their owner
+  / return the registered handlers for a single event as a ([]phase;name;priority) table
   if[not -11h=type event;.z.m.logerr[`list;err:"di.handlers: event must be a symbol"];'err];
-  :$[event in observerevents; $[event in key .z.m.registry;0!.z.m.registry event;0!registryschema];
-     event in deciderevents;  $[event in key .z.m.owner;deciderlist event;([]role:`symbol$();name:`symbol$())];
+  :$[event in observerevents; simplelist event;
+     event in phasedevents;   $[event in key .z.m.owner;phasedlist event;emptylist];
      [.z.m.logerr[`list;err:"di.handlers: unsupported event ",string[event]];'err]];
-  };
-
-observe:{[event;nm;func]
-  / attach a side-effect-only observer to a decider event's owner - it runs after a successful owner call and never alters the result
-  if[not -11h=type event;.z.m.logerr[`observe;err:"di.handlers: event must be a symbol"];'err];
-  if[not -11h=type nm;.z.m.logerr[`observe;err:"di.handlers: name must be a symbol"];'err];
-  if[not type[func] within 100 112h;.z.m.logerr[`observe;err:"di.handlers: func must be a function"];'err];
-  if[event~`.z.ph;
-    .z.m.logerr[`observe;err:"di.handlers: .z.ph is not managed here - HTTP GET permissioning uses .h.val, not .z.*"];'err];
-  if[not event in deciderevents;
-    .z.m.logerr[`observe;err:"di.handlers: only decider events can be observed; ",string[event]," is not a decider event"];'err];
-  if[not event in key .z.m.owner;
-    .z.m.logerr[`observe;err:"di.handlers: cannot observe ",string[event]," before it has an owner - call register first"];'err];
-  / capture the owner and install the dispatcher on first observe only, then add or replace this observer in registration order
-  if[not event in key .z.m.ownerfunc;installdecider event];
-  .z.m.deciderobs[event]:.z.m.deciderobs[event] upsert (nm;func);
-  .z.m.loginfo[`observe;"attached observer ",string[nm]," to ",string[event]];
-  };
-
-unobserve:{[event;nm]
-  / detach an observer from a decider event - the dispatcher stays installed even after the last observer is removed
-  if[not -11h=type event;.z.m.logerr[`unobserve;err:"di.handlers: event must be a symbol"];'err];
-  if[not -11h=type nm;.z.m.logerr[`unobserve;err:"di.handlers: name must be a symbol"];'err];
-  if[not event in key .z.m.deciderobs;.z.m.loginfo[`unobserve;"no observers attached to ",string[event],"; nothing to detach for ",string[nm]];:(::)];
-  if[not nm in exec name from .z.m.deciderobs event;.z.m.loginfo[`unobserve;"observer ",string[nm]," not attached to ",string[event],"; nothing to detach"];:(::)];
-  .z.m.deciderobs[event]:.z.m.deciderobs[event] _ nm;
-  .z.m.loginfo[`unobserve;"detached observer ",string[nm]," from ",string[event]];
   };
 
 init:{[deps]
@@ -209,7 +240,9 @@ init:{[deps]
     .z.m.original:(`$())!();
     .z.m.owner:(`$())!();
     .z.m.ownerfunc:(`$())!();
-    .z.m.deciderobs:(`$())!();
+    .z.m.ownerpri:(`$())!();
+    .z.m.pre:(`$())!();
+    .z.m.post:(`$())!();
     ];
   .z.m.loginfo[`init;"di.handlers initialised"];
   };

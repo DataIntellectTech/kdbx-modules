@@ -111,6 +111,12 @@ run,0,0,q,handlers.remove[`.z.ph;`exec;`web],1,1,remove the .z.ph owner
 true,0,0,q,.oo.phdef~value `.z.ph,1,1,remove restored the exact shipped GET handler not \\x-to-unset
 true,0,0,q,100h=type value `.z.ph,1,1,and .z.ph is a real handler function again not left unset
 
+comment,,,,,,,phased - a second .z.ph ownership cycle re-captures and restores the shipped default again
+run,0,0,q,handlers.register[`.z.ph;`exec;`web2;0;{[x] `again}],1,1,claim .z.ph a second time after a full teardown
+true,0,0,q,`again~(value `.z.ph)"GET /",1,1,the second owner is in effect through a freshly installed dispatcher
+run,0,0,q,handlers.remove[`.z.ph;`exec;`web2],1,1,remove the second owner
+true,0,0,q,.oo.phdef~value `.z.ph,1,1,the shipped GET handler is restored again after the second cycle
+
 comment,,,,,,,phased - .z.pw owner sees the real password post sees *** and pre is rejected
 run,0,0,q,handlers.register[`.z.pw;`exec;`auth;0;{[u;p] .oo.ownerpw::p;1b}],1,1,owner records the password it receives and allows
 run,0,0,q,handlers.register[`.z.pw;`post;`audit;0;{[r;a] .oo.obspw::a}],1,1,post records the args it receives

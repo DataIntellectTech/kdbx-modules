@@ -1,27 +1,16 @@
-/ configuration loading and cascade resolution for the modular torq world - replaces
-/ torq.q's loadf/loadconfig/loadaddconfig/overrideconfig. the module resolves a settings
-/ cascade over a builtin root and an app root, reading BOTH flat name:value .q files and
-/ .toml files, and RETURNS the merged config as a single flat dict - the shape di.torq
-/ consumes (config:cascade[...] straight after use`di.config, then passed to each module's
-/ init). the module reads no env/identity - the caller (di.torq) supplies the roots and the
-/ process identity (proctype/procname).
-/ public api: cascade (resolve the cascade over two roots x default/proctype/procname ->
-/ merged flat dict), parsefile (parse one .q or .toml settings file -> flat dict), and
-/ overrideconfig (apply the command-line override layer on top of the resolved dict).
-/ precedence is name-major (a more specific NAME wins; within a name the later/app root wins)
-/ and, within a single tier, .toml wins over .q on a key clash (useful mid-migration).
-/ NOTE: di.toml is not yet in kdbx-modules (it lands with the PoC merge) - the .toml half of
-/ a tier stays dormant here (parsefile delegates .toml to di.toml lazily, only when a .toml
-/ file actually exists); the .q path needs it never.
-/ cascade/parsefile are PURE - no init, no logger, no globals - because di.torq resolves
-/ config before the logger dependency is even built. overrideconfig logs (it is the one place
-/ that reports skipped/rejected overrides), so it - and only it - requires init.
+/ configuration cascade resolution for the modular torq world - replaces torq.q's
+/ loadf/loadconfig/loadaddconfig/overrideconfig. resolves a settings cascade over a builtin root
+/ and an app root, reading both flat name:value .q files and .toml files, and RETURNS the merged
+/ config as one flat dict (the shape di.torq consumes). reads no env/identity - the caller supplies
+/ the roots and process identity.
+/ precedence is name-major (more specific NAME wins; within a name the app root wins) and, within a
+/ tier, .toml wins over .q. cascade/parsefile are pure (no init/logger) - di.torq resolves config
+/ before the logger exists; only overrideconfig logs, so only it needs init. di.toml is a soft dep
+/ (not yet in kdbx-modules): parsefile loads it lazily, only when a .toml file is present.
 
 init:{[deps]
-  / wire the injected logger - required for overrideconfig, no silent fallback. deps: a dict
-  / with a `log key holding a binary `info`warn`error dict of {[c;m]} loggers (from di.log or
-  / hand-rolled). no adaptation here, so a monadic kx.log instance must be wrapped first.
-  / cascade/parsefile do not need init; overrideconfig does. e.g. config.init[enlist[`log]!enlist logdep]
+  / wire the injected logger (required by overrideconfig; no fallback). deps: a dict with a `log
+  / key holding a binary `info`warn`error dict of {[c;m]} loggers. cascade/parsefile don't need init.
   if[99h<>type deps;
     '"di.config: deps must be a dict with `log key"];
   if[not `log in key deps;
@@ -39,11 +28,9 @@ init:{[deps]
 / --- settings cascade resolution (.q + .toml -> flat dict) ---
 
 requiretoml:{[path]
-  / internal - a .toml settings file (path) exists and must be parsed, which needs the di.toml
-  / module. di.toml is a SOFT dependency: it is not required to be in the repo/on QPATH and the
-  / .q-only path never touches it - it is needed ONLY once a .toml file actually appears. guard
-  / the load so a missing di.toml gives a clear, actionable error naming the file, instead of the
-  / cryptic `notfound: di.toml` that a bare use would raise. returns the resolved di.toml module.
+  / internal - resolve di.toml to parse a .toml file. di.toml is a soft dep (needed only once a
+  / .toml file appears); guard the load so a missing one gives a clear error naming the file, not a
+  / cryptic `notfound: di.toml`. returns the di.toml module.
   :@[use;`di.toml;{[p;e]
     msg:"di.config: cannot parse TOML file '",p,"' - the di.toml module was not found on QPATH; ";
     msg,:"a di.toml module is required to parse .toml settings (underlying: ",e,")";
@@ -52,59 +39,45 @@ requiretoml:{[path]
   };
 
 parsefile:{[path]
-  / parse ONE settings file into a flat dict. a .toml path is delegated to di.toml (via the
-  / requiretoml guard), loaded lazily - only when a .toml file actually appears, so the .q-only
-  / path never needs it. a .q file is plain `name:value` lines: split on the first ":", the RHS
-  / run through value (so `:hdb, `trade`quote, `symbol$() all work); blank, "/"-comment, and
-  / stray non-pair lines (no ":") are skipped. a missing file of either extension contributes nothing (empty dict), so the
-  / cascade needs no presence checks. order matters: existence is checked FIRST, so a missing
-  / .toml tier never triggers the di.toml requirement; only a .toml file that actually EXISTS
-  / requires di.toml - if it is absent, requiretoml signals a clear error (di.toml lives only in
-  / the PoC today; the .q-only path needs it never).
+  / parse ONE settings file into a flat dict. .toml -> di.toml (via requiretoml); .q -> flat
+  / `name:value` lines (split on first ":", RHS through value). blank, "/"-comment and non-pair
+  / (no ":") lines are skipped; a missing file -> empty dict. existence is checked FIRST, so a
+  / missing .toml tier never triggers the di.toml requirement.
   fsym:`$":",path;
   if[0=count key fsym; :()!()];
   if[path like "*.toml"; :(requiretoml[path])[`parsefile] path];
   lines:read0 fsym;
   lines:lines where 0<count each lines;
   lines:lines where not lines like "/*";
-  / keep only lines that actually carry a "name:value" separator. this drops whitespace-only
-  / and stray non-pair lines BEFORE the split - without it, first where ln=":" is 0N on such a
-  / line and the 0N#ln / (0N+1)_ln that follow signal a cryptic 'type, failing the whole file.
+  / keep only "name:value" lines: with no ":", `first where` gives 0N and the 0N#/0N_ that follow
+  / throw 'type, failing the whole file.
   lines:lines where lines like "*:*";
   pairs:{[ln] i:first where ln=":"; (`$i#ln;value (i+1)_ln)} each lines;
   $[count pairs; (first each pairs)!last each pairs; ()!()]
   };
 
 parsetier:{[base]
-  / internal - resolve one cascade tier: try base.q then base.toml, .toml winning on a key
-  / clash if both exist (useful mid-migration). each missing file yields an empty dict.
+  / internal - resolve one tier: base.q then base.toml, .toml winning on a clash. missing -> empty.
   (parsefile base,".q"),parsefile base,".toml"
   };
 
 cascade:{[builtinroot;approot;proctype;procname]
-  / resolve the settings cascade over the two roots x the (default;proctype;procname) name
-  / sequence and RETURN the merged flat dict. pure - no init, no logger, no globals - so
-  / di.torq can call it directly after use`di.config, before the logger exists. precedence is
-  / name-major: a more specific NAME wins over the root layer (procname beats proctype beats
-  / default), and within a name the later (app) root overrides the builtin root - so a key set
-  / in both builtin/{proctype} and app/default resolves to the builtin proctype value. within a
-  / single tier, .toml wins over .q (see parsetier). the accumulator is seeded with a sentinel
-  / `!(::) key so its value list stays general from the first merge (a same-typed value list
-  / coalesces to a typed vector that ,: then refuses to widen); the sentinel is dropped before return.
-  / proctype and procname must be resolved, non-null symbol atoms. string`` is "", so a null
-  / name would build a bogus "<root>/" base and make parsetier read a file literally named ".q"
-  / (or ".toml") in the root. a null here means the caller's identity resolution failed - surface
-  / it, don't silently resolve the wrong files. (a null symbol still has type -11h, so the null
-  / check is needed in addition to the type check.)
+  / resolve the cascade over the two roots x (default;proctype;procname) and RETURN the merged flat
+  / dict. pure (no init/logger/globals). name-major: a more specific NAME wins over the root layer,
+  / and within a name the app root wins (parsetier gives .toml>.q within a tier). the accumulator is
+  / seeded with a sentinel (`)!(::) key so its value list stays general from the first merge (a
+  / same-typed value list coalesces to a typed vector that ,: then won't widen); dropped before return.
+  / proctype/procname must be non-null symbol atoms: string`` is "", which would build a bogus
+  / "<root>/" base and read a file named ".q"/".toml". a null means identity resolution failed, so
+  / surface it. (a null symbol is still type -11h, so the null check is separate from the type check.)
   if[not all -11h=type each (proctype;procname);
     '"di.config: cascade requires proctype and procname to be symbol atoms"];
   if[(null proctype)|null procname;
     '"di.config: cascade requires non-null proctype and procname; got ",(-3!proctype)," and ",-3!procname];
   dirs:(builtinroot;approot);
-  / dedup the name sequence (distinct keeps first-occurrence order, so least->most-specific is
-  / preserved). without it, a name that coincides with an earlier tier re-applies that tier at a
-  / LATER precedence slot: procname~proctype is merely redundant, but procname~`default would put
-  / the default tier LAST and wrongly override the proctype tier - inverting name-major precedence.
+  / dedup (distinct keeps first-occurrence order, preserving least->most-specific). without it a
+  / repeated name re-applies its tier at a LATER slot: procname~proctype is redundant, but
+  / procname~`default would put default LAST and wrongly override proctype.
   names:distinct `default,proctype,procname;
   bases:raze {[ds;nm] ds,\:"/",string nm}[dirs;] each names;
   acc:{[a;b] a,parsetier b}/[(enlist `)!enlist(::);bases];
@@ -116,37 +89,33 @@ cascade:{[builtinroot;approot;proctype;procname]
 hexchars:"0123456789abcdefABCDEF";
 
 parsefailed:{[t;raw;vals]
-  / internal - true if any raw string failed to parse to type t. boolean (1h) and byte (4h)
-  / have no null, so a bad parse ("B"$"bad"->0b, "X"$"gg"->0x00) slips past a null check and
-  / would corrupt config - validate their string form explicitly. other types null on failure.
+  / internal - true if any raw string failed to parse to type t. bool (1h) and byte (4h) have no
+  / null, so a bad parse ("B"$"bad"->0b, "X"$"gg"->0x00) slips past a null check - check their form
+  / explicitly. other types null on failure.
   :$[1h=abs t;not all raw in (enlist"0";enlist"1");
      4h=abs t;not all {(0=count[x] mod 2) and all x in hexchars} each raw;
      any null vals];
   };
 
 applyoverride:{[name;cur;raw]
-  / internal - parse raw value(s) into cur's type and return (applied;newvalue). cur is the
-  / setting's current value from the config dict; its type drives the parse. raw is a string or
-  / list of strings. applied is 0b (and newvalue is cur, unchanged) if cur is not a basic type,
-  / a value failed to parse, or a single-valued (scalar/string) setting got other than one value.
+  / internal - parse raw into cur's type; return (applied;newvalue). cur's type drives the parse.
+  / applied is 0b (newvalue=cur) if cur is not a basic type, a value failed to parse, or a
+  / single-valued setting got other than one value.
   t:type cur;
   if[not (abs t) within (1;-1+count .Q.t);
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": not a basic type"];
     :(0b;cur);
   ];
   raw:$[10h=type raw;enlist raw;raw];
-  / a scalar-atom (t<0) or string (10h) setting is single-valued: require EXACTLY one override
-  / value. reject a multi- or zero-value override rather than silently taking the first (or, on
-  / an empty list, writing a null) - a scalar cannot hold several values, and a null must never
-  / reach config. vector settings (t>0, not 10h) legitimately take as many values as given.
+  / scalar-atom (t<0) and string (10h) settings are single-valued: require exactly one value. reject
+  / a multi- or zero-value override rather than silently taking the first or writing a null. vector
+  / settings (t>0, not 10h) take as many as given.
   if[(1<>count raw) and ((t<0)|(10h=t));
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": expected a single value, got ",string count raw];
     :(0b;cur);
   ];
-  / a char-string (10h) setting is already text - take the override string as-is (nothing to
-  / parse, and any string is valid). this makes .toml-origin string settings overridable, the
-  / same way symbol (.q-origin) settings already are; di.config stays policy-free by preserving
-  / whatever type the setting already had.
+  / a string (10h) is already text - take the override as-is (no parse). lets .toml-origin string
+  / settings be overridden like symbol (.q-origin) ones; type is preserved either way.
   if[10h=t;
     vals:first raw;
     .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
@@ -157,22 +126,18 @@ applyoverride:{[name;cur;raw]
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": value did not parse"];
     :(0b;cur);
   ];
-  / reduce to scalar only after parsefailed (which checks the full per-element list); runs
-  / before the log and return so both use the scalar form.
+  / reduce to scalar only after parsefailed (which checks the whole list).
   if[t<0;vals:first vals];
   .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
   :(1b;vals);
   };
 
 overrideconfig:{[config;params]
-  / apply the command-line override layer on top of a resolved config dict, parsing each value
-  / into the matching setting's existing type. this is the TOP tier of the cascade - di.torq
-  / parses the process command line (.Q.opt .z.x) and calls this after cascade, so launch-time
-  / flags win over the settings files. config is the flat dict from cascade; params a dict keyed
-  / by setting name (symbol) with string (or list-of-string) values. only keys already present in
-  / config with a basic type are overridden; unknown keys, non-basic types, and unparseable
-  / values are logged and skipped (a single bad override never aborts the batch and a null is
-  / never written into config). returns the UPDATED config dict.
+  / apply the command-line override layer onto a resolved config dict - the TOP cascade tier
+  / (di.torq calls this after cascade with .Q.opt .z.x, so launch flags win over files). config is
+  / the cascade dict; params keys settings (symbol) to string / string-list values, parsed into each
+  / setting's existing type. unknown keys, non-basic types and bad values are logged and skipped
+  / (never aborts the batch, never writes a null). returns the updated config dict.
   if[99h<>type config;
     .z.m.logerr[`overrideconfig;err:"di.config: config must be a dict"];
     'err;
@@ -201,9 +166,8 @@ overrideconfig:{[config;params]
   };
 
 getapimeta:{[]
-  / this module's api metadata, one row per exported function, for di.torq to collect and register
-  / with di.api. names are bare (the module's own); di.torq applies the process-wide qualification.
-  / one self-contained (name;public;descrip;params;return) row per line - flip cols!flip rows.
+  / this module's api metadata, one row per exported function, for di.torq to register with di.api.
+  / names are bare (di.torq qualifies them). one (name;public;descrip;params;return) row per line.
   :flip `name`public`descrip`params`return!flip(
     (`init;           0b; "wire the injected logger (required by overrideconfig)";       "[dict: deps with a `log key]";                                                    "null");
     (`cascade;        1b; "resolve the settings cascade over two roots -> merged flat dict (name-major, .toml>.q)"; "[string: builtinroot; string: approot; symbol: proctype; symbol: procname]"; "dict: merged setting -> value");

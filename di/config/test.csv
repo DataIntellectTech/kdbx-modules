@@ -10,6 +10,8 @@ before,0,0,q,"(`:/tmp/diconfigbuiltin/rdb.q) 0: enlist ""diconfigb:10""",1,1,bui
 before,0,0,q,"(`:/tmp/diconfigapp/default.q) 0: (""diconfiga:100"";""diconfigb:5"")",1,1,app/default flat name:value (two settings)
 before,0,0,q,"(`:/tmp/diconfigapp/rdb1.q) 0: enlist ""diconfiga:999""",1,1,app/rdb1 procname tier sets diconfiga
 before,0,0,q,"basecfg:`enabled`rows`syms`tab`byte`str!(0b;100;`a`b;([]a:`long$());0x01;"":olddb"")",1,1,base config dict for the overrideconfig tests (str is a char-string setting, as a .toml value would be)
+before,0,0,q,"system""mkdir -p /tmp/diconfigskip""",1,1,dir for the malformed-line skip test
+before,0,0,q,"(`:/tmp/diconfigskip/default.q) 0: (""a:1"";"""";""/ a comment"";""straynocolon"";""b:2"")",1,1,a .q file mixing valid pairs with blank/comment/no-colon lines
 before,0,0,q,"system""mkdir -p /tmp/diconfigtoml""",1,1,dir for the toml-guard test
 before,0,0,q,"(`:/tmp/diconfigtoml/present.toml) 0: enlist ""a = 1""",1,1,a .toml file that exists but cannot be parsed without di.toml (absent in kdbx-modules)
 comment,,,,,,,init - dependency validation
@@ -21,6 +23,7 @@ comment,,,,,,,parsefile - parse one flat .q settings file into a dict (.toml del
 true,0,0,q,"1~cfg.parsefile[""/tmp/diconfigbuiltin/default.q""]`diconfiga",1,1,parsefile reads a flat name:value .q file into a dict
 true,0,0,q,"2=count cfg.parsefile[""/tmp/diconfigbuiltin/default.q""]",1,1,parsefile returns every setting in the file
 true,0,0,q,"0=count cfg.parsefile[""/tmp/diconfignope/default.q""]",1,1,parsefile returns an empty dict for a missing .q file
+true,0,0,q,"(`a`b!1 2)~cfg.parsefile[""/tmp/diconfigskip/default.q""]",1,1,parsefile skips blank/comment/no-colon lines and returns only valid pairs (no-colon line must not crash the split)
 comment,,,,,,,parsefile - .toml guard rail (di.toml is a soft dep; absent in kdbx-modules so the error path is exercised here)
 true,0,0,q,"0=count cfg.parsefile[""/tmp/diconfignope/absent.toml""]",1,1,a MISSING .toml contributes nothing and does NOT require di.toml (existence checked before delegation)
 fail,0,0,q,"cfg.parsefile[""/tmp/diconfigtoml/present.toml""]",1,1,an EXISTING .toml with no di.toml on QPATH signals rather than parsing
@@ -32,6 +35,11 @@ true,0,0,q,"999~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;
 true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1])`diconfigb",1,1,a key absent from the procname tier keeps its most-specific set value (builtin proctype)
 true,0,0,q,"not (`) in key cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1]",1,1,the sentinel merge key is dropped from the returned dict
 true,0,0,q,"0=count cfg.cascade[""/tmp/diconfignope1"";""/tmp/diconfignope2"";`rdb;`rdb1]",1,1,an all-missing cascade resolves to an empty dict
+true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`default])`diconfigb",1,1,dedup: procname=`default must NOT re-apply the default tier last and override proctype (would be 5 without distinct)
+true,0,0,q,"100~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb])`diconfiga",1,1,dedup: proctype~procname resolves correctly (each tier once)
+fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;(`)]",1,1,cascade rejects a null procname (else it resolves a bogus root/.q tier)
+fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";(`);`rdb1]",1,1,cascade rejects a null proctype
+fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";""rdb"";`rdb1]",1,1,cascade rejects a non-symbol (string) proctype
 comment,,,,,,,overrideconfig - command-line override layer applied onto a resolved config dict
 true,0,0,q,"1b~(cfg.overrideconfig[basecfg;`enabled`rows!(enlist""1"";enlist""500"")])`enabled",1,1,bool parsed and set from string
 true,0,0,q,"500~(cfg.overrideconfig[basecfg;`enabled`rows!(enlist""1"";enlist""500"")])`rows",1,1,long parsed and set from string
@@ -43,6 +51,9 @@ true,0,0,q,"0x01~(cfg.overrideconfig[basecfg;enlist[`byte]!enlist ""gg""])`byte"
 true,0,0,q,"`xx`yy~(cfg.overrideconfig[basecfg;enlist[`syms]!enlist (""xx"";""yy"")])`syms",1,1,symbol list parsed and set from strings
 true,0,0,q,""":newdb""~(cfg.overrideconfig[basecfg;enlist[`str]!enlist "":newdb""])`str",1,1,a string-typed setting is overridden as-is (this is what makes .toml string settings overridable)
 true,0,0,q,"10h~type (cfg.overrideconfig[basecfg;enlist[`str]!enlist "":newdb""])`str",1,1,string override preserves the string (10h) type
+true,0,0,q,"100~(cfg.overrideconfig[basecfg;enlist[`rows]!enlist (""55"";""66"")])`rows",1,1,a multi-value override on a scalar setting is rejected (not silently first) - left unchanged
+true,0,0,q,""":olddb""~(cfg.overrideconfig[basecfg;enlist[`str]!enlist (""aa"";""bb"")])`str",1,1,a multi-value override on a string setting is rejected - left unchanged
+true,0,0,q,"any (exec msg from logtab) like ""*expected a single value*""",1,1,a multi-value override on a single-valued setting is logged
 true,0,0,q,"not `nope in key cfg.overrideconfig[basecfg;enlist[`nope]!enlist enlist""1""]",1,1,an unknown setting is not added to the config dict
 true,0,0,q,"(key basecfg)~key cfg.overrideconfig[basecfg;enlist[`nope]!enlist enlist""1""]",1,1,an unknown setting leaves the config keys unchanged
 true,0,0,q,"any (exec msg from logtab) like ""*unknown setting*""",1,1,unknown setting logged

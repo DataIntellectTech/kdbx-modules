@@ -55,8 +55,8 @@ parsefile:{[path]
   / parse ONE settings file into a flat dict. a .toml path is delegated to di.toml (via the
   / requiretoml guard), loaded lazily - only when a .toml file actually appears, so the .q-only
   / path never needs it. a .q file is plain `name:value` lines: split on the first ":", the RHS
-  / run through value (so `:hdb, `trade`quote, `symbol$() all work); blank and "/"-comment lines
-  / are skipped. a missing file of either extension contributes nothing (empty dict), so the
+  / run through value (so `:hdb, `trade`quote, `symbol$() all work); blank, "/"-comment, and
+  / stray non-pair lines (no ":") are skipped. a missing file of either extension contributes nothing (empty dict), so the
   / cascade needs no presence checks. order matters: existence is checked FIRST, so a missing
   / .toml tier never triggers the di.toml requirement; only a .toml file that actually EXISTS
   / requires di.toml - if it is absent, requiretoml signals a clear error (di.toml lives only in
@@ -67,6 +67,10 @@ parsefile:{[path]
   lines:read0 fsym;
   lines:lines where 0<count each lines;
   lines:lines where not lines like "/*";
+  / keep only lines that actually carry a "name:value" separator. this drops whitespace-only
+  / and stray non-pair lines BEFORE the split - without it, first where ln=":" is 0N on such a
+  / line and the 0N#ln / (0N+1)_ln that follow signal a cryptic 'type, failing the whole file.
+  lines:lines where lines like "*:*";
   pairs:{[ln] i:first where ln=":"; (`$i#ln;value (i+1)_ln)} each lines;
   $[count pairs; (first each pairs)!last each pairs; ()!()]
   };
@@ -87,8 +91,21 @@ cascade:{[builtinroot;approot;proctype;procname]
   / single tier, .toml wins over .q (see parsetier). the accumulator is seeded with a sentinel
   / `!(::) key so its value list stays general from the first merge (a same-typed value list
   / coalesces to a typed vector that ,: then refuses to widen); the sentinel is dropped before return.
+  / proctype and procname must be resolved, non-null symbol atoms. string`` is "", so a null
+  / name would build a bogus "<root>/" base and make parsetier read a file literally named ".q"
+  / (or ".toml") in the root. a null here means the caller's identity resolution failed - surface
+  / it, don't silently resolve the wrong files. (a null symbol still has type -11h, so the null
+  / check is needed in addition to the type check.)
+  if[not all -11h=type each (proctype;procname);
+    '"di.config: cascade requires proctype and procname to be symbol atoms"];
+  if[(null proctype)|null procname;
+    '"di.config: cascade requires non-null proctype and procname; got ",(-3!proctype)," and ",-3!procname];
   dirs:(builtinroot;approot);
-  names:`default,proctype,procname;
+  / dedup the name sequence (distinct keeps first-occurrence order, so least->most-specific is
+  / preserved). without it, a name that coincides with an earlier tier re-applies that tier at a
+  / LATER precedence slot: procname~proctype is merely redundant, but procname~`default would put
+  / the default tier LAST and wrongly override the proctype tier - inverting name-major precedence.
+  names:distinct `default,proctype,procname;
   bases:raze {[ds;nm] ds,\:"/",string nm}[dirs;] each names;
   acc:{[a;b] a,parsetier b}/[(enlist `)!enlist(::);bases];
   acc _ `
@@ -110,14 +127,22 @@ parsefailed:{[t;raw;vals]
 applyoverride:{[name;cur;raw]
   / internal - parse raw value(s) into cur's type and return (applied;newvalue). cur is the
   / setting's current value from the config dict; its type drives the parse. raw is a string or
-  / list of strings. applied is 0b (and newvalue is cur, unchanged) if cur is not a basic type
-  / or a value failed to parse.
+  / list of strings. applied is 0b (and newvalue is cur, unchanged) if cur is not a basic type,
+  / a value failed to parse, or a single-valued (scalar/string) setting got other than one value.
   t:type cur;
   if[not (abs t) within (1;-1+count .Q.t);
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": not a basic type"];
     :(0b;cur);
   ];
   raw:$[10h=type raw;enlist raw;raw];
+  / a scalar-atom (t<0) or string (10h) setting is single-valued: require EXACTLY one override
+  / value. reject a multi- or zero-value override rather than silently taking the first (or, on
+  / an empty list, writing a null) - a scalar cannot hold several values, and a null must never
+  / reach config. vector settings (t>0, not 10h) legitimately take as many values as given.
+  if[(1<>count raw) and (t<0)|(10h=t);
+    .z.m.logerr[`overrideconfig;"cannot override ",(string name),": expected a single value, got ",string count raw];
+    :(0b;cur);
+  ];
   / a char-string (10h) setting is already text - take the override string as-is (nothing to
   / parse, and any string is valid). this makes .toml-origin string settings overridable, the
   / same way symbol (.q-origin) settings already are; di.config stays policy-free by preserving

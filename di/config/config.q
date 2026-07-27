@@ -139,7 +139,7 @@ applyoverride:{[name;cur;raw]
   / value. reject a multi- or zero-value override rather than silently taking the first (or, on
   / an empty list, writing a null) - a scalar cannot hold several values, and a null must never
   / reach config. vector settings (t>0, not 10h) legitimately take as many values as given.
-  if[(1<>count raw) and (t<0)|(10h=t);
+  if[(1<>count raw) and ((t<0)|(10h=t));
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": expected a single value, got ",string count raw];
     :(0b;cur);
   ];

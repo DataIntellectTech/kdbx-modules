@@ -102,7 +102,7 @@ first — di.config does no wrapping.
 | Function | Signature | Description |
 |---|---|---|
 | `cascade` | `cascade[builtinroot;approot;proctype;procname]` | Resolve the settings cascade over the two roots × the `default`/`{proctype}`/`{procname}` name sequence and **return one flat dict**. Pure — no `init`, no logger, no globals. Precedence is name-major with `.toml > .q` within a tier (see above). A key set nowhere is simply absent; an all-missing cascade returns an empty dict. |
-| `parsefile` | `parsefile[path]` | Parse a single settings file into a flat dict. A `.toml` path is delegated to `di.toml` (loaded lazily); a `.q` path is flat `name:value` lines. A missing file (either extension) → empty dict. Pure. |
+| `parsefile` | `parsefile[path]` | Parse a single settings file into a flat dict. A `.toml` path is delegated to `di.toml` (loaded lazily, behind the guard rail below); a `.q` path is flat `name:value` lines. A missing file (either extension) → empty dict. An existing `.toml` file with no `di.toml` on `QPATH` signals a clear error naming the file. Pure. |
 | `overrideconfig` | `overrideconfig[config;params]` | Apply the **command-line override layer** on top of a resolved config dict — the top tier of the cascade. `di.torq` parses the process command line (`.Q.opt .z.x`) and calls this after `cascade`, so launch-time flags (e.g. `-loglevel info`, `-rows 5000`) win over the settings files. `config` is the dict from `cascade`; `params` is a dict keyed by setting name (symbol) with string (or list-of-string) values, each parsed into that setting's **existing** type. Only keys already present with a basic type are overridden; unknown keys, non-basic types, and unparseable values are logged and skipped. Returns the **updated config dict**. Requires `init`. |
 | `init` | `init[deps]` | Wire the injected logger for `overrideconfig`. `deps` is a dict with a required `log` key — an already-conforming binary `` `info`warn`error `` dict of `{[c;m]}` functions. Errors immediately if the log dependency is missing or malformed. |
 | `getapimeta` | `getapimeta[]` | This module's API metadata — one `(name;public;descrip;params;return)` row per exported function, for `di.torq` to register with `di.api`. |
@@ -120,13 +120,50 @@ Internal helpers — `parsetier` (per-tier `.q`+`.toml` merge), `applyoverride`,
 
 None mandatory. `cascade`/`parsefile` gain a **lazy, soft dependency on `di.toml`**: it is
 `` use``d only when a `.toml` file is actually encountered, so the `.q`-only path needs
-nothing.
+nothing. **di.toml does not need to be in the repo (or on `QPATH`) for di.config to load or
+run** — it is required only at the moment a `.toml` settings file is actually parsed.
+
+### The `.toml` guard rail
+
+`parsefile` guards the di.toml load so a missing module produces a clear, actionable error
+rather than a cryptic `notfound`. The order is deliberate:
+
+1. **Check the file exists first.** A missing file (either extension) → empty dict. So a
+   missing `.toml` tier *never* triggers the di.toml requirement — the internal
+   `parsetier`/`cascade` probe `base,".toml"` on every tier, and absent tiers cost nothing.
+2. **Then, only for a `.toml` file that actually exists, require di.toml.** The internal
+   `requiretoml` helper attempts `` use`di.toml `` under protected evaluation; if it is not
+   found, it signals a clear error **naming the offending file**:
+   ```
+   'di.config: cannot parse TOML file '/path/to/x.toml' - the di.toml module was not found
+    on QPATH; a di.toml module is required to parse .toml settings (underlying: notfound: di.toml)
+   ```
+3. **Parse.** With di.toml resolved, the file is delegated to it.
+
+Because this signal happens at config-resolution time — *before* the logger dependency is
+wired — it surfaces via the raised error (which aborts startup with the reason), not via the
+injected logger.
+
+### Contract di.config expects from di.toml
+
+A di.toml module must export a **`parsefile`** function taking a settings-file path string
+and returning a **flat dict** of `setting → value`:
+
+```q
+(use`di.toml)[`parsefile] "/path/to/settings.toml"   / -> `dir`rows!(":appdb";100)
+```
+
+TOML has no symbol type, so di.toml returns every TOML string as a **q char string** (never
+a symbol); di.config applies no coercion, so consumers that need a symbol normalise at the
+point of use (`` `$ `` is a no-op on an already-a-symbol value).
 
 > **⚠️ `di.toml` is not yet in kdbx-modules** — it currently lives only in the KDBX-POC and
-> lands here with the PoC merge. Until then the `.toml` half of a tier is **dormant** in
-> this repo: `parsefile` on a `.toml` path would `` use`di.toml `` and fail unless `di.toml`
-> is on `QPATH`. The `.q` path works standalone. The `.toml` resolution is therefore
-> verified in the PoC (where `di.toml` is vendored), not in this repo's test suite.
+> lands here with the PoC merge (a di.toml module is in development against the contract
+> above). Until it is on `QPATH`, the `.toml` half of a tier is **dormant** in this repo: a
+> `.toml` file that exists but cannot be parsed raises the guard error above; the `.q` path
+> works standalone. Full `.toml` resolution is verified in the PoC (where `di.toml` is
+> vendored); this repo's suite covers the guard's error path (di.toml absent) and the
+> file-exists-before-delegation ordering.
 
 ## Design notes & open gaps
 
@@ -155,8 +192,16 @@ nothing.
   `"X"$"gg"` yields `0x00`, both non-null — so a bad value would slip past a null check and
   silently corrupt config. `parsefailed` handles these two explicitly (boolean must be
   `"0"`/`"1"`; byte must be even-length hex); anything else is rejected and logged, never
-  written. A string-typed (`10h`) setting still can't be overridden (its per-element char
-  cast is rejected as non-parsing) — this fails safe and is a rare edge.
+  written.
+- **String-typed (`10h`) settings are overridable — as text, no parse.** A char-string
+  setting's override value *is* already a string, so `applyoverride` takes it as-is rather
+  than casting it (any string is valid; there is no parse-failure case). This matters because
+  TOML has no symbol type, so a `.toml`-origin setting like `dir = ":appdb"` or
+  `loglevel = "info"` comes back as a string — without this, such settings could not be
+  command-line-overridden at all, whereas their `.q`-origin symbol equivalents (`` dir:`:appdb ``)
+  could. di.config stays policy-free: it preserves whatever type the setting already had
+  (string in, string out; symbol in, symbol out), leaving symbol-vs-string normalisation to
+  the consumer as everywhere else.
 - **The sentinel merge key.** `cascade`'s accumulator is seeded with a sentinel
   `` (enlist`)!enlist(::) `` key so its value list stays general from the first merge — a
   same-typed value list coalesces to a typed vector that `,:` then refuses to widen (e.g.

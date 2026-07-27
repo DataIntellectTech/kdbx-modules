@@ -38,18 +38,32 @@ init:{[deps]
 
 / --- settings cascade resolution (.q + .toml -> flat dict) ---
 
+requiretoml:{[path]
+  / internal - a .toml settings file (path) exists and must be parsed, which needs the di.toml
+  / module. di.toml is a SOFT dependency: it is not required to be in the repo/on QPATH and the
+  / .q-only path never touches it - it is needed ONLY once a .toml file actually appears. guard
+  / the load so a missing di.toml gives a clear, actionable error naming the file, instead of the
+  / cryptic `notfound: di.toml` that a bare use would raise. returns the resolved di.toml module.
+  :@[use;`di.toml;{[p;e]
+    msg:"di.config: cannot parse TOML file '",p,"' - the di.toml module was not found on QPATH; ";
+    msg,:"a di.toml module is required to parse .toml settings (underlying: ",e,")";
+    'msg
+    }[path;]];
+  };
+
 parsefile:{[path]
-  / parse ONE settings file into a flat dict. a .toml path is delegated to di.toml, loaded
-  / lazily (only when a .toml file actually appears, so the .q-only path never needs it).
-  / a .q file is plain `name:value` lines: split on the first ":", the RHS run through value
-  / (so `:hdb, `trade`quote, `symbol$() all work); blank and "/"-comment lines are skipped.
-  / a missing file of either extension contributes nothing (empty dict), so the cascade needs
-  / no presence checks. existence is checked BEFORE the .toml delegation so a missing .toml
-  / tier never forces di.toml to load - di.toml is pulled in only when a .toml file actually
-  / exists (di.toml lives only in the PoC today; the .q-only path needs it never).
+  / parse ONE settings file into a flat dict. a .toml path is delegated to di.toml (via the
+  / requiretoml guard), loaded lazily - only when a .toml file actually appears, so the .q-only
+  / path never needs it. a .q file is plain `name:value` lines: split on the first ":", the RHS
+  / run through value (so `:hdb, `trade`quote, `symbol$() all work); blank and "/"-comment lines
+  / are skipped. a missing file of either extension contributes nothing (empty dict), so the
+  / cascade needs no presence checks. order matters: existence is checked FIRST, so a missing
+  / .toml tier never triggers the di.toml requirement; only a .toml file that actually EXISTS
+  / requires di.toml - if it is absent, requiretoml signals a clear error (di.toml lives only in
+  / the PoC today; the .q-only path needs it never).
   fsym:`$":",path;
   if[0=count key fsym; :()!()];
-  if[path like "*.toml"; :(use`di.toml)[`parsefile] path];
+  if[path like "*.toml"; :(requiretoml[path])[`parsefile] path];
   lines:read0 fsym;
   lines:lines where 0<count each lines;
   lines:lines where not lines like "/*";
@@ -104,6 +118,15 @@ applyoverride:{[name;cur;raw]
     :(0b;cur);
   ];
   raw:$[10h=type raw;enlist raw;raw];
+  / a char-string (10h) setting is already text - take the override string as-is (nothing to
+  / parse, and any string is valid). this makes .toml-origin string settings overridable, the
+  / same way symbol (.q-origin) settings already are; di.config stays policy-free by preserving
+  / whatever type the setting already had.
+  if[10h=t;
+    vals:first raw;
+    .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
+    :(1b;vals);
+  ];
   vals:(upper .Q.t abs t)$'raw;
   if[parsefailed[t;raw;vals];
     .z.m.logerr[`overrideconfig;"cannot override ",(string name),": value did not parse"];

@@ -1,0 +1,31 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,svc:use`di.servers,1,1,load the module
+before,0,0,q,"logrows:([]lvl:`symbol$();ctx:`symbol$();msg:())",1,1,recording log table
+before,0,0,q,"mocklog:`info`warn`error!({[c;m]`logrows upsert(`info;c;m)};{[c;m]`logrows upsert(`warn;c;m)};{[c;m]`logrows upsert(`error;c;m)})",1,1,recording binary logger
+before,0,0,q,"timercalls:([]id:`symbol$();period:`long$())",1,1,recording timer-addjob table
+before,0,0,q,"mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts]`timercalls upsert(id;period)}",1,1,mock timer dep (records addjob calls)
+before,0,0,q,"handlercalls:([]event:`symbol$();name:`symbol$())",1,1,recording handler-register table
+before,0,0,q,"mockhandlers:`register`remove`list!({[ev;ph;nm;pri;fn]`handlercalls upsert(ev;nm)};{[ev;ph;nm]};{[ev]})",1,1,mock handlers dep (di.handlers register[event;phase;nm;pri;func] shape)
+before,0,0,q,"mockdeps:{[conns]`log`timer`handlers`proctype`procname`connections!(mocklog;mocktimer;mockhandlers;`selfproc;`selfinst;conns)}",1,1,build the full deps dict (injectables + config)
+comment,,,,,,,init - dependency + config validation (plain signal; logger not wired yet)
+fail,0,0,q,svc.init[()!()],1,1,init with no deps errors
+fail,0,0,q,svc.init[enlist[`log]!enlist mocklog],1,1,init missing timer/handlers errors
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(42;mocktimer;mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a non-dict log value
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!((enlist`info)!enlist{[c;m]};mocktimer;mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a log dict missing warn/error
+fail,0,0,q,"svc.init[`log`timer`handlers!(mocklog;mocktimer;mockhandlers)]",1,1,init rejects deps without proctype/procname identity
+comment,,,,,,,init - wiring and idempotency
+run,0,0,q,svc.init[mockdeps[`symbol$()]],1,1,init with the mock deps
+true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,init registered its .z.pc observer via the handlers dep
+true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,init scheduled the retry job via the timer dep
+true,0,0,q,10=first exec period from timercalls where id=`serversretry,1,1,retry period is 10s (di.timer mode-1h period is in seconds - guards the old 10000 typo)
+run,0,0,q,svc.init[mockdeps[`symbol$()]],1,1,re-init must be idempotent (di.torq calls init once per process; a second call must not blow up)
+true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,idempotent re-init did NOT add a second retry job
+true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,idempotent re-init did NOT re-register the pc handler
+comment,,,,,,,startup / getservers / gethandlebytype / getapimeta
+run,0,0,q,svc.startup[],1,1,startup with no configured connections is a no-op (connections empty)
+true,0,0,q,0=count svc.getservers[`nosuch],1,1,getservers returns empty for an unconnected proctype
+true,0,0,q,0Ni~svc.gethandlebytype[`nosuch;`any],1,1,gethandlebytype returns 0Ni when no live server of that proctype
+true,0,0,q,(asc key svc)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the module's exports (only exported functions)
+true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,1b~(1!svc.getapimeta[])[`startup]`public,1,1,a public API function (startup) is marked public
+true,0,0,q,0b~(1!svc.getapimeta[])[`init]`public,1,1,framework plumbing (init) is not public

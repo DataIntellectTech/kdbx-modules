@@ -11,6 +11,10 @@ fescapes:"s = \"a\\nb\\tc\\\"d\"";
 fblank:"\n  \n# only a comment\n";
 fqdotkey:"\"a.b\" = 1";                     / a QUOTED key with a dot - a literal key, allowed
 expesc:"a\nb\tc\"d";                        / expected unescaped value of fescapes' s
+fbs:"p = \"a\\\\nb\"";                      / TOML  p = "a\\nb"  (escaped backslash then n)
+expbs:"a\\nb";                              / expected: a, backslash, n, b (4 chars) - NOT a newline
+femptystr:"k = \"\"";                       / TOML  k = ""  (a legitimate empty string)
+finvesc:"s = \"a\\xb\"";                    / TOML  s = "a\xb"  (\x is not a valid escape)
 
 TDIR:"/tmp/ditomltest";
 setuptoml:{[] system "mkdir -p ",TDIR; (`$":",TDIR,"/x.toml") 0: ("dir = \":appdb\"";"rows = 100");};

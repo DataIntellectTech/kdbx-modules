@@ -32,6 +32,11 @@ true,0,0,q,0=count rarr`empty,1,1,an empty array parses to an empty list
 comment,,,,,,,escapes
 true,0,0,q,expesc~(tml.parsetoml fescapes)`s,1,1,the \n \t \" escapes are expanded
 true,0,0,q,7=count (tml.parsetoml fescapes)`s,1,1,the unescaped string has the expected length
+true,0,0,q,expbs~(tml.parsetoml fbs)`p,1,1,an escaped backslash next to n resolves to backslash+n (single-pass unescape) not a newline
+true,0,0,q,0=count (tml.parsetoml femptystr)`k,1,1,a quoted empty string is a valid empty value
+fail,0,0,q,tml.parsetoml finvesc,1,1,an unknown string escape (\x) is rejected
+fail,0,0,q,"tml.parsetoml ""k =""",1,1,an empty (missing) value is rejected
+fail,0,0,q,"tml.parsetoml ""x = [1, 2""",1,1,an unterminated array (no closing ]) is rejected
 comment,,,,,,,blank / comment-only input
 true,0,0,q,0=count tml.parsetoml fblank,1,1,blank and comment-only input yields an empty dict
 comment,,,,,,,fail-loud - unparseable / unsupported input signals (shared utility - never silent garbage)

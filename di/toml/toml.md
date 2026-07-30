@@ -73,6 +73,8 @@ wrong data:
 - a **dotted key** `a.b` (nesting) — but a *quoted* dotted key `"a.b" = 1` is a legitimate literal
   key and is kept
 - a **duplicate key / section** (or a key/section-name clash) — a TOML error, not silent last-wins
+- an **empty (missing) value** `k =`, and an **unterminated / malformed array** (`[` without a `]`)
+- an **unknown or dangling string escape** (`\x`, a trailing `\`)
 - an **array-of-tables** `[[x]]`, a malformed section header (missing `]`), or an empty section name
 - a non-char input, or a 1-char input (a char atom) — handled/validated at the `parsetoml` entry so
   it never surfaces as a cryptic `'type`
@@ -82,12 +84,11 @@ gets a clear `'di.toml: …'` error, not quiet garbage.
 
 ## Known limitations
 
-- **Escape handling is sequential** (`ssr`-based, `\\` applied last). A literal backslash immediately
-  followed by an escape character (e.g. a TOML value containing `\\n`) is an accepted edge — it is
-  not disambiguated the way a single-pass unescaper would. Real settings values don't hit this.
 - **Comment/`=` detection uses raw quote parity, not escape-aware.** A line that combines an
-  *escaped* quote inside a string with a trailing `#` comment on the same line can mis-detect the
-  comment boundary. Whole strings and whole-line/trailing comments (the common cases) are fine.
+  *escaped* quote inside a string value with a trailing `#` comment on the same line (e.g.
+  `d = "a\"b" # c`) can mis-detect the comment/separator boundary. This **fails safe** — the line is
+  *rejected* (signals), never silently mis-parsed — so it is over-strict on a rare construct, not a
+  correctness hole. Whole strings and whole-line/trailing comments (the common cases) are fine.
 - **Integer/float detection is by presence of `.`**, so an exponent-only float (`1e3`) is rejected
   (it parses to a null and signals) — write `1.0e3`.
 

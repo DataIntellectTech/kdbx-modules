@@ -98,16 +98,14 @@ priority-ordered fan-out.
 
 ## Open items / not yet done
 
-- **Live-peer integration tests are the next step.** `test.csv` currently covers the mockable
-  surface (init validation, dep-wiring via recording mocks, idempotency, a no-op `startup`,
-  `getservers`/`gethandlebytype` with no servers, `getapimeta`). The connection behaviour —
-  `startup` connecting to a real peer and logging a failed dial, `gethandlebytype` returning a
-  live remote handle, the retry cycle recovering an ungraceful kill (`cleanup`+reopen),
-  `waitfortype` connected-vs-timeout — needs a genuinely separate spawned `q` peer (a
-  self-connect returns pseudo-handle `0`, not a real socket). Since `retry`/`cleanup`/`formathp`
-  are internal, exercise the retry cycle by invoking the callback the **mock timer captured** at
-  `addjob` (tests the actually-wired path), not a direct export. See the child-q spawn recipe in
-  the q-gotchas reference.
+- **Live-peer integration tests are in place** (`test.q` + `test.csv`, 33 checks). They spawn a
+  genuinely separate `q` peer (a self-connect returns pseudo-handle `0`, not a real socket) and
+  cover: `startup` connecting to a live peer and logging a failed dial while excluding self,
+  `gethandlebytype` returning a live remote handle (`2=h"1+1"`), the retry cycle recovering an
+  ungraceful kill (`cleanup`+reopen), and `waitfortype` connected-vs-timeout — plus the mockable
+  surface (init validation, dep-wiring, idempotency, input validation, `getapimeta`). Because
+  `retry`/`cleanup` are internal, the retry cycle is driven by invoking the callback the **mock
+  timer captured** at `addjob` (the actually-wired path), not a direct export.
 - **Provider modules not in kdbx-modules yet.** `di.log` (feature-logging branch) and
   `di.handlers` aren't here yet, so the injected contracts are mocked in tests. The handlers
   mock uses the real `register[event;phase;nm;pri;func]` shape from `handlers.q`.
@@ -117,6 +115,10 @@ priority-ordered fan-out.
   `tcps`/`unix` socket types end-to-end (only `tcp` is wired through `startup`).
 
 ## Tests
+
+Run in a fresh q session (spawns and kills a real peer process; don't interleave with other
+modules' tests). Needs `QHOME` set (the peer is launched via `$QHOME/bin/q`) and `di.os` on
+`QPATH` (the harness uses `os.abspath` to load `test.q`):
 
 ```q
 k4unit:use`di.k4unit

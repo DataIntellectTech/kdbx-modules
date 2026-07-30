@@ -168,6 +168,7 @@ retry:{[]
 
 getservers:{[pt]
   / every live (non-null handle) SERVERS row for a proctype.
+  if[not -11h=type pt;raiseerror[`getservers;"proctype must be a symbol"]];
   select from .z.m.SERVERS where proctype=pt, not null w
   };
 
@@ -187,6 +188,8 @@ updatestats:{[wh]
 gethandlebytype:{[pt;selection]
   / get a single live handle for a proctype via a selection algorithm (`any`roundrobin`last), or
   / 0Ni if none is connected. bumps usage stats on the chosen row.
+  if[not -11h=type pt;raiseerror[`gethandlebytype;"proctype must be a symbol"]];
+  if[not -11h=type selection;raiseerror[`gethandlebytype;"selection must be a symbol (`any`roundrobin`last)"]];
   r:getservers[pt];
   if[0=count r;:0Ni];
   wh:(selector[r;selection])`w;
@@ -207,6 +210,9 @@ waitfortype:{[pt;timeoutms;pollms]
   / sleeping pollms. returns 1b once connected, 0b on timeout - the CALLER decides if that is fatal.
   / NOTE the blocking system"sleep" is fine at startup (single-threaded; the injected timer's .z.ts
   / just doesn't fire during the sleep).
+  if[not -11h=type pt;raiseerror[`waitfortype;"proctype must be a symbol"]];
+  if[not (abs type timeoutms) within 5 7h;raiseerror[`waitfortype;"timeoutms must be an integer (ms)"]];
+  if[not (abs type pollms) within 5 7h;raiseerror[`waitfortype;"pollms must be an integer (ms)"]];
   deadline:.z.p+`timespan$1000000*`long$timeoutms;
   .z.m.loginfo[`servers;"waiting up to ",(string timeoutms),"ms for a ",(string pt)," connection"];
   while[(0=count getservers pt) and .z.p<deadline;

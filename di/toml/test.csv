@@ -1,0 +1,63 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tml:use`di.toml,1,1,load the module
+before,0,0,q,"system ""l di/toml/test.q""",1,1,load TOML text fixtures + temp-file helpers
+before,0,0,q,setuptoml[],1,1,write a temp .toml file fixture
+before,0,0,q,rflat:tml.parsetoml fflat,1,1,parse the flat fixture once
+before,0,0,q,rcom:tml.parsetoml fcomments,1,1,parse the comments fixture once
+before,0,0,q,rsec:tml.parsetoml fsection,1,1,parse the section fixture once
+before,0,0,q,rarr:tml.parsetoml farrays,1,1,parse the arrays fixture once
+comment,,,,,,,scalars - types and policy-free strings
+true,0,0,q,1j~rflat`a,1,1,integer parses to a long
+true,0,0,q,-7h=type rflat`a,1,1,integer is a long (matches .q value semantics) not an int
+true,0,0,q,2.5~rflat`b,1,1,float parses to a float
+true,0,0,q,1b~rflat`c,1,1,true parses to a boolean
+true,0,0,q,0b~rflat`d,1,1,false parses to a boolean
+true,0,0,q,"""hello""~rflat`s",1,1,quoted string parses to its contents
+true,0,0,q,10h=type rflat`s,1,1,string stays a q char string (policy-free - never a symbol)
+comment,,,,,,,quoted keys
+true,0,0,q,"42j~(tml.parsetoml fqkey)(`$""my key"")",1,1,a double-quoted key with a space is preserved
+comment,,,,,,,comments (whole-line + trailing + quote-aware)
+true,0,0,q,1j~rcom`a,1,1,a trailing comment is stripped from a value
+true,0,0,q,"""a # b""~rcom`s",1,1,a # inside a string is NOT treated as a comment
+true,0,0,q,`a`s~asc key rcom,1,1,a whole-line comment produces no spurious key
+comment,,,,,,,sections (one level of nesting)
+true,0,0,q,1j~rsec`top,1,1,a key before any section stays at the top level
+true,0,0,q,99h=type rsec`sec,1,1,a section becomes a sub-dict
+true,0,0,q,10j~rsec[`sec]`k,1,1,a section key is parsed
+true,0,0,q,"""rdb""~rsec[`sec]`name",1,1,a section string value is a q string
+comment,,,,,,,arrays
+true,0,0,q,1 2 3~rarr`nums,1,1,an integer array parses to a long vector
+true,0,0,q,"(""xx"";""yy"")~rarr`strs",1,1,a string array parses to a list of strings
+true,0,0,q,0=count rarr`empty,1,1,an empty array parses to an empty list
+comment,,,,,,,escapes
+true,0,0,q,expesc~(tml.parsetoml fescapes)`s,1,1,the \n \t \" escapes are expanded
+true,0,0,q,7=count (tml.parsetoml fescapes)`s,1,1,the unescaped string has the expected length
+comment,,,,,,,blank / comment-only input
+true,0,0,q,0=count tml.parsetoml fblank,1,1,blank and comment-only input yields an empty dict
+comment,,,,,,,fail-loud - unparseable / unsupported input signals (shared utility - never silent garbage)
+fail,0,0,q,"tml.parsetoml ""novalue""",1,1,a line with no = signals a clear error
+fail,0,0,q,"tml.parsetoml ""d = 2024-01-15""",1,1,a datetime value is rejected (out of scope - would be a silent null)
+fail,0,0,q,"tml.parsetoml ""name = rdb""",1,1,a bare unquoted word value is rejected (quote real strings)
+fail,0,0,q,"tml.parsetoml ""a.b = 1""",1,1,an unquoted dotted key is rejected (nesting not supported)
+fail,0,0,q,"tml.parsetoml ""[[x]]\ny = 1""",1,1,array-of-tables [[...]] is rejected (not supported)
+fail,0,0,q,"tml.parsetoml ""[x\ny = 1""",1,1,a malformed section header (missing ]) is rejected
+fail,0,0,q,"tml.parsetoml ""[""",1,1,a bare [ gives a clean signal (not a cryptic 'type)
+fail,0,0,q,tml.parsetoml 5,1,1,a non-char-string input signals rather than a cryptic error
+true,0,0,q,"1j~(tml.parsetoml ""x = 1"")`x",1,1,a normal multi-char string still parses
+fail,0,0,q,"tml.parsetoml ""[]\nk = 1""",1,1,an empty section name is rejected
+fail,0,0,q,"tml.parsetoml ""export FOO=5""",1,1,a non-TOML line with = and a valid value still fails (invalid bare key - has a space)
+fail,0,0,q,"tml.parsetoml ""x:a=5""",1,1,another non-TOML-with-= line fails (bare key has a colon)
+fail,0,0,q,"tml.parsetoml ""= 5""",1,1,an empty key is rejected
+fail,0,0,q,"tml.parsetoml ""a = 1\na = 2""",1,1,a duplicate key is rejected (TOML error - not silent last-wins)
+fail,0,0,q,"tml.parsetoml ""[s]\nx = 1\n[s]\ny = 2""",1,1,a duplicate section is rejected
+true,0,0,q,"1j~(tml.parsetoml ""my-key_2 = 1"")(`$""my-key_2"")",1,1,a bare key with - and _ is valid (TOML allows them)
+true,0,0,q,"1j~(tml.parsetoml fqdotkey)(`$""a.b"")",1,1,a QUOTED key with a dot is a literal key (allowed - not a dotted-key construct)
+comment,,,,,,,parsefile (fail loud on missing; callers guard existence themselves)
+true,0,0,q,""":appdb""~(tml.parsefile TDIR,""/x.toml"")`dir",1,1,parsefile reads and parses a .toml file
+true,0,0,q,"100j~(tml.parsefile TDIR,""/x.toml"")`rows",1,1,parsefile parses an integer as a long
+fail,0,0,q,"tml.parsefile TDIR,""/nope.toml""",1,1,a missing .toml file SIGNALS (fail loud; a cascade caller guards existence itself)
+comment,,,,,,,getapimeta
+true,0,0,q,"(asc (key tml) except `getapimeta)~asc exec name from tml.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,not `getapimeta in exec name from tml.getapimeta[],1,1,getapimeta does not register itself (plumbing not in the api)
+true,0,0,q,`name`public`descrip`params`return~cols tml.getapimeta[],1,1,getapimeta rows carry the registry columns
+after,0,0,q,teardowntoml[],1,1,remove the temp fixture dir

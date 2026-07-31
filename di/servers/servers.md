@@ -47,7 +47,7 @@ h "1+1"
 | `getservers` | `getservers[proctype]` | Live (`w` non-null) `SERVERS` rows for a proctype. |
 | `gethandlebytype` | `gethandlebytype[proctype;selection]` | One live handle via `` `any``/`roundrobin`/`last``; `0Ni` if none. Bumps usage stats. |
 | `waitfortype` | `waitfortype[proctype;timeoutms;pollms]` | Block until a live connection exists or timeout; `1b`/`0b`. Caller decides if a timeout is fatal. `startup` must have run first. |
-| `getapimeta` | `getapimeta[]` | This module's api metadata, one row per export, for `di.torq` to register with `di.api`. |
+| `getapimeta` | `getapimeta[]` | This module's api metadata, one row per **callable** API function (`init`/`getapimeta` plumbing omitted), for `di.torq` to register with `di.api`. |
 
 Export is deliberately conservative — only functions `di.torq` or a consumer actually calls
 (so `di.api` lists exactly these). The rest are **internal**: `retry` (the scheduled
@@ -91,7 +91,9 @@ priority-ordered fan-out.
 - **`raiseerror` (log-then-signal)** for all post-init domain errors (`formathp` unknown
   ipctype, `selector` unknown selection, missing `process.csv`). `init`'s own dependency
   validation is the one exception (plain `'` — no logger yet).
-- **`getapimeta`** exported; a test asserts it documents exactly the module's exports. No
+- **`getapimeta`** exported; a test asserts it documents exactly the module's *callable*
+  exports — `init`/`getapimeta` are plumbing (di.torq calls them by convention) and are
+  deliberately omitted from the registry rows, matching di.toml and the skill convention. No
   `version` export / VERSION file yet — deferred to the di.depcheck rollout, as in di.config.
 - **Env-free** — di.servers reads no environment variable; the `process.csv` path arrives via
   `config`processcsv` (di.torq resolves it), holding di.config's env-free boundary.

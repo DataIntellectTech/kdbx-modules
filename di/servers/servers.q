@@ -59,6 +59,8 @@ init:{[deps]
     '"di.servers: handlers value must be a dict (see di.handlers)"];
   if[not all `proctype`procname in key deps;
     '"di.servers: proctype and procname (self-identity) are required in deps"];
+  if[not all -11h=type each deps`proctype`procname;
+    '"di.servers: proctype and procname must be symbols"];
   .z.m.loginfo:deps[`log]`info;
   .z.m.logwarn:deps[`log]`warn;
   .z.m.logerr:deps[`log]`error;
@@ -85,7 +87,7 @@ init:{[deps]
 formathp:{[host;port;ipctype]
   / internal - build a connection-handle symbol for `tcp`/`tcps`/`unix. only `tcp is exercised by
   / startup in v1; the others exist for a future SOCKETTYPE-style config.
-  h:string $[host=`localhost;`localhost;host];
+  h:string host;
   p:string port;
   $[ipctype=`tcp; lower `$":",h,":",p;
     ipctype=`tcps;lower `$":tcps://",h,":",p;
@@ -225,13 +227,12 @@ waitfortype:{[pt;timeoutms;pollms]
   };
 
 getapimeta:{[]
-  / this module's api metadata, one row per exported function, for di.torq to register with di.api.
-  / names are bare (di.torq qualifies them). one (name;public;descrip;params;return) row per line.
+  / this module's api metadata, one row per CALLABLE API function, for di.torq to register with
+  / di.api. init/getapimeta are plumbing (di.torq calls them by convention) and are deliberately NOT
+  / listed - the registry describes the callable api, not plumbing. names are bare (di.torq qualifies).
   :flip `name`public`descrip`params`return!flip(
-    (`init;            0b; "wire injected deps + config and install the pc observer + retry job (idempotent)"; "[dict: deps - `log`timer`handlers + `proctype`procname (+`connections`processcsv)]"; "null");
-    (`startup;         1b; "open connections to configured proctypes from process.csv (reads init config)"; "[]";                                                    "null");
-    (`getservers;      1b; "live SERVERS rows for a proctype";                                      "[symbol: proctype]";                                           "table: live server rows");
-    (`gethandlebytype; 1b; "one live handle for a proctype via any/roundrobin/last selection";      "[symbol: proctype; symbol: selection]";                        "int: handle, 0Ni if none");
-    (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]";            "boolean: 1b connected, 0b timed out");
-    (`getapimeta;      0b; "this module's api metadata rows";                                       "[]";                                                           "table: metadata rows"));
+    (`startup;         1b; "open connections to configured proctypes from process.csv (reads init config)"; "[]";                                       "null");
+    (`getservers;      1b; "live SERVERS rows for a proctype";                                      "[symbol: proctype]";                              "table: live server rows");
+    (`gethandlebytype; 1b; "one live handle for a proctype via any/roundrobin/last selection";      "[symbol: proctype; symbol: selection]";           "int: handle, 0Ni if none");
+    (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };

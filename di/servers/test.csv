@@ -42,6 +42,8 @@ comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection
 fail,0,0,q,"svc.waitfortype[`hdb;""x"";200]",1,1,waitfortype rejects a non-integer timeout
-true,0,0,q,(asc key svc)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the exports
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;mocktimer;mockhandlers;""rdb"";`p)]",1,1,init rejects a non-symbol proctype
+true,0,0,q,(asc (key svc) except `init`getapimeta)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,not any `init`getapimeta in exec name from svc.getapimeta[],1,1,getapimeta omits plumbing (init/getapimeta not registered)
 true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapimeta rows carry the registry columns
 after,0,0,q,teardownfixture[],1,1,kill the peer and remove the fixture dir

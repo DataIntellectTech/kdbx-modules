@@ -69,6 +69,10 @@ comment,,,,,,,parsefile (fail loud on missing; callers guard existence themselve
 true,0,0,q,""":appdb""~(tml.parsefile TDIR,""/x.toml"")`dir",1,1,parsefile reads and parses a .toml file
 true,0,0,q,"100j~(tml.parsefile TDIR,""/x.toml"")`rows",1,1,parsefile parses an integer as a long
 fail,0,0,q,"tml.parsefile TDIR,""/nope.toml""",1,1,a missing .toml file SIGNALS (fail loud; a cascade caller guards existence itself)
+comment,,,,,,,di.depcheck deps.toml contract - [dependencies] table of quoted dotted keys -> version strings
+true,0,0,q,expdeps~(tml.parsetoml fdeps)`dependencies,1,1,a deps.toml [dependencies] table parses to the symbol!version-string dict di.depcheck readdeps expects
+true,0,0,q,11h=type key (tml.parsetoml fdeps)`dependencies,1,1,dependency names are symbols (quoted dotted keys unquoted)
+true,0,0,q,all 10h=type each value (tml.parsetoml fdeps)`dependencies,1,1,version values stay strings (policy-free) for meetsmin comparison
 comment,,,,,,,getapimeta
 true,0,0,q,"(asc (key tml) except `getapimeta)~asc exec name from tml.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
 true,0,0,q,not `getapimeta in exec name from tml.getapimeta[],1,1,getapimeta does not register itself (plumbing not in the api)

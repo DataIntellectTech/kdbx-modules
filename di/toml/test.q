@@ -22,6 +22,8 @@ expescarr:("x\"y";"zz");                    / expected: two elements x"y and zz 
 fqsec:"[\"a.b\"]\nx = 1";                   / TOML  ["a.b"]  -  a QUOTED section name (dot is literal)
 ftab:"s = \"x\ty\"";                        / TOML  s = "x<tab>y"  (a literal tab inside the string)
 exptab:"x\ty";                              / expected: x, tab, y - the tab preserved, not spaced
+fdeps:"# peer deps\n[dependencies]\n\"di.servers\" = \"0.3.0\"  # injected\n\"di.dbwrite\" = \"0.1.0\"";  / a di.depcheck deps.toml
+expdeps:`di.servers`di.dbwrite!("0.3.0";"0.1.0");   / di.depcheck's readdeps expects [dependencies] -> symbol!version-string
 
 TDIR:"/tmp/ditomltest";
 setuptoml:{[] system "mkdir -p ",TDIR; (`$":",TDIR,"/x.toml") 0: ("dir = \":appdb\"";"rows = 100");};

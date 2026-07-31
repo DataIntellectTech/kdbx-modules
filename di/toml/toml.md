@@ -47,10 +47,10 @@ array-of-tables (`[[x]]`).
 | `parsefile` | `parsefile[path]` | Read and parse a `.toml` file into a dict. A **missing file signals** — a caller that treats missing as acceptable (a config cascade) guards existence itself first (as di.config does). |
 | `getapimeta` | `getapimeta[]` | This module's api metadata — one row per **callable** function (`parsetoml`, `parsefile`); `getapimeta` itself is plumbing and is deliberately not listed. For `di.torq` to register with `di.api`. |
 
-Export is conservative — the internal helpers (`trimstr`, `firstunquoted`, `stripcomment`,
-`splitassign`, `unquotekey`, `unescape`, `parsescalar`, `splitcommas`, `parsevalue`, `sectname`,
-`addkv`, `addline`) are not exported. No `version` export / `VERSION` file yet — deferred to the
-di.depcheck rollout, as in di.config/di.servers.
+Export is conservative — the internal helpers (`trimstr`, `isquoted`, `instrmask`, `firstunquoted`,
+`stripcomment`, `splitassign`, `unquotekey`, `parsekey`, `unescape`, `parsescalar`, `splitcommas`,
+`parsevalue`, `sectname`, `addkv`, `addline`) are not exported. No `version` export / `VERSION` file yet — deferred
+to the di.depcheck rollout, as in di.config/di.servers.
 
 ## di.config integration contract
 
@@ -66,16 +66,17 @@ Anything the scoped grammar can't correctly represent **signals** rather than si
 wrong data:
 
 - a bare/unquoted non-numeric value (a word, a datetime)
-- an **invalid bare key** — one with a space, `:`, or any char outside `A-Za-z0-9_-` (this is what
-  makes most *non-TOML* lines that happen to contain `=` — a shell `export FOO=5`, a q `x:a=5` —
-  fail loud instead of parsing to a bogus symbol key)
-- an **empty key** (`= 5`)
-- a **dotted key** `a.b` (nesting) — but a *quoted* dotted key `"a.b" = 1` is a legitimate literal
-  key and is kept
+- an **invalid bare key or section name** — one with a space, `:`, or any char outside `A-Za-z0-9_-`
+  (this is what makes most *non-TOML* lines that happen to contain `=` — a shell `export FOO=5`, a q
+  `x:a=5` — fail loud instead of parsing to a bogus symbol key). Keys and section names are held to
+  the *same* rule (a shared `parsekey`)
+- an **empty key or section name** (`= 5`, `[]`)
+- a **dotted key or section** (`a.b`, `[a.b]` — nesting) — but a *quoted* `"a.b"` (key or section) is
+  a legitimate literal name and is kept, unquoted
 - a **duplicate key / section** (or a key/section-name clash) — a TOML error, not silent last-wins
 - an **empty (missing) value** `k =`, and an **unterminated / malformed array** (`[` without a `]`)
 - an **unknown or dangling string escape** (`\x`, a trailing `\`)
-- an **array-of-tables** `[[x]]`, a malformed section header (missing `]`), or an empty section name
+- an **array-of-tables** `[[x]]`, or a malformed section header (missing `]`)
 - a non-char input, or a 1-char input (a char atom) — handled/validated at the `parsetoml` entry so
   it never surfaces as a cryptic `'type`
 
@@ -84,13 +85,10 @@ gets a clear `'di.toml: …'` error, not quiet garbage.
 
 ## Known limitations
 
-- **Comment/`=` detection uses raw quote parity, not escape-aware.** A line that combines an
-  *escaped* quote inside a string value with a trailing `#` comment on the same line (e.g.
-  `d = "a\"b" # c`) can mis-detect the comment/separator boundary. This **fails safe** — the line is
-  *rejected* (signals), never silently mis-parsed — so it is over-strict on a rare construct, not a
-  correctness hole. Whole strings and whole-line/trailing comments (the common cases) are fine.
-- **Integer/float detection is by presence of `.`**, so an exponent-only float (`1e3`) is rejected
-  (it parses to a null and signals) — write `1.0e3`.
+None that mis-parse. Everything outside the supported grammar — including TOML number forms not
+covered (underscored `1_000`, hex/octal/binary `0x`/`0o`/`0b`, `inf`/`nan`) — is **rejected with a
+clear signal**, never silently mis-parsed. The scope is deliberately the settings-file subset; widen
+it (and add tests) if a real settings file needs more.
 
 ## Tests
 

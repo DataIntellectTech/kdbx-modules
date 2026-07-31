@@ -11,15 +11,35 @@
 
 keychars:.Q.a,.Q.A,.Q.n,"_-";   / chars allowed in a bare key; anything else must be "quoted"
 
-trimstr:{[s] trim ssr[s;"\t";" "]};
+trimstr:{[s] i:where not s in " \t"; $[count i;(first i)_(1+last i)#s;""]};   / strip leading/trailing space+tab; keep internal
 isquoted:{[s] (1<count s) and all (first;last)@\:s="\""};
 unquotekey:{[k] $[isquoted k;1_-1_k;k]};
 stripcomment:{[l] (firstunquoted["#";l])#l};
-sectname:{[l] `$trimstr l 1+til -2+count l};
+
+parsekey:{[raw]
+  / validate + resolve a bare-or-"quoted" key OR section name to a symbol - both follow the same
+  / rule. a bare name is A-Za-z0-9_- only; a "quoted" name takes any chars (a "." is then literal).
+  / empty, dotted-bare (nesting, out of scope), and invalid-bare names all signal.
+  if[0=count raw;'"di.toml: empty key or section name"];
+  if[not isquoted raw;
+    if["." in raw;'"di.toml: dotted keys/sections are not supported (quote the name if the . is literal): ",raw];
+    if[not all raw in keychars;'"di.toml: invalid bare name (only A-Za-z0-9_- allowed; quote otherwise): ",raw]];
+  `$unquotekey raw};
+
+sectname:{[hdr] parsekey trimstr hdr 1+til -2+count hdr};
+
+instrmask:{[s]
+  / per-position boolean: is this char inside a "..." string? escape-aware - a \" or \\ inside a
+  / string does not toggle the state. carries (in-string?; prev-char-was-an-escaping-backslash?) and
+  / returns the state BEFORE each char (0b prepended, last state dropped). used by both scanners
+  / below so comment/= detection and array-comma splitting handle escaped quotes identically.
+  if[0=count s;:0#0b];
+  st:{[a;x] $[a 1;(a 0;0b); x="\\";(a 0;1b); x="\"";(not a 0;0b); (a 0;0b)]}\[(0b;0b);s];
+  0b,-1_ st[;0]};
 
 firstunquoted:{[c;s]
-  / first index of char c outside a "..." span (or count s if none). note: not escape-aware.
-  ?[;1b] (c=s) and not mod[;2] sums s="\""};
+  / first index of char c outside a "..." string (or count s if none); c is only ever "#" or "=".
+  ?[;1b] (s=c) and not instrmask s};
 
 splitassign:{[l]
   / (key;value) split on the first unquoted "=" ; a line with no "=" is malformed.
@@ -38,19 +58,20 @@ unescape:{[s]
   r 0};
 
 parsescalar:{[tok]
-  / one scalar: "quoted string" | true | false | float (has ".") | long. an unquoted non-numeric
-  / token (bare word, datetime) parses to a null and is rejected - real strings must be quoted.
+  / one scalar: "quoted string" | true | false | float (has "." or an e/E exponent) | long. an
+  / unquoted non-numeric token (a bare word, a datetime) parses to a null and is rejected.
   tok:trimstr tok;
   if[isquoted tok;:unescape 1_-1_tok];
   if[tok~"true"; :1b];
   if[tok~"false";:0b];
-  if[null v:$[tok like "*.*";"F"$tok;"J"$tok];
+  if[null v:$[any tok in ".eE";"F"$tok;"J"$tok];
     '"di.toml: unparseable value (quote strings; bare words/datetimes are out of scope): ",tok];
   v};
 
 splitcommas:{[s]
-  / split an array's inner text on top-level commas (a comma inside "..." is not a separator).
-  1_'_[;s] where (s=",") and not mod[;2] sums "\""=s:",",s};
+  / split an array's inner text on top-level commas (a comma inside "..." is not a separator;
+  / escape-aware via instrmask). prepend a comma so the first element uses the same cut-and-drop rule.
+  1_'_[;s] where (s=",") and not instrmask s:",",s};
 
 parsevalue:{[v]
   / a "[ ... ]" array -> list of scalars (empty -> ()); else a single scalar. empty and unterminated
@@ -77,17 +98,12 @@ addline:{[acc;line]
     [hdr:trimstr line;
      if[not "]"=last hdr;'"di.toml: malformed section header (missing ]): ",line];
      if["[["~2 sublist hdr;'"di.toml: array-of-tables [[...]] is not supported: ",line];
-     if[null nm:sectname hdr;'"di.toml: empty section name: ",line];
+     nm:sectname hdr;
      if[not null cursect;top:addkv[top;cursect;sect]];
      (top;nm;()!())];
     [kv:splitassign line;
-     rawkey:kv 0;
-     if[0=count rawkey;'"di.toml: empty key: ",line];
-     if[not isquoted rawkey;
-       if["." in rawkey;'"di.toml: dotted keys are not supported (quote the key if the dot is literal): ",rawkey];
-       if[not all rawkey in keychars;'"di.toml: invalid bare key (only A-Za-z0-9_- allowed; quote otherwise): ",rawkey]];
+     k:parsekey kv 0;
      v:parsevalue kv 1;
-     k:`$unquotekey rawkey;
      $[null cursect;(addkv[top;k;v];cursect;sect);(top;cursect;addkv[sect;k;v])]]]};
 
 parsetoml:{[text]

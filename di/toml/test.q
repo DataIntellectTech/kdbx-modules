@@ -15,6 +15,13 @@ fbs:"p = \"a\\\\nb\"";                      / TOML  p = "a\\nb"  (escaped backsl
 expbs:"a\\nb";                              / expected: a, backslash, n, b (4 chars) - NOT a newline
 femptystr:"k = \"\"";                       / TOML  k = ""  (a legitimate empty string)
 finvesc:"s = \"a\\xb\"";                    / TOML  s = "a\xb"  (\x is not a valid escape)
+fescq:"d = \"a\\\"b\" # c";                 / TOML  d = "a\"b" # c  (escaped quote in value + comment)
+expescq:"a\"b";                             / expected value of d: a, ", b  (comment stripped)
+fescarr:"a = [\"x\\\"y\", \"zz\"]";         / TOML  a = ["x\"y", "zz"]  (escaped quote in an array elem)
+expescarr:("x\"y";"zz");                    / expected: two elements x"y and zz (comma not mis-split)
+fqsec:"[\"a.b\"]\nx = 1";                   / TOML  ["a.b"]  -  a QUOTED section name (dot is literal)
+ftab:"s = \"x\ty\"";                        / TOML  s = "x<tab>y"  (a literal tab inside the string)
+exptab:"x\ty";                              / expected: x, tab, y - the tab preserved, not spaced
 
 TDIR:"/tmp/ditomltest";
 setuptoml:{[] system "mkdir -p ",TDIR; (`$":",TDIR,"/x.toml") 0: ("dir = \":appdb\"";"rows = 100");};

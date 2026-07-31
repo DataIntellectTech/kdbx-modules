@@ -10,6 +10,8 @@ comment,,,,,,,scalars - types and policy-free strings
 true,0,0,q,1j~rflat`a,1,1,integer parses to a long
 true,0,0,q,-7h=type rflat`a,1,1,integer is a long (matches .q value semantics) not an int
 true,0,0,q,2.5~rflat`b,1,1,float parses to a float
+true,0,0,q,"1000f~(tml.parsetoml ""x = 1e3"")`x",1,1,an exponent float (1e3) parses to a float
+true,0,0,q,"-0.02~(tml.parsetoml ""x = -2E-2"")`x",1,1,a signed exponent float (-2E-2) parses to a float
 true,0,0,q,1b~rflat`c,1,1,true parses to a boolean
 true,0,0,q,0b~rflat`d,1,1,false parses to a boolean
 true,0,0,q,"""hello""~rflat`s",1,1,quoted string parses to its contents
@@ -19,6 +21,7 @@ true,0,0,q,"42j~(tml.parsetoml fqkey)(`$""my key"")",1,1,a double-quoted key wit
 comment,,,,,,,comments (whole-line + trailing + quote-aware)
 true,0,0,q,1j~rcom`a,1,1,a trailing comment is stripped from a value
 true,0,0,q,"""a # b""~rcom`s",1,1,a # inside a string is NOT treated as a comment
+true,0,0,q,expescq~(tml.parsetoml fescq)`d,1,1,an escaped quote in a value plus a trailing comment is handled (escape-aware quote tracking)
 true,0,0,q,`a`s~asc key rcom,1,1,a whole-line comment produces no spurious key
 comment,,,,,,,sections (one level of nesting)
 true,0,0,q,1j~rsec`top,1,1,a key before any section stays at the top level
@@ -29,9 +32,11 @@ comment,,,,,,,arrays
 true,0,0,q,1 2 3~rarr`nums,1,1,an integer array parses to a long vector
 true,0,0,q,"(""xx"";""yy"")~rarr`strs",1,1,a string array parses to a list of strings
 true,0,0,q,0=count rarr`empty,1,1,an empty array parses to an empty list
+true,0,0,q,expescarr~(tml.parsetoml fescarr)`a,1,1,an escaped quote in an array element does not mis-split the comma (escape-aware splitcommas)
 comment,,,,,,,escapes
 true,0,0,q,expesc~(tml.parsetoml fescapes)`s,1,1,the \n \t \" escapes are expanded
 true,0,0,q,7=count (tml.parsetoml fescapes)`s,1,1,the unescaped string has the expected length
+true,0,0,q,exptab~(tml.parsetoml ftab)`s,1,1,a literal tab inside a string value is preserved (not converted to a space by trimming)
 true,0,0,q,expbs~(tml.parsetoml fbs)`p,1,1,an escaped backslash next to n resolves to backslash+n (single-pass unescape) not a newline
 true,0,0,q,0=count (tml.parsetoml femptystr)`k,1,1,a quoted empty string is a valid empty value
 fail,0,0,q,tml.parsetoml finvesc,1,1,an unknown string escape (\x) is rejected
@@ -45,6 +50,9 @@ fail,0,0,q,"tml.parsetoml ""d = 2024-01-15""",1,1,a datetime value is rejected (
 fail,0,0,q,"tml.parsetoml ""name = rdb""",1,1,a bare unquoted word value is rejected (quote real strings)
 fail,0,0,q,"tml.parsetoml ""a.b = 1""",1,1,an unquoted dotted key is rejected (nesting not supported)
 fail,0,0,q,"tml.parsetoml ""[[x]]\ny = 1""",1,1,array-of-tables [[...]] is rejected (not supported)
+fail,0,0,q,"tml.parsetoml ""[a.b]\nx = 1""",1,1,a dotted (nested) section name is rejected (same rule as dotted keys)
+fail,0,0,q,"tml.parsetoml ""[a b]\nx = 1""",1,1,an invalid bare section name (has a space) is rejected
+true,0,0,q,"1j~(tml.parsetoml fqsec)[`$""a.b""]`x",1,1,a QUOTED section name is a literal name (unquoted like a quoted key)
 fail,0,0,q,"tml.parsetoml ""[x\ny = 1""",1,1,a malformed section header (missing ]) is rejected
 fail,0,0,q,"tml.parsetoml ""[""",1,1,a bare [ gives a clean signal (not a cryptic 'type)
 fail,0,0,q,tml.parsetoml 5,1,1,a non-char-string input signals rather than a cryptic error

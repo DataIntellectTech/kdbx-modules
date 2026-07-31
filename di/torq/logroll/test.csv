@@ -1,0 +1,47 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,logroll:use`di.torq.logroll,1,,load module
+before,0,0,q,system "l di/torq/logroll/test.q",1,,load mock deps and fixture helpers
+before,0,0,q,setenv[`TORQXAPPHOME;"/tmp"],1,,point TORQXAPPHOME for the relative-dir test - inherited by spawned children too
+before,0,0,q,setupfixture[],1,,create temp fixture directories
+
+true,0,0,q,`interactive in key logroll,1,,the interactive (TTY) guard helper is exported
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,logroll.init[nosectioncfg[];()!()],1,,missing [logroll] section - must no-op even with no deps at all
+true,0,0,q,0=outfilecount[],1,,no-op created no files
+true,0,0,q,0=count addjobcalls,1,,no-op scheduled no timer job
+
+run,0,0,q,logroll.init[disabledcfg[];()!()],1,,enabled=false - must also no-op with no deps
+true,0,0,q,0=outfilecount[],1,,disabled created no files
+true,0,0,q,0=count addjobcalls,1,,disabled scheduled no timer job
+
+fail,0,0,q,logroll.init[enabledabsdircfg[];()!()],1,,enabled with no deps at all must error on the missing log dependency
+fail,0,0,q,logroll.init[enabledabsdircfg[];enlist[`log]!enlist mocklog[]],1,,enabled with log but no timer dependency must error
+
+run,0,0,q,spawnchildinit["enabledabsdircfg"],1,,enabled with an absolute dir - spawned in a separate process (see test.q's comment on why)
+true,0,0,q,1=outfilecount[],1,,exactly one out_ file created
+true,0,0,q,1=errfilecount[],1,,exactly one err_ file created
+true,0,0,q,outaliasexists[],1,,out_ alias symlink created by default
+true,0,0,q,erraliasexists[],1,,err_ alias symlink created by default
+true,0,0,q,1=addjobcount[],1,,exactly one timer job scheduled
+true,0,0,q,86400=addjobperiod[],1,,scheduled with a 1-day period
+true,0,0,q,1h=addjobmode[],1,,scheduled with fixed-rate mode 1h
+true,0,0,q,addjobhasstartattime[],1,,scheduled with an explicit first-fire startattime
+
+run,0,0,q,spawnchildinit["enabledabsdircfg"],1,,spawn again to prove a second roll adds a second file rather than overwriting
+true,0,0,q,2=outfilecount[],1,,second roll created a second out_ file
+true,0,0,q,2=errfilecount[],1,,second roll created a second err_ file
+
+run,0,0,q,setupfixture[],1,,fresh fixture dir for the suppressalias case
+run,0,0,q,spawnchildinit["enabledsuppressaliascfg"],1,,enabled with suppressalias=true
+true,0,0,q,not outaliasexists[],1,,suppressalias correctly skipped the out_ alias
+true,0,0,q,not erraliasexists[],1,,suppressalias correctly skipped the err_ alias
+
+run,0,0,q,spawnchildinit["enabledreldircfg"],1,,enabled with a relative dir - exercises resolvedir's TORQXAPPHOME join
+true,0,0,q,1=relfilecount[],1,,relative dir correctly resolved against TORQXAPPHOME and mounted
+
+true,0,0,q,resolveabssymbolok[],1,,resolvedir on a symbol handle strips the colon and returns the absolute path unchanged
+true,0,0,q,resolveabsstringok[],1,,resolvedir on an absolute string is returned unchanged
+true,0,0,q,resolverelstringok[],1,,resolvedir on a relative string joins against TORQXAPPHOME
+
+after,0,0,q,teardownfixture[],1,,remove the temp fixture directories

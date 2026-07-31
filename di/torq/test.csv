@@ -1,0 +1,45 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tq:use`di.torq,1,,load module
+before,0,0,q,system "l di/torq/test.q",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,create a temp app fixture: settings, process.csv, scratch hdb, custom proctype file
+
+fail,0,0,q,tq.reqenv[`DI_TORQ_TEST_NO_SUCH_VAR],1,,reqenv on a missing env var must error
+
+fail,0,0,q,tq.init[`;`;()!()],1,,"auto-detect with no port set (system""p""=0) and two localhost rows in process.csv must fail as ambiguous"
+
+run,0,0,q,system "p 19999",1,,bind a port that appears nowhere in the fixture process.csv
+fail,0,0,q,tq.init[`;`;()!()],1,,auto-detect must fail when this session's port matches no process.csv row
+
+run,0,0,q,r:tq.init[`hdb;`hdb;()!()],1,,explicit-identity init for the built-in hdb proctype
+true,0,0,q,`hdb~r`proctype,1,,identity resolved from the explicit args
+true,0,0,q,`k4unittest~(r`config)`owner,1,,config cascade reached the app-level default.q
+true,0,0,q,`widgets in tables[],1,,the built-in hdb module actually mounted the fixture hdb dir
+true,0,0,q,(`handlers`log`servers`timer)~asc key r`deps,1,,all four core deps (incl injected servers) were built and passed through
+
+run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
+true,0,0,q,`hdb~r2`proctype,1,,override path still resolves the same identity
+
+run,0,0,q,r3:tq.init[TESTPROCNAME;`testinst;()!()],1,,explicit-identity init for a custom proctype
+true,0,0,q,TESTPROCNAME~r3`proctype,1,,identity resolved for the custom proctype
+true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reached the custom proctype's own settings file
+true,0,0,q,(`handlers`log`servers`timer)~asc key .k4unittestproc.captureddeps,1,,deps (incl injected servers) were passed through to the custom proctype's init exactly like a built-in one
+true,0,0,q,1=.k4unittestproc.runcalled,1,,the .run hook fired automatically after init - no launcher-side proctype knowledge needed
+
+run,0,0,q,r5:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with the norun override set (this reloads the proctype file, resetting runcalled to 0)
+true,0,0,q,0=.k4unittestproc.runcalled,1,,-norun skipped the hook - count stayed at 0 instead of incrementing to 1
+
+true,0,0,q,APPCOMMON_LOADED,1,,app-code cascade loaded code/common/*.q during init (at root)
+true,0,0,q,APPPROC_LOADED,1,,app-code cascade loaded code/<proctype>/*.q during init (at root)
+true,0,0,q,not `APPNAME_LOADED in key `.,1,,procname-tier code/<procname>/ is OFF by default (loadnamecode)
+run,0,0,q,enablenamecode[],1,,enable procname-tier loading via the procname settings tier
+run,0,0,q,r6:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with loadnamecode turned on in config
+true,0,0,q,`APPNAME_LOADED in key `.,1,,procname-tier code now loads when loadnamecode=1b
+
+true,0,0,q,`hdb~r`proctype,1,,sanity: hdb (no .hdb.run published) still inited cleanly earlier with no hook and no error
+
+run,0,0,q,system "p 28580",1,,rebind to the port process.csv says hdb owns
+run,0,0,q,r4:tq.init[`;`;()!()],1,,auto-detect identity now that the port uniquely matches one row
+true,0,0,q,`hdb~r4`proctype,1,,auto-detected the right proctype
+true,0,0,q,`hdb~r4`procname,1,,auto-detected the right procname
+
+after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file

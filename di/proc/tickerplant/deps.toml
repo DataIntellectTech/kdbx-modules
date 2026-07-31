@@ -1,0 +1,5 @@
+# Peer modules di.tickerplant `use`s (see di/depcheck/depcheck.md).
+[dependencies]
+"di.pubsub" = "0.1.0"
+"di.eodtime" = "0.1.0"
+"di.tplogmgr" = "0.1.0"

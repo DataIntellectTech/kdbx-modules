@@ -128,3 +128,20 @@ Do not use windows carriage returns `^M` in q files. You can fix this by using
 dos2unix.
 
 Unless it is unavoidable lines of code should not exceed 150 characters.
+
+## Notes (framework tier)
+
+> Additive clarifications from the framework work; consistent with the rules above.
+
+- **Root writes across the module boundary are not gratuitous `::`.** The "avoid global assign"
+  rule stands, but `@[`.;name;…]` / `set[`.ns.fn;…]` used to maintain a *root* table or publish a
+  root IPC entry point from inside a `use`-loaded module are the **sanctioned idiom** (see the
+  namespace-write boundary in `consistency.md`), not a style violation.
+- **`do` / `while` / `for`:** the iterator-first rule stands. A bounded queue/accumulator loop
+  with no natural iterator (e.g. a cycle-guarded dependency-graph walk) is the rare justified
+  exception — comment *why*.
+- **Reserved names bite at load time, not just runtime.** Beyond "don't use q reserved names":
+  the ones that have actually broken things are `log`, `ss`, `sv`, `string`, `cut`, `tables`. A
+  local or parameter named after a builtin may fail to shadow it and can throw when the file is
+  *loaded* (e.g. `sv:...` → `'sv`). Pick a distinct name (`srv` not `sv`, `lg` not `log`). Full
+  list of q traps in `CLAUDE.md`.

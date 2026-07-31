@@ -1,0 +1,9 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,rdb:use`di.proc.rdb,1,,load module
+before,0,0,q,mlog:`info`warn`error!(3#enlist {[c;m]}),1,,a minimal (dyadic) log dep dict
+
+fail,0,0,q,rdb.init[()!();()!()],1,,init without the log dependency must error
+fail,0,0,q,rdb.init[()!();(enlist`log)!enlist mlog],1,,init with log but no timer dependency must error
+
+true,0,0,q,`init`endofday`reload`version~key rdb,1,,module exports init/endofday/reload/version
+true,0,0,q,0<count rdb`version,1,,version string is present (e.g. 0.1.0)

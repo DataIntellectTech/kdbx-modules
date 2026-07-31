@@ -1,0 +1,9 @@
+# Peer modules di.gateway `use`s, with the minimum version each must be at. Ships WITH the
+# module (versioned lockstep) and is validated transitively at startup by di.depcheck's
+# manifest walk (di.torq.init) - see di/depcheck/depcheck.md. Not the app's install manifest;
+# that is TORQXAPPHOME/deps.toml.
+[dependencies]
+"di.torq.servers" = "0.3.0"       # requires the INJECTED-servers contract (deps`servers)
+"di.serverselect" = "0.1.0"
+"di.asyncdispatch" = "0.1.0"
+"di.dataaccess" = "0.2.0"

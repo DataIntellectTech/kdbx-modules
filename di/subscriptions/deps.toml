@@ -1,0 +1,3 @@
+# Peer modules di.subscriptions `use`s (see di/depcheck/depcheck.md).
+[dependencies]
+"di.tplogmgr" = "0.1.0"

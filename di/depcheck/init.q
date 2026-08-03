@@ -3,4 +3,4 @@
 
 \l ::depcheck.q
 
-export:([init;version])
+export:([init;version;checkcontract])

@@ -121,8 +121,8 @@ init:{[config;deps]
   / serverselect deactivate) or client (asyncdispatch orphan-query cleanup). Each is a no-op for
   / the other role, so calling all three on every close is safe.
   hl:deps`handlers;
-  (hl`register)[`po;`;`gateway;10;{[wh] (.z.m.ad`addclientdetails)[wh]}];
-  (hl`register)[`pc;`;`gateway;10;{[wh] (.z.m.ad`removeserverhandle)[wh]; (.z.m.ad`removeclienthandle)[wh]; (.z.m.srvsel`setserveractive)[wh;0b]}];
+  (hl`register)[`.z.po;`;`gateway;10;{[wh] (.z.m.ad`addclientdetails)[wh]}];
+  (hl`register)[`.z.pc;`;`gateway;10;{[wh] (.z.m.ad`removeserverhandle)[wh]; (.z.m.ad`removeclienthandle)[wh]; (.z.m.srvsel`setserveractive)[wh;0b]}];
 
   / publish the client entry points + the eod reload gate at root. .gw.getdata is the
   / normalised query layer (di.dataaccess); the raw asyncexec/asyncexecjpt route query strings.

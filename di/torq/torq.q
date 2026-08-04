@@ -83,14 +83,14 @@ buildtimerdep:{[overrides]
   `addjob`deletejobs`enablejobs`disablejobs`getactivejobs!((tm`addjob)`custom;tm`deletejobs;tm`enablejobs;tm`disablejobs;tm`getactivejobs)
   }
 
-/ builds the handlers dependency dict, using di.torq.handlers unless overridden. di.torq.handlers's own
-/ remove function is named `deregister` (avoiding a suspected reserved-name collision -
-/ see di/torq/handlers/handlers.q) but is exposed here under the contract's `remove` key.
+/ builds the handlers dependency dict, using di.torq.handlers unless overridden. The reconciled
+/ di.torq.handlers (kdbx feature-handlers, canonical) exports the contract names directly, so the
+/ dict maps through 1:1 - no deregister->remove aliasing as the earlier TorqX module needed.
 buildhandlersdep:{[overrides;logdep]
   modname:$[`handlers in key overrides;overrides`handlers;`di.torq.handlers];
   hz:use modname;
   (hz`init)[enlist[`log]!enlist logdep];
-  `register`remove`list!(hz`register;hz`deregister;hz`list)
+  `register`remove`list!(hz`register;hz`remove;hz`list)
   }
 
 / builds the servers (connection-management) dependency dict, using di.torq.servers unless

@@ -1,0 +1,6 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,lg:use`di.util.log,1,,load module
+run,0,0,q,lg.info[`test;"hello"],1,,info does not throw
+run,0,0,q,lg.warn[`test;"careful"],1,,warn does not throw
+run,0,0,q,lg.error[`test;"boom"],1,,error does not throw
+run,0,0,q,lg.info[`;""],1,,info tolerates null ctx and empty message

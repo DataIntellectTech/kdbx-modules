@@ -1,0 +1,496 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load the module with a capturing logger and a capturing handlers mock
+before,0,0,q,perms:use`di.permissions,1,1,load di.permissions
+before,0,0,q,.pt.cap:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,log capture table for assertions
+before,0,0,q,caplog:`info`warn`error!({[c;m] `.pt.cap insert (`info;c;m)};{[c;m] `.pt.cap insert (`warn;c;m)};{[c;m] `.pt.cap insert (`error;c;m)}),1,1,capturing binary logger {[c;m]}
+before,0,0,q,.pt.reg:([]event:`symbol$();phase:`symbol$();nm:`symbol$();pri:`long$();f:()),1,1,handler registration capture table
+before,0,0,q,"mockh:`register`remove`list!({[e;p;n;pr;f] `.pt.reg insert (e;p;n;pr;f)};{[e;p;n] delete from `.pt.reg where event=e,phase=p,nm=n; (::)};{[e] select from .pt.reg where event=e})",1,1,handlers mock capturing every registration
+before,0,0,q,deps:`log`handlers!(caplog;mockh),1,1,the injected dependency dict
+
+comment,,,,,,,init - dependency validation (log and handlers are required and never defaulted)
+fail,0,0,q,perms.init[(::);(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,perms.init[(::);()!()],1,1,init rejects deps missing both keys
+fail,0,0,q,perms.init[(::);enlist[`log]!enlist caplog],1,1,init rejects deps missing the handlers key
+fail,0,0,q,perms.init[(::);enlist[`handlers]!enlist mockh],1,1,init rejects deps missing the log key
+fail,0,0,q,perms.init[(::);`log`handlers!(42;mockh)],1,1,init rejects a non-dict log value
+fail,0,0,q,perms.init[(::);`log`handlers!((enlist[`info]!enlist caplog`info);mockh)],1,1,init rejects a log dict missing warn and error
+fail,0,0,q,perms.init[(::);`log`handlers!(caplog;enlist[`register]!enlist mockh`register)],1,1,init rejects a handlers dict missing remove and list
+run,0,0,q,.pt.errstr:@[{perms.init[(::);()!()]};(::);{x}],1,1,capture the error string from a bad init
+true,0,0,q,".pt.errstr like ""di.permissions:*""",1,1,init errors are prefixed di.permissions:
+true,0,0,q,".pt.errstr like ""*di.log*""",1,1,the error names which module supplies the missing dependency
+
+comment,,,,,,,init - config validation
+fail,0,0,q,perms.init[enlist[`engine]!enlist `tiered;deps],1,1,the tiered engine is not implemented and is rejected
+fail,0,0,q,perms.init[enlist[`engine]!enlist `nosuch;deps],1,1,an unknown engine is rejected
+fail,0,0,q,perms.init[enlist[`engine]!enlist 42;deps],1,1,a non-symbol engine is rejected
+fail,0,0,q,perms.init[42;deps],1,1,a non-dict config is rejected
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,perms.init[enlist[`nosuchkey]!enlist 1b;deps],1,1,an unrecognised config key is accepted
+true,0,0,q,1=count select from .pt.cap where lvl=`warn,1,1,an unrecognised config key warns rather than being dropped silently
+true,0,0,q,"any (exec msg from .pt.cap where lvl=`warn) like\: ""*nosuchkey*""",1,1,the warning names the offending key
+
+comment,,,,,,,disabled by default - nothing registered and nothing published at root
+run,0,0,q,perms.init[(::);deps],1,1,init with defaults (enabled is 0b)
+true,0,0,q,0=count .pt.reg,1,1,a disabled module registers no handlers
+true,0,0,q,0=count (key `.pm) except `,1,1,a disabled module publishes nothing at root
+true,0,0,q,not perms.status[][`enabled],1,1,status reports the module as disabled
+
+comment,,,,,,,module metadata
+true,0,0,q,10h=type perms.version,1,1,version is a string
+true,0,0,q,0<count perms.version,1,1,version is non-empty
+true,0,0,q,"(asc (key perms) except `init`getapimeta)~asc exec name from perms.getapimeta[] where not name like ""admin.*""",1,1,getapimeta documents exactly the callable exports (admin.* sub rows excluded)
+true,0,0,q,not any `init`getapimeta in exec name from perms.getapimeta[],1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols perms.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,"all exec public from perms.getapimeta[] where not name like ""admin.*""",1,1,every top level export is public (admin.* members are 0b by design)
+true,0,0,q,`teardown in exec name from perms.getapimeta[],1,1,teardown is documented - it is lifecycle not plumbing
+
+comment,,,,,,,enabled - handler registration
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,init enabled
+true,0,0,q,6=count select from .pt.reg where phase=`exec,1,1,exec is claimed on all six phased message events
+true,0,0,q,(asc `.z.pw`.z.pg`.z.ps`.z.pi`.z.pp`.z.ws)~asc exec event from .pt.reg where phase=`exec,1,1,the six exec events are exactly the message handlers
+true,0,0,q,1=count select from .pt.reg where event=`.z.pc,1,1,.z.pc is registered once
+true,0,0,q,all null exec phase from .pt.reg where event=`.z.pc,1,1,.z.pc is a simple observer with a null phase
+true,0,0,q,0=count select from .pt.reg where event=`.z.ph,1,1,.z.ph is deliberately not claimed - GET permissioning is .h.val
+true,0,0,q,all `di.permissions=exec nm from .pt.reg,1,1,every registration uses the stable module name
+true,0,0,q,`val in key `.h,1,1,.h.val is assigned directly rather than via register
+
+comment,,,,,,,enabled - root publication for legacy grant scripts
+true,0,0,q,`ALL in key `.pm,1,1,the wildcard constant is published as .pm.ALL
+true,0,0,q,all `adduser`addgroup`addrole`addtogroup`assignrole`grantaccess`grantfunction in key `.pm,1,1,the seven grant script functions are published at root
+true,0,0,q,8=count (key `.pm) except `,1,1,exactly eight names are published and no more
+true,0,0,q,"(`$""*"")~get `.pm.ALL",1,1,.pm.ALL holds the wildcard object
+
+comment,,,,,,,admin api and the rbac engine
+run,0,0,q,.pt.trade:([]sym:`a`a`b;px:1 2 3.0),1,1,a root table to permission
+run,0,0,q,.pt.secret:([]k:`x`y),1,1,a second root table nobody may read
+run,0,0,q,"perms.admin.addrole[`reader;""may select""]",1,1,create a reader role
+run,0,0,q,perms.admin.grantfunction[`select;`reader;{1b}],1,1,grant select to the reader role
+run,0,0,q,"perms.admin.addrole[`super;""everything""]",1,1,create a superuser role
+run,0,0,q,perms.admin.grantfunction[perms.admin.wildcard;`super;{1b}],1,1,grant the wildcard to the superuser role
+run,0,0,q,"perms.admin.addgroup[`inner;""inner group""]",1,1,create the inner group
+run,0,0,q,"perms.admin.addgroup[`outer;""outer group""]",1,1,create the outer group
+run,0,0,q,perms.admin.grantaccess[`.pt.trade;`inner;`read],1,1,grant the inner group read on the trade table
+run,0,0,q,"perms.admin.adduser[`alice;`local;`md5;md5 ""pw""]",1,1,create alice
+run,0,0,q,perms.admin.assignrole[`alice;`reader],1,1,alice is a reader
+run,0,0,q,perms.admin.addtogroup[`alice;`inner],1,1,alice is in the inner group
+run,0,0,q,"perms.admin.adduser[`bob;`local;`md5;md5 ""pw""]",1,1,create bob
+run,0,0,q,perms.admin.assignrole[`bob;`super],1,1,bob is a superuser
+run,0,0,q,"perms.admin.adduser[`carol;`local;`md5;md5 ""pw""]",1,1,create carol
+run,0,0,q,perms.admin.assignrole[`carol;`reader],1,1,carol is a reader
+run,0,0,q,perms.admin.addtogroup[`carol;`outer],1,1,carol is in the outer group
+run,0,0,q,perms.admin.addtogroup[`outer;`inner],1,1,the outer group is itself a member of the inner group
+true,0,0,q,"perms.allowed[`alice;""select from .pt.trade""]",1,1,alice may read a table her group is granted
+true,0,0,q,"not perms.allowed[`alice;""select from .pt.secret""]",1,1,alice may not read an ungranted table
+true,0,0,q,"perms.allowed[`bob;""select from .pt.secret""]",1,1,a wildcard grant permits everything
+true,0,0,q,"perms.allowed[`carol;""select from .pt.trade""]",1,1,group membership is transitive - outer inherits inner
+true,0,0,q,"perms.allowed[`alice;"".pt.trade""]",1,1,a bare variable reference is read checked and allowed
+true,0,0,q,"not perms.allowed[`alice;"".pt.secret""]",1,1,a bare variable reference is read checked and denied
+true,0,0,q,"not perms.allowed[`mallory;""select from .pt.trade""]",1,1,an unknown user is denied
+fail,0,0,q,"perms.requ[`alice;""select from .pt.secret""]",1,1,requ signals when the check fails
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,"@[{perms.requ[`alice;""select from .pt.secret""]};(::);{x}]",1,1,drive a denial
+true,0,0,q,0<count select from .pt.cap where lvl=`error,1,1,a denial is logged at error before it is signalled
+
+comment,,,,,,,paramchecks must fail closed
+run,0,0,q,"perms.admin.addrole[`broken;""a paramcheck that throws""]",1,1,create a role with a throwing paramcheck
+run,0,0,q,"perms.admin.grantfunction[`.pt.fn;`broken;{'""boom""}]",1,1,grant with a paramcheck that throws
+run,0,0,q,"perms.admin.adduser[`dave;`local;`md5;md5 ""pw""]",1,1,create dave
+run,0,0,q,perms.admin.assignrole[`dave;`broken],1,1,dave holds the broken role
+run,0,0,q,.pt.fn:{[x] x},1,1,the function being guarded
+true,0,0,q,"not perms.allowed[`dave;"".pt.fn[1]""]",1,1,a paramcheck that throws denies rather than permits
+fail,0,0,q,perms.admin.grantfunction[`.pt.fn;`broken;1b],1,1,a literal paramcheck is rejected at grant time
+
+comment,,,,,,,virtual tables
+run,0,0,q,perms.admin.createvirtualtable[`.pt.vtrade;`.pt.trade;enlist (=;`sym;enlist `a)],1,1,a virtual table filtered to sym=a
+run,0,0,q,perms.admin.grantaccess[`.pt.vtrade;`inner;`read],1,1,grant read on the virtual table
+true,0,0,q,"perms.allowed[`alice;""select from .pt.vtrade""]",1,1,the virtual table is readable
+true,0,0,q,"2=count perms.requ[`alice;""select from .pt.vtrade""]",1,1,the virtual table where clause is spliced in - 2 of 3 rows
+
+comment,,,,,,,result size cap
+run,0,0,q,perms.init[`enabled`maxsize!(1b;10);deps],1,1,re-init with a tiny maxsize
+fail,0,0,q,"perms.requ[`alice;""select from .pt.trade""]",1,1,an oversized result is refused
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore the default maxsize
+
+comment,,,,,,,read only mode selects the evaluator at runtime not load time
+comment,,,,,,,NB reval's restriction is not applied when .z.w=0 so a blocked write cannot be asserted
+comment,,,,,,,in process - enforcement is covered by test_integration.csv against a real handle
+run,0,0,q,perms.init[`enabled`readonly!(1b;0b);deps],1,1,read only off
+true,0,0,q,not perms.status[][`readonly],1,1,status reports read only off
+run,0,0,q,perms.init[`enabled`readonly!(1b;1b);deps],1,1,read only on without restarting
+true,0,0,q,perms.status[][`readonly],1,1,status reports read only on - the flag is runtime not load time
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore read only off
+
+comment,,,,,,,authentication - the -public flag bug fix
+comment,,,,,,,"TorQ evaluates if[""B""$(.Q.opt .z.x)[`public][0;0]] which throws 'type when the flag is absent"
+run,0,0,q,.pt.pw:first exec f from .pt.reg where event=`.z.pw,1,1,take the registered .z.pw body
+true,0,0,q,"not .pt.pw[`ghost;""""]",1,1,an unknown user is refused rather than throwing when public is disabled
+true,0,0,q,"perms.admin.adduser[`eve;`local;`md5;md5 ""right""];.pt.pw[`eve;""right""]",1,1,a valid local password authenticates
+true,0,0,q,"not .pt.pw[`eve;""wrong""]",1,1,an invalid local password is refused
+true,0,0,q,"not .pt.pw[`eve;""RIGHT""]",1,1,password comparison is not case folded
+
+comment,,,,,,,ldap is optional - everything above ran with no native library present
+true,0,0,q,not perms.status[][`ldapenabled],1,1,ldap is disabled by default matching TorQ's shipped settings
+true,0,0,q,not perms.status[][`ldapavailable],1,1,no ldap session exists when ldap is disabled
+fail,0,0,q,"perms.unblock[""notasymbol""]",1,1,unblock rejects a non-symbol user
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,perms.unblock[`nobody],1,1,unblock on an unknown user is a no op
+true,0,0,q,0=count select from .pt.cap where lvl=`error,1,1,a no op unblock does not log an error
+
+comment,,,,,,,teardown - releases handlers .h.val and the published root names
+run,0,0,q,.pt.hval:get `.h.val,1,1,remember the current .h.val
+run,0,0,q,perms.teardown[],1,1,tear the module down
+true,0,0,q,0=count .pt.reg,1,1,every handler registration is removed
+true,0,0,q,0=count (key `.pm) except `,1,1,every published root name is removed
+true,0,0,q,not perms.status[][`enabled],1,1,status reports the module as disabled after teardown
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init after teardown
+true,0,0,q,7=count .pt.reg,1,1,re-init re-registers all seven handlers
+true,0,0,q,8=count (key `.pm) except `,1,1,re-init re-publishes the eight root names
+true,0,0,q,"perms.allowed[`alice;""select from .pt.trade""]",1,1,grant data survives teardown and re-init - alice keeps her access
+true,0,0,q,"not perms.allowed[`alice;""select from .pt.secret""]",1,1,denials survive teardown and re-init too
+run,0,0,q,perms.teardown[],1,1,leave the process clean
+comment,,,,,,,=== gaps found by adversarial smoke testing - everything below was previously untested ===
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init after the teardown above
+comment,,,,,,,"config values are type checked at init, not left to fail confusingly later"
+fail,0,0,q,"perms.init[`enabled`maxsize!(1b;""big"");deps]",1,1,a non-integer maxsize is rejected
+fail,0,0,q,"perms.init[`enabled`readonly!(1b;""yes"");deps]",1,1,a non-boolean readonly is rejected
+fail,0,0,q,perms.init[`enabled`ldapblocktime!(1b;5);deps],1,1,a non-timespan ldapblocktime is rejected
+fail,0,0,q,"perms.init[`enabled`ldapbuilddn!(1b;""nope"");deps]",1,1,a non-function ldapbuilddn is rejected
+run,0,0,q,".pt.cfgerr:@[{perms.init[`enabled`readonly`public!(1b;""y"";""n"");deps]};(::);{x}]",1,1,capture a multi-key type error
+true,0,0,q,"0<count .pt.cfgerr ss ""readonly, public""",1,1,all offenders of one kind are reported together
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore a valid config
+comment,,,,,,,every export is callable before init or errors clearly - none may crash obscurely
+true,0,0,q,10h=type perms.version,1,1,version needs no init
+true,0,0,q,0<count perms.getapimeta[],1,1,getapimeta needs no init
+comment,,,,,,,val valp and execas - previously untested exports
+true,0,0,q,"2=perms.val parse ""1+1""",1,1,val evaluates a parse tree
+true,0,0,q,"4=perms.valp ""2+2""",1,1,valp evaluates a string
+true,0,0,q,"6=perms.valp parse ""3+3""",1,1,valp evaluates a parse tree
+run,0,0,q,.pt.zz:42,1,1,a root variable to reach
+run,0,0,q,"perms.admin.addrole[`su;""all""]",1,1,superuser role
+run,0,0,q,perms.admin.grantfunction[perms.admin.wildcard;`su;{1b}],1,1,grant the wildcard
+run,0,0,q,"perms.admin.adduser[`root;`local;`md5;md5 ""pw""]",1,1,a superuser
+run,0,0,q,perms.admin.assignrole[`root;`su],1,1,assign it
+true,0,0,q,"42=perms.execas["".pt.zz"";`root]",1,1,execas runs as the given user
+fail,0,0,q,"perms.execas["".pt.zz"";`nobody]",1,1,execas is refused for an unpermissioned user
+comment,,,,,,,loadpermissions - previously untested and the root publication contract it depends on
+run,0,0,q,".pt.gdir:""/tmp/dipermgrants""",1,1,a scratch grant directory
+run,0,0,q,"system ""rm -rf "",.pt.gdir",1,1,clear any leftovers
+run,0,0,q,"system ""mkdir -p "",.pt.gdir",1,1,create it
+run,0,0,q,"(hsym `$.pt.gdir,""/default.q"") 0: ("".pm.addrole[`fromfile;\""loaded from a grant file\""]"";"".pm.grantfunction[.pm.ALL;`fromfile;{1b}]"")",1,1,write a grant file calling .pm.* at root exactly as TorQ does
+run,0,0,q,perms.init[`enabled`grantdirs!(1b;enlist .pt.gdir);deps],1,1,init with the grant directory
+run,0,0,q,"perms.admin.adduser[`filer;`local;`md5;md5 ""pw""]",1,1,a user to receive the file-defined role
+run,0,0,q,perms.admin.assignrole[`filer;`fromfile],1,1,assigning it proves addrole ran from the file
+true,0,0,q,"perms.allowed[`filer;""1+1""]",1,1,the wildcard grant from the grant file is in force
+run,0,0,q,"system ""rm -rf "",.pt.gdir",1,1,clean up the grant directory
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,back to a plain config
+run,0,0,q,perms.loadpermissions[],1,1,loadpermissions with no grantdirs is a no op
+comment,,,,,,,the revoke and remove half of the admin api - previously untested in its entirety
+run,0,0,q,"perms.admin.addrole[`r2;""r2""]",1,1,a role
+run,0,0,q,"perms.admin.addgroup[`g2;""g2""]",1,1,a group
+run,0,0,q,"perms.admin.adduser[`u2;`local;`md5;md5 ""pw""]",1,1,a user
+run,0,0,q,perms.admin.assignrole[`u2;`r2],1,1,assign the role
+run,0,0,q,perms.admin.addtogroup[`u2;`g2],1,1,join the group
+run,0,0,q,perms.admin.grantfunction[`select;`r2;{1b}],1,1,grant select
+run,0,0,q,perms.admin.grantaccess[`.pt.zz;`g2;`read],1,1,grant read
+true,0,0,q,"perms.allowed[`u2;"".pt.zz""]",1,1,access is granted
+run,0,0,q,perms.admin.revokeaccess[`.pt.zz;`g2;`read],1,1,revoke the read grant
+true,0,0,q,"not perms.allowed[`u2;"".pt.zz""]",1,1,revokeaccess actually removes access
+run,0,0,q,perms.admin.removefromgroup[`u2;`g2],1,1,leave the group
+run,0,0,q,perms.admin.unassignrole[`u2;`r2],1,1,drop the role
+true,0,0,q,"not perms.allowed[`u2;""select from .pt.trade""]",1,1,role removal removes function access
+run,0,0,q,perms.admin.revokefunction[`select;`r2],1,1,revoke the function grant
+run,0,0,q,perms.admin.addfunction[`f1;`fg1],1,1,add a function to a function group
+run,0,0,q,perms.admin.removefunction[`f1;`fg1],1,1,and remove it
+run,0,0,q,perms.admin.removevirtualtable[`.pt.vtrade],1,1,remove the virtual table created earlier
+comment,,,,,,,NB a grant made against a virtual table NAME survives removevirtualtable - the two are
+comment,,,,,,,independent objects - so allowed still says yes; executing it is what now fails
+true,0,0,q,"perms.allowed[`alice;""select from .pt.vtrade""]",1,1,the surviving grant still permits the name
+fail,0,0,q,"perms.requ[`alice;""select from .pt.vtrade""]",1,1,but the removed virtual table no longer resolves so execution fails
+run,0,0,q,perms.admin.revokeaccess[`.pt.vtrade;`inner;`read],1,1,revoke the orphaned grant
+true,0,0,q,"not perms.allowed[`alice;""select from .pt.vtrade""]",1,1,once revoked the name is denied
+run,0,0,q,perms.admin.addpublic[`p1;9i],1,1,track an anonymous user
+run,0,0,q,perms.admin.removepublic[`p1],1,1,and untrack it
+run,0,0,q,perms.admin.removerole[`r2],1,1,remove the role
+run,0,0,q,perms.admin.removegroup[`g2],1,1,remove the group
+run,0,0,q,perms.admin.removeuser[`u2],1,1,remove the user
+true,0,0,q,"not perms.allowed[`u2;"".pt.zz""]",1,1,a removed user has no access
+comment,,,,,,,cloneuser - previously untested
+run,0,0,q,"perms.admin.addrole[`r3;""r3""]",1,1,a role to clone
+run,0,0,q,"perms.admin.addgroup[`g3;""g3""]",1,1,a group to clone
+run,0,0,q,perms.admin.grantfunction[`select;`r3;{1b}],1,1,grant select to it
+run,0,0,q,perms.admin.grantaccess[`.pt.trade;`g3;`read],1,1,grant read to it
+run,0,0,q,"perms.admin.adduser[`orig;`local;`md5;md5 ""secret""]",1,1,the source user
+run,0,0,q,perms.admin.assignrole[`orig;`r3],1,1,give the source its role
+run,0,0,q,perms.admin.addtogroup[`orig;`g3],1,1,and its group
+run,0,0,q,"perms.admin.cloneuser[`orig;`copy;""secret""]",1,1,clone it
+true,0,0,q,"perms.allowed[`copy;""select from .pt.trade""]",1,1,the clone inherits role and group access
+fail,0,0,q,"perms.admin.cloneuser[`ghost;`copy2;""x""]",1,1,cloning an unknown user is refused
+comment,,,,,,,lambda expressions - the lamq path was previously untested
+run,0,0,q,.pt.pubtab:([]a:1 2),1,1,a readable table
+run,0,0,q,perms.admin.grantaccess[`.pt.pubtab;`inner;`read],1,1,grant read on it to alices group
+true,0,0,q,"perms.allowed[`alice;""{count .pt.pubtab}[]""]",1,1,a lambda touching a permitted variable is allowed
+true,0,0,q,"not perms.allowed[`alice;""{count .pt.secret}[]""]",1,1,a forbidden lambda now returns 0b rather than raising - allowed is a predicate
+comment,,,,,,,"permissivemode - only observable through requ, since allowed pins it off (legacy behaviour)"
+run,0,0,q,.pt.unlisted:([]z:1 2),1,1,a table with no grants at all
+run,0,0,q,perms.init[`enabled`permissivemode!(1b;0b);deps],1,1,permissive mode off
+fail,0,0,q,"perms.requ[`alice;""select from .pt.unlisted""]",1,1,an ungranted table is denied when permissive is off
+run,0,0,q,perms.init[`enabled`permissivemode!(1b;1b);deps],1,1,permissive mode on
+true,0,0,q,"2=count perms.requ[`alice;""select from .pt.unlisted""]",1,1,an ungranted table is readable when permissive is on
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
+comment,,,,,,,the .z.ps ignore list - previously untested
+run,0,0,q,"perms.init[`enabled`ignorelist!(1b;(`upd;""upd""));deps]",1,1,init with an ignore list
+run,0,0,q,.pt.updcount:0,1,1,a counter the ignored function bumps
+run,0,0,q,upd:{[t;d] .pt.updcount+:1;},1,1,the ignored function
+run,0,0,q,.pt.ps:first exec f from .pt.reg where event=`.z.ps,1,1,take the registered .z.ps body
+run,0,0,q,.pt.ps (`upd;`t;1),1,1,drive an ignored message head
+true,0,0,q,1=.pt.updcount,1,1,an ignore listed head bypasses the permission check and runs
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore an empty ignore list
+comment,,,,,,,a failed init must not leave the process half configured
+run,0,0,q,perms.teardown[],1,1,start from a clean slate
+fail,0,0,q,"perms.init[`enabled`ldapenabled`ldaplibpath!(1b;1b;""/nonexistent/kdbldap"");deps]",1,1,a missing ldap library fails init loudly
+true,0,0,q,0=count (key `.pm) except `,1,1,a failed init publishes nothing at root
+true,0,0,q,0=count .pt.reg,1,1,a failed init registers no handlers
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,recover cleanly afterwards
+true,0,0,q,8=count (key `.pm) except `,1,1,recovery republishes the root names
+run,0,0,q,perms.teardown[],1,1,leave the process clean
+comment,,,,,,,"=== second adversarial pass - bypass attempts, input validation, cycle invariants ==="
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,.pt.sec:([]s:enlist`topsecret),1,1,a table alice has no grant on
+comment,,,,,,,a restricted user must not reach an ungranted table by ANY route
+fail,0,0,q,"perms.requ[`alice;""select from .pt.sec""]",1,1,plain select is refused
+fail,0,0,q,"perms.requ[`alice;""?[`.pt.sec;();0b;()]""]",1,1,a functional select is refused
+fail,0,0,q,"perms.requ[`alice;""get `.pt.sec""]",1,1,get is refused
+fail,0,0,q,"perms.requ[`alice;""value `.pt.sec""]",1,1,value is refused
+fail,0,0,q,"perms.requ[`alice;""{x} .pt.sec""]",1,1,an identity lambda does not launder the reference
+fail,0,0,q,"perms.requ[`alice;""reverse .pt.sec""]",1,1,a .q keyword is refused
+fail,0,0,q,"perms.requ[`alice;""count .pt.sec""]",1,1,count is refused
+fail,0,0,q,"perms.requ[`alice;""select from (select from .pt.sec)""]",1,1,a nested select is refused
+fail,0,0,q,"perms.requ[`alice;""update s:`x from `.pt.sec""]",1,1,an in place update is refused as a write
+fail,0,0,q,"perms.requ[`alice;""delete from `.pt.sec""]",1,1,an in place delete is refused as a write
+fail,0,0,q,"perms.requ[`alice;""system \""ls /\""""]",1,1,a system command is refused
+fail,0,0,q,"perms.requ[`alice;""read0 `:/etc/hostname""]",1,1,file access is refused
+fail,0,0,q,"perms.requ[`alice;""tmp::.pt.sec""]",1,1,assignment then read is refused
+comment,,,,,,,malformed client input errors cleanly and is logged - never a bare q parse error
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,".pt.perr:@[{perms.requ[`alice;"". (::;x)""]};(::);{x}]",1,1,drive an unparseable query
+true,0,0,q,"0<count .pt.perr ss ""could not parse query""",1,1,an unparseable query gives a prefixed error (ss not like - like nyi errors on multi wildcard patterns)
+true,0,0,q,0<count select from .pt.cap where lvl=`error,1,1,and it is logged before being signalled
+fail,0,0,q,"perms.requ[`alice;""select from (""]",1,1,an unbalanced bracket is refused cleanly
+comment,,,,,,,public api input validation - a wrong type must never escape as a raw type or length error
+run,0,0,q,".pt.terr:@[{perms.allowed[""alice"";""1+1""]};(::);{x}]",1,1,user passed as a string
+true,0,0,q,"0<count .pt.terr ss ""user must be a symbol""",1,1,the error names the argument and the expected type
+fail,0,0,q,"perms.allowed[42;""1+1""]",1,1,a non-symbol user is refused
+fail,0,0,q,perms.allowed[`alice;42],1,1,a non-string non-parse-tree query is refused
+fail,0,0,q,perms.requ[`alice;`.pt.sec],1,1,a bare symbol query is refused
+fail,0,0,q,"perms.execas[`alice;""1+1""]",1,1,execas with swapped arguments is refused
+fail,0,0,q,"perms.admin.adduser[""bob"";`local;`md5;""""]",1,1,adduser rejects a string user id
+fail,0,0,q,"perms.admin.adduser[`bob;""local"";`md5;""""]",1,1,adduser rejects a string authtype
+fail,0,0,q,"perms.admin.addgroup[""g"";""d""]",1,1,addgroup rejects a string name
+fail,0,0,q,"perms.admin.addrole[""r"";""d""]",1,1,addrole rejects a string name
+fail,0,0,q,"perms.admin.grantaccess[`t;`g;""read""]",1,1,grantaccess rejects a string level
+fail,0,0,q,perms.admin.grantaccess[`t;`g;`sideways],1,1,grantaccess rejects a level that is neither read nor write
+true,0,0,q,"-1h=type perms.allowed[`alice;parse ""1+1""]",1,1,a parse tree query is accepted and yields a boolean
+comment,,,,,,,init and teardown cycles must not accumulate state
+run,0,0,q,perms.teardown[],1,1,start clean
+run,0,0,q,do[20; perms.init[enlist[`enabled]!enlist 1b;deps]; perms.teardown[]],1,1,twenty full cycles
+true,0,0,q,0=count .pt.reg,1,1,no handler registrations leak across cycles
+true,0,0,q,0=count (key `.pm) except `,1,1,no root names leak across cycles
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,init once more
+true,0,0,q,7=count .pt.reg,1,1,exactly seven registrations after a single init
+true,0,0,q,8=count (key `.pm) except `,1,1,exactly eight root names after a single init
+true,0,0,q,"perms.allowed[`alice;""select from .pt.trade""]",1,1,grant data survived twenty cycles
+run,0,0,q,perms.teardown[],1,1,leave clean
+comment,,,,,,,=== loose ends closed: unblock and addtogroup validation ===
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+fail,0,0,q,perms.unblock[42],1,1,unblock rejects a non symbol user
+fail,0,0,q,"perms.unblock[""alice""]",1,1,unblock rejects a string user
+run,0,0,q,.pt.uerr:@[{perms.unblock[42]};(::);{x}],1,1,capture the unblock type error
+true,0,0,q,"0<count .pt.uerr ss ""user must be a symbol""",1,1,unblock uses the same validation message as every other entry point
+fail,0,0,q,perms.admin.addtogroup[`alice;`nosuchgroup],1,1,addtogroup rejects a group that does not exist (matches TorQ)
+fail,0,0,q,perms.admin.assignrole[`alice;`nosuchrole],1,1,assignrole rejects a role that does not exist (matches TorQ)
+comment,,,,,,,=== ldap dispatch - exercised WITHOUT a server or a native library ===
+comment,,,,,,,the bind path itself needs a real ldap server and is NOT covered here - see permissions.md
+comment,,,,,,,"what is covered: authtype routing, the ldapenabled gate, and unknown authtype handling"
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,"perms.admin.adduser[`ldapuser;`ldap;`md5;md5 """"]",1,1,a user whose authtype routes to the ldap backend
+run,0,0,q,"perms.admin.adduser[`localuser;`local;`md5;md5 ""pw""]",1,1,a user on the local backend
+run,0,0,q,"perms.admin.adduser[`weirduser;`nosuchauth;`md5;md5 ""pw""]",1,1,a user with an authtype no backend implements
+run,0,0,q,.pt.pw2:first exec f from .pt.reg where event=`.z.pw,1,1,the registered .z.pw body
+true,0,0,q,"not .pt.pw2[`ldapuser;""anything""]",1,1,an ldap user is refused when ldapenabled is 0b rather than erroring
+true,0,0,q,0<count select from .pt.cap where lvl=`warn,1,1,and the refusal is logged as a warning
+true,0,0,q,".pt.pw2[`localuser;""pw""]",1,1,the local backend still authenticates correctly
+true,0,0,q,"not .pt.pw2[`localuser;""wrong""]",1,1,the local backend still rejects a wrong password
+true,0,0,q,"not .pt.pw2[`weirduser;""pw""]",1,1,an unknown authtype is refused rather than throwing
+run,0,0,q,delete from `.pt.cap,1,1,clear again
+true,0,0,q,"not .pt.pw2[`weirduser;""pw""]",1,1,unknown authtype refused
+true,0,0,q,0<count select from .pt.cap where lvl=`warn,1,1,and logged
+true,0,0,q,not perms.status[][`ldapavailable],1,1,no ldap session was ever opened
+run,0,0,q,perms.unblock[`ldapuser],1,1,unblock on a user with no ldap record is a safe no op
+run,0,0,q,perms.teardown[],1,1,leave clean
+comment,,,,,,,"=== ldap bind / cache / lockout - exercised via an injected ldapbind, no server needed ==="
+comment,,,,,,,ldapbind is a DEPS injection (process wiring code this module already trusts) not a config value
+run,0,0,q,perms.teardown[],1,1,clean slate
+run,0,0,q,.pt.binds:0,1,1,count how many times the server is actually hit
+run,0,0,q,.pt.rc:0i,1,1,the return code the fake bind will give
+run,0,0,q,fakebind:{[sess;d] .pt.binds+:1; enlist[`ReturnCode]!enlist .pt.rc},1,1,a scriptable stand in for the native bind
+run,0,0,q,ldeps:`log`handlers`ldapbind!(caplog;mockh;fakebind),1,1,deps carrying the injected bind
+run,0,0,q,perms.init[`enabled`ldapenabled`ldapchecklimit`ldapchecktime`ldapblocktime!(1b;1b;3;0D00:05;0D00:00:01);ldeps],1,1,ldap on with a short blocktime
+true,0,0,q,perms.status[][`ldapavailable],1,1,status reports ldap available when a bind is injected
+run,0,0,q,"perms.admin.adduser[`lu;`ldap;`md5;md5 """"]",1,1,a user routed to the ldap backend
+run,0,0,q,.pt.pw3:first exec f from .pt.reg where event=`.z.pw,1,1,the registered .z.pw body
+run,0,0,q,perms.unblock[`lu],1,1,clear any cached ldap state from a previous run so bind counts are deterministic
+run,0,0,q,.pt.binds:0,1,1,reset the counter after that
+comment,,,,,,,a successful bind
+true,0,0,q,".pt.pw3[`lu;""secret""]",1,1,a successful bind authenticates the user
+true,0,0,q,1=.pt.binds,1,1,the server was hit exactly once
+comment,,,,,,,the skip the server path - repeat success within checktime with the same password
+true,0,0,q,".pt.pw3[`lu;""secret""]",1,1,a repeat login with the same password still succeeds
+true,0,0,q,1=.pt.binds,1,1,and it did NOT hit the server again - the cached success was reused
+true,0,0,q,".pt.pw3[`lu;""different""]",1,1,a different password goes back to the server
+true,0,0,q,2=.pt.binds,1,1,which means the server was hit a second time
+comment,,,,,,,failed binds accumulate and lock the user out at ldapchecklimit
+run,0,0,q,.pt.rc:-1i,1,1,make the fake bind fail
+run,0,0,q,.pt.binds:0,1,1,reset the counter
+true,0,0,q,"not .pt.pw3[`lu;""wrong1""]",1,1,first failure is refused
+true,0,0,q,"not .pt.pw3[`lu;""wrong2""]",1,1,second failure is refused
+true,0,0,q,"not .pt.pw3[`lu;""wrong3""]",1,1,third failure reaches ldapchecklimit
+true,0,0,q,3=.pt.binds,1,1,all three attempts reached the server
+true,0,0,q,"not .pt.pw3[`lu;""wrong4""]",1,1,a locked out user is refused
+true,0,0,q,3=.pt.binds,1,1,and a locked out user does NOT reach the server
+comment,,,,,,,unblock clears the lockout and lets the user back in
+run,0,0,q,.pt.rc:0i,1,1,make the fake bind succeed again
+run,0,0,q,perms.unblock[`lu],1,1,clear the lockout
+true,0,0,q,".pt.pw3[`lu;""secret""]",1,1,the user can authenticate again after unblock
+true,0,0,q,4=.pt.binds,1,1,and the server was reached once more
+comment,,,,,,,blocktime expiry releases a lockout without an explicit unblock
+run,0,0,q,.pt.rc:-1i,1,1,fail again
+run,0,0,q,".pt.pw3[`lu;""w1""];.pt.pw3[`lu;""w2""];.pt.pw3[`lu;""w3""]",1,1,drive the user back to locked out
+run,0,0,q,.pt.binds:0,1,1,reset the counter
+true,0,0,q,"not .pt.pw3[`lu;""w4""]",1,1,still locked out immediately after
+true,0,0,q,0=.pt.binds,1,1,and not reaching the server while locked
+run,0,0,q,"system ""sleep 1.2""",1,1,wait past the one second blocktime
+run,0,0,q,.pt.rc:0i,1,1,make the bind succeed
+true,0,0,q,".pt.pw3[`lu;""secret""]",1,1,once blocktime elapses the user may try again and succeeds
+true,0,0,q,0<.pt.binds,1,1,and the attempt reached the server
+comment,,,,,,,a bind that throws must fail closed rather than propagate to the caller
+run,0,0,q,"throwbind:{[s;d] '""boom""}",1,1,a bind that signals
+run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);`log`handlers`ldapbind!(caplog;mockh;throwbind)],1,1,inject the throwing bind
+run,0,0,q,"perms.admin.adduser[`lu2;`ldap;`md5;md5 """"]",1,1,another ldap user
+run,0,0,q,.pt.pw4:first exec f from .pt.reg where event=`.z.pw,1,1,the .z.pw body
+true,0,0,q,"not .pt.pw4[`lu2;""x""]",1,1,a throwing bind denies rather than escaping to the caller
+comment,,,,,,,deps validation covers the optional ldapbind
+fail,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);`log`handlers`ldapbind!(caplog;mockh;42)],1,1,a non function ldapbind is rejected
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,back to the plain deps
+true,0,0,q,not perms.status[][`ldapavailable],1,1,no ldap without an injected bind or a native library
+run,0,0,q,perms.teardown[],1,1,leave clean
+comment,,,,,,,=== third adversarial pass: bind shape validation and grant file unwind ===
+run,0,0,q,perms.teardown[],1,1,clean slate
+comment,,,,,,,a bind returning a non dict is DANGEROUS unchecked: r[`ReturnCode] on an int is HANDLE APPLY
+comment,,,,,,,so a bind returning 42 would attempt an IPC write to file descriptor 42
+run,0,0,q,.pt.mk:{[f] `log`handlers`ldapbind!(caplog;mockh;f)},1,1,helper building deps with a given bind
+run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] 42}],1,1,init with a bind returning a bare int
+run,0,0,q,"perms.admin.adduser[`bindu;`ldap;`md5;md5 """"]",1,1,an ldap user
+run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,the .z.pw body
+true,0,0,q,"not .pt.pw5[`bindu;""p""]",1,1,a non dict bind result denies rather than writing to a file descriptor
+run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] enlist[`Other]!enlist 0i}],1,1,a dict with no ReturnCode
+run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,refresh the body
+run,0,0,q,perms.unblock[`bindu],1,1,clear any lockout from the previous attempt
+true,0,0,q,"not .pt.pw5[`bindu;""p2""]",1,1,a dict missing ReturnCode denies
+run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] (::)}],1,1,a null return
+run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,refresh the body
+run,0,0,q,perms.unblock[`bindu],1,1,clear lockout
+true,0,0,q,"not .pt.pw5[`bindu;""p3""]",1,1,a null bind result denies
+run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] enlist[`ReturnCode]!enlist -1i}],1,1,a valid failure
+run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,refresh the body
+run,0,0,q,"perms.admin.adduser[`freshu;`ldap;`md5;md5 """"]",1,1,a FRESH user so the cache cannot mask the result
+true,0,0,q,"not .pt.pw5[`freshu;""pw""]",1,1,a valid failure return denies
+comment,,,,,,,a grant file is arbitrary q and may throw - init must unwind rather than half install
+run,0,0,q,perms.teardown[],1,1,clean slate
+run,0,0,q,".pt.bg:""/tmp/dipermbadgrants""",1,1,a scratch directory
+run,0,0,q,"system ""rm -rf "",.pt.bg",1,1,clear leftovers
+run,0,0,q,"system ""mkdir -p "",.pt.bg",1,1,create it
+run,0,0,q,"(hsym `$.pt.bg,""/default.q"") 0: enlist ""'\""deliberate grant file failure\""""",1,1,a grant file that signals
+fail,0,0,q,perms.init[`enabled`grantdirs!(1b;enlist .pt.bg);deps],1,1,init fails loudly when a grant file throws
+true,0,0,q,0=count (key `.pm) except `,1,1,the root publication is unwound - nothing left behind
+true,0,0,q,0=count .pt.reg,1,1,no handlers were registered
+true,0,0,q,not perms.status[][`enabled],1,1,status honestly reports the module as disabled
+run,0,0,q,"system ""rm -rf "",.pt.bg",1,1,clean up
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,recover
+true,0,0,q,8=count (key `.pm) except `,1,1,recovery republishes cleanly
+run,0,0,q,perms.teardown[],1,1,leave clean
+comment,,,,,,,=== allowed and requ must agree on .q keyword joins (TorQ returned 1b unconditionally) ===
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,.pt.jl:([]k:`x`y;v:1 2),1,1,a table alice may read
+run,0,0,q,.pt.jr:([k:`x`y] s:`p`q),1,1,a keyed table alice may NOT read yet
+run,0,0,q,perms.admin.grantfunction[`lj;`reader;{1b}],1,1,let the reader role call lj
+run,0,0,q,@[{perms.admin.revokeaccess[`.pt.jr;`inner;`read]};(::);{x}],1,1,revoke any grant left by a previous run so the denial below is deterministic
+run,0,0,q,perms.admin.grantaccess[`.pt.jl;`inner;`read],1,1,grant read on the left table only
+true,0,0,q,"not perms.allowed[`alice;"".pt.jl lj .pt.jr""]",1,1,allowed refuses a join touching an ungranted table
+fail,0,0,q,"perms.requ[`alice;"".pt.jl lj .pt.jr""]",1,1,and requ refuses it too - the two now agree
+run,0,0,q,perms.admin.grantaccess[`.pt.jr;`inner;`read],1,1,now grant the right table as well
+true,0,0,q,"perms.allowed[`alice;"".pt.jl lj .pt.jr""]",1,1,allowed permits the join once both tables are granted
+true,0,0,q,"2=count perms.requ[`alice;"".pt.jl lj .pt.jr""]",1,1,"and requ executes it, returning both rows"
+run,0,0,q,perms.teardown[],1,1,leave clean
+comment,,,,,,,=== getapimeta enumerates the admin sub api rather than hiding 22 callables behind one row ===
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,.pt.m:perms.getapimeta[],1,1,take the metadata
+true,0,0,q,"(asc (key perms) except `init`getapimeta)~asc exec name from .pt.m where not name like ""admin.*""",1,1,top level rows still match the export list exactly
+true,0,0,q,"(asc (key perms.admin) except `)~asc `$last each ""."" vs/: string exec name from .pt.m where name like ""admin.*""",1,1,every admin member has its own documented row
+true,0,0,q,"not any exec public from .pt.m where name like ""admin.*""",1,1,admin members are public:0b - in di.api full view but not the public summary
+true,0,0,q,"all exec public from .pt.m where not name like ""admin.*""",1,1,top level exports remain public
+true,0,0,q,"21<count select from .pt.m where name like ""admin.*""",1,1,the admin sub api is enumerated not summarised
+true,0,0,q,not any 0=count each exec descrip from .pt.m,1,1,every row carries a description
+true,0,0,q,not any 0=count each exec params from .pt.m,1,1,every row documents its parameters
+comment,,,,,,,"=== allowed is a predicate: a forbidden lambda returns 0b, it does not throw ==="
+run,0,0,q,.pt.lamt:([]a:1 2),1,1,a table alice may read
+run,0,0,q,perms.admin.grantaccess[`.pt.lamt;`inner;`read],1,1,grant it
+true,0,0,q,"perms.allowed[`alice;""{count .pt.lamt}[]""]",1,1,a permitted lambda is allowed
+true,0,0,q,"not perms.allowed[`alice;""{count .pt.secret}[]""]",1,1,a forbidden lambda returns 0b rather than raising
+true,0,0,q,"-1h=type perms.allowed[`alice;""{count .pt.secret}[]""]",1,1,and the result really is a boolean
+fail,0,0,q,"perms.requ[`alice;""{count .pt.secret}[]""]",1,1,requ still raises for a real execution
+comment,,,,,,,"=== lamq tests only the tokens referenced, not every name in every namespace ==="
+comment,,,,,,,TorQ enumerated all root names per query - 2.9ms at 5000 names vs 0.065ms now
+run,0,0,q,"{[i] (`$""perftmp"",string i) set i} each til 2000",1,1,add 2000 root names
+true,0,0,q,"perms.allowed[`alice;""{count .pt.lamt}[]""]",1,1,a permitted lambda is still correct with a large root namespace
+true,0,0,q,"not perms.allowed[`alice;""{count .pt.secret}[]""]",1,1,and a forbidden one is still refused
+run,0,0,q,"![`.;();0b;`$""perftmp"",/:string til 2000]",1,1,clean the temporary names back out
+comment,,,,,,,=== .h.val routes HTTP GET through the same check as .z.pg ===
+true,0,0,q,(get `.h.val)~first exec f from .pt.reg where event=`.z.pg,1,1,.h.val is the very same function registered as the .z.pg exec owner
+run,0,0,q,perms.teardown[],1,1,tear down
+true,0,0,q,not (get `.h.val)~first exec f from .pt.reg where event=`.z.pg,1,1,teardown restores .h.val rather than leaving ours installed
+comment,,,,,,,=== allowed must agree with requ under permissivemode (TorQ pinned it off regardless) ===
+run,0,0,q,.pt.unl2:([]z:1 2),1,1,a table with no grants at all
+run,0,0,q,perms.init[`enabled`permissivemode!(1b;1b);deps],1,1,permissive mode ON
+true,0,0,q,"perms.allowed[`alice;""select from .pt.unl2""]",1,1,allowed permits an ungranted table when permissive is on
+true,0,0,q,"2=count perms.requ[`alice;""select from .pt.unl2""]",1,1,and requ agrees - it executes
+run,0,0,q,perms.init[`enabled`permissivemode!(1b;0b);deps],1,1,permissive mode OFF
+true,0,0,q,"not perms.allowed[`alice;""select from .pt.unl2""]",1,1,allowed refuses when permissive is off
+fail,0,0,q,"perms.requ[`alice;""select from .pt.unl2""]",1,1,and requ agrees - it refuses
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
+comment,,,,,,,"=== root publication is a config choice, not a fixed cost ==="
+run,0,0,q,perms.teardown[],1,1,clean slate
+run,0,0,q,perms.init[`enabled`publishroot!(1b;0b);deps],1,1,init with publishroot off
+true,0,0,q,0=count (key `.pm) except `,1,1,nothing is published at root
+true,0,0,q,7=count .pt.reg,1,1,but handlers are still registered - the module still enforces
+true,0,0,q,"not perms.allowed[`nosuchuser;""select from .pt.trade""]",1,1,and permission checks still work
+run,0,0,q,perms.teardown[],1,1,tear down
+run,0,0,q,perms.init[`enabled`publishroot!(1b;1b);deps],1,1,init with publishroot on
+true,0,0,q,8=count (key `.pm) except `,1,1,the legacy names are published again
+fail,0,0,q,"perms.init[`enabled`publishroot!(1b;""yes"");deps]",1,1,a non boolean publishroot is rejected
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
+run,0,0,q,perms.teardown[],1,1,leave clean
+comment,,,,,,,=== a permission check must never EVALUATE the objects it is checking ===
+comment,,,,,,,"a view referenced by a query is a readable object, but evaluating it during the check would let"
+comment,,,,,,,an unpermissioned caller trigger arbitrary computation before any check has passed
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,.pt.se:0,1,1,a side effect counter
+run,0,0,q,.pt.viewtgt:([]x:1 2),1,1,the table the view reads
+run,0,0,q,.pt.myview::(.pt.se+:1; count .pt.viewtgt)[1],1,1,a view with an observable side effect
+run,0,0,q,@[{perms.admin.revokeaccess[`.pt.myview;`inner;`read]};(::);{x}],1,1,revoke any grant left by a previous run so the denial below is deterministic
+run,0,0,q,.pt.se:0,1,1,reset the counter after definition
+true,0,0,q,"not perms.allowed[`alice;""{count .pt.myview}[]""]",1,1,an ungranted view is refused
+true,0,0,q,0=.pt.se,1,1,and checking it did NOT evaluate it
+run,0,0,q,perms.admin.grantaccess[`.pt.myview;`inner;`read],1,1,grant read on the view
+true,0,0,q,"perms.allowed[`alice;""{count .pt.myview}[]""]",1,1,a granted view is permitted
+true,0,0,q,0=.pt.se,1,1,and checking it still did not evaluate it
+run,0,0,q,perms.teardown[],1,1,leave clean

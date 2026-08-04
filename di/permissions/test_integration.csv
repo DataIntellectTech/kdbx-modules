@@ -1,0 +1,38 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration test - stands up a real child q process and drives a real IPC connection
+comment,,,,,,,it exists because ONE behaviour cannot be tested in process: revals read-only restriction is
+comment,,,,,,,"not applied when .z.w=0. at the console reval parse ""g::1"" happily sets g; over a real handle"
+comment,,,,,,,the identical call throws noupdate. k4unit runs in process at handle 0 so a unit test asserting
+comment,,,,,,,a blocked write would FAIL against correct code - hence this suite
+comment,,,,,,,the child needs only di.permissions: it uses di.handlers when present and a minimal inline
+comment,,,,,,,"stand-in otherwise, so a sibling module on another branch cannot make this suite silently skip"
+comment,,,,,,,note k4unit runs every before row first then the asserts - results are captured here checked below
+before,0,0,q,".pi.dir:""/tmp/dipermtest""",1,1,scratch directory for the child script and port file
+before,0,0,q,"system ""rm -rf "",.pi.dir",1,1,clear any leftovers from a previous run
+before,0,0,q,"system ""mkdir -p "",.pi.dir",1,1,create the scratch directory
+before,0,0,q,".pi.portfile:.pi.dir,""/port""",1,1,the child writes its OS-assigned port here
+before,0,0,q,".pi.child:(""perms:use`di.permissions"";""lg:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})"";""/ prefer real di.handlers; fall back to a minimal inline stand-in when it is not on QPATH."";""/ this suite exists to prove reval enforcement over a REAL handle - it must not silently skip"";""/ merely because a sibling module is on a different branch"";""hd:@[{h:use`di.handlers; h.init[enlist[`log]!enlist lg]; `register`remove`list!(h.register;h.remove;h.list)};::;{[e] `register`remove`list!({[ev;p;n;pri;f] set[ev;f]};{[ev;p;n] };{[ev] ()})}]"";""perms.init[`enabled`readonly!(1b;1b);`log`handlers!(lg;hd)]"";""perms.admin.addrole[`su;\""all\""]"";""perms.admin.grantfunction[perms.admin.wildcard;`su;{1b}]"";""perms.admin.adduser[.z.u;`local;`md5;md5 \""\""]"";""perms.admin.assignrole[.z.u;`su]"";""gg:0"";""\\p 0W"")",1,1,the child script - loads the module for real with readonly on and a superuser
+before,0,0,q,".pi.child,:""(hsym `$\"""",.pi.portfile,""\"") 0: enlist string system\""p\""""",1,1,append the port-publishing line
+before,0,0,q,"(hsym `$.pi.dir,""/child.q"") 0: .pi.child",1,1,write the child script
+before,0,0,q,"qcands:$[count qh:getenv[`QHOME];(raze(qh;""/bin/q"");raze(qh;""/"";string .z.o;""/q""));()]",1,1,candidate q binaries for kdbx and classic layouts
+before,0,0,q,"qbin:$[count ex:qcands where {not ()~key hsym `$x} each qcands;first ex;""q""]",1,1,first candidate that exists else q on PATH
+before,0,0,q,"system qbin,"" "",.pi.dir,""/child.q -q < /dev/null > "",.pi.dir,""/child.log 2>&1 &""",1,1,spawn the child in the background
+before,0,0,q,"{[f] do[50;if[not ()~key hsym `$f;:(::)];system ""sleep 0.1""]}[.pi.portfile]",1,1,wait up to 5 seconds for the child to publish its port
+before,0,0,q,".pi.port:@[{""J""$first read0 hsym `$x};.pi.portfile;{[e] 0N}]",1,1,read the OS-assigned port
+before,0,0,q,".pi.h:$[null .pi.port;0Ni;@[hopen;`$""::"",string .pi.port;{[e] 0Ni}]]",1,1,connect to the child - NB :: not : which would open a FILE
+before,0,0,q,.pi.up:not null .pi.h,1,1,did the child come up?
+before,0,0,q,".pi.childlog:@[{read0 hsym `$x};.pi.dir,""/child.log"";{[e] enlist ""no child log""}]",1,1,keep the child log so a failure to start is diagnosable
+comment,,,,,,,a skip must be VISIBLE - a suite reporting 0 failures while testing nothing is worse than a failure
+true,0,0,q,.pi.up,1,1,the child process started; if this fails read .pi.childlog for why
+comment,,,,,,,read only enforcement over a REAL handle - the whole reason this suite exists
+before,0,0,q,".pi.read:$[.pi.up;@[{.pi.h""select from ([]a:1 2 3)""};::;{[e] `ERR}];`SKIP]",1,1,a permitted read through the child
+before,0,0,q,".pi.write:$[.pi.up;@[{.pi.h""gg::42""};::;{[e] e}];""SKIP""]",1,1,a global write through the child
+before,0,0,q,".pi.ggafter:$[.pi.up;@[{.pi.h""gg""};::;{[e] 0N}];0N]",1,1,read gg back to prove the write never landed
+true,0,0,q,$[.pi.up;3=count .pi.read;0b],1,1,a permitted read succeeds through the real handler chain
+true,0,0,q,$[.pi.up;10h=type .pi.write;0b],1,1,the write was refused - an error string came back not a result
+true,0,0,q,"$[.pi.up;.pi.write like ""*noupdate*"";0b]",1,1,the refusal is revals noupdate - read only is genuinely enforced
+true,0,0,q,$[.pi.up;0=.pi.ggafter;0b],1,1,gg is untouched - the write did not land
+comment,,,,,,,cleanup
+before,0,0,q,"if[.pi.up;@[{.pi.h""exit 0""};::;{[e]}]]",1,1,ask the child to exit
+before,0,0,q,if[.pi.up;@[hclose;.pi.h;{[e]}]],1,1,close the handle
+before,0,0,q,"system ""rm -rf "",.pi.dir",1,1,remove the scratch directory

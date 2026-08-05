@@ -55,6 +55,12 @@ init:{[deps]
     '"di.servers: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
   if[99h<>type deps`timer;
     '"di.servers: timer value must be a dict (see di.timer)"];
+  if[not `addjob in key deps`timer;
+    '"di.servers: timer dict must expose `addjob (see di.timer)"];
+  if[99h<>type deps[`timer]`addjob;
+    '"di.servers: timer`addjob must be a variant dict (see di.timer addjob.custom/default/simple)"];
+  if[not `custom in key deps[`timer]`addjob;
+    '"di.servers: timer`addjob must expose the `custom variant [id;func;params;period;mode;opts]"];
   if[99h<>type deps`handlers;
     '"di.servers: handlers value must be a dict (see di.handlers)"];
   if[not all `proctype`procname in key deps;
@@ -76,9 +82,12 @@ init:{[deps]
     / (param `wh`, not `w`, so it does not shadow the SERVERS column w.)
     pcfunc:{[wh] .z.m.SERVERS:update endp:.z.p,w:0Ni from .z.m.SERVERS where w=wh; };
     (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pcfunc];
-    / di.timer mode-1h period is in SECONDS, so 10 = a 10-second retry (a bare 10000 here would be
-    / ~2.8h - the latent typo that made dead-handle recovery effectively never fire in early POCs).
-    (.z.m.timer[`addjob])[`serversretry;retry;();10;1;()!()];
+    / di.timer's addjob is a VARIANT DICT; take `custom - the fully-configurable 6-arg form
+    / [id;func;params;period;mode;opts]. mode-1h period is in SECONDS, so 10 = a 10s retry (a bare
+    / 10000 would be ~2.8h - the latent typo that made dead-handle recovery never fire in early POCs).
+    / retry is passed BY VALUE (a lambda, not a symbol) so di.timer stores and runs it directly; its
+    / compile-time .z.m rewrite means it still updates di.servers' SERVERS when the timer fires it.
+    (.z.m.timer[`addjob][`custom])[`serversretry;retry;();10;1;()!()];
     .z.m.registered:1b;
     ];
   .z.m.loginfo[`init;"di.servers initialised"];

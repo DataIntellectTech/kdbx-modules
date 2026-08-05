@@ -10,12 +10,11 @@ mocklog:`info`warn`error!(
   {[c;m]`logrows upsert(`warn;c;m)};
   {[c;m]`logrows upsert(`error;c;m)});
 
-/ timer mock: records (id;period) for the wiring asserts AND captures each job's func by id, so a
-/ test can fire the retry cycle exactly as the real timer would (retry/cleanup are INTERNAL - not
-/ exported - so they are driven only via this captured callback).
-timercalls:([]id:`symbol$();period:`long$());
-timerjobs:(`symbol$())!();
-mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] timerjobs[id]:func; `timercalls upsert (id;period);};
+/ REAL di.timer - di.servers is its first consumer, so we integrate against the merged module (not a
+/ mock's guess at the addjob contract) to prove the addjob[`custom] wiring end-to-end. di.servers does
+/ NOT call timer.init, so no .z.ts cycle starts here: init adds the serversretry job to di.timer's jobs
+/ table, and firejob invokes the stored func manually - exactly what the timer's cycle would do.
+rtmr:use`di.timer;
 
 / handlers mock: records (event;name) with di.handlers' register[event;phase;nm;pri;func] shape. it
 / does NOT actually bind .z.pc - so the only cleanup path exercised here is the explicit retry->
@@ -27,7 +26,9 @@ mockhandlers:`register`remove`list!(
   {[ev]});
 
 warnlogged:{[s] any (exec msg from logrows where lvl=`warn) like "*",s,"*"};
-firejob:{[id] timerjobs[id][]};
+/ fire a scheduled job's stored func exactly as the real di.timer's cycle would (retry/cleanup are
+/ INTERNAL - not exported - so this is the only handle on them: the func di.servers gave the timer).
+firejob:{[jid] (first exec func from rtmr.getalljobs[] where id=jid)[]};
 
 / --- real peer process fixture ---
 FIXDIR:"/tmp/diserverstest";
@@ -67,4 +68,4 @@ setupfixture:{[]
 teardownfixture:{[] killpeer[]; system "rm -rf ",FIXDIR;};
 
 / build the deps dict di.torq would assemble: injectables + this process's config slice.
-svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv!(mocklog;mocktimer;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv")};
+svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv!(mocklog;rtmr;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv")};

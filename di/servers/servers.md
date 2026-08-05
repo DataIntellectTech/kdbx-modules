@@ -23,8 +23,8 @@ duplicate `di.timer.addjob` id would throw). `init` does **not** open connection
 
 | key | kind | meaning |
 |---|---|---|
-| `log` | injectable | binary `` `info`warn`error `` `{[c;m]}` logger dict |
-| `timer` | injectable | di.timer contract; `addjob` = the 6-arg `custom` form `{[id;func;params;period;mode;opts]}` |
+| `log` | injectable | binary `` `info`warn`error `` `{[c;m]}` logger dict — di.log's `logdict``log` satisfies this directly (it carries all six levels; the extra `trace`/`debug`/`fatal` are ignored) |
+| `timer` | injectable | the di.timer export dict; di.servers calls `` timer[`addjob][`custom] `` — the 6-arg `{[id;func;params;period;mode;opts]}` variant (`addjob` is a variant dict of `custom`/`default`/`simple`) |
 | `handlers` | injectable | di.handlers contract; `register[event;phase;nm;pri;func]` |
 | `proctype`/`procname` | config | this process's own identity (required); used to exclude self from `process.csv` |
 | `connections` | config | proctypes this process should dial (symbols, or strings from a `.toml` cascade — normalised). Optional; default = none |
@@ -100,17 +100,23 @@ priority-ordered fan-out.
 
 ## Open items / not yet done
 
-- **Live-peer integration tests are in place** (`test.q` + `test.csv`, 33 checks). They spawn a
-  genuinely separate `q` peer (a self-connect returns pseudo-handle `0`, not a real socket) and
+- **Live-peer integration tests are in place** (`test.q` + `test.csv`, 37 checks), and now wire the
+  **real merged `di.timer` and `di.log`** — only `di.handlers` (not yet merged) is mocked. They spawn
+  a genuinely separate `q` peer (a self-connect returns pseudo-handle `0`, not a real socket) and
   cover: `startup` connecting to a live peer and logging a failed dial while excluding self,
   `gethandlebytype` returning a live remote handle (`2=h"1+1"`), the retry cycle recovering an
-  ungraceful kill (`cleanup`+reopen), and `waitfortype` connected-vs-timeout — plus the mockable
-  surface (init validation, dep-wiring, idempotency, input validation, `getapimeta`). Because
-  `retry`/`cleanup` are internal, the retry cycle is driven by invoking the callback the **mock
-  timer captured** at `addjob` (the actually-wired path), not a direct export.
-- **Provider modules not in kdbx-modules yet.** `di.log` (feature-logging branch) and
-  `di.handlers` aren't here yet, so the injected contracts are mocked in tests. The handlers
-  mock uses the real `register[event;phase;nm;pri;func]` shape from `handlers.q`.
+  ungraceful kill (`cleanup`+reopen), and `waitfortype` connected-vs-timeout — plus init validation,
+  dep-wiring, idempotency, input validation, and `getapimeta`. `init` schedules `serversretry` in the
+  real `di.timer` (asserted via `` timer.getalljobs[] ``); because `retry`/`cleanup` are internal, the
+  retry cycle is driven by invoking the exact func di.servers handed the timer (`` firejob `` reads it
+  back from `` getalljobs[] `` — the actually-wired path), not a direct export. Idempotent re-init is
+  a genuine test here: the real timer's `` addjob[`custom] `` throws on a duplicate id, so a
+  non-idempotent `init` would fail outright. A final check re-inits against di.log's real `logdict` to
+  prove the injected-log contract holds end-to-end.
+- **`di.handlers` not in kdbx-modules yet**, so only that injected contract is mocked. The handlers
+  mock uses the real `register[event;phase;nm;pri;func]` shape from `handlers.q`; the `.z.pc` observer
+  path is therefore exercised only via the explicit `retry`→`cleanup` sweep, not a live auto-fired
+  `.z.pc` (which real di.handlers would install).
 - **`config`processcsv` and the assembled `connections` list** depend on di.torq's config
   wiring — coordinate when di.torq's servers dep is built.
 - Scoped-out (v1): discovery service, password/access-list files, non-TorQ tracking, and the

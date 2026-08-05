@@ -113,7 +113,9 @@ buildhandlersdep:{[overrides;logdep]
 buildserversdep:{[overrides;config;logdep;timerdep;handlersdep]
   modname:$[`servers in key overrides;overrides`servers;`di.torq.servers];
   srv:use modname;
-  (srv`init)[config;`log`timer`handlers!(logdep;timerdep;handlersdep)];
+  / one-arg init[deps] (kdbx convention, matching handlers/config/depcheck): merge the injectables into
+  / this process's config slice - init reads log/timer/handlers + proctype/procname self-identity from it.
+  (srv`init)[config,`log`timer`handlers!(logdep;timerdep;handlersdep)];
   `startup`getservers`gethandlebytype`waitfortype!((srv`startup);(srv`getservers);(srv`gethandlebytype);(srv`waitfortype))
   }
 
@@ -180,33 +182,50 @@ runhook:{[proctype;overrides]
   if[`run in key ns;(get `$".",(string proctype),".run")[]];
   }
 
+/ reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
+/ di.torq itself (identity, stack id, port, norun), NOT config settings. Everything else on the
+/ command line is a candidate config override.
+reservedflags:`proctype`procname`torqxstackid`p`norun;
+
+/ the config-override params from a parsed command-line opt dict (.Q.opt .z.x): drop the reserved
+/ flags, keep the rest. di.torq.config.overrideconfig then applies each to the matching setting
+/ (parsed into its type) and skips any that don't name a real setting. Pure - unit-testable without .z.x.
+clioverrideparams:{[cmdlineopts] (key[cmdlineopts] except reservedflags)#cmdlineopts}
+
 init:{[proctype;procname;overrides]
   / dependency check runs first, before anything else - a version mismatch should
   / be caught before identity resolution, config, or any module load even starts.
-  / check[] is itself a no-op if TORQXAPPHOME has no deps.toml (opt-in feature, see
-  / di.torq.depcheck's docs) - this doesn't require every app to have adopted one yet.
+  / checkversiongraphfile[] is a no-op if TORQXAPPHOME has no deps.toml (opt-in, see di.torq.depcheck's docs).
   dc:use`di.torq.depcheck;
-  (dc`check)[reqenv[`TORQXAPPHOME],"/deps.toml"];
-  (dc`checkztsintegrity)[];
+  (dc`checkversiongraphfile)[`;reqenv[`TORQXAPPHOME],"/deps.toml"];
   ident:resolveidentity[proctype;procname];
   proctype:ident`proctype;
   procname:ident`procname;
-  / peer-version manifest graph (di.torq.depcheck 0.2.0+): now that identity is known, walk THIS
-  / process's dependency subtree - each module's own deps.toml declares the minimum versions of
-  / the modules it `use`s, and the walk validates them transitively against what's installed.
-  / This is what turns "customer upgraded di.proc.gateway but not the di.serverselect it now needs"
-  / from a cryptic mid-startup runtime error into a clear startup failure naming the culprit.
-  / Built-in proctypes have a di.* entry module; a custom proctype's optional manifest lives at
-  / code/processes/<proctype>.deps.toml. Pure on-disk reads, still before any module loads.
+  / pre-load VERSION graph (reconciled di.torq.depcheck: kdbx's semver + manifest reading, TorqX's on-disk
+  / VERSION-file walk - see docs/reconciliation/depcheck.md): now that identity is known, walk THIS process's
+  / dependency subtree - each module's own deps.q/deps.toml declares the minimum versions of the modules it
+  / `use`s, validated transitively against the VERSION files installed on QPATH. Turns "customer upgraded
+  / di.proc.gateway but not the di.serverselect it now needs" from a cryptic mid-startup runtime error into a
+  / clear startup failure naming the culprit. Built-in proctypes have a di.* entry module; a custom proctype's
+  / optional manifest lives at code/processes/<proctype>.deps.toml. Pure on-disk reads, still before any module loads.
   $[proctype in key builtin;
-    (dc`checkgraph)[builtin proctype];
-    (dc`checkgraphfrom)[proctype;reqenv[`TORQXAPPHOME],"/code/processes/",(string proctype),".deps.toml"]];
+    (dc`checkversiongraph)[enlist builtin proctype];
+    (dc`checkversiongraphfile)[proctype;reqenv[`TORQXAPPHOME],"/code/processes/",(string proctype),".deps.toml"]];
   r:roots[];
-  cc:use`di.torq.config;
-  config:(cc`cascade)[r 0;r 1;proctype;procname];
-  / self-identity, so any module (or something it calls) can find out who it is
-  config:config,`proctype`procname!(proctype;procname);
+  / the logger is built before config so di.torq.config's command-line override layer (below) can log through it
   logdep:buildlogdep[overrides];
+  cc:use`di.torq.config;
+  (cc`init)[enlist[`log]!enlist logdep];
+  config:(cc`cascade)[r 0;r 1;proctype;procname];
+  / command-line override layer - the TOP cascade tier. A launch flag matching a settings name
+  / overrides it (parsed into that setting's type); reserved launcher/identity flags are excluded,
+  / and a flag that doesn't name a real setting is skipped (see di.torq.config.overrideconfig).
+  config:(cc`overrideconfig)[config; clioverrideparams .Q.opt .z.x];
+  / self-identity is resolved by di.torq and authoritative - stamped AFTER overrides so it always wins
+  config:config,`proctype`procname!(proctype;procname);
+  / the process.csv phone-book path, so di.torq.servers (and any consumer building its own startup config
+  / slice from this config) can dial peers without reading env itself - keeps di.servers' env-free boundary.
+  config:config,enlist[`processcsv]!enlist reqenv[`TORQXAPPCONFIG],"/process.csv";
   timerdep:buildtimerdep[overrides];
   handlersdep:buildhandlersdep[overrides;logdep];
   / servers is built LAST (it consumes log/timer/handlers at init) and injected alongside
@@ -226,6 +245,11 @@ init:{[proctype;procname;overrides]
   / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
   / app file may define/override .<proctype>.run for the hook to pick up).
   loadappcode[logdep;config;proctype;procname];
+  / post-load session audit (di.torq.depcheck.init): now that every module is loaded, introspect the live
+  / session - core-dependency contract shapes (log/timer/handlers), .z.ts ownership, and an optional minimum
+  / kdb-x engine version (config`minkdbxversion). Complements the pre-load VERSION graph above, which validated
+  / installed versions before loading; this validates what actually loaded. Raises on a real contract/dependency gap.
+  (dc`init)[`log`minkdbxversion!(logdep;$[`minkdbxversion in key config;"f"$config`minkdbxversion;0Nf])];
   runhook[proctype;overrides];
   `proctype`procname`config`deps!(proctype;procname;config;deps)
   }

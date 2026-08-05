@@ -61,6 +61,12 @@ setupfixture:{[]
 / loadnamecode into the procname settings tier to turn on the procname-tier app-code cascade.
 enablenamecode:{[] writelines[APPBASE,"/settings/testinst.q";enlist "loadnamecode:1b"]; }
 
+/ a synthetic parsed-command-line opt dict in .Q.opt shape (values are string lists; a bare flag
+/ like -norun is ()) for the command-line override-layer tests. Mixes the reserved launcher/identity
+/ flags di.torq consumes (proctype/procname/torqxstackid/p/norun) with two real setting flags
+/ (myrows/myname), so a test can assert clioverrideparams keeps only the latter.
+sampleopts:{[] `proctype`procname`torqxstackid`p`norun`myrows`myname!((enlist"hdb");(enlist"hdb");(enlist"s1");(enlist"5560");();(enlist"7");(enlist"widget"))}
+
 teardownfixture:{[]
   system "rm -rf ",APPBASE;
   system "rm -f ",TESTPROCFILE;

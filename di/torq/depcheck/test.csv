@@ -1,0 +1,209 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load module and a capturing logger
+before,0,0,q,depcheck:use`di.torq.depcheck,1,,load di.torq.depcheck module
+before,0,0,q,.dc.captbl:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,,log capture table for assertions
+before,0,0,q,caplog:`info`warn`error!({[c;m] `.dc.captbl insert (`info;c;m)};{[c;m] `.dc.captbl insert (`warn;c;m)};{[c;m] `.dc.captbl insert (`error;c;m)}),1,,capturing binary logger {[c;m]}
+
+comment,,,,,,,init - dependency validation
+fail,0,0,q,depcheck.init[(::)],1,,init rejects a non-dict deps
+fail,0,0,q,depcheck.init[()!()],1,,init rejects missing log key
+fail,0,0,q,depcheck.init[enlist[`log]!enlist 42],1,,init rejects a non-dict log value
+fail,0,0,q,depcheck.init[enlist[`log]!enlist `info`warn!(caplog`info;caplog`warn)],1,,init rejects a log dict missing the error key
+run,0,0,q,.dc.errstr:@[{depcheck.init[()!()]};(::);{x}],1,,capture the error string from a bad init
+true,0,0,q,.dc.errstr like "di.torq.depcheck:*",1,,init error is prefixed di.torq.depcheck:
+
+comment,,,,,,,module metadata - exported version
+true,0,0,q,10h=type depcheck.version,1,,version is a string
+true,0,0,q,0<count depcheck.version,1,,version is non-empty
+
+comment,,,,,,,semver comparison - internal helper
+true,0,0,q,.m.di.0torq.0depcheck.vergte["1.2.3";"1.2.3"],1,,equal versions satisfy the minimum
+true,0,0,q,.m.di.0torq.0depcheck.vergte["1.3.0";"1.2.9"],1,,greater major-adjacent version satisfies the minimum
+true,0,0,q,not .m.di.0torq.0depcheck.vergte["1.2.0";"1.2.1"],1,,lesser patch fails the minimum
+true,0,0,q,not .m.di.0torq.0depcheck.vergte["0.9.9";"1.0.0"],1,,lesser major fails the minimum
+true,0,0,q,.m.di.0torq.0depcheck.vergte["0.2.0";"0.2.0"],1,,equal 0.x versions satisfy the minimum
+
+comment,,,,,,,kdb-x engine version check - internal helper, uses .z.K not .z.v
+true,0,0,q,0=count .m.di.0torq.0depcheck.kdbxcheck[()!()],1,,no warning when no minimum kdb-x version is configured
+true,0,0,q,0=count .m.di.0torq.0depcheck.kdbxcheck[enlist[`minkdbxversion]!enlist 0f],1,,no warning when the configured minimum is at or below the running engine
+true,0,0,q,1=count .m.di.0torq.0depcheck.kdbxcheck[enlist[`minkdbxversion]!enlist 999f],1,,warns when the configured minimum exceeds the running kdb-x engine version
+
+comment,,,,,,,live negative/positive controls - real shipped modules not synthetic fixtures. di.timer is merged to
+comment,,,,,,,main so it loads unconditionally; di.kafka and di.handlers are still on open unmerged PRs (#112/#114)
+comment,,,,,,,so their loads are protected and every assertion depending on them gracefully no-ops when absent -
+comment,,,,,,,this suite must pass standalone against a bare main checkout not just this developer's merged QPATH
+before,0,0,q,timer:use`di.timer,1,,load the real di.timer module - always present on main - a live negative control
+before,0,0,q,.dc.havekafka:@[{kafka:use`di.kafka;1b};`;0b],1,,attempt di.kafka - PR #112 unmerged - absent on a bare main checkout
+before,0,0,q,.dc.havehandlers:@[{handlers:use`di.torq.handlers;1b};`;0b],1,,attempt di.torq.handlers - reconciled into the hierarchy - present on this branch
+before,0,0,q,.dc.havetoml:@[{use`di.util.toml;1b};`;0b],1,,attempt di.util.toml - PR #116, on its own feature-toml branch - absent on a bare feature-depcheck checkout
+
+comment,,,,,,,checkonedep - dependency presence and version, exercised directly against live loaded modules
+true,0,0,q,".m.di.0torq.0depcheck.checkonedep[`di.doesnotexist;""1.0.0""]~enlist ""di.doesnotexist requires minimum version 1.0.0, not found""",1,,an undeclared/unloaded dependency is reported not found
+true,0,0,q,".m.di.0torq.0depcheck.checkonedep[`di.timer;""1.0.0""]~enlist ""di.timer requires minimum version 1.0.0, but di.timer exports no version""",1,,real di.timer (loaded, no version export) is reported as exporting no version
+true,0,0,q,"(not .dc.havekafka) or .m.di.0torq.0depcheck.checkonedep[`di.kafka;""1.0.0""]~enlist ""di.kafka requires minimum version 1.0.0, but di.kafka exports no version""",1,,real di.kafka checked when present (PR #112) else a no-op pass
+true,0,0,q,(not .dc.havehandlers) or 0=count .m.di.0torq.0depcheck.checkonedep[`di.torq.handlers;"0.1.0"],1,,real di.torq.handlers checked when present else a no-op pass
+true,0,0,q,"(not .dc.havehandlers) or .m.di.0torq.0depcheck.checkonedep[`di.torq.handlers;""9.9.9""]~enlist ""di.torq.handlers requires minimum version 9.9.9, found 0.1.0""",1,,real di.torq.handlers checked when present else a no-op pass
+
+comment,,,,,,,di.util.log positive control - the reconciled log module is present on this branch and exports a version
+true,0,0,q,"$[@[{use`di.util.log;1b};`;0b];.m.di.0torq.0depcheck.checkonedep[`di.util.log;""1.0.0""]~enlist ""di.util.log requires minimum version 1.0.0, found 0.1.0"";1b]",1,,di.util.log is version-checked for real (it exports 0.1.0) else a no-op pass
+
+comment,,,,,,,loaded-but-unreadable-export edge case - constructed via direct namespace manipulation since no real
+comment,,,,,,,module can be made to load successfully and then fail an export read. Caught checkdepversion using an
+comment,,,,,,,eager `or` over a `~(::)` check during manual smoke testing - not by reading the code - see depcheck.q
+before,0,0,q,.m.di.0fakemod.something:1,1,,fabricate a loaded module whose export dict was never actually set
+true,0,0,q,".m.di.0torq.0depcheck.checkcontract[`di.fakemod;`x`y]~enlist ""di.fakemod is loaded but its export dict could not be read""",1,,checkcontract reports the unreadable-export case distinctly
+true,0,0,q,".m.di.0torq.0depcheck.checkonedep[`di.fakemod;""1.0.0""]~enlist ""di.fakemod requires minimum version 1.0.0, but di.fakemod exports no version""",1,,checkonedep no longer throws 'type on this case - regression test for the `or`-eagerness bug
+
+comment,,,,,,,non-di.* vendor dependency resolution - a deps.q may legitimately name an external vendor module (e.g.
+comment,,,,,,,kx.log) as a hard dependency. Fabricated via namespace manipulation since kx.log isn't committed to this
+comment,,,,,,,repo (only vendored locally on this dev machine) - checkonedep must not hardcode `.m.di when resolving
+before,0,0,q,.m.zz.0widget.export:enlist[`version]!enlist "2.0.0",1,,fabricate a loaded non-di.* vendor module with a real version
+true,0,0,q,0=count .m.di.0torq.0depcheck.checkonedep[`zz.widget;"1.0.0"],1,,a loaded non-di.* dependency satisfying its minimum passes
+true,0,0,q,".m.di.0torq.0depcheck.checkonedep[`zz.widget;""3.0.0""]~enlist ""zz.widget requires minimum version 3.0.0, found 2.0.0""",1,,a loaded non-di.* dependency is version-checked for real not falsely reported not-found
+true,0,0,q,".m.di.0torq.0depcheck.checkonedep[`zz.doesnotexist;""1.0.0""]~enlist ""zz.doesnotexist requires minimum version 1.0.0, not found""",1,,a genuinely absent non-di.* vendor namespace still safely reports not found, no crash
+
+comment,,,,,,,malformed semver handling - caught during manual adversarial re-scrutiny (not by reading the code): a
+comment,,,,,,,pre-release-tagged found version used to silently null out its patch component and compare as lower than
+comment,,,,,,,it really is; a typo'd deps.q minver used to silently compare as no real minimum at all. See parsesemver.
+before,0,0,q,.m.zz.0badfound.export:enlist[`version]!enlist "1.2.3-rc1",1,,fabricate a loaded module exporting a version with a pre-release tag
+true,0,0,q,"(3#0Ni)~.m.di.0torq.0depcheck.parsesemver[""1.2.3-rc1""]",1,,a version with a non-numeric component parses to the malformed sentinel not a partial triple
+true,0,0,q,".m.di.0torq.0depcheck.ismalformed[""1.2.3-rc1""]",1,,ismalformed recognises the pre-release-tagged string
+true,0,0,q,not .m.di.0torq.0depcheck.ismalformed["1.2.3"],1,,ismalformed does not flag a well-formed version
+true,0,0,q,".m.di.0torq.0depcheck.checkonedep[`zz.badfound;""1.2.0""]~enlist ""zz.badfound exports version 1.2.3-rc1, which is not a valid major.minor.patch version""",1,,a pre-release-tagged found version is reported as invalid rather than silently compared as lower
+true,0,0,q,".m.di.0torq.0depcheck.checkonedep[`zz.widget;""abc""]~enlist ""zz.widget has a declared minimum version of abc, which is not a valid major.minor.patch version""",1,,a malformed deps.q minver is reported as invalid rather than silently treated as no real minimum
+
+comment,,,,,,,buildreport - internal report-formatting helper, exercised directly not just indirectly via init's report
+true,0,0,q,.m.di.0torq.0depcheck.buildreport["X";("a";"b")]~"X:\n  a\n  b",1,,buildreport formats a header line followed by bulleted indented entries
+
+comment,,,,,,,checkmoduledeps - internal per-module deps.q auditor, exercised directly against real on-disk deps.q files
+comment,,,,,,,rather than only indirectly via checkdeps[] - closes a real gap: finddepsq/readdepsq's actual QPATH file
+comment,,,,,,,discovery and load mechanics had never been exercised by any committed test, only by manual scratch testing
+true,0,0,q,()~.m.di.0torq.0depcheck.checkmoduledeps[`di.timer],1,,di.timer genuinely ships no deps.q - the real not-found branch against a real module, no crash
+true,0,0,q,()~.m.di.0torq.0depcheck.checkmoduledeps[`di.torq.depcheck],1,,di.torq.depcheck's own real shipped empty deps.q is found and loaded via the real QPATH file-lookup and system load - proves the real file-discovery-and-load path actually works, not just the in-memory branches
+run,0,0,q,".dc.qroot:first "":"" vs getenv`QPATH; system ""mkdir -p "",.dc.qroot,""/di/zzmalformeddep""; (hsym `$.dc.qroot,""/di/zzmalformeddep/deps.q"") 0: enlist ""deps:42""",1,,"create a real on-disk malformed deps.q (deps defined as an int, not a dict) under a scratch module directory derived from QPATH at runtime - no hardcoded absolute path, no new committed fixture file. deliberately a run action not before: before actions across every accumulated load of this file in one k4unit session run as a single upfront batch, while run/true/fail replay per load in file order - a before here would create the fixture once but the paired cleanup below (a run action) would fire once per load, deleting it out from under a second load's assertion"
+true,0,0,q,any .m.di.0torq.0depcheck.checkmoduledeps[`di.zzmalformeddep] like "*deps.q is malformed*",1,,a genuinely malformed deps.q found on disk is reported as its own failure line rather than crashing checkdeps - previously only manually verified never committed
+run,0,0,q,"system ""rm -rf "",.dc.qroot,""/di/zzmalformeddep""",1,,remove the scratch fixture directory
+
+comment,,,,,,,checkcontracts - core dependency contract shape, exercised against live loaded modules
+true,0,0,q,not any .m.di.0torq.0depcheck.checkcontracts[] like "di.timer is missing*",1,,real di.timer satisfies the aligned Timer contract (cp was dropped - di.timer exports the five keys di.torq uses)
+true,0,0,q,not any .m.di.0torq.0depcheck.checkcontracts[] like "di.torq.handlers is missing*",1,,real di.torq.handlers satisfies the Handlers contract in full when present; vacuously true when absent
+
+comment,,,,,,,checkcontract - generic exported primitive underneath checkcontracts[], reached via the real used export
+comment,,,,,,,dict (not the internal namespace path) since the point of exporting it is that callers reach it this way
+true,0,0,q,0=count depcheck.checkcontract[`di.timer;`addjob`deletejobs],1,,passing case - real di.timer genuinely exports both required keys
+true,0,0,q,"depcheck.checkcontract[`di.timer;`addjob`cp]~enlist ""di.timer is missing required contract key(s): cp""",1,,failing case - only the genuinely missing key (cp) is reported not the present one (addjob)
+true,0,0,q,0=count depcheck.checkcontract[`di.doesnotexist;`x`y],1,,not-loaded case - a module never used at all returns no failure not a crash, matching checkonedep's presence-check being the place absence is reported instead
+
+comment,,,,,,,checkcontract - bare symbol atom for requiredkeys (a single-key contract written the natural way,
+comment,,,,,,,without remembering to enlist it) - found by direct testing against the newly-exported function, not
+comment,,,,,,,by reading the code. every internal caller (contracts dict values) already passes a vector, so this
+comment,,,,,,,edge case did not exist before checkcontract became a public entry point for arbitrary future callers
+true,0,0,q,"depcheck.checkcontract[`di.timer;`cp]~enlist ""di.timer is missing required contract key(s): cp""",1,,a bare atom failing key normalises to the same vector-shaped result as an enlisted one
+true,0,0,q,0=count depcheck.checkcontract[`di.timer;`addjob],1,,a bare atom passing key normalises correctly too - not just the failing case
+
+comment,,,,,,,ztscheck - .z.ts ownership, exercised against real .z.ts state
+run,0,0,q,system"x .z.ts",1,,reset .z.ts to the kdb-x built-in default before testing
+true,0,0,q,0=count .m.di.0torq.0depcheck.ztscheck[],1,,no warning when .z.ts is unbound
+run,0,0,q,.z.ts:{[x]},1,,directly assign .z.ts outside di.timer for the negative case
+true,0,0,q,.m.di.0torq.0depcheck.ztscheck[]~enlist ".z.ts has been directly assigned outside di.timer. This may cause timer conflicts.",1,,warns when .z.ts is bound outside di.timer
+run,0,0,q,system"x .z.ts",1,,restore .z.ts to the kdb-x built-in default after the test
+
+comment,,,,,,,end-to-end init - a fabricated loaded module whose on-disk deps.q requires an absent module drives a real
+comment,,,,,,,checkdeps failure (the Timer-contract gap that used to drive this is gone now that cp was dropped).
+comment,,,,,,,minkdbxversion is also set above .z.K so a real warning is computed alongside the real failure - regression
+comment,,,,,,,test for a logging bug: warnings were only logged when init did NOT also fail, since the failures branch
+comment,,,,,,,signalled before the warnings-logging line was reached, silently dropping a coinciding warning. Fixed by logging warnings first.
+run,0,0,q,".dc.if:first "":"" vs getenv`QPATH; system ""mkdir -p "",.dc.if,""/di/zzinitfail""; (hsym `$.dc.if,""/di/zzinitfail/deps.q"") 0: enlist ""deps:enlist[`di.doesnotexist]!enlist \""1.0.0\""""",1,,install a module on QPATH whose deps.q requires an absent module
+run,0,0,q,.m.di.0zzinitfail.export:([]),1,,fabricate it as a LOADED module so checkdeps audits its deps.q
+run,0,0,q,.dc.captbl:0#.dc.captbl,1,,reset log capture
+run,0,0,q,.dc.initerr:@[{depcheck.init[`log`minkdbxversion!(caplog;999f)]};(::);{x}],1,,init throws end-to-end while a real kdbxcheck warning is also computed
+true,0,0,q,.dc.initerr like "di.torq.depcheck: DEPENDENCY CHECK FAILED:*",1,,the signalled error is the di.torq.depcheck-prefixed report block
+true,0,0,q,".dc.initerr like ""*di.doesnotexist requires minimum version 1.0.0, not found*""",1,,the report names the real unmet dependency
+true,0,0,q,any `error = exec lvl from .dc.captbl,1,,the failing report was also logged at error before being signalled
+true,0,0,q,any `warn = exec lvl from .dc.captbl,1,,the coinciding warning was also logged at warn - not silently dropped - regression test for the logging fix
+true,0,0,q,(exec first msg from .dc.captbl where lvl=`warn) like "*is below the configured minimum*",1,,the logged warning is the real kdbxcheck text, not an empty or wrong message
+run,0,0,q,"system ""rm -rf "",.dc.if,""/di/zzinitfail""",1,,remove the on-disk init-failure fixture (the fabricated .m.di.0zzinitfail is harmless with no deps left on disk)
+
+comment,,,,,,,dual-format manifest reading - deps.q and/or deps.toml merged with .toml winning on a clash (mirrors
+comment,,,,,,,di.config's live parsetier). scratch module dirs are derived from QPATH at runtime - no hardcoded path,
+comment,,,,,,,no committed fixture - and created/removed with run actions (not before) so each replays in file order
+run,0,0,q,".dc.qr:first "":"" vs getenv`QPATH; system ""mkdir -p "",.dc.qr,""/di/zzqonly "",.dc.qr,""/di/zztomlonly "",.dc.qr,""/di/zzboth""",1,,create scratch module directories from QPATH at runtime
+run,0,0,q,"(hsym `$.dc.qr,""/di/zzqonly/deps.q"") 0: enlist ""deps:enlist[`di.timer]!enlist \""1.0.0\""""",1,,zzqonly ships only a deps.q
+run,0,0,q,"(hsym `$.dc.qr,""/di/zztomlonly/deps.toml"") 0: (""[dependencies]"";""\""di.timer\"" = \""1.0.0\"""")",1,,zztomlonly ships only a deps.toml
+run,0,0,q,"(hsym `$.dc.qr,""/di/zzboth/deps.q"") 0: enlist ""deps:enlist[`di.timer]!enlist \""1.0.0\""""",1,,zzboth deps.q declares di.timer 1.0.0
+run,0,0,q,"(hsym `$.dc.qr,""/di/zzboth/deps.toml"") 0: (""[dependencies]"";""\""di.timer\"" = \""9.9.9\"""")",1,,zzboth deps.toml declares di.timer 9.9.9 - the clashing value that should win
+true,0,0,q,"((.m.di.0torq.0depcheck.readdeps `di.zzqonly) 1)~enlist[`di.timer]!enlist ""1.0.0""",1,,a q-only module's deps.q is read
+true,0,0,q,"$[.dc.havetoml;((.m.di.0torq.0depcheck.readdeps `di.zztomlonly) 1)~enlist[`di.timer]!enlist ""1.0.0"";1b]",1,,a toml-only module's deps.toml is read via di.util.toml (no-op pass when di.util.toml is absent)
+true,0,0,q,"$[.dc.havetoml;((.m.di.0torq.0depcheck.readdeps `di.zzboth) 1)~enlist[`di.timer]!enlist ""9.9.9"";1b]",1,,when both formats declare the same key the .toml value wins on the clash (no-op pass when di.util.toml is absent)
+true,0,0,q,0=count (.m.di.0torq.0depcheck.readdeps `di.zzqonly) 0,1,,a clean q-only manifest yields no read-failures
+true,0,0,q,0=count (.m.di.0torq.0depcheck.readdeps `di.doesnotexist) 1,1,,a module with neither format yields an empty merged manifest
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zzqonly "",.dc.qr,""/di/zztomlonly "",.dc.qr,""/di/zzboth""",1,,remove the dual-format scratch fixtures
+
+comment,,,,,,,a broken deps.toml degrades to one aggregated failure line worded like di.config's requiretoml - never a
+comment,,,,,,,throw (deliberately unlike di.config's requiretoml which aborts its whole cascade - see depcheck.md)
+run,0,0,q,"system ""mkdir -p "",.dc.qr,""/di/zzbroken""; (hsym `$.dc.qr,""/di/zzbroken/deps.toml"") 0: enlist ""garbage no equals""",1,,create a scratch module with a malformed deps.toml
+true,0,0,q,"any ((.m.di.0torq.0depcheck.readdeps `di.zzbroken) 0) like ""di.torq.depcheck: cannot read deps.toml*""",1,,a malformed deps.toml is reported as one clear di.util.toml-attributed failure line, not thrown
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zzbroken""",1,,remove the broken-toml scratch fixture
+
+comment,,,,,,,transitive graph walk - a loaded root (zzga, fabricated) -> zzgb (installed on QPATH) -> zzgc (absent).
+comment,,,,,,,zzgb also declares zzga (a cycle), which the visited-set guard must terminate. zzgb itself is a direct dep
+comment,,,,,,,of the loaded root so it is checkdeps' domain and must NOT be double-reported by checkgraph
+run,0,0,q,.m.di.0zzga.export:([]),1,,fabricate a loaded module di.zzga so it becomes a walk root
+run,0,0,q,"system ""mkdir -p "",.dc.qr,""/di/zzga "",.dc.qr,""/di/zzgb""; (hsym `$.dc.qr,""/di/zzga/init.q"") 0: enlist ""export:([])""; (hsym `$.dc.qr,""/di/zzga/deps.q"") 0: enlist ""deps:enlist[`di.zzgb]!enlist \""1.0.0\""""",1,,install zzga on QPATH declaring zzgb
+run,0,0,q,"(hsym `$.dc.qr,""/di/zzgb/init.q"") 0: enlist ""export:([])""; (hsym `$.dc.qr,""/di/zzgb/deps.q"") 0: enlist ""deps:`di.zzgc`di.zzga!(\""1.0.0\"";\""1.0.0\"")""",1,,install zzgb on QPATH declaring zzgc (missing) and zzga (cycle)
+true,0,0,q,"any (.m.di.0torq.0depcheck.checkgraph[]) like ""di.zzgc is required transitively by di.zzgb*""",1,,checkgraph surfaces a depth>=2 dependency that does not resolve on QPATH
+true,0,0,q,"not any (.m.di.0torq.0depcheck.checkgraph[]) like ""di.zzgb is required transitively*""",1,,zzgb (a direct dep of the loaded root) is not double-reported - the cycle also terminated without error
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zzga "",.dc.qr,""/di/zzgb""",1,,remove the graph-walk on-disk fixtures (the fabricated .m.di.0zzga is harmless with no deps on disk)
+
+comment,,,,,,,resolvemodule - QPATH presence resolution without loading, distinct from checkonedep's loaded-check
+true,0,0,q,not (::)~.m.di.0torq.0depcheck.resolvemodule `di.timer,1,,a real installed module resolves on QPATH
+true,0,0,q,(::)~.m.di.0torq.0depcheck.resolvemodule `di.doesnotexistanywhere,1,,an absent module resolves to (::)
+
+comment,,,,,,,a deps.toml that exists but declares no [dependencies] section - the else branch of readdepstoml
+run,0,0,q,"system ""mkdir -p "",.dc.qr,""/di/zznodeps""; (hsym `$.dc.qr,""/di/zznodeps/deps.toml"") 0: enlist ""name = \""foo\""""",1,,create a deps.toml with a top-level key but no [dependencies] section
+true,0,0,q,0=count (.m.di.0torq.0depcheck.readdeps `di.zznodeps) 1,1,,a deps.toml with no [dependencies] section yields an empty merged manifest not a crash
+true,0,0,q,"$[.dc.havetoml;0=count (.m.di.0torq.0depcheck.readdeps `di.zznodeps) 0;1b]",1,,and no read-failures either - a valid file with nothing declared is not an error (needs di.util.toml to read the file; no-op pass when absent)
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zznodeps""",1,,remove the no-dependencies scratch fixture
+
+comment,,,,,,,malformed [dependencies] - a deps.toml where `dependencies` is a scalar not a section. must degrade to a
+comment,,,,,,,clean failure line with an empty merged dict, NOT throw out of readdeps's merge and abort the whole walk
+run,0,0,q,"system ""mkdir -p "",.dc.qr,""/di/zzscalar""; (hsym `$.dc.qr,""/di/zzscalar/deps.toml"") 0: enlist ""dependencies = \""oops\""""",1,,create a deps.toml whose dependencies key is a scalar string
+true,0,0,q,"$[.dc.havetoml;any ((.m.di.0torq.0depcheck.readdeps `di.zzscalar) 0) like ""di.torq.depcheck: deps.toml for di.zzscalar has a malformed*"";1b]",1,,a non-dict [dependencies] is reported as one clear failure line (no-op pass when di.util.toml is absent)
+true,0,0,q,0=count (.m.di.0torq.0depcheck.readdeps `di.zzscalar) 1,1,,and the merged manifest is empty so the merge never throws
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zzscalar""",1,,remove the malformed-dependencies scratch fixture
+
+comment,,,,,,,non-string version value - an unquoted deps.toml version parses to a float; a deps.q version may be an int
+comment,,,,,,,or symbol. either is an authoring error reported as its own clear line, never a corrupted concatenated
+comment,,,,,,,message or a throw out of parsesemver's `vs`. a single-char string version must NOT trip this guard
+run,0,0,q,"system ""mkdir -p "",.dc.qr,""/di/zzfloatver""; (hsym `$.dc.qr,""/di/zzfloatver/deps.toml"") 0: (""[dependencies]"";""\""di.timer\"" = 1.0"")",1,,deps.toml with an UNQUOTED version - di.util.toml parses it as a float
+true,0,0,q,"$[.dc.havetoml;any (.m.di.0torq.0depcheck.checkmoduledeps `di.zzfloatver) like ""di.timer has a non-string minimum version*"";1b]",1,,an unquoted (float) deps.toml version is reported as a non-string version, not a garbage line or a crash (needs di.util.toml to parse the float; no-op pass when absent)
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zzfloatver""",1,,remove the float-version fixture
+run,0,0,q,"system ""mkdir -p "",.dc.qr,""/di/zzintver""; (hsym `$.dc.qr,""/di/zzintver/deps.q"") 0: enlist ""deps:enlist[`di.timer]!enlist 5""",1,,deps.q with an int version value
+true,0,0,q,"any (.m.di.0torq.0depcheck.checkmoduledeps `di.zzintver) like ""di.timer has a non-string minimum version*""",1,,an int deps.q version is reported as a non-string version too
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zzintver""",1,,remove the int-version fixture
+run,0,0,q,"system ""mkdir -p "",.dc.qr,""/di/zzonechar""; (hsym `$.dc.qr,""/di/zzonechar/deps.q"") 0: enlist ""deps:enlist[`di.timer]!enlist \""1\""""",1,,deps.q with a legitimate single-char string version
+true,0,0,q,"not any (.m.di.0torq.0depcheck.checkmoduledeps `di.zzonechar) like ""di.timer has a non-string minimum*""",1,,a single-char string version is valid and must NOT be flagged as non-string - the guard does not over-trigger
+run,0,0,q,"system ""rm -rf "",.dc.qr,""/di/zzonechar""",1,,remove the single-char-version fixture
+
+comment,,,,,,,pre-load VERSION graph (grafted from TorqX) - on-disk resolvemodule + VERSION-file transitive version check
+run,0,0,q,".dc.vg:first "":"" vs getenv`QPATH",1,,scratch QPATH root for the pre-load version-graph fixtures
+run,0,0,q,"{[r;d] system ""mkdir -p "",r,""/di/"",d; (hsym `$r,""/di/"",d,""/init.q"") 0: enlist ""export:([])""}[.dc.vg;] each (""vgok"";""vgbad"";""vgmid"";""vgleaf"";""vgroot"")",1,,five installable fixture modules (each needs an init.q to resolve on QPATH)
+run,0,0,q,"(hsym `$.dc.vg,""/di/vgok/VERSION"") 0: enlist ""2.0.0""",1,,vgok installed at 2.0.0
+run,0,0,q,"(hsym `$.dc.vg,""/di/vgbad/VERSION"") 0: enlist ""1.0.0""",1,,vgbad installed at 1.0.0
+run,0,0,q,"(hsym `$.dc.vg,""/di/vgleaf/VERSION"") 0: enlist ""1.0.0""",1,,vgleaf installed at 1.0.0
+run,0,0,q,"(hsym `$.dc.vg,""/di/vgmid/VERSION"") 0: enlist ""1.0.0""",1,,vgmid installed at 1.0.0
+run,0,0,q,"(hsym `$.dc.vg,""/di/vgmid/deps.q"") 0: enlist ""deps:enlist[`di.vgleaf]!enlist \""9.9.9\""""",1,,vgmid declares di.vgleaf>=9.9.9 (unsatisfiable - vgleaf is 1.0.0)
+run,0,0,q,"(hsym `$.dc.vg,""/di/vgroot/deps.q"") 0: enlist ""deps:`di.vgok`di.vgmid!(\""1.0.0\"";\""1.0.0\"")""",1,,vgroot declares vgok+vgmid (both satisfied at the root; the transitive fault is under vgmid)
+true,0,0,q,"""2.0.0""~.m.di.0torq.0depcheck.readversion .m.di.0torq.0depcheck.resolvemodule `di.vgok",1,,readversion reads a resolved module's on-disk VERSION file without loading it
+true,0,0,q,0=count .m.di.0torq.0depcheck.checkinstalledversion[`;`di.vgok;"1.0.0"],1,,an installed dependency whose VERSION meets the minimum passes
+true,0,0,q,".m.di.0torq.0depcheck.checkinstalledversion[`;`di.vgbad;""2.0.0""]~enlist ""di.vgbad requires minimum version 2.0.0, found 1.0.0""",1,,an installed dependency below the minimum reports its found version
+true,0,0,q,"any .m.di.0torq.0depcheck.checkinstalledversion[`;`di.doesnotexistanywhere;""1.0.0""] like ""*not found on QPATH""",1,,an uninstalled dependency is reported not found (pre-load presence)
+true,0,0,q,(()!())~depcheck.checkversiongraph[enlist `di.vgok],1,,a leaf entry with no manifest passes cleanly
+true,0,0,q,(()!())~depcheck.checkversiongraph[enlist `di.vgleaf],1,,a satisfied subtree passes
+true,0,0,q,"(@[depcheck.checkversiongraph;enlist `di.vgroot;{x}]) like ""*(required by di.vgmid) di.vgleaf requires minimum version 9.9.9, found 1.0.0*""",1,,a transitive (depth-2) version mismatch is caught pre-load and attributed to the module that imposed it
+run,0,0,q,"(hsym `$.dc.vg,""/passmanifest.toml"") 0: (""[dependencies]"";""\""di.vgok\"" = \""1.0.0\"""")",1,,an app-level manifest file satisfied by what is installed
+run,0,0,q,"(hsym `$.dc.vg,""/failmanifest.toml"") 0: (""[dependencies]"";""\""di.vgbad\"" = \""2.0.0\"""")",1,,an app-level manifest file NOT satisfied (vgbad is 1.0.0)
+true,0,0,q,"$[.dc.havetoml;(()!())~depcheck.checkversiongraphfile[`;.dc.vg,""/passmanifest.toml""];1b]",1,,a satisfied app manifest FILE passes (no-op pass if di.util.toml is absent)
+true,0,0,q,"$[.dc.havetoml;(@[depcheck.checkversiongraphfile[`;];.dc.vg,""/failmanifest.toml"";{x}]) like ""*di.vgbad requires minimum version 2.0.0, found 1.0.0*"";1b]",1,,an unsatisfied app manifest FILE is caught pre-load (no-op pass if di.util.toml is absent)
+true,0,0,q,"(()!())~depcheck.checkversiongraphfile[`;.dc.vg,""/nonexistent.toml""]",1,,an absent manifest file is a clean no-op (opt-in)
+run,0,0,q,"system ""rm -rf "",.dc.vg,""/di/vgok "",.dc.vg,""/di/vgbad "",.dc.vg,""/di/vgmid "",.dc.vg,""/di/vgleaf "",.dc.vg,""/di/vgroot""; system ""rm -f "",.dc.vg,""/passmanifest.toml "",.dc.vg,""/failmanifest.toml""",1,,remove the version-graph fixtures

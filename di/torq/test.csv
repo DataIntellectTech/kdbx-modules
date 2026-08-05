@@ -42,4 +42,12 @@ run,0,0,q,r4:tq.init[`;`;()!()],1,,auto-detect identity now that the port unique
 true,0,0,q,`hdb~r4`proctype,1,,auto-detected the right proctype
 true,0,0,q,`hdb~r4`procname,1,,auto-detected the right procname
 
+comment,,,,,,,command-line override layer - clioverrideparams filters .Q.opt .z.x into config-override params
+run,0,0,q,cliopts:sampleopts[],1,,a synthetic .Q.opt-shape command line (reserved launcher flags + myrows/myname setting flags)
+true,0,0,q,`myname`myrows~asc key .m.di.0torq.clioverrideparams[cliopts],1,,only the real setting flags survive the filter
+true,0,0,q,not any `proctype`procname`torqxstackid`p`norun in key .m.di.0torq.clioverrideparams[cliopts],1,,every reserved launcher/identity flag is dropped before overrideconfig
+true,0,0,q,(enlist"7")~(.m.di.0torq.clioverrideparams[cliopts])`myrows,1,,kept override values are unchanged (the .Q.opt string-list shape overrideconfig expects)
+true,0,0,q,0=count .m.di.0torq.clioverrideparams[()!()],1,,an empty command line yields no overrides
+true,0,0,q,0=count .m.di.0torq.clioverrideparams[`proctype`p!((enlist"hdb");(enlist"5560"))],1,,a command line of only reserved flags yields no overrides
+
 after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file

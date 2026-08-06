@@ -108,9 +108,11 @@ priority-ordered fan-out.
   surface (init validation, dep-wiring, idempotency, input validation, `getapimeta`). Because
   `retry`/`cleanup` are internal, the retry cycle is driven by invoking the callback the **mock
   timer captured** at `addjob` (the actually-wired path), not a direct export.
-- **Provider modules not in kdbx-modules yet.** `di.util.log` (feature-logging branch) and
-  `di.torq.handlers` aren't here yet, so the injected contracts are mocked in tests. The handlers
-  mock uses the real `register[event;phase;nm;pri;func]` shape from `handlers.q`.
+- **Injected providers are mocked in tests by design.** `di.util.log` and `di.torq.handlers` are
+  both present on this branch now (log = the real structured logger from `main` PR #90), but the
+  unit tests still mock them so a failure localises to `di.torq.servers` rather than a provider.
+  The handlers mock uses the real `register[event;phase;nm;pri;func]` shape from `handlers.q`; the
+  real wiring is exercised end-to-end by di.torq's own suite.
 - **`config`processcsv` and the assembled `connections` list** depend on di.torq's config
   wiring — coordinate when di.torq's servers dep is built.
 - Scoped-out (v1): discovery service, password/access-list files, non-TorQ tracking, and the

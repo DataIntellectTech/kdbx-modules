@@ -1,6 +1,218 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,lg:use`di.util.log,1,,load module
-run,0,0,q,lg.info[`test;"hello"],1,,info does not throw
-run,0,0,q,lg.warn[`test;"careful"],1,,warn does not throw
-run,0,0,q,lg.error[`test;"boom"],1,,error does not throw
-run,0,0,q,lg.info[`;""],1,,info tolerates null ctx and empty message
+before,0,0,q,lg:use`di.util.log,1,,load module into session
+
+/ Test 0: createlog is exported and is a function
+true,0,0,q,100h=type lg.createlog,1,,createlog is a function
+
+/ Test 1: createlog returns a dictionary with all expected keys
+before,0,0,q,log1:lg.createlog[],1,,create first logger instance
+true,0,0,q,`trace`debug`info`warn`error`fatal`add`remove`setfmt`getfmt`addfmt`setlvl`getlvl~key log1,1,,createlog returns dict with expected keys
+
+/ Test 2: all level functions in returned dict are callable (projections: 104h)
+true,0,0,q,104h=type log1`trace,1,,instance trace is a function
+true,0,0,q,104h=type log1`debug,1,,instance debug is a function
+true,0,0,q,104h=type log1`info,1,,instance info is a function
+true,0,0,q,104h=type log1`warn,1,,instance warn is a function
+true,0,0,q,104h=type log1`error,1,,instance error is a function
+true,0,0,q,104h=type log1`fatal,1,,instance fatal is a function
+
+/ Test 3: management functions are callable (all projections: 104h)
+true,0,0,q,104h=type log1`setlvl,1,,setlvl is a function
+true,0,0,q,104h=type log1`getlvl,1,,getlvl is a function
+true,0,0,q,104h=type log1`setfmt,1,,setfmt is a function
+true,0,0,q,104h=type log1`getfmt,1,,getfmt is a function
+true,0,0,q,104h=type log1`addfmt,1,,addfmt is a function
+true,0,0,q,104h=type log1`add,1,,add is a function
+true,0,0,q,104h=type log1`remove,1,,remove is a function
+
+/ Test 4: default level is info
+true,0,0,q,`info~log1.getlvl[0],1,,default log level is info
+
+/ Test 5: default format is basic
+true,0,0,q,`basic~log1.getfmt[0],1,,default format is basic
+
+/ Test 6: setlvl changes the active level
+run,0,0,q,log1.setlvl `warn,1,,set level to warn
+true,0,0,q,`warn~log1.getlvl[0],1,,getlvl returns warn after setlvl
+
+/ Test 7: setlvl rejects invalid levels
+true,0,0,q,@[log1.setlvl;`notexist;{1b}],1,,setlvl throws on unknown level
+
+/ Test 8: messages below filter level return () silently
+true,0,0,q,()~log1.info[`test;"this should be suppressed"],1,,info below warn filter returns ()
+run,0,0,q,log1.setlvl `info,1,,restore level to info
+
+/ Test 9: level functions do not throw on valid messages
+run,0,0,q,log1.info[`test;"test message"],1,,instance info accepts plain string
+run,0,0,q,log1.warn[`test;"test warning"],1,,instance warn accepts plain string
+
+/ Test 10: setfmt changes the active format
+run,0,0,q,log1.setfmt `syslog,1,,set format to syslog
+true,0,0,q,`syslog~log1.getfmt[0],1,,getfmt returns syslog after setfmt
+run,0,0,q,log1.setfmt `raw,1,,set format to raw
+true,0,0,q,`raw~log1.getfmt[0],1,,getfmt returns raw after setfmt
+run,0,0,q,log1.setfmt `basic,1,,restore format to basic
+
+/ Test 11: setfmt rejects unknown format names
+true,0,0,q,@[log1.setfmt;`notexist;{1b}],1,,setfmt throws on unknown format
+
+/ Test 12: addfmt adds a new named format
+run,0,0,q,log1.addfmt[`compact;"$l $m"],1,,add compact format
+run,0,0,q,log1.setfmt `compact,1,,switch to custom compact format
+true,0,0,q,`compact~log1.getfmt[0],1,,getfmt returns custom format name
+run,0,0,q,log1.setfmt `basic,1,,restore to basic
+
+/ Test 13: each createlog call returns an independent instance
+before,0,0,q,log2:lg.createlog[],1,,create second logger instance
+run,0,0,q,log2.setlvl `error,1,,set log2 level to error
+true,0,0,q,`info~log1.getlvl[0],1,,log1 level unaffected by log2 setlvl
+true,0,0,q,`error~log2.getlvl[0],1,,log2 level is error independently
+
+/ Test 14: add with a function sink returns the function handle
+before,0,0,q,nosink:{[msg] 1b},1,,define a no-op function sink
+true,0,0,q,nosink~log1.add[nosink;`info],1,,add returns the registered function handle
+run,0,0,q,log1.remove[nosink;`info],1,,remove function sink from info level
+
+/ Test 15: fmtmsg plain string passes through (internal helper, tested indirectly)
+run,0,0,q,log1.info[`test;"plain string message"],1,,instance info with plain string
+run,0,0,q,log1.info[`test;("message with %s";`symbol)],1,,instance info with %s substitution
+run,0,0,q,log1.info[`test;("message with %r";"raw repr")],1,,instance info with %r substitution
+run,0,0,q,log1.info[`test;"literal 100%% complete"],1,,instance info with %% escape
+
+/ Test 16: instance trace, debug and fatal do not throw
+run,0,0,q,log1.setlvl `trace,1,,lower level to trace so trace and debug are not suppressed
+run,0,0,q,log1.trace[`test;"test trace"],1,,instance trace accepts plain string
+run,0,0,q,log1.debug[`test;"test debug"],1,,instance debug accepts plain string
+run,0,0,q,log1.fatal[`test;"test fatal"],1,,instance fatal accepts plain string
+run,0,0,q,log1.setlvl `info,1,,restore level to info
+
+/ Test 17: function sink captures formatted output
+before,0,0,q,log3:lg.createlog[],1,,create logger for sink capture test
+before,0,0,q,captured:(),1,,initialise capture buffer
+before,0,0,q,"capfn:{captured::captured,enlist x}",1,,define capture function that appends to global
+run,0,0,q,log3.add[capfn;`info],1,,add function sink to info level
+run,0,0,q,log3.info[`test;"sink test message"],1,,send message through function sink
+true,0,0,q,0<count captured,1,,function sink received output
+true,0,0,q,"any {0<count x ss ""sink test message""} each captured",1,,captured output contains the message text
+
+/ Test 18: setlvl `fatal suppresses all levels below fatal
+before,0,0,q,log4:lg.createlog[],1,,create logger for fatal-level filter test
+before,0,0,q,fcaptured:(),1,,initialise fatal capture buffer
+before,0,0,q,"ffn:{fcaptured::fcaptured,enlist x}",1,,define fatal capture function
+run,0,0,q,"log4.add[ffn;`trace`debug`info`warn`error`fatal]",1,,add sink to all levels
+run,0,0,q,log4.setlvl `fatal,1,,set level to fatal
+true,0,0,q,"()~log4.info[`test;""suppressed""]",1,,info suppressed at fatal level
+true,0,0,q,"()~log4.warn[`test;""suppressed""]",1,,warn suppressed at fatal level
+true,0,0,q,"()~log4.error[`test;""suppressed""]",1,,error suppressed at fatal level
+true,0,0,q,0=count fcaptured,1,,no messages captured below fatal level
+run,0,0,q,"log4.fatal[`test;""fatal passes through""]",1,,fatal level passes through
+true,0,0,q,0<count fcaptured,1,,fatal level message was captured
+
+/ Test 19: logdict is a dictionary pre-wrapped under a single `log` key
+true,0,0,q,99h=type lg.logdict,1,,logdict is a dictionary
+true,0,0,q,enlist[`log]~key lg.logdict,1,,logdict has a single `log key
+
+/ Test 20: logdict`log holds all six levels, a superset of the info/warn/error contract minimum
+true,0,0,q,`trace`debug`info`warn`error`fatal~key lg.logdict`log,1,,logdict log dict has all six level keys
+true,0,0,q,all `info`warn`error in key lg.logdict`log,1,,logdict satisfies the contract minimum
+
+/ Test 21: functions in logdict conform to {[ctx;msg]} contract signature
+true,0,0,q,2=sum (::)~/:1_value (lg.logdict`log)`trace,1,,logdict trace takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value (lg.logdict`log)`debug,1,,logdict debug takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value (lg.logdict`log)`info,1,,logdict info takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value (lg.logdict`log)`warn,1,,logdict warn takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value (lg.logdict`log)`error,1,,logdict error takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value (lg.logdict`log)`fatal,1,,logdict fatal takes 2 free parameters
+
+/ Test 22: logdict can be passed straight into a consumer's init unmodified
+before,0,0,q,"mockinit:{[deps] not ()~deps[`log]`info}",1,,define mock consumer init that checks log dep wiring
+true,0,0,q,mockinit[lg.logdict],1,,logdict satisfies a typical consumer init signature
+
+/ Test 23: a sink that signals an error no longer crashes the caller
+before,0,0,q,log5:lg.createlog[],1,,create logger for sink error isolation test
+before,0,0,q,"badfn:{[msg] '""boom""}",1,,define a sink that always signals an error
+run,0,0,q,log5.add[badfn;`info],1,,add the broken sink alongside the default stdout sink
+run,0,0,q,log5.info[`test;"message survives a broken sink"],1,,call must not throw despite badfn failing
+
+/ Test 24: a broken sink does not block other sinks from receiving the message
+before,0,0,q,ecaptured:(),1,,initialise capture buffer for the healthy sink
+before,0,0,q,"efn:{ecaptured::ecaptured,enlist x}",1,,define a healthy capture sink
+run,0,0,q,log5.add[efn;`info],1,,add the healthy sink alongside the still-broken badfn
+run,0,0,q,log5.info[`test;"message reaches the healthy sink"],1,,call must not throw with both sinks present
+true,0,0,q,0<count ecaptured,1,,healthy sink still received output despite badfn failing
+true,0,0,q,"any {0<count x ss ""message reaches the healthy sink""} each ecaptured",1,,healthy sink captured the correct text
+
+/ Test 25: remove with a (handle;fn) pair removes only that exact sink, not others sharing the handle
+before,0,0,q,log6:lg.createlog[],1,,create logger for pair-targeted remove test
+before,0,0,q,pcaptured1:(),1,,initialise capture buffer for first sender
+before,0,0,q,pcaptured2:(),1,,initialise capture buffer for second sender
+before,0,0,q,"pfn1:{pcaptured1::pcaptured1,enlist x}",1,,define first sender sharing handle 5i
+before,0,0,q,"pfn2:{pcaptured2::pcaptured2,enlist x}",1,,define second sender sharing handle 5i
+run,0,0,q,"log6.add[(5i;pfn1);`info]",1,,register handle 5i with first sender
+run,0,0,q,"log6.add[(5i;pfn2);`info]",1,,register same handle 5i with second sender
+run,0,0,q,"log6.remove[(5i;pfn2);`info]",1,,remove only the (5i;pfn2) pair
+run,0,0,q,log6.info[`test;"pair removal test"],1,,trigger info to exercise remaining sinks
+true,0,0,q,0<count pcaptured1,1,,sink registered with pfn1 still receives output
+true,0,0,q,0=count pcaptured2,1,,sink registered with pfn2 was removed and receives nothing
+
+/ Test 26: remove with a bare handle still removes every sink sharing that handle
+before,0,0,q,wcaptured1:(),1,,initialise first warn-level capture buffer
+before,0,0,q,wcaptured2:(),1,,initialise second warn-level capture buffer
+before,0,0,q,"wfn1:{wcaptured1::wcaptured1,enlist x}",1,,define first sender sharing handle 6i
+before,0,0,q,"wfn2:{wcaptured2::wcaptured2,enlist x}",1,,define second sender sharing handle 6i
+run,0,0,q,"log6.add[(6i;wfn1);`warn]",1,,register handle 6i with wfn1 on warn level
+run,0,0,q,"log6.add[(6i;wfn2);`warn]",1,,register same handle 6i with wfn2 on warn level
+run,0,0,q,log6.remove[6i;`warn],1,,remove by bare handle 6i - should match both entries
+run,0,0,q,log6.warn[`test;"bare handle removal test"],1,,trigger warn after removing both sinks
+true,0,0,q,0=count wcaptured1,1,,first sink removed by bare-handle match
+true,0,0,q,0=count wcaptured2,1,,second sink also removed by bare-handle match
+
+/ Test 27: instance-level functions conform to the {[ctx;msg]} log dependency contract signature
+true,0,0,q,2=sum (::)~/:1_value log1`trace,1,,instance trace takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value log1`debug,1,,instance debug takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value log1`info,1,,instance info takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value log1`warn,1,,instance warn takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value log1`error,1,,instance error takes 2 free parameters
+true,0,0,q,2=sum (::)~/:1_value log1`fatal,1,,instance fatal takes 2 free parameters
+
+/ Test 28: bare top-level level functions exist and are callable
+true,0,0,q,100h=type lg.trace,1,,trace is a function
+true,0,0,q,100h=type lg.debug,1,,debug is a function
+true,0,0,q,100h=type lg.info,1,,info is a function
+true,0,0,q,100h=type lg.warn,1,,warn is a function
+true,0,0,q,100h=type lg.error,1,,error is a function
+true,0,0,q,100h=type lg.fatal,1,,fatal is a function
+
+/ Test 29: bare top-level functions conform to the {[ctx;msg]} contract signature
+true,0,0,q,2=count (value lg.info)1,1,,info takes 2 parameters
+true,0,0,q,2=count (value lg.warn)1,1,,warn takes 2 parameters
+true,0,0,q,2=count (value lg.error)1,1,,error takes 2 parameters
+true,0,0,q,2=count (value lg.trace)1,1,,trace takes 2 parameters
+true,0,0,q,2=count (value lg.debug)1,1,,debug takes 2 parameters
+true,0,0,q,2=count (value lg.fatal)1,1,,fatal takes 2 parameters
+
+/ Test 30: bare top-level functions do not throw and can be assembled into a custom dict by hand
+run,0,0,q,lg.info[`mymodule;"bare info test message"],1,,bare info accepts symbol ctx and string msg
+before,0,0,q,logdep:`info`warn`error!(lg.info;lg.warn;lg.error),1,,build a custom log dependency dict by hand from bare functions
+true,0,0,q,`info`warn`error~key logdep,1,,hand-built logdep has the required contract keys
+
+/ Test 31: logdict has its own independent createlog instance, separate from the bare functions
+true,0,0,q,not lg.info~(lg.logdict`log)`info,1,,bare info and logdict's info are distinct implementations
+
+/ Test 32: add rejects an invalid level symbol instead of silently creating an orphaned sink key
+true,0,0,q,.[log1.add;(1i;`notalevel);{1b}],1,,add throws on an unrecognised level symbol
+true,0,0,q,.[log1.add;(1i;`info`notalevel);{1b}],1,,add throws when any level in a mixed list is invalid, not just when all are
+
+/ Test 33: remove accepts a list of levels, mirroring add, and removes the sink from each
+before,0,0,q,log7:lg.createlog[],1,,create logger for multi-level remove test
+before,0,0,q,mcaptured:(),1,,initialise capture buffer for multi-level sink
+before,0,0,q,"mfn:{mcaptured::mcaptured,enlist x}",1,,define capture sink for multi-level test
+run,0,0,q,"log7.add[mfn;`info`warn]",1,,add sink across two levels in one call
+run,0,0,q,"log7.remove[mfn;`info`warn]",1,,remove sink from both levels in one call
+run,0,0,q,log7.info[`test;"should not be captured after multi-level remove"],1,,trigger info after multi-level remove
+run,0,0,q,log7.warn[`test;"should not be captured after multi-level remove"],1,,trigger warn after multi-level remove
+true,0,0,q,0=count mcaptured,1,,sink received nothing after being removed from both levels in one call
+
+/ Test 34: remove rejects an invalid level symbol, same validation as add
+true,0,0,q,.[log1.remove;(2i;`notalevel);{1b}],1,,remove throws on an unrecognised level symbol
+true,0,0,q,.[log1.remove;(2i;`info`notalevel);{1b}],1,,remove throws when any level in a mixed list is invalid, not just when all are

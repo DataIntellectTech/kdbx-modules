@@ -1,72 +1,191 @@
-# di.util.log
+# Log
 
-A minimal stub logging provider - satisfies the `info`/`warn`/`error` dependency
-contract documented in `kdbx-modules/consistency.md` (a dict with three functions,
-each `{[ctx;msg] ...}`).
-
-This is a placeholder. The TorQ Modularisation Plan lists a real `di.util.log` (wrapping
-`kx.log`) as Sprint 1 work; this stub exists so every other module that depends on
-logging - which is nearly all of them - has something real to inject today, without
-waiting on that work. Swap it out later: any module built against the DI contract
-doesn't need to change, only whatever builds the `log` dependency dict (`di.torq`'s
-`buildlogdep`) needs to point at the new module name instead.
-
-## Design
-
-```q
-fmt:{[level;ctx;msg] (string .z.p)," ",(upper string level)," ",(string ctx)," ",msg}
-info:{[ctx;msg] -1 fmt[`info;ctx;msg]; }
-warn:{[ctx;msg] -1 fmt[`warn;ctx;msg]; }
-error:{[ctx;msg] -2 fmt[`error;ctx;msg]; }
-```
-
-Every message is `<timestamp> <LEVEL> <ctx> <msg>`. `info`/`warn` write to stdout
-(`-1`), `error` writes to stderr (`-2`) - the same out/err split legacy TorQ's own
-`.lg.o`/`.lg.e` make (torq-developer skill, Rule L2), so existing log-watching habits
-and tooling still work. `fmt` itself is not exported - only the three level functions
-are part of the public contract; nothing outside this module should need to build a
-log line itself.
-
-## Dependency
-
-None. `di.util.log` is Tier 1 / standalone - it's the thing other modules depend *on*, not
-a consumer of anything else.
+`log.q` is the default logging implementation for `di.*` modules. It writes formatted lines to
+stdout and satisfies the log dependency contract expected by modules such as `di.email`. It also
+provides `createlog`, a factory for rich structured logger instances with level filtering,
+multiple output sinks, and configurable format templates.
 
 ## Usage
 
 ```q
-q)lg:use`di.util.log
-q)lg.info[`hdb;"mounting hdb"]
-2026.07.09D12:37:56.931480000 INFO hdb mounting hdb
-q)lg.warn[`servers;"failed to open connection"]
-2026.07.09D12:37:56.931538000 WARN servers failed to open connection
-q)lg.error[`loader;"boom"]
-2026.07.09D12:37:56.931547000 ERROR loader boom
+logger:use`di.util.log
+logger.trace[`mymodule;"entering function"]
+logger.debug[`mymodule;"value is 42"]
+logger.info[`mymodule;"starting up"]
+logger.warn[`mymodule;"disk usage above 80%"]
+logger.error[`mymodule;"connection failed"]
+logger.fatal[`mymodule;"unrecoverable error, shutting down"]
 ```
 
-In practice nothing calls `di.util.log` directly like this - `di.torq`'s `buildlogdep`
-builds the `log` dependency dict (`` `info`warn`error!(lg`info;lg`warn;lg`error) ``)
-once per process and passes it down through `init[config;deps]` to every module that
-needs it.
+Output format:
 
-`ctx` is conventionally the calling module's own name as a symbol (`` `hdb ``,
-`` `servers ``, ...), not the log level or anything about the call site - it exists so
-a human reading a log file (or a future real `di.util.log` filtering by it) can tell which
-module a line came from.
+```
+2026-04-09T12:00:00.000000000 [TRACE] [mymodule] entering function
+2026-04-09T12:00:00.001000000 [DEBUG] [mymodule] value is 42
+2026-04-09T12:00:00.002000000 [INFO] [mymodule] starting up
+2026-04-09T12:00:00.003000000 [WARN] [mymodule] disk usage above 80%
+2026-04-09T12:00:00.004000000 [ERROR] [mymodule] connection failed
+2026-04-09T12:00:00.005000000 [FATAL] [mymodule] unrecoverable error, shutting down
+```
 
-## Known gaps (stub, not the real di.util.log)
+## Injecting into other modules
 
-- No log levels / filtering - every call always prints, there's no `-loglevel` guard.
-- No file output - stdout/stderr only, no `out_`/`err_` file convention yet.
-- No JSON format, no `.lg.ext`-style extension hook (torq-developer skill, Rules L3/L4).
-- No in-memory `logmsg` table or pub/sub publishing of log lines (Rule L2).
+All `di.*` modules that accept a log dependency expect a dictionary with keys `` `info`warn`error ``, each a function with signature `{[ctx;msg]}`.
 
-All deferred to whenever the real `di.util.log` (Sprint 1 of the modularisation plan) lands.
+```q
+logger:use`di.util.log
+logdep:`info`warn`error!(logger.info;logger.warn;logger.error)
+
+email:use`di.email
+email.init[enlist[`log]!enlist logdep]
+```
+
+You can extend the injected dictionary with `trace`, `debug`, and `fatal` for modules that support them:
+
+```q
+logdep:`trace`debug`info`warn`error`fatal!(logger.trace;logger.debug;logger.info;logger.warn;logger.error;logger.fatal)
+```
+
+`di.util.log` has no dependencies of its own, so there's no `init` to call on it first — use
+`logdict` to skip building the dict by hand. It's the dependency already wrapped as
+`` `log!enlist logdict ``, ready to pass straight into any `di.*` module's `init`:
+
+```q
+mylog:use`di.util.log
+email:use`di.email
+email.init[mylog.logdict]
+```
+
+## createlog
+
+`createlog` is a factory that returns an independent logger instance with level filtering, multiple output sinks, and configurable format templates. Each call to `createlog` produces a separate instance with its own state.
+
+Instance-level functions (`trace`..`fatal`) take the same `{[ctx;msg]}` signature as the plain top-level functions, so an instance satisfies the log dependency contract directly. None of the built-in format templates have a slot for `ctx`, so it's folded into the message text as `[ctx] msg`.
+
+```q
+logger:use`di.util.log
+mylog:logger.createlog[]
+
+mylog.setlvl `warn                                  / suppress trace, debug, info
+mylog.info[`mymodule;"this is suppressed"]          / returns () silently
+mylog.warn[`mymodule;"this appears"]
+
+mylog.setfmt `syslog                      / switch to syslog format
+mylog.addfmt[`compact;"$l $m"]           / add a custom format
+mylog.setfmt `compact
+
+mylog.add[2i;`error`fatal]               / add stderr sink for error and fatal
+mylog.remove[1i;`trace]                  / remove stdout from trace level
+```
+
+### Sinks
+
+A sink is a handle (integer file descriptor or function) passed to `add`. If a function is provided it is called with the formatted line string. Built-in handles follow standard q conventions: `1i` is stdout, `2i` is stderr. Since a sink can be any open handle, `hopen` a real file to log to disk:
+
+```q
+fh:hopen`:/path/to/app.log
+mylog.add[fh;lvls]              / route every level to the file
+mylog.remove[1i;lvls]           / optionally drop the default stdout sink
+mylog.info[`mymodule;"this now goes to app.log"]
+```
+
+Or use a plain function sink to capture output in memory:
+
+```q
+buf:();
+capture:{[msg] buf,:enlist msg};         / function sink - captures output
+mylog.add[capture;`info`warn`error]
+mylog.info[`mymodule;"captured"]
+buf                                      / ("2026-...captured\n")
+mylog.remove[capture;`info]
+```
+
+### Format templates
+
+Three built-in formats are available:
+
+| Name | Template | Example output |
+|---|---|---|
+| `basic` (default) | `$p $l PID[$i] HOST[$h] $m` | `2026-04-09T12:00:00.000000000 INFO PID[1234] HOST[myhost] message` |
+| `syslog` | `<$s> $m` | `<6> message` |
+| `raw` | `$m` | `message` |
+
+Template variables: `$p` timestamp, `$l` level, `$i` PID, `$h` hostname, `$m` message, `$s` syslog severity number.
+
+## API
+
+### `trace`
+Parameters: `[ctx; msg]`
+
+Write a trace-level message to stdout.
+
+- `ctx` — symbol context tag (e.g. `` `mymodule ``)
+- `msg` — string message
+
+### `debug`
+Parameters: `[ctx; msg]`
+
+Write a debug-level message to stdout.
+
+### `info`
+Parameters: `[ctx; msg]`
+
+Write an info-level message to stdout.
+
+### `warn`
+Parameters: `[ctx; msg]`
+
+Write a warning-level message to stdout.
+
+### `error`
+Parameters: `[ctx; msg]`
+
+Write an error-level message to stdout.
+
+### `fatal`
+Parameters: `[ctx; msg]`
+
+Write a fatal-level message to stdout.
+
+### `logdict`
+A dictionary, not a function.
+
+`` `log!enlist(`trace`debug`info`warn`error`fatal!(...))`` — the log dependency dict pre-wrapped
+exactly as any `di.*` module's `init` expects `deps`, so it can be passed straight through
+without building it by hand. It includes all six levels, a superset of the `info`/`warn`/`error`
+contract minimum, since the underlying `createlog[]` instance computes them anyway — a module
+that supports the optional extended levels gets them for free. Backed by its own independent
+`createlog[]` instance, separate from the plain `trace`..`fatal` functions above.
+
+### `createlog`
+Parameters: none
+
+Returns an independent logger instance as a dictionary of functions. Each call returns a new instance with isolated state.
+
+Returned keys: `` `trace`debug`info`warn`error`fatal`add`remove`setfmt`getfmt`addfmt`setlvl`getlvl ``
+
+| Function | Parameters | Description |
+|---|---|---|
+| `trace`..`fatal` | `[ctx;msg]` | Write a message at the given level (filtered by active level) |
+| `setlvl` | `[lvl]` | Set minimum level; one of `` `trace`debug`info`warn`error`fatal `` |
+| `getlvl` | `[_]` | Return current minimum level |
+| `setfmt` | `[name]` | Switch to a named format template |
+| `getfmt` | `[_]` | Return current format name |
+| `addfmt` | `[name;template]` | Register a new named format template |
+| `add` | `[handle;lvls]` | Add a sink for one or more levels; returns the handle |
+| `remove` | `[handle;lvl]` | Remove a sink from a level. `handle` may be a bare handle (removes every sink registered with it) or a `(handle;fn)` pair matching what was passed to `add` (removes only that exact sink) |
+
+## Log dependency contract
+
+The log dependency contract used across `di.*` modules requires a dictionary:
+
+```q
+`info`warn`error!({[ctx;msg] ...};{[ctx;msg] ...};{[ctx;msg] ...})
+```
+
+`di.util.log` satisfies this contract. You can also supply any custom implementation with the same signatures.
 
 ## Testing
-
-`test.csv` (k4unit) confirms each level function doesn't throw, including with a null
-`ctx` and an empty message. Run with:
 
 ```q
 q)k4unit:use`di.k4unit

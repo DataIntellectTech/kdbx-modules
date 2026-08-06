@@ -38,6 +38,11 @@ true,0,0,q,not perms.status[][`enabled],1,1,status reports the module as disable
 comment,,,,,,,module metadata
 true,0,0,q,10h=type perms.version,1,1,version is a string
 true,0,0,q,0<count perms.version,1,1,version is non-empty
+comment,,,,,,,version is read from the VERSION file not a q literal - and STAYS exported because
+comment,,,,,,,di.depcheck reads it from the export dict and fails the dep check if a module drops it
+true,0,0,q,`version in key perms,1,1,version is still an export - di.depcheck checkdepversion reads it there
+true,0,0,q,3=count "." vs perms.version,1,1,the VERSION file holds a major.minor.patch string di.depcheck can parse
+true,0,0,q,not any perms.version in "\n\r",1,1,no stray newline came through from the file
 true,0,0,q,"(asc (key perms) except `init`getapimeta)~asc exec name from perms.getapimeta[] where not name like ""admin.*""",1,1,getapimeta documents exactly the callable exports (admin.* sub rows excluded)
 true,0,0,q,not any `init`getapimeta in exec name from perms.getapimeta[],1,1,framework plumbing is not registered in the api
 true,0,0,q,`name`public`descrip`params`return~cols perms.getapimeta[],1,1,getapimeta rows carry the registry columns
@@ -118,6 +123,40 @@ run,0,0,q,perms.init[`enabled`readonly!(1b;0b);deps],1,1,read only off
 true,0,0,q,not perms.status[][`readonly],1,1,status reports read only off
 run,0,0,q,perms.init[`enabled`readonly!(1b;1b);deps],1,1,read only on without restarting
 true,0,0,q,perms.status[][`readonly],1,1,status reports read only on - the flag is runtime not load time
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore read only off
+
+comment,,,,,,,readonly must not break parse tree queries - the h(`func;arg) IPC idiom
+comment,,,,,,,"TorQ valp is $[readonly;{reval parse x};value] and parse throws 'type on a list, so"
+comment,,,,,,,every symbol or lambda headed parse tree threw under readonly - rbac.exe routes both here
+run,0,0,q,.pt.rofn:{[a] 100+a},1,1,a named root function to call by parse tree
+run,0,0,q,"perms.admin.addrole[`rro;""readonly parse tree probe""]",1,1,a role for the probe
+run,0,0,q,perms.admin.grantfunction[perms.admin.wildcard;`rro;{1b}],1,1,superuser grant so the check passes and evaluation is actually reached
+run,0,0,q,"perms.admin.adduser[`uro;`local;`md5;md5 ""x""]",1,1,the probe user
+run,0,0,q,perms.admin.assignrole[`uro;`rro],1,1,assign the role
+true,0,0,q,101=perms.requ[`uro;(`.pt.rofn;1)],1,1,readonly off - a symbol headed parse tree evaluates
+run,0,0,q,perms.init[`enabled`readonly!(1b;1b);deps],1,1,turn read only on
+true,0,0,q,101=perms.requ[`uro;(`.pt.rofn;1)],1,1,readonly on - the same parse tree still evaluates rather than throwing type
+true,0,0,q,101=perms.valp (`.pt.rofn;1),1,1,valp takes a parse tree directly under readonly - parse is applied only to strings
+true,0,0,q,"101=perms.valp "".pt.rofn 1""",1,1,valp still parses a string under readonly
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore read only off
+true,0,0,q,101=perms.requ[`uro;(`.pt.rofn;1)],1,1,and the two readonly states agree on the same query
+
+comment,,,,,,,readonly must never be MORE permissive than readonly off - symbol argument resolution
+comment,,,,,,,"valp under readonly must keep value semantics (head resolved, arguments NOT). handing a"
+comment,,,,,,,tree to reval directly uses EVAL semantics which resolve a symbol argument to its variable
+comment,,,,,,,so (`echo;`secret) would return a table the caller has no grant on - only the head is checked
+run,0,0,q,.pt.leaktab:([]card:`4111`4222),1,1,a table the low privilege user has no grant on - NB its own fixture not the shared .pt.secret
+run,0,0,q,.pt.leakecho:{[a] a},1,1,an identity function that would return whatever it is handed
+run,0,0,q,"perms.admin.addrole[`rlow;""low privilege""]",1,1,a low privilege role
+run,0,0,q,perms.admin.grantfunction[`.pt.leakecho;`rlow;{1b}],1,1,granted ONLY .pt.leakecho - no table access whatsoever
+run,0,0,q,"perms.admin.adduser[`ulow;`local;`md5;md5 ""m""]",1,1,the low privilege user
+run,0,0,q,perms.admin.assignrole[`ulow;`rlow],1,1,assign the role
+fail,0,0,q,"perms.requ[`ulow;""select from .pt.leaktab""]",1,1,a direct read of the table is refused
+fail,0,0,q,"perms.requ[`ulow;"".pt.leaktab""]",1,1,and so is a bare reference to it
+true,0,0,q,`.pt.leaktab~perms.requ[`ulow;(`.pt.leakecho;`.pt.leaktab)],1,1,readonly off - the symbol argument comes back unresolved
+run,0,0,q,perms.init[`enabled`readonly!(1b;1b);deps],1,1,turn read only on
+true,0,0,q,`.pt.leaktab~perms.requ[`ulow;(`.pt.leakecho;`.pt.leaktab)],1,1,readonly on - STILL unresolved; eval semantics here would leak the whole table
+fail,0,0,q,"perms.requ[`ulow;""select from .pt.leaktab""]",1,1,and the direct read is still refused under readonly
 run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore read only off
 
 comment,,,,,,,authentication - the -public flag bug fix
@@ -225,6 +264,26 @@ run,0,0,q,perms.admin.addtogroup[`orig;`g3],1,1,and its group
 run,0,0,q,"perms.admin.cloneuser[`orig;`copy;""secret""]",1,1,clone it
 true,0,0,q,"perms.allowed[`copy;""select from .pt.trade""]",1,1,the clone inherits role and group access
 fail,0,0,q,"perms.admin.cloneuser[`ghost;`copy2;""x""]",1,1,cloning an unknown user is refused
+comment,,,,,,,"cloneuser password hashing - TorQ evaluates ""md5 string `"",p which breaks on a space or backtick"
+comment,,,,,,,each clone authenticates with its exact password - proving the STORED HASH is right
+run,0,0,q,"perms.admin.cloneuser[`orig;`copysp;""pass word""]",1,1,clone with a password containing a space
+true,0,0,q,"perms.allowed[`copysp;""select from .pt.trade""]",1,1,that clone inherits access too
+true,0,0,q,".pt.pw[`copysp;""pass word""]",1,1,the clone authenticates with the exact space bearing password - the stored hash is right
+true,0,0,q,"not .pt.pw[`copysp;""pass""]",1,1,and a truncated password is refused - the whole string was hashed not just the first word
+run,0,0,q,"perms.admin.cloneuser[`orig;`copybt;""a`b""]",1,1,clone with a password containing a backtick
+true,0,0,q,".pt.pw[`copybt;""a`b""]",1,1,a backtick password hashes and authenticates rather than throwing type
+run,0,0,q,"perms.admin.adduser[`shauser;`local;`sha1;""deadbeef""]",1,1,a user with an unsupported hashtype
+fail,0,0,q,"perms.admin.cloneuser[`shauser;`shacopy;""x""]",1,1,cloning an unsupported hashtype is refused rather than silently mis-hashing
+comment,,,,,,,"=== EVERY admin entry point validates its arguments through raiseerror, not a raw q error ==="
+comment,,,,,,,a raw 'type from a downstream upsert bypasses the log entirely - no audit trail of who sent what
+comment,,,,,,,this asserts the whole surface at once so a newly added admin function cannot quietly skip it
+run,0,0,q,".pt.pfx:{[f] r:@[f;::;{x}]; $[10h=type r;0<count r ss ""di.permissions:"";0b]}",1,1,helper - did the call raise a module prefixed error
+run,0,0,q,".pt.bad:({perms.admin.removeuser[""u""]};{perms.admin.removegroup[""g""]};{perms.admin.removerole[""r""]};{perms.admin.removefromgroup[""u"";""g""]};{perms.admin.unassignrole[""u"";""r""]};{perms.admin.addfunction[""f"";""g""]};{perms.admin.removefunction[""f"";""g""]};{perms.admin.revokeaccess[""t"";""g"";""read""]};{perms.admin.revokefunction[""o"";""r""]};{perms.admin.createvirtualtable[""v"";`t;()]};{perms.admin.removevirtualtable[""v""]};{perms.admin.addpublic[""u"";1i]};{perms.admin.removepublic[""u""]};{perms.admin.addtogroup[""u"";`g]};{perms.admin.assignrole[""u"";`r]};{perms.admin.cloneuser[`orig;`nc;`notastring]})",1,1,one wrong typed call per entry point that previously leaked a raw error
+true,0,0,q,16=count .pt.bad,1,1,all sixteen previously unguarded entry points are covered
+true,0,0,q,all .pt.pfx each .pt.bad,1,1,every one raises a module prefixed error rather than a bare type or length
+run,0,0,q,.pt.nerr:count select from .pt.cap where lvl=`error,1,1,error log count before
+run,0,0,q,"@[{perms.admin.removeuser[""u""]};(::);{x}]",1,1,drive one rejection
+true,0,0,q,.pt.nerr<count select from .pt.cap where lvl=`error,1,1,and the rejection reached the injected logger - it is not only thrown
 comment,,,,,,,lambda expressions - the lamq path was previously untested
 run,0,0,q,.pt.pubtab:([]a:1 2),1,1,a readable table
 run,0,0,q,perms.admin.grantaccess[`.pt.pubtab;`inner;`read],1,1,grant read on it to alices group
@@ -493,4 +552,39 @@ true,0,0,q,0=.pt.se,1,1,and checking it did NOT evaluate it
 run,0,0,q,perms.admin.grantaccess[`.pt.myview;`inner;`read],1,1,grant read on the view
 true,0,0,q,"perms.allowed[`alice;""{count .pt.myview}[]""]",1,1,a granted view is permitted
 true,0,0,q,0=.pt.se,1,1,and checking it still did not evaluate it
+
+comment,,,,,,,"=== a select is checked on its WHERE, BY and COLUMNS clauses, not only its target table ==="
+comment,,,,,,,alice may read .pt.trade and may NOT read .pt.secret. without this check a columns
+comment,,,,,,,expression naming .pt.secret executes and returns its data - measured leaking a real value
+comment,,,,,,,TorQs query function checks nothing but first q[1] so this gap is inherited not introduced
+comment,,,,,,,the predicate is rbac.isdefinedvar - the same one a bare reference and lamq use - minus the
+comment,,,,,,,target tables own column names; see the block further down that asserts both halves of that
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+true,0,0,q,"0<count perms.requ[`alice;""select from .pt.trade""]",1,1,the ordinary permitted read still works
+fail,0,0,q,"perms.requ[`alice;""select p:count .pt.secret from .pt.trade""]",1,1,a columns expression naming an ungranted table is refused
+fail,0,0,q,"perms.requ[`alice;""select p:first .pt.secret`k from .pt.trade""]",1,1,and so is one extracting an actual value from it
+fail,0,0,q,"perms.requ[`alice;""select from .pt.trade where sym in exec k from .pt.secret""]",1,1,a where clause naming an ungranted table is refused
+true,0,0,q,"not perms.allowed[`alice;""select p:count .pt.secret from .pt.trade""]",1,1,allowed agrees with requ - it returned 1b before this check existed
+fail,0,0,q,"perms.requ[`alice;""update x:count .pt.secret from `.pt.trade""]",1,1,the update and delete branch is checked too
+comment,,,,,,,ordinary queries must NOT be over-blocked by the clause check
+true,0,0,q,"0<count perms.requ[`alice;""select sym from .pt.trade""]",1,1,naming a column is fine
+true,0,0,q,"0<=count perms.requ[`alice;""select from .pt.trade where sym=`a""]",1,1,a where clause on the tables own columns is fine
+true,0,0,q,"0<count perms.requ[`alice;""select count i by sym from .pt.trade""]",1,1,a by clause on the tables own columns is fine
+comment,,,,,,,the clause check uses the SAME predicate as a bare reference (rbac.isdefinedvar) so a
+comment,,,,,,,"non-table global cannot be read through a clause when a bare reference to it is refused."
+comment,,,,,,,before this the check was tables-only and a plain VECTOR leaked its contents through a clause
+run,0,0,q,.pt.secretvec:1234 5678,1,1,a plain vector global - not a table - with no grant
+run,0,0,q,.pt.secretdict:`pin`cvv!1234 999,1,1,a plain dict global with no grant
+fail,0,0,q,"perms.requ[`alice;"".pt.secretvec""]",1,1,a bare reference to the vector is refused
+fail,0,0,q,"perms.requ[`alice;""select p:first .pt.secretvec from .pt.trade""]",1,1,and a columns clause referencing it is refused too - the two paths agree
+fail,0,0,q,"perms.requ[`alice;""select from .pt.trade where sym in .pt.secretvec""]",1,1,and a where clause referencing it
+fail,0,0,q,"perms.requ[`alice;""select p:.pt.secretdict`pin from .pt.trade""]",1,1,a plain dict in a clause is refused as well
+comment,,,,,,,"the target tables own COLUMN names are excluded first - inside a select such a symbol"
+comment,,,,,,,denotes the column not a same named global; without this the wider predicate denies normal queries
+run,0,0,q,.pt.colltab:([]zz:1 2),1,1,a table with a distinctively named column
+run,0,0,q,zz:`acollidingglobal,1,1,a ROOT GLOBAL with the same name as that column and no grant
+run,0,0,q,perms.admin.grantaccess[`.pt.colltab;`inner;`read],1,1,grant alice read on the table
+true,0,0,q,"0<count perms.requ[`alice;""select zz from .pt.colltab""]",1,1,the column wins over the same named global - no false denial
+comment,,,,,,,NB the virtual table splice is asserted earlier in this suite and still passes with the
+comment,,,,,,,clause check active - that is the regression proof; .pt.vtrade is deliberately revoked by now
 run,0,0,q,perms.teardown[],1,1,leave clean

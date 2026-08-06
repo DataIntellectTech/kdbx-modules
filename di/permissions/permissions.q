@@ -3,8 +3,8 @@
 / and code/common/execas.q; controlaccess.q's tiered engine is deliberately deferred (see the engine
 / config key, which ships from v1 so the tiered engine can land later without reshaping this schema)
 
-/ module version - placeholder only; no project-wide version / di.depcheck convention exists yet
-version:"0.1.0";
+/ NB: the module version is NOT defined here - it is read from the VERSION file in init.q, so a
+/ release bump touches one plain-text file rather than a q string literal
 
 / ============================================================
 / constants (load-time)
@@ -81,7 +81,7 @@ configdefaults:`enabled`engine`maxsize`runmode`permissivemode`readonly`public`ig
 / every ldap setting is read from .z.m.config at call time (one storage location, no bare-name
 / ambiguity) - including by the default ldapbuilddn below, which is why it is explicit about it
 ldapconfigdefaults:`ldapenabled`ldaplibpath`ldapdebug`ldapservers`ldapversion`ldapblocktime`ldapchecklimit`ldapchecktime`ldapbuilddnsuf`ldapbuilddn!
-  (0b;"";0i;enlist `$"ldap://localhost:0";3;0D00:30:00;3;0D00:05;"";{"uid=",string[x],",",.z.m.config`ldapbuilddnsuf});
+  (0b;"";0b;enlist `$"ldap://localhost:0";3;0D00:30:00;3;0D00:05;"";{"uid=",string[x],",",.z.m.config`ldapbuilddnsuf});
 
 / ============================================================
 / internal helpers
@@ -93,6 +93,18 @@ requiresym:{[ctx;nm;x]
   / unlogged, and with no indication which argument was wrong
   if[-11h<>type x;
     raiseerror[ctx;nm," must be a symbol, got ",.Q.s1 type x]];
+  };
+
+requirestring:{[ctx;nm;x]
+  / validate a public-api argument that must be a string (char vector)
+  if[10h<>type x;
+    raiseerror[ctx;nm," must be a string, got ",.Q.s1 type x]];
+  };
+
+requireint:{[ctx;nm;x]
+  / validate a public-api argument that must be an integer handle
+  if[not type[x] in -6 -7h;
+    raiseerror[ctx;nm," must be an integer, got ",.Q.s1 type x]];
   };
 
 requirequery:{[ctx;q]
@@ -130,15 +142,19 @@ validatedeps:{[deps]
     '"di.permissions: deps must be a dict with `log and `handlers keys - see di.log, di.handlers"];
   if[not all `log`handlers in key deps;
     '"di.permissions: log and handlers dependencies are required; pass `log (`info`warn`error) ",
-      "and `handlers (`register`remove`list) - see di.log, di.handlers; got: ",(", " sv string key deps)];
+      "and `handlers (`register`remove) - see di.log, di.handlers; got: ",(", " sv string key deps)];
   if[99h<>type deps`log;
     '"di.permissions: log value must be a dict; pass `info`warn`error functions - see di.log"];
   if[not all `info`warn`error in key deps`log;
     '"di.permissions: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
   if[99h<>type deps`handlers;
-    '"di.permissions: handlers value must be a dict; pass `register`remove`list functions - see di.handlers"];
-  if[not all `register`remove`list in key deps`handlers;
-    '"di.permissions: handlers dict must have `register`remove`list keys; got: ",(", " sv string key deps`handlers)];
+    '"di.permissions: handlers value must be a dict; pass `register`remove functions - see di.handlers"];
+  / only `register`remove are required - this module never calls `list (nor `version). requiring a key
+  / the code path does not exercise is friction with no safety payoff. NB this is unrelated to
+  / di.depcheck's handlers contract, which checks that di.handlers EXPORTS register/remove/list -
+  / a statement about the provider's export dict, not about any consumer's injected-deps dict
+  if[not all `register`remove in key deps`handlers;
+    '"di.permissions: handlers dict must have `register`remove keys; got: ",(", " sv string key deps`handlers)];
   / ldapbind is OPTIONAL - when supplied it replaces the native bind entirely (see ldap.bind)
   if[`ldapbind in key deps;
     if[not type[deps`ldapbind] within 100 112h;
@@ -161,8 +177,9 @@ resolveconfig:{[config]
 / rather than surfacing later as a confusing runtime error far from its cause
 / engine is deliberately absent - validateengine gives a better message for it
 / ignorelist and grantdirs are deliberately absent - both accept several shapes and are normalised
-boolconfigkeys:`enabled`readonly`permissivemode`runmode`public`ldapenabled`publishroot;
-intconfigkeys:`maxsize`ldapversion`ldapchecklimit`ldapdebug;
+/ ldapdebug is a bare on/off flag, not a level - ldap.debuglog reads it as `if[...]`, nothing grades it
+boolconfigkeys:`enabled`readonly`permissivemode`runmode`public`ldapenabled`publishroot`ldapdebug;
+intconfigkeys:`maxsize`ldapversion`ldapchecklimit;
 symconfigkeys:`proctype`procname;
 strconfigkeys:`ldaplibpath`ldapbuilddnsuf;
 spanconfigkeys:`ldapblocktime`ldapchecktime;
@@ -230,7 +247,6 @@ init:{[config;deps]
   .z.m.logerr:(deps`log)`error;
   .z.m.register:(deps`handlers)`register;
   .z.m.removehandler:(deps`handlers)`remove;
-  .z.m.listhandlers:(deps`handlers)`list;
   cfg:resolveconfig[config];
   validateconfig[cfg];
   validateengine[cfg`engine];
@@ -299,6 +315,7 @@ admin.adduser:{[u;authtype;hashtype;password]
 
 admin.removeuser:{[u]
   requireinit[`removeuser];
+  requiresym[`removeuser;"user id";u];
   .z.m.user:.[.z.m.user;();_;u];
   };
 
@@ -311,6 +328,7 @@ admin.addgroup:{[n;d]
 
 admin.removegroup:{[n]
   requireinit[`removegroup];
+  requiresym[`removegroup;"group name";n];
   .z.m.groupinfo:.[.z.m.groupinfo;();_;n];
   };
 
@@ -322,12 +340,15 @@ admin.addrole:{[n;d]
 
 admin.removerole:{[n]
   requireinit[`removerole];
+  requiresym[`removerole;"role name";n];
   .z.m.roleinfo:.[.z.m.roleinfo;();_;n];
   };
 
 admin.addtogroup:{[u;g]
   / add a user to a group, giving them the group's table-level access
   requireinit[`addtogroup];
+  requiresym[`addtogroup;"user";u];
+  requiresym[`addtogroup;"group name";g];
   if[not g in key .z.m.groupinfo;raiseerror[`addtogroup;"no such group, call admin.addgroup first: ",string g]];
   / NB: upsert, not join. TorQ writes `usergroup,:(u;g)`, whose amend-in-place semantics insert a row;
   / the explicit `.z.m.x:.z.m.x,(...)` rewrite this module needs is NOT equivalent - on an empty table
@@ -337,29 +358,39 @@ admin.addtogroup:{[u;g]
 
 admin.removefromgroup:{[u;g]
   requireinit[`removefromgroup];
+  requiresym[`removefromgroup;"user";u];
+  requiresym[`removefromgroup;"group name";g];
   if[(u;g) in .z.m.usergroup;.z.m.usergroup:.[.z.m.usergroup;();_;.z.m.usergroup?(u;g)]];
   };
 
 admin.assignrole:{[u;r]
   / assign a user a role, giving them the role's function-level access
   requireinit[`assignrole];
+  requiresym[`assignrole;"user";u];
+  requiresym[`assignrole;"role";r];
   if[not r in key .z.m.roleinfo;raiseerror[`assignrole;"no such role, call admin.addrole first: ",string r]];
   if[not (u;r) in .z.m.userrole;.z.m.userrole:.z.m.userrole upsert (u;r)];
   };
 
 admin.unassignrole:{[u;r]
   requireinit[`unassignrole];
+  requiresym[`unassignrole;"user";u];
+  requiresym[`unassignrole;"role";r];
   if[(u;r) in .z.m.userrole;.z.m.userrole:.[.z.m.userrole;();_;.z.m.userrole?(u;r)]];
   };
 
 admin.addfunction:{[f;g]
   / put a function into a function group, so a grant against the group covers it
   requireinit[`addfunction];
+  requiresym[`addfunction;"function";f];
+  requiresym[`addfunction;"function group";g];
   if[not (f;g) in .z.m.functiongroup;.z.m.functiongroup:.z.m.functiongroup upsert (f;g)];
   };
 
 admin.removefunction:{[f;g]
   requireinit[`removefunction];
+  requiresym[`removefunction;"function";f];
+  requiresym[`removefunction;"function group";g];
   if[(f;g) in .z.m.functiongroup;.z.m.functiongroup:.[.z.m.functiongroup;();_;.z.m.functiongroup?(f;g)]];
   };
 
@@ -379,6 +410,9 @@ admin.grantaccess:{[o;e;l]
 
 admin.revokeaccess:{[o;e;l]
   requireinit[`revokeaccess];
+  requiresym[`revokeaccess;"object";o];
+  requiresym[`revokeaccess;"entity";e];
+  requiresym[`revokeaccess;"level";l];
   if[(o;e;l) in .z.m.access;.z.m.access:.[.z.m.access;();_;.z.m.access?(o;e;l)]];
   };
 
@@ -393,6 +427,8 @@ admin.grantfunction:{[o;r;p]
 
 admin.revokefunction:{[o;r]
   requireinit[`revokefunction];
+  requiresym[`revokefunction;"object";o];
+  requiresym[`revokefunction;"role";r];
   t:`object`role#.z.m.function;
   if[(o;r) in t;.z.m.function:.[.z.m.function;();_;t?(o;r)]];
   };
@@ -400,31 +436,45 @@ admin.revokefunction:{[o;r]
 admin.createvirtualtable:{[n;t;w]
   / expose a named view of a table with an implicit where-clause spliced into any select against it
   requireinit[`createvirtualtable];
+  requiresym[`createvirtualtable;"name";n];
+  requiresym[`createvirtualtable;"table";t];
   if[not n in key .z.m.virtualtable;.z.m.virtualtable:.z.m.virtualtable upsert (n;t;w)];
   };
 
 admin.removevirtualtable:{[n]
   requireinit[`removevirtualtable];
+  requiresym[`removevirtualtable;"name";n];
   if[n in key .z.m.virtualtable;.z.m.virtualtable:.[.z.m.virtualtable;();_;n]];
   };
 
 admin.addpublic:{[u;w]
   / track an auto-provisioned anonymous user against the handle that created it
   requireinit[`addpublic];
+  requiresym[`addpublic;"user";u];
+  requireint[`addpublic;"handle";w];
   .z.m.publictrack:.z.m.publictrack upsert (u;w);
   };
 
 admin.removepublic:{[u]
   requireinit[`removepublic];
+  requiresym[`removepublic;"user";u];
   .z.m.publictrack:.[.z.m.publictrack;();_;u];
   };
 
 admin.cloneuser:{[u;unew;p]
   / copy a user's auth method plus group and role membership onto a new user id
   requireinit[`cloneuser];
+  requiresym[`cloneuser;"source user";u];
+  requiresym[`cloneuser;"new user id";unew];
+  requirestring[`cloneuser;"password";p];
   if[not u in key .z.m.user;raiseerror[`cloneuser;"no such user to clone: ",string u]];
   ul:raze exec authtype,hashtype from .z.m.user where id=u;
-  admin.adduser[unew;ul 0;ul 1;value (string ul 1)," string `",p];
+  / NB: hash directly. TorQ builds the string (string hashtype)," string `",p and EVALUATES it, which
+  / throws on any password containing a space ('word) or a backtick ('type), and evaluates
+  / caller-supplied text in an auth path. md5 p is identical for a well-formed password and total
+  if[not `md5~ul 1;
+    raiseerror[`cloneuser;"cannot clone user with unsupported hashtype ",string[ul 1],"; only md5 is supported"]];
+  admin.adduser[unew;ul 0;ul 1;md5 p];
   admin.addtogroup[unew;] each exec groupname from .z.m.usergroup where user=u;
   admin.assignrole[unew;] each exec role from .z.m.userrole where user=u;
   };
@@ -494,9 +544,54 @@ rbac.qexe:{[x]
 
 rbac.exe:{[x]
   / evaluate an expression, choosing parse-tree vs string evaluation by the head's type
+  / NB: only heads of type 102/103/105-112 (operators, iterators, compositions) reach val - a symbol
+  / head is 11h and a lambda head is 100h, so both fall through to valp, as does a string. that is
+  / fine because valp handles all three shapes; it did NOT before the parse guard was added there
   v:$[(104<>a)&100<a:abs type first x;val;valp]x;
   if[.z.m.maxsize<-22!v;raiseerror[`exe;err[`size][]]];
   :v;
+  };
+
+rbac.symsin:{[x]
+  / every symbol appearing anywhere in a parse-tree fragment
+  / NB only general lists (0h) and dicts (99h) recurse - recursing into an atom would not terminate,
+  / and a functional select tree holds resolved FUNCTION VALUES, so lamq's stringify-and-tokenise
+  / approach cannot be reused here (`string` throws on them)
+  t:type x;
+  :$[-11h=t;enlist x;
+     11h=t;x;
+     0h=t;raze .z.s each x;
+     99h=t;raze .z.s each (key x;value x);
+     `$()];
+  };
+
+rbac.checkclauses:{[u;q;b;pr]
+  / a select is permission-checked on its TARGET table only, but its where, by and columns clauses can
+  / name OTHER objects: `select p:first secretvec from open` returned secretvec's contents to a user
+  / with no grant on it, even though the identical BARE reference is refused. TorQ has the same gap -
+  / permissions.q's query checks nothing but first q[1].
+  / 2_q is (where;by;columns); the target at q[1] is already checked by the caller.
+  / the predicate is rbac.isdefinedvar - THE SAME ONE a bare reference and lamq use - so all three
+  / paths agree on what counts as a readable object, rather than this one having its own narrower idea.
+  / the target's own COLUMN NAMES are removed FIRST: inside a select a symbol matching a column denotes
+  / that column, not a same-named global, so checking it would deny ordinary queries. measured against
+  / `select id,v from t` with globals `id`/`v` also defined - flagged without this, clean with it
+  / 2_q assumes the (?/!;target;where;by;columns) shape, which rbac.isq guarantees by gating on
+  / count>=5 in a DIFFERENT function. assert it here rather than trust that coupling: on a shorter
+  / list 2_q silently yields (), so refs is empty, so nothing is checked and the query is PERMITTED.
+  / a silent fail-OPEN is the one direction a permission check must never take, so fail loudly instead
+  if[5>count q;
+    raiseerror[`query;"malformed query tree - expected at least 5 elements, got ",string count q]];
+  tgt:$[11h=abs type q 1;first q 1;`];
+  refs:distinct rbac.symsin 2_q;
+  refs:refs except @[{cols get x};tgt;`$()];
+  refs:refs where rbac.isdefinedvar each refs;
+  / public objects are always readable, as in lamq
+  refs:refs except distinct exec object from .z.m.access where entity=`public;
+  bad:refs where not rbac.achk[u;;`read;pr] each refs;
+  if[count bad;
+    $[b;raiseerror[`query;" | " sv err[`selt] each bad];:0b]];
+  :1b;
   };
 
 rbac.query:{[u;q;b;pr]
@@ -506,6 +601,7 @@ rbac.query:{[u;q;b;pr]
   / update or delete in place - needs write access on the target
   if[((!)~q 0) and 11h=type q 1;
     if[not rbac.achk[u;first q 1;`write;pr];$[b;raiseerror[`query;err[`updt][first q 1]];:0b]];
+    if[not rbac.checkclauses[u;q;b;pr];:0b];
     :$[b;rbac.qexe q;1b]];
   / nested query - recurse into the inner select
   if[rbac.isq q 1;:$[b;rbac.qexe @[q;1;rbac.expr[u]];1b]];
@@ -517,6 +613,7 @@ rbac.query:{[u;q;b;pr]
       q:@[q;1;:;vt`table];
       q:@[q;2;:;enlist first[q 2],vt`whereclause]];
     if[not rbac.achk[u;t;`read;pr];$[b;raiseerror[`query;err[`selt][t]];:0b]];
+    if[not rbac.checkclauses[u;q;b;pr];:0b];
     :$[b;rbac.qexe q;1b]];
   / anything else - superuser only
   if[not rbac.fchk[u;wildcard;()];$[b;raiseerror[`query;err[`selx][]];:0b]];
@@ -659,8 +756,22 @@ val:{[x]
 
 valp:{[x]
   / evaluate a string or parse tree, under reval when read-only mode is on
+  / ⚠ BUG FIX vs TorQ: legacy is `valp:$[readonly;{reval parse x};value]` (permissions.q:9). `parse`
+  / requires a STRING and throws 'type on a list, so under readonly every parse-tree input threw
+  / instead of evaluating. rbac.exe routes BOTH symbol heads (type 11h) and lambda heads (100h) here,
+  / which is the standard sync/async IPC call shape h(`func;arg) - so a readonly process (canonically
+  / an HDB) rejected the most common client idiom with a bare 'type
   requireinit[`valp];
-  :$[.z.m.readonly;reval parse x;value x];
+  if[not .z.m.readonly;:value x];
+  / read-only. a STRING parses then evaluates, exactly as legacy did - `parse` inserts the literal
+  / markers so eval and value agree on it.
+  / a PARSE TREE must keep `value`'s semantics, which resolve the head but NOT the arguments. handing
+  / it to `reval` directly would use EVAL semantics, which resolve a symbol argument to the variable it
+  / names: (`echo;`secret) would return the contents of `secret` to a caller with no grant on it, since
+  / only the head is permission-checked. that is a read bypass, and it would exist ONLY in read-only
+  / mode - strictly more permissive than the same call with readonly off, which is the wrong direction.
+  / applying value to the tree as a literal inside reval keeps value's semantics and reval's write ban
+  :$[10h=type x;reval parse x;reval (value;enlist x)];
   };
 
 allowed:{[u;q]
@@ -871,8 +982,11 @@ authenticate:{[u;p]
   if[not ud[`authtype] in key auth;
     .z.m.logwarn[`authenticate;"rejected ",(string u),": unknown authtype ",string ud`authtype];
     :0b];
+  / log both outcomes: a warn-only trail records rejections but leaves successful logins invisible,
+  / so the audit cannot answer "who connected". ldap successes were logged only under ldapdebug
   ok:auth[ud`authtype][u;p];
-  if[not ok;.z.m.logwarn[`authenticate;"failed authentication for user ",string u]];
+  $[ok;.z.m.loginfo[`authenticate;"authenticated user ",string u];
+       .z.m.logwarn[`authenticate;"failed authentication for user ",string u]];
   :ok;
   };
 
@@ -997,6 +1111,11 @@ registerhandlers:{[]
   / claim the exec phase of every message-handling event, plus a .z.pc observer for cleanup
   / registered under a stable name so a re-init reclaims the same events rather than colliding
   {[e] .z.m.register[e;`exec;`di.permissions;0;execbodies e]} each key execbodies;
+  / priority 0 on .z.pc - lower runs first, so this cleanup precedes any other observer. that is the
+  / faithful port: TorQ chains .z.pc as {droppublic[y];@[x;y]} (permissions.q:260), cleanup first and
+  / the prior handler after. it is also the right layering - TorqX registers its gateway .z.po/.z.pc
+  / connection bookkeeping at priority 10, so the security teardown lands ahead of it, and nothing in
+  / that bookkeeping depends on the user record droppublic removes
   .z.m.register[`.z.pc;`;`di.permissions;0;droppublic];
   / .h.val is where HTTP GET permissioning actually happens on kdb+ 3.5+; it is not a .z.* event, so
   / di.handlers' register would reject the symbol - assign it directly, keeping the original to restore.

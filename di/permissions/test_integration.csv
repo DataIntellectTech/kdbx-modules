@@ -11,7 +11,7 @@ before,0,0,q,".pi.dir:""/tmp/dipermtest""",1,1,scratch directory for the child s
 before,0,0,q,"system ""rm -rf "",.pi.dir",1,1,clear any leftovers from a previous run
 before,0,0,q,"system ""mkdir -p "",.pi.dir",1,1,create the scratch directory
 before,0,0,q,".pi.portfile:.pi.dir,""/port""",1,1,the child writes its OS-assigned port here
-before,0,0,q,".pi.child:(""perms:use`di.permissions"";""lg:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})"";""/ prefer real di.handlers; fall back to a minimal inline stand-in when it is not on QPATH."";""/ this suite exists to prove reval enforcement over a REAL handle - it must not silently skip"";""/ merely because a sibling module is on a different branch"";""hd:@[{h:use`di.handlers; h.init[enlist[`log]!enlist lg]; `register`remove`list!(h.register;h.remove;h.list)};::;{[e] `register`remove`list!({[ev;p;n;pri;f] set[ev;f]};{[ev;p;n] };{[ev] ()})}]"";""perms.init[`enabled`readonly!(1b;1b);`log`handlers!(lg;hd)]"";""perms.admin.addrole[`su;\""all\""]"";""perms.admin.grantfunction[perms.admin.wildcard;`su;{1b}]"";""perms.admin.adduser[.z.u;`local;`md5;md5 \""\""]"";""perms.admin.assignrole[.z.u;`su]"";""gg:0"";""\\p 0W"")",1,1,the child script - loads the module for real with readonly on and a superuser
+before,0,0,q,".pi.child:(""perms:use`di.permissions"";""lg:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})"";""/ prefer real di.handlers; fall back to a minimal inline stand-in when it is not on QPATH."";""/ this suite exists to prove reval enforcement over a REAL handle - it must not silently skip"";""/ merely because a sibling module is on a different branch"";""hd:@[{h:use`di.handlers; h.init[enlist[`log]!enlist lg]; `register`remove`list!(h.register;h.remove;h.list)};::;{[e] `register`remove`list!({[ev;p;n;pri;f] set[ev;f]};{[ev;p;n] };{[ev] ()})}]"";""perms.init[`enabled`readonly!(1b;1b);`log`handlers!(lg;hd)]"";""perms.admin.addrole[`su;\""all\""]"";""perms.admin.grantfunction[perms.admin.wildcard;`su;{1b}]"";""perms.admin.adduser[.z.u;`local;`md5;md5 \""\""]"";""perms.admin.assignrole[.z.u;`su]"";""rofn:{[a] 100+a}"";""wr:{[v] gg::v}"";""gg:0"";""\\p 0W"")",1,1,the child script - loads the module for real with readonly on and a superuser
 before,0,0,q,".pi.child,:""(hsym `$\"""",.pi.portfile,""\"") 0: enlist string system\""p\""""",1,1,append the port-publishing line
 before,0,0,q,"(hsym `$.pi.dir,""/child.q"") 0: .pi.child",1,1,write the child script
 before,0,0,q,"qcands:$[count qh:getenv[`QHOME];(raze(qh;""/bin/q"");raze(qh;""/"";string .z.o;""/q""));()]",1,1,candidate q binaries for kdbx and classic layouts
@@ -32,6 +32,18 @@ true,0,0,q,$[.pi.up;3=count .pi.read;0b],1,1,a permitted read succeeds through t
 true,0,0,q,$[.pi.up;10h=type .pi.write;0b],1,1,the write was refused - an error string came back not a result
 true,0,0,q,"$[.pi.up;.pi.write like ""*noupdate*"";0b]",1,1,the refusal is revals noupdate - read only is genuinely enforced
 true,0,0,q,$[.pi.up;0=.pi.ggafter;0b],1,1,gg is untouched - the write did not land
+comment,,,,,,,parse tree queries under readonly - the h(`func;arg) IPC idiom over a REAL handle
+comment,,,,,,,"TorQ valp did reval parse x under readonly and parse throws type on a list, so this"
+comment,,,,,,,exact call - the commonest sync IPC shape - failed on any readonly process such as an hdb
+before,0,0,q,".pi.tree:$[.pi.up;@[{.pi.h (`rofn;1)};::;{[e] `$""ERR: "",e}];`SKIP]",1,1,call a named function by parse tree across the handle
+true,0,0,q,$[.pi.up;101~.pi.tree;0b],1,1,a symbol headed parse tree evaluates under readonly rather than throwing type
+comment,,,,,,,a parse tree call must STILL be write banned - valp applies value inside reval not beside it
+comment,,,,,,,this is the assertion that would catch reval being dropped from the parse tree branch
+before,0,0,q,".pi.treewrite:$[.pi.up;@[{.pi.h (`wr;7)};::;{[e] e}];""SKIP""]",1,1,attempt a write through a parse tree call
+before,0,0,q,".pi.ggtree:$[.pi.up;@[{.pi.h""gg""};::;{[e] 0N}];0N]",1,1,read gg back after the tree write attempt
+true,0,0,q,$[.pi.up;10h=type .pi.treewrite;0b],1,1,the parse tree write was refused - an error string came back
+true,0,0,q,"$[.pi.up;.pi.treewrite like ""*noupdate*"";0b]",1,1,refused with noupdate - read only still governs a parse tree call
+true,0,0,q,$[.pi.up;0=.pi.ggtree;0b],1,1,gg is untouched by the parse tree write
 comment,,,,,,,cleanup
 before,0,0,q,"if[.pi.up;@[{.pi.h""exit 0""};::;{[e]}]]",1,1,ask the child to exit
 before,0,0,q,if[.pi.up;@[hclose;.pi.h;{[e]}]],1,1,close the handle

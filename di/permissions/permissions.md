@@ -18,7 +18,9 @@ see [Engine scope](#engine-scope).
   a group may itself be a member of another group.
 - **Query interception.** Select/update/delete, bare variable references, named function calls,
   `.q`-keyword calls (including joins, whose table arguments are checked recursively) and lambda
-  expressions are each classified and checked appropriately.
+  expressions are each classified and checked appropriately. A select is checked on its **where, by
+  and columns clauses as well as its target table**, using the same predicate as a bare reference —
+  see [Clause checking](#clause-checking).
 - **Virtual tables.** A named view of a table with an implicit where-clause spliced into any select
   against it, so a group can be granted a filtered slice rather than the whole table.
 - **Pluggable authentication.** `local` (md5 hash) and `ldap` backends, selected per user by the
@@ -34,7 +36,7 @@ see [Engine scope](#engine-scope).
 | Dependency | Key | Required | Description |
 |---|---|---|---|
 | logger | `` `log `` | yes | dict with `info`, `warn`, `error`, each binary `{[c;m]}` — symbol context, string message |
-| handlers | `` `handlers `` | yes | dict with `register`, `remove`, `list` — see `di.handlers` |
+| handlers | `` `handlers `` | yes | dict with `register` and `remove` — see `di.handlers`. A full `di.handlers` dict (which also carries `list`) is fine; only the two keys this module calls are required |
 | ldap bind | `` `ldapbind `` | **no** | `{[session;dict]}` returning a dict with a `` `ReturnCode `` key (`0i` = success). Replaces the native LDAP library entirely when supplied — see [LDAP coverage](#ldap-coverage--the-bind-path-is-exercised-via-an-injected-ldapbind) |
 
 **No hard dependencies on other `di.*` modules** — `deps.q` is empty and the module is standalone.
@@ -99,7 +101,7 @@ handlers are registered and nothing is published at root.
 | `publishroot` | `1b` | expose the legacy `.pm.*` names at root. Set `0b` if you have no legacy grant files — the module still enforces, it just leaves the root namespace untouched |
 | `ldapenabled` | `0b` | enable the LDAP backend and load its native library |
 | `ldaplibpath` | `""` | path to the LDAP `.so`; falls back to `$KDBLIB` |
-| `ldapdebug` | `0i` | log LDAP chatter at info level |
+| `ldapdebug` | `0b` | log LDAP chatter at info level |
 | `ldapservers` | `` enlist `$"ldap://localhost:0" `` | LDAP server URIs |
 | `ldapversion` | `3` | LDAP protocol version |
 | `ldapblocktime` | `0D00:30:00` | how long a locked-out user stays locked out; null means forever |
@@ -144,14 +146,11 @@ Would this user be permitted to run this query? Never executes it.
 perms.allowed[`alice;"select from trade"]   / 1b
 ```
 
-> **`allowed` is a true predicate.** It returns a boolean and never executes the query. Two earlier
+> **`allowed` is a true predicate.** It returns a boolean and never executes the query. Three earlier
 > caveats have been fixed: it now descends into `.q`-keyword joins (so it agrees with `requ` rather
-> than permitting joins `requ` refuses), and a forbidden lambda expression returns `0b` instead of
-> raising.
->
-> **One caveat remains:** it **ignores `permissivemode`**, pinning it off regardless of config —
-> inherited from TorQ, which fixes `allowed:mainexpr[;;0b;0b]`. On a permissive-mode process `allowed`
-> will therefore deny things `requ` permits. `requ` is the authority.
+> than permitting joins `requ` refuses), a forbidden lambda expression returns `0b` instead of raising,
+> and it honours `permissivemode` rather than pinning it off as TorQ does (`allowed:mainexpr[;;0b;0b]`),
+> so it no longer denies things `requ` permits.
 
 ### `requ[user;query]`
 Permission-check a query as a user and execute it. Passes the query through untouched when the module
@@ -210,7 +209,15 @@ What the module is currently enforcing: engine, read-only state, permissive mode
 public access, and LDAP availability. Legacy has no equivalent introspection.
 
 ### `version`
-The module version string.
+The module version string, e.g. `"0.1.0"`.
+
+Read at load time from the **`VERSION` file** in the module directory (`version:first read0`:::VERSION`
+in `init.q`) rather than being hardcoded as a q literal, so a release bump touches one plain-text file.
+This follows the TorqX module convention.
+
+`version` remains in the **export dictionary**. `di.depcheck` resolves a dependency's version from its
+export dict (`checkdepversion`) and reports `"… exports no version"` — failing the dependency check —
+if a module omits it. Moving the *value* to a file does not move the *export*.
 
 ### `getapimeta[]`
 This module's api metadata — one `` `name`public`descrip`params`return `` row per callable export, for
@@ -238,7 +245,45 @@ are covered too**: an unparseable string yields
 `di.permissions: mainexpr: could not parse query: …` rather than q's bare parse error, so a client
 probing with garbage still leaves an audit trail.
 
+"Every" is enforced rather than asserted: the suite drives one wrong-typed call at **each** admin
+entry point and requires all of them to raise a `di.permissions:`-prefixed error, so an admin function
+added later cannot quietly skip validation. It also checks that the rejection reached the injected
+logger, not merely that it was thrown.
+
 ---
+
+## Clause checking
+
+TorQ permission-checks a select on its **target table only** (`permissions.q`'s `query` inspects
+nothing but `first q[1]`). A select's where, by and columns clauses can name *other* tables, and those
+executed unchecked — so a user granted any single table could read any other:
+
+```q
+/ alice is granted `open and has NO grant on `secret
+select p:first secret`pin from open     / TorQ: returns 1234. here: refused
+select p:count secret from open         / TorQ: returns the row count. here: refused
+select from open where id in exec id from secret   / TorQ: executes. here: refused
+```
+
+This module checks every readable object named anywhere in the where, by and columns clauses, and
+refuses the query unless the user has read access to each. `allowed` applies the same check, so it
+agrees with `requ` rather than permitting a query `requ` would refuse.
+
+**The predicate is `rbac.isdefinedvar` — the same one a bare reference and a lambda expression use.**
+That is the point: all three paths agree on what counts as a readable object, so an object cannot be
+readable through a select clause while a bare reference to it is refused. An earlier revision checked
+only *table*-valued symbols, which left exactly that inconsistency:
+
+```q
+.pt.secretvec                                  / refused
+select p:first .pt.secretvec from .pt.trade    / returned its contents
+```
+
+**The target table's own column names are removed first.** Inside a select, a symbol matching a column
+denotes that column, not a same-named global — so checking it would deny ordinary queries. Without the
+exclusion, `select id,v from open` is refused on any process that also happens to define globals `id`
+or `v`; with it, that query is clean and an ungranted global of a colliding name still cannot be read
+(the suite asserts both, via a `zz` column and a `zz` root global).
 
 ## Handler registration
 
@@ -316,7 +361,8 @@ this schema.
 > That was not true initially — grant data and LDAP cache state surviving `teardown` broke ten
 > assertions on a second run, which is what surfaced the `unblock` gap documented above.
 
-**Unit suite** (`test.csv`) — 111 rows, 67 assertions, no sockets and no native library required:
+**Unit suite** (`test.csv`) — no sockets and no native library required. Run it for the current row
+and assertion counts rather than trusting a figure quoted here:
 ```q
 k4unit:use`di.k4unit
 k4unit.moduletest`di.permissions

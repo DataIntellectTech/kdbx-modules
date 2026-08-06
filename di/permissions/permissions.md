@@ -5,7 +5,7 @@ message-handling `.z.*` event via the injected `di.handlers` dependency, permiss
 incoming query against a user's roles and groups, and optionally enforces a whole-process read-only
 mode.
 
-Consolidates five TorQ files: `code/handlers/permissions.q` (`.pm`), `writeaccess.q` (`.readonly`),
+Consolidates four TorQ files: `code/handlers/permissions.q` (`.pm`), `writeaccess.q` (`.readonly`),
 `ldap.q` (`.ldap`), and `code/common/execas.q`. TorQ's `controlaccess.q` tiered engine is **deferred** -
 see [Engine scope](#engine-scope).
 

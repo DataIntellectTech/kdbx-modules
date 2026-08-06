@@ -75,10 +75,10 @@ closesub:{[h]
 .z.pc:{closesub[x]};
 
 / broadcast to all subscribers upon end of day, client needs to define endofday function
-callendofday:{(neg getallhandles[])@\:`endofday`};
+callendofday:{[d](neg getallhandles[])@\:(`endofday;d)};
 
 / broadcast to all subscribers upon end of period, client needs to define endofperiod function
-callendofperiod:{(neg getallhandles[])@\:`endofperiod`};
+callendofperiod:{(neg getallhandles[])@\:(`endofperiod;x)};
 
 / get table schema
 extractschema:{[table]0#value table};

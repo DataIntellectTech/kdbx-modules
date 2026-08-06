@@ -67,5 +67,9 @@ setupfixture:{[]
 
 teardownfixture:{[] killpeer[]; system "rm -rf ",FIXDIR;};
 
+/ write a process.csv whose header is REORDERED vs the assumed host,port,proctype,procname (the exact
+/ shape that used to silently misparse) and return its path - used to prove readprocesscsv fails loud.
+writebadcsv:{[] (`$":",p:FIXDIR,"/bad.csv") 0: ("port,host,proctype,procname"; "5010,localhost,rdb,rdb1"); p};
+
 / build the deps dict di.torq would assemble: injectables + this process's config slice.
 svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv!(mocklog;rtmr;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv")};

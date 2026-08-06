@@ -93,15 +93,11 @@ init:{[deps]
   .z.m.loginfo[`init;"di.servers initialised"];
   };
 
-formathp:{[host;port;ipctype]
-  / internal - build a connection-handle symbol for `tcp`/`tcps`/`unix. only `tcp is exercised by
-  / startup in v1; the others exist for a future SOCKETTYPE-style config.
-  h:string host;
-  p:string port;
-  $[ipctype=`tcp; lower `$":",h,":",p;
-    ipctype=`tcps;lower `$":tcps://",h,":",p;
-    ipctype=`unix;lower `$":unix://",p;
-    raiseerror[`formathp;"unknown ipctype ",string ipctype]]
+formathp:{[host;port]
+  / internal - build the tcp connection-handle symbol from a process.csv row. v1 is tcp only; a
+  / future SOCKETTYPE config would reintroduce tcps/unix handling (and a type arg) when there is a
+  / real requirement and a test - we do not ship unexercised branches.
+  lower `$":",(string host),":",string port
   };
 
 opencon:{[hpup]
@@ -114,12 +110,17 @@ opencon:{[hpup]
   };
 
 readprocesscsv:{[path]
-  / internal - read the static process.csv phone book (host,port,proctype,procname). the PATH is
-  / supplied by the caller (from config`processcsv); di.servers reads no env itself, holding
-  / di.config's env-free boundary - di.torq resolves the path and puts it in config.
+  / internal - read the static process.csv phone book. the PATH comes from config`processcsv (di.torq
+  / resolves it; di.servers reads no env). v1 is a STRICT 4-column host,port,proctype,procname layout:
+  / validate the header up front and FAIL LOUD, because ("SISS";",") is positional and would otherwise
+  / silently misread a reordered or wider file (e.g. a real 13-column TorQ process.csv) into garbage.
   fsym:`$":",path;
   if[0=count key fsym;raiseerror[`readprocesscsv;"process.csv not found at ",path]];
-  ("SISS";enlist",") 0: fsym
+  lines:read0 fsym;
+  if[0=count lines;raiseerror[`readprocesscsv;"process.csv is empty at ",path]];
+  if[not `host`port`proctype`procname~`$trim each "," vs first lines;
+    raiseerror[`readprocesscsv;"process.csv header must be exactly host,port,proctype,procname (v1 4-column phone book); got: ",first lines]];
+  ("SISS";enlist",") 0: lines
   };
 
 startup:{[]
@@ -139,9 +140,13 @@ startup:{[]
   procs:update isme:(proctype=pt)&procname=pn from procs;
   procs:select from procs where not isme;
   procs:select from procs where proctype in conns;
-  if[0=count procs;.z.m.loginfo[`servers;"no process.csv rows match the configured connections"];:()];
+  / idempotent: skip any proc already tracked in SERVERS. a repeat startup (or a process.csv that has
+  / grown since) then adds only NEW rows - never a duplicate row or a leaked second handle to a proc
+  / already connected. reconnecting a dropped peer is retry's job, not startup's.
+  procs:select from procs where not procname in exec procname from .z.m.SERVERS;
+  if[0=count procs;.z.m.loginfo[`servers;"no new process.csv rows to connect"];:()];
   {[row]
-    hpup:formathp[row`host;row`port;`tcp];
+    hpup:formathp[row`host;row`port];
     w:opencon[hpup];
     if[not null w;.z.m.loginfo[`servers;"connected to ",(string row`proctype),"/",(string row`procname)," at ",string hpup]];
     / catenate+reassign, NOT `tablename insert - a symbol-based insert into `.z.m.SERVERS` misses

@@ -43,7 +43,7 @@ h "1+1"
 | Function | Signature | Description |
 |---|---|---|
 | `init` | `init[deps]` | Wire deps + config, record identity, install the `.z.pc` handler + retry job. Idempotent. |
-| `startup` | `startup[]` | Read `process.csv` (`processcsv`), drop self, connect to each row whose proctype is in `connections`. A failed connection is logged (not raised) and left as `w:0Ni` for `retry`. No-op if no connections configured. |
+| `startup` | `startup[]` | Read `process.csv` (`processcsv`), drop self, connect to each row whose proctype is in `connections`. A failed connection is logged (not raised) and left as `w:0Ni` for `retry`. No-op if no connections configured. **Idempotent**: skips procs already tracked in `SERVERS`, so a repeat call (or a grown `process.csv`) adds only new rows — never a duplicate or a leaked second handle. `process.csv` must be the strict v1 4-column `host,port,proctype,procname` layout — a reordered or wider header is **rejected loudly** (the reader is positional, so it would otherwise misparse silently). |
 | `getservers` | `getservers[proctype]` | Live (`w` non-null) `SERVERS` rows for a proctype. |
 | `gethandlebytype` | `gethandlebytype[proctype;selection]` | One live handle via `` `any``/`roundrobin`/`last``; `0Ni` if none. Bumps usage stats. |
 | `waitfortype` | `waitfortype[proctype;timeoutms;pollms]` | Block until a live connection exists or timeout; `1b`/`0b`. Caller decides if a timeout is fatal. `startup` must have run first. |
@@ -88,9 +88,9 @@ priority-ordered fan-out.
 - **Three-flat-var logging** — `.z.m.loginfo`/`.z.m.logwarn`/`.z.m.logerr`, matching
   `consistency.md`, `di.compression` and `di.config`. (The project hasn't globally frozen this
   vs. the single-dict form — flag before changing.)
-- **`raiseerror` (log-then-signal)** for all post-init domain errors (`formathp` unknown
-  ipctype, `selector` unknown selection, missing `process.csv`). `init`'s own dependency
-  validation is the one exception (plain `'` — no logger yet).
+- **`raiseerror` (log-then-signal)** for all post-init domain errors (`selector` unknown
+  selection, missing or malformed `process.csv`). `init`'s own dependency validation is the one
+  exception (plain `'` — no logger yet).
 - **`getapimeta`** exported; a test asserts it documents exactly the module's *callable*
   exports — `init`/`getapimeta` are plumbing (di.torq calls them by convention) and are
   deliberately omitted from the registry rows, matching di.toml and the skill convention. No
@@ -119,8 +119,9 @@ priority-ordered fan-out.
   `.z.pc` (which real di.handlers would install).
 - **`config`processcsv` and the assembled `connections` list** depend on di.torq's config
   wiring — coordinate when di.torq's servers dep is built.
-- Scoped-out (v1): discovery service, password/access-list files, non-TorQ tracking, and the
-  `tcps`/`unix` socket types end-to-end (only `tcp` is wired through `startup`).
+- Scoped-out (v1): discovery service, password/access-list files, non-TorQ tracking, and
+  `tcps`/`unix` socket types. Only `tcp` is supported; `formathp` builds a `tcp` handle with no
+  socket-type arg — a future `SOCKETTYPE` config reintroduces that (with a test) when needed.
 
 ## Tests
 

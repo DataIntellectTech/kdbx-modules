@@ -38,6 +38,12 @@ true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
 comment,,,,,,,waitfortype - connected vs timeout
 true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
 true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
+comment,,,,,,,startup is idempotent - a repeat call must not duplicate rows or leak a second handle
+run,0,0,q,svc.startup[],1,1,call startup a second time with the same config
+true,0,0,q,1=count svc.getservers[`otherproc],1,1,repeat startup added no duplicate otherproc row (guard skips already-tracked procs)
+comment,,,,,,,readprocesscsv fails loud on a reordered/wider header instead of silently misparsing
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`connections`processcsv!(mocklog;rtmr;mockhandlers;`selfproc;`selfinst;`rdb;writebadcsv[])]",1,1,re-init pointing at a process.csv whose header is reordered
+fail,0,0,q,svc.startup[],1,1,startup signals on the bad header rather than silently misreading columns
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

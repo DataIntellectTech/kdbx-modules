@@ -72,8 +72,22 @@ logdep:`info`warn`error!(
 handlers.init[enlist[`log]!enlist logdep];
 handlersdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list);
 
-perms.init[`enabled`readonly!(1b;0b);`log`handlers!(logdep;handlersdep)];
+perms.init[(`log`handlers!(logdep;handlersdep)),`enabled`readonly!(1b;0b)];
 ```
+
+`init` takes a **single dictionary** carrying both the dependencies and the configuration, the same
+call shape every `di.*` module takes. Dependency keys (`` `log ``, `` `handlers ``, `` `ldapbind ``)
+and configuration keys share one flat namespace; no configuration key collides with a dependency key,
+and the dependency keys are stripped before the configuration is stored, so they never appear in
+`status[]` or trigger the unrecognised-key warning.
+
+> **Watch the join.** `` enlist[`k]!enlist somedict `` puts a *table* on the value side (a one-element
+> list of dictionaries is a table), so joining two of them throws `` 'mismatch ``. Join `di.log`'s
+> `logdict` with **one** multi-key dictionary rather than chaining single-key ones:
+> ```q
+> perms.init[logging.logdict,`handlers`enabled`readonly!(handlersdep;1b;0b)]   / works
+> perms.init[logging.logdict,(enlist[`handlers]!enlist handlersdep),...]       / 'mismatch
+> ```
 
 `init` must be called before any other function. It is **idempotent**: a second call re-wires the
 dependencies and config and reclaims the same handler registrations, leaving grant data intact.
@@ -128,7 +142,7 @@ module, so this ships empty. **A process that receives `.u.upd`-shaped feed traf
 explicitly**, or that traffic will be permission-checked and rejected:
 
 ```q
-perms.init[`enabled`ignorelist!(1b;(`upd;"upd";`.u.upd;".u.upd"));deps]
+perms.init[deps,`enabled`ignorelist!(1b;(`upd;"upd";`.u.upd;".u.upd"))]
 ```
 
 It is a **mixed** list - the head of an incoming message is matched against both symbol and string
@@ -138,13 +152,13 @@ forms. It applies to `.z.ps` only, matching TorQ; `.z.pg` is never exempted.
 
 ## Exported functions
 
-### `init[config;deps]`
+### `init[deps]`
 Wire dependencies, resolve config, and (when enabled) publish root names, load grants and register
 handlers. Idempotent - see [Initialisation](#initialisation) for the full worked example.
 ```q
-perms.init[`enabled`readonly!(1b;0b);`log`handlers!(logdep;handlersdep)]
+perms.init[(`log`handlers!(logdep;handlersdep)),`enabled`readonly!(1b;0b)]
 / or with defaults only (module loads but stays disabled):
-perms.init[(::);`log`handlers!(logdep;handlersdep)]
+perms.init[`log`handlers!(logdep;handlersdep)]
 ```
 
 ### `teardown[]`
@@ -453,7 +467,7 @@ handlers:use`di.handlers
 handlers.init[enlist[`log]!enlist logdep];
 handlersdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list);
 
-perms.init[enlist[`enabled]!enlist 1b;`log`handlers!(logdep;handlersdep)];
+perms.init[(`log`handlers!(logdep;handlersdep)),enlist[`enabled]!enlist 1b];
 
 / set up a reader who may select from trade and nothing else
 trade:([]sym:`a`a`b;px:1 2 3.0);
@@ -515,7 +529,7 @@ resolved. This exists so the caching and lockout logic can be exercised without 
 
 ```q
 fakebind:{[sess;d] enlist[`ReturnCode]!enlist 0i}      / 0i = success, anything else = failure
-perms.init[`enabled`ldapenabled!(1b;1b);`log`handlers`ldapbind!(logdep;handlersdep;fakebind)]
+perms.init[(`log`handlers`ldapbind!(logdep;handlersdep;fakebind)),`enabled`ldapenabled!(1b;1b)]
 ```
 
 This is a **`deps` injection, not a config value** - deps are process wiring code the module already
@@ -577,17 +591,17 @@ dirty module state.
 > handling over a **real child process and a real IPC handle** - the things that cannot be tested
 > in-process, because `reval` does not enforce at `.z.w=0`.
 >
-> It wires **real `di.handlers` only when that module is on `QPATH`**, falling back to a minimal
-> inline stand-in (a bare `set[ev;f]`) otherwise. `di.handlers` lives on the `feature-handlers`
-> branch, so a checkout of `feature-permissions` alone runs against the stand-in and does **not**
-> exercise real phase/`exec`-ownership dispatch - that is covered by `di.handlers`' own suite, not
-> this one. Check out both branches to exercise the real wiring.
+> It wires the **real `di.handlers`**, which ships alongside this module on the same branch, so it
+> does exercise real phase and `exec`-ownership dispatch - not a stand-in. A minimal inline stand-in
+> (a bare `set[ev;f]`) exists only as a fallback for a `QPATH` that lacks `di.handlers`.
 >
-> Which path ran is **reported, not assumed**: the suite asserts the child returned a boolean for
-> `realhandlers`, and the value is visible in the results. This exists because the "prefer real
-> `di.handlers`" branch was silently dead for weeks - `h.init` on a function-local throws
-> `'h.init` (module dot-sugar resolves only against a *global* name), and the protected apply
-> swallowed it, so the stand-in always ran while the suite reported green.
+> Which path ran is **asserted, not assumed**: the suite requires the child to report
+> `realhandlers` as `1b`, so a silent fall-through to the stand-in **fails** the suite rather than
+> passing quietly. That assertion exists because the "prefer real `di.handlers`" branch was silently
+> dead for weeks - `h.init` on a function-local throws `'h.init` (module dot-sugar resolves only
+> against a *global* name), and the protected apply swallowed it, so the stand-in always ran while
+> the suite reported green. If you run this on a `QPATH` without `di.handlers`, expect that one row
+> to fail; that is the point of it.
 
 ---
 

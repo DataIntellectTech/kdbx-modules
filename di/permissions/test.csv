@@ -8,29 +8,46 @@ before,0,0,q,"mockh:`register`remove`list!({[e;p;n;pr;f] `.pt.reg insert (e;p;n;
 before,0,0,q,deps:`log`handlers!(caplog;mockh),1,1,the injected dependency dict
 
 comment,,,,,,,init - dependency validation (log and handlers are required and never defaulted)
-fail,0,0,q,perms.init[(::);(::)],1,1,init rejects a non-dict deps
-fail,0,0,q,perms.init[(::);()!()],1,1,init rejects deps missing both keys
-fail,0,0,q,perms.init[(::);enlist[`log]!enlist caplog],1,1,init rejects deps missing the handlers key
-fail,0,0,q,perms.init[(::);enlist[`handlers]!enlist mockh],1,1,init rejects deps missing the log key
-fail,0,0,q,perms.init[(::);`log`handlers!(42;mockh)],1,1,init rejects a non-dict log value
-fail,0,0,q,perms.init[(::);`log`handlers!((enlist[`info]!enlist caplog`info);mockh)],1,1,init rejects a log dict missing warn and error
-fail,0,0,q,perms.init[(::);`log`handlers!(caplog;enlist[`register]!enlist mockh`register)],1,1,init rejects a handlers dict missing remove and list
-run,0,0,q,.pt.errstr:@[{perms.init[(::);()!()]};(::);{x}],1,1,capture the error string from a bad init
+fail,0,0,q,perms.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,perms.init[()!()],1,1,init rejects deps missing both keys
+fail,0,0,q,perms.init[enlist[`log]!enlist caplog],1,1,init rejects deps missing the handlers key
+fail,0,0,q,perms.init[enlist[`handlers]!enlist mockh],1,1,init rejects deps missing the log key
+fail,0,0,q,perms.init[`log`handlers!(42;mockh)],1,1,init rejects a non-dict log value
+fail,0,0,q,perms.init[`log`handlers!((enlist[`info]!enlist caplog`info);mockh)],1,1,init rejects a log dict missing warn and error
+fail,0,0,q,perms.init[`log`handlers!(caplog;enlist[`register]!enlist mockh`register)],1,1,init rejects a handlers dict missing remove and list
+run,0,0,q,.pt.errstr:@[{perms.init[()!()]};(::);{x}],1,1,capture the error string from a bad init
 true,0,0,q,".pt.errstr like ""di.permissions:*""",1,1,init errors are prefixed di.permissions:
 true,0,0,q,".pt.errstr like ""*di.log*""",1,1,the error names which module supplies the missing dependency
 
 comment,,,,,,,init - config validation
-fail,0,0,q,perms.init[enlist[`engine]!enlist `tiered;deps],1,1,the tiered engine is not implemented and is rejected
-fail,0,0,q,perms.init[enlist[`engine]!enlist `nosuch;deps],1,1,an unknown engine is rejected
-fail,0,0,q,perms.init[enlist[`engine]!enlist 42;deps],1,1,a non-symbol engine is rejected
-fail,0,0,q,perms.init[42;deps],1,1,a non-dict config is rejected
+fail,0,0,q,"perms.init[deps,enlist[`engine]!enlist `tiered]",1,1,the tiered engine is not implemented and is rejected
+fail,0,0,q,"perms.init[deps,enlist[`engine]!enlist `nosuch]",1,1,an unknown engine is rejected
+fail,0,0,q,"perms.init[deps,enlist[`engine]!enlist 42]",1,1,a non-symbol engine is rejected
+fail,0,0,q,perms.init[42],1,1,a non-dict argument is rejected
 run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
-run,0,0,q,perms.init[enlist[`nosuchkey]!enlist 1b;deps],1,1,an unrecognised config key is accepted
+run,0,0,q,"perms.init[deps,enlist[`nosuchkey]!enlist 1b]",1,1,an unrecognised config key is accepted
 true,0,0,q,1=count select from .pt.cap where lvl=`warn,1,1,an unrecognised config key warns rather than being dropped silently
 true,0,0,q,"any (exec msg from .pt.cap where lvl=`warn) like\: ""*nosuchkey*""",1,1,the warning names the offending key
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,init with the dependency keys alongside a known config key
+true,0,0,q,0=count select from .pt.cap where lvl=`warn,1,1,dependency keys are never reported as an unrecognised config key
+run,0,0,q,".pt.mns0:first (key `.m.di) where (string key `.m.di) like ""*permissions*""",1,1,locate the module private namespace
+run,0,0,q,".pt.cfg0:get `$"".m.di."",(string .pt.mns0),"".config""",1,1,read the resolved config back out of module state
+true,0,0,q,"not any `log`handlers`ldapbind in key .pt.cfg0",1,1,dependency keys never reach the stored config
+run,0,0,q,perms.teardown[],1,1,release before the next block
+
+comment,,,,,,,init - the single-dict call shape di.torq wires every module through
+run,0,0,q,logging:use`di.log,1,1,load di.log for its ready-made logdict dependency
+true,0,0,q,"(enlist`log)~key logging.logdict",1,1,logdict is a one-key dependency dict ready to pass straight to init
+run,0,0,q,"perms.init[logging.logdict,`handlers`enabled!(mockh;1b)]",1,1,the single-dict shape di.torq wires each module through
+true,0,0,q,0<count .pt.reg,1,1,and that wiring really enabled the module rather than silently no-opping
+true,0,0,q,perms.status[][`enabled],1,1,status confirms enabled through the framework-shape wiring
+run,0,0,q,perms.teardown[],1,1,release the di.log wiring
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,back to the capturing logger for the remaining tests
+run,0,0,q,perms.teardown[],1,1,and leave disabled as the following blocks expect
 
 comment,,,,,,,disabled by default - nothing registered and nothing published at root
-run,0,0,q,perms.init[(::);deps],1,1,init with defaults (enabled is 0b)
+run,0,0,q,perms.init[deps],1,1,init with defaults (enabled is 0b)
 true,0,0,q,0=count .pt.reg,1,1,a disabled module registers no handlers
 true,0,0,q,0=count (key `.pm) except `,1,1,a disabled module publishes nothing at root
 true,0,0,q,not perms.status[][`enabled],1,1,status reports the module as disabled
@@ -50,7 +67,7 @@ true,0,0,q,"all exec public from perms.getapimeta[] where not name like ""admin.
 true,0,0,q,`teardown in exec name from perms.getapimeta[],1,1,teardown is documented - it is lifecycle not plumbing
 
 comment,,,,,,,enabled - handler registration
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,init enabled
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,init enabled
 true,0,0,q,6=count select from .pt.reg where phase=`exec,1,1,exec is claimed on all six phased message events
 true,0,0,q,(asc `.z.pw`.z.pg`.z.ps`.z.pi`.z.pp`.z.ws)~asc exec event from .pt.reg where phase=`exec,1,1,the six exec events are exactly the message handlers
 true,0,0,q,1=count select from .pt.reg where event=`.z.pc,1,1,.z.pc is registered once
@@ -112,18 +129,18 @@ true,0,0,q,"perms.allowed[`alice;""select from .pt.vtrade""]",1,1,the virtual ta
 true,0,0,q,"2=count perms.requ[`alice;""select from .pt.vtrade""]",1,1,the virtual table where clause is spliced in - 2 of 3 rows
 
 comment,,,,,,,result size cap
-run,0,0,q,perms.init[`enabled`maxsize!(1b;10);deps],1,1,re-init with a tiny maxsize
+run,0,0,q,"perms.init[deps,`enabled`maxsize!(1b;10)]",1,1,re-init with a tiny maxsize
 fail,0,0,q,"perms.requ[`alice;""select from .pt.trade""]",1,1,an oversized result is refused
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore the default maxsize
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore the default maxsize
 
 comment,,,,,,,read only mode selects the evaluator at runtime not load time
 comment,,,,,,,NB reval's restriction is not applied when .z.w=0 so a blocked write cannot be asserted
 comment,,,,,,,in process - enforcement is covered by test_integration.csv against a real handle
-run,0,0,q,perms.init[`enabled`readonly!(1b;0b);deps],1,1,read only off
+run,0,0,q,"perms.init[deps,`enabled`readonly!(1b;0b)]",1,1,read only off
 true,0,0,q,not perms.status[][`readonly],1,1,status reports read only off
-run,0,0,q,perms.init[`enabled`readonly!(1b;1b);deps],1,1,read only on without restarting
+run,0,0,q,"perms.init[deps,`enabled`readonly!(1b;1b)]",1,1,read only on without restarting
 true,0,0,q,perms.status[][`readonly],1,1,status reports read only on - the flag is runtime not load time
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore read only off
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore read only off
 
 comment,,,,,,,readonly must not break parse tree queries - the h(`func;arg) IPC idiom
 comment,,,,,,,"TorQ valp is $[readonly;{reval parse x};value] and parse throws 'type on a list, so"
@@ -134,11 +151,11 @@ run,0,0,q,perms.admin.grantfunction[perms.admin.wildcard;`rro;{1b}],1,1,superuse
 run,0,0,q,"perms.admin.adduser[`uro;`local;`md5;md5 ""x""]",1,1,the probe user
 run,0,0,q,perms.admin.assignrole[`uro;`rro],1,1,assign the role
 true,0,0,q,101=perms.requ[`uro;(`.pt.rofn;1)],1,1,readonly off - a symbol headed parse tree evaluates
-run,0,0,q,perms.init[`enabled`readonly!(1b;1b);deps],1,1,turn read only on
+run,0,0,q,"perms.init[deps,`enabled`readonly!(1b;1b)]",1,1,turn read only on
 true,0,0,q,101=perms.requ[`uro;(`.pt.rofn;1)],1,1,readonly on - the same parse tree still evaluates rather than throwing type
 true,0,0,q,101=perms.valp (`.pt.rofn;1),1,1,valp takes a parse tree directly under readonly - parse is applied only to strings
 true,0,0,q,"101=perms.valp "".pt.rofn 1""",1,1,valp still parses a string under readonly
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore read only off
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore read only off
 true,0,0,q,101=perms.requ[`uro;(`.pt.rofn;1)],1,1,and the two readonly states agree on the same query
 
 comment,,,,,,,readonly must never be MORE permissive than readonly off - symbol argument resolution
@@ -154,10 +171,10 @@ run,0,0,q,perms.admin.assignrole[`ulow;`rlow],1,1,assign the role
 fail,0,0,q,"perms.requ[`ulow;""select from .pt.leaktab""]",1,1,a direct read of the table is refused
 fail,0,0,q,"perms.requ[`ulow;"".pt.leaktab""]",1,1,and so is a bare reference to it
 true,0,0,q,`.pt.leaktab~perms.requ[`ulow;(`.pt.leakecho;`.pt.leaktab)],1,1,readonly off - the symbol argument comes back unresolved
-run,0,0,q,perms.init[`enabled`readonly!(1b;1b);deps],1,1,turn read only on
+run,0,0,q,"perms.init[deps,`enabled`readonly!(1b;1b)]",1,1,turn read only on
 true,0,0,q,`.pt.leaktab~perms.requ[`ulow;(`.pt.leakecho;`.pt.leaktab)],1,1,readonly on - STILL unresolved; eval semantics here would leak the whole table
 fail,0,0,q,"perms.requ[`ulow;""select from .pt.leaktab""]",1,1,and the direct read is still refused under readonly
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore read only off
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore read only off
 
 comment,,,,,,,authentication - the -public flag bug fix
 comment,,,,,,,"TorQ evaluates if[""B""$(.Q.opt .z.x)[`public][0;0]] which throws 'type when the flag is absent"
@@ -181,22 +198,22 @@ run,0,0,q,perms.teardown[],1,1,tear the module down
 true,0,0,q,0=count .pt.reg,1,1,every handler registration is removed
 true,0,0,q,0=count (key `.pm) except `,1,1,every published root name is removed
 true,0,0,q,not perms.status[][`enabled],1,1,status reports the module as disabled after teardown
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init after teardown
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init after teardown
 true,0,0,q,7=count .pt.reg,1,1,re-init re-registers all seven handlers
 true,0,0,q,8=count (key `.pm) except `,1,1,re-init re-publishes the eight root names
 true,0,0,q,"perms.allowed[`alice;""select from .pt.trade""]",1,1,grant data survives teardown and re-init - alice keeps her access
 true,0,0,q,"not perms.allowed[`alice;""select from .pt.secret""]",1,1,denials survive teardown and re-init too
 run,0,0,q,perms.teardown[],1,1,leave the process clean
 comment,,,,,,,=== gaps found by adversarial smoke testing - everything below was previously untested ===
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init after the teardown above
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init after the teardown above
 comment,,,,,,,"config values are type checked at init, not left to fail confusingly later"
-fail,0,0,q,"perms.init[`enabled`maxsize!(1b;""big"");deps]",1,1,a non-integer maxsize is rejected
-fail,0,0,q,"perms.init[`enabled`readonly!(1b;""yes"");deps]",1,1,a non-boolean readonly is rejected
-fail,0,0,q,perms.init[`enabled`ldapblocktime!(1b;5);deps],1,1,a non-timespan ldapblocktime is rejected
-fail,0,0,q,"perms.init[`enabled`ldapbuilddn!(1b;""nope"");deps]",1,1,a non-function ldapbuilddn is rejected
-run,0,0,q,".pt.cfgerr:@[{perms.init[`enabled`readonly`public!(1b;""y"";""n"");deps]};(::);{x}]",1,1,capture a multi-key type error
+fail,0,0,q,"perms.init[deps,`enabled`maxsize!(1b;""big"")]",1,1,a non-integer maxsize is rejected
+fail,0,0,q,"perms.init[deps,`enabled`readonly!(1b;""yes"")]",1,1,a non-boolean readonly is rejected
+fail,0,0,q,"perms.init[deps,`enabled`ldapblocktime!(1b;5)]",1,1,a non-timespan ldapblocktime is rejected
+fail,0,0,q,"perms.init[deps,`enabled`ldapbuilddn!(1b;""nope"")]",1,1,a non-function ldapbuilddn is rejected
+run,0,0,q,".pt.cfgerr:@[{perms.init[deps,`enabled`readonly`public!(1b;""y"";""n"")]};(::);{x}]",1,1,capture a multi-key type error
 true,0,0,q,"0<count .pt.cfgerr ss ""readonly, public""",1,1,all offenders of one kind are reported together
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore a valid config
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore a valid config
 comment,,,,,,,every export is callable before init or errors clearly - none may crash obscurely
 true,0,0,q,10h=type perms.version,1,1,version needs no init
 true,0,0,q,0<count perms.getapimeta[],1,1,getapimeta needs no init
@@ -216,12 +233,12 @@ run,0,0,q,".pt.gdir:""/tmp/dipermgrants""",1,1,a scratch grant directory
 run,0,0,q,"system ""rm -rf "",.pt.gdir",1,1,clear any leftovers
 run,0,0,q,"system ""mkdir -p "",.pt.gdir",1,1,create it
 run,0,0,q,"(hsym `$.pt.gdir,""/default.q"") 0: ("".pm.addrole[`fromfile;\""loaded from a grant file\""]"";"".pm.grantfunction[.pm.ALL;`fromfile;{1b}]"")",1,1,write a grant file calling .pm.* at root exactly as TorQ does
-run,0,0,q,perms.init[`enabled`grantdirs!(1b;enlist .pt.gdir);deps],1,1,init with the grant directory
+run,0,0,q,"perms.init[deps,`enabled`grantdirs!(1b;enlist .pt.gdir)]",1,1,init with the grant directory
 run,0,0,q,"perms.admin.adduser[`filer;`local;`md5;md5 ""pw""]",1,1,a user to receive the file-defined role
 run,0,0,q,perms.admin.assignrole[`filer;`fromfile],1,1,assigning it proves addrole ran from the file
 true,0,0,q,"perms.allowed[`filer;""1+1""]",1,1,the wildcard grant from the grant file is in force
 run,0,0,q,"system ""rm -rf "",.pt.gdir",1,1,clean up the grant directory
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,back to a plain config
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,back to a plain config
 run,0,0,q,perms.loadpermissions[],1,1,loadpermissions with no grantdirs is a no op
 comment,,,,,,,the revoke and remove half of the admin api - previously untested in its entirety
 run,0,0,q,"perms.admin.addrole[`r2;""r2""]",1,1,a role
@@ -323,13 +340,13 @@ comment,,,,,,,"=== public access provides its own scaffolding - assignrole/addto
 comment,,,,,,,"with public enabled and no publicuser role, TorQs provisioning path THROWS out of .z.pw."
 comment,,,,,,,it was unreachable in TorQ only because the -public flag threw type first - fixing that exposed it
 run,0,0,q,perms.teardown[],1,1,tear down first so this starts from a known handler state
-run,0,0,q,perms.init[`enabled`public!(1b;1b);deps],1,1,enable public access
+run,0,0,q,"perms.init[deps,`enabled`public!(1b;1b)]",1,1,enable public access
 run,0,0,q,.pt.pw2:first exec f from .pt.reg where event=`.z.pw,1,1,take the freshly registered .z.pw body
 true,0,0,q,".pt.pw2[`anonA;""""]",1,1,an anonymous login succeeds rather than throwing no such role
 true,0,0,q,".pt.pw2[`anonB;""""]",1,1,and a second one
 true,0,0,q,"not .pt.pw2[`anonC;""apassword""]",1,1,but a password bearing anonymous attempt is still refused
 true,0,0,q,"not perms.allowed[`anonA;""select from .pt.secret""]",1,1,the anonymous user is fail closed - it holds no grants
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore
 comment,,,,,,,lambda expressions - the lamq path was previously untested
 run,0,0,q,.pt.pubtab:([]a:1 2),1,1,a readable table
 run,0,0,q,perms.admin.grantaccess[`.pt.pubtab;`inner;`read],1,1,grant read on it to alices group
@@ -337,29 +354,29 @@ true,0,0,q,"perms.allowed[`alice;""{count .pt.pubtab}[]""]",1,1,a lambda touchin
 true,0,0,q,"not perms.allowed[`alice;""{count .pt.secret}[]""]",1,1,a forbidden lambda now returns 0b rather than raising - allowed is a predicate
 comment,,,,,,,"permissivemode - only observable through requ, since allowed pins it off (legacy behaviour)"
 run,0,0,q,.pt.unlisted:([]z:1 2),1,1,a table with no grants at all
-run,0,0,q,perms.init[`enabled`permissivemode!(1b;0b);deps],1,1,permissive mode off
+run,0,0,q,"perms.init[deps,`enabled`permissivemode!(1b;0b)]",1,1,permissive mode off
 fail,0,0,q,"perms.requ[`alice;""select from .pt.unlisted""]",1,1,an ungranted table is denied when permissive is off
-run,0,0,q,perms.init[`enabled`permissivemode!(1b;1b);deps],1,1,permissive mode on
+run,0,0,q,"perms.init[deps,`enabled`permissivemode!(1b;1b)]",1,1,permissive mode on
 true,0,0,q,"2=count perms.requ[`alice;""select from .pt.unlisted""]",1,1,an ungranted table is readable when permissive is on
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore
 comment,,,,,,,the .z.ps ignore list - previously untested
-run,0,0,q,"perms.init[`enabled`ignorelist!(1b;(`upd;""upd""));deps]",1,1,init with an ignore list
+run,0,0,q,"perms.init[deps,`enabled`ignorelist!(1b;(`upd;""upd""))]",1,1,init with an ignore list
 run,0,0,q,.pt.updcount:0,1,1,a counter the ignored function bumps
 run,0,0,q,upd:{[t;d] .pt.updcount+:1;},1,1,the ignored function
 run,0,0,q,.pt.ps:first exec f from .pt.reg where event=`.z.ps,1,1,take the registered .z.ps body
 run,0,0,q,.pt.ps (`upd;`t;1),1,1,drive an ignored message head
 true,0,0,q,1=.pt.updcount,1,1,an ignore listed head bypasses the permission check and runs
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore an empty ignore list
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore an empty ignore list
 comment,,,,,,,a failed init must not leave the process half configured
 run,0,0,q,perms.teardown[],1,1,start from a clean slate
-fail,0,0,q,"perms.init[`enabled`ldapenabled`ldaplibpath!(1b;1b;""/nonexistent/kdbldap"");deps]",1,1,a missing ldap library fails init loudly
+fail,0,0,q,"perms.init[deps,`enabled`ldapenabled`ldaplibpath!(1b;1b;""/nonexistent/kdbldap"")]",1,1,a missing ldap library fails init loudly
 true,0,0,q,0=count (key `.pm) except `,1,1,a failed init publishes nothing at root
 true,0,0,q,0=count .pt.reg,1,1,a failed init registers no handlers
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,recover cleanly afterwards
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,recover cleanly afterwards
 true,0,0,q,8=count (key `.pm) except `,1,1,recovery republishes the root names
 run,0,0,q,perms.teardown[],1,1,leave the process clean
 comment,,,,,,,"=== second adversarial pass - bypass attempts, input validation, cycle invariants ==="
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init
 run,0,0,q,.pt.sec:([]s:enlist`topsecret),1,1,a table alice has no grant on
 comment,,,,,,,a restricted user must not reach an ungranted table by ANY route
 fail,0,0,q,"perms.requ[`alice;""select from .pt.sec""]",1,1,plain select is refused
@@ -397,16 +414,16 @@ fail,0,0,q,perms.admin.grantaccess[`t;`g;`sideways],1,1,grantaccess rejects a le
 true,0,0,q,"-1h=type perms.allowed[`alice;parse ""1+1""]",1,1,a parse tree query is accepted and yields a boolean
 comment,,,,,,,init and teardown cycles must not accumulate state
 run,0,0,q,perms.teardown[],1,1,start clean
-run,0,0,q,do[20; perms.init[enlist[`enabled]!enlist 1b;deps]; perms.teardown[]],1,1,twenty full cycles
+run,0,0,q,"do[20; perms.init[deps,enlist[`enabled]!enlist 1b]; perms.teardown[]]",1,1,twenty full cycles
 true,0,0,q,0=count .pt.reg,1,1,no handler registrations leak across cycles
 true,0,0,q,0=count (key `.pm) except `,1,1,no root names leak across cycles
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,init once more
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,init once more
 true,0,0,q,7=count .pt.reg,1,1,exactly seven registrations after a single init
 true,0,0,q,8=count (key `.pm) except `,1,1,exactly eight root names after a single init
 true,0,0,q,"perms.allowed[`alice;""select from .pt.trade""]",1,1,grant data survived twenty cycles
 run,0,0,q,perms.teardown[],1,1,leave clean
 comment,,,,,,,=== loose ends closed: unblock and addtogroup validation ===
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init
 fail,0,0,q,perms.unblock[42],1,1,unblock rejects a non symbol user
 fail,0,0,q,"perms.unblock[""alice""]",1,1,unblock rejects a string user
 run,0,0,q,.pt.uerr:@[{perms.unblock[42]};(::);{x}],1,1,capture the unblock type error
@@ -439,7 +456,7 @@ run,0,0,q,.pt.binds:0,1,1,count how many times the server is actually hit
 run,0,0,q,.pt.rc:0i,1,1,the return code the fake bind will give
 run,0,0,q,fakebind:{[sess;d] .pt.binds+:1; enlist[`ReturnCode]!enlist .pt.rc},1,1,a scriptable stand in for the native bind
 run,0,0,q,ldeps:`log`handlers`ldapbind!(caplog;mockh;fakebind),1,1,deps carrying the injected bind
-run,0,0,q,perms.init[`enabled`ldapenabled`ldapchecklimit`ldapchecktime`ldapblocktime!(1b;1b;3;0D00:05;0D00:00:01);ldeps],1,1,ldap on with a short blocktime
+run,0,0,q,"perms.init[ldeps,`enabled`ldapenabled`ldapchecklimit`ldapchecktime`ldapblocktime!(1b;1b;3;0D00:05;0D00:00:01)]",1,1,ldap on with a short blocktime
 true,0,0,q,perms.status[][`ldapavailable],1,1,status reports ldap available when a bind is injected
 run,0,0,q,"perms.admin.adduser[`lu;`ldap;`md5;md5 """"]",1,1,a user routed to the ldap backend
 run,0,0,q,.pt.pw3:first exec f from .pt.reg where event=`.z.pw,1,1,the registered .z.pw body
@@ -479,13 +496,13 @@ true,0,0,q,".pt.pw3[`lu;""secret""]",1,1,once blocktime elapses the user may try
 true,0,0,q,0<.pt.binds,1,1,and the attempt reached the server
 comment,,,,,,,a bind that throws must fail closed rather than propagate to the caller
 run,0,0,q,"throwbind:{[s;d] '""boom""}",1,1,a bind that signals
-run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);`log`handlers`ldapbind!(caplog;mockh;throwbind)],1,1,inject the throwing bind
+run,0,0,q,"perms.init[(`log`handlers`ldapbind!(caplog;mockh;throwbind)),`enabled`ldapenabled!(1b;1b)]",1,1,inject the throwing bind
 run,0,0,q,"perms.admin.adduser[`lu2;`ldap;`md5;md5 """"]",1,1,another ldap user
 run,0,0,q,.pt.pw4:first exec f from .pt.reg where event=`.z.pw,1,1,the .z.pw body
 true,0,0,q,"not .pt.pw4[`lu2;""x""]",1,1,a throwing bind denies rather than escaping to the caller
 comment,,,,,,,deps validation covers the optional ldapbind
-fail,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);`log`handlers`ldapbind!(caplog;mockh;42)],1,1,a non function ldapbind is rejected
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,back to the plain deps
+fail,0,0,q,"perms.init[(`log`handlers`ldapbind!(caplog;mockh;42)),`enabled`ldapenabled!(1b;1b)]",1,1,a non function ldapbind is rejected
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,back to the plain deps
 true,0,0,q,not perms.status[][`ldapavailable],1,1,no ldap without an injected bind or a native library
 run,0,0,q,perms.teardown[],1,1,leave clean
 comment,,,,,,,=== third adversarial pass: bind shape validation and grant file unwind ===
@@ -493,19 +510,19 @@ run,0,0,q,perms.teardown[],1,1,clean slate
 comment,,,,,,,a bind returning a non dict is DANGEROUS unchecked: r[`ReturnCode] on an int is HANDLE APPLY
 comment,,,,,,,so a bind returning 42 would attempt an IPC write to file descriptor 42
 run,0,0,q,.pt.mk:{[f] `log`handlers`ldapbind!(caplog;mockh;f)},1,1,helper building deps with a given bind
-run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] 42}],1,1,init with a bind returning a bare int
+run,0,0,q,"perms.init[(.pt.mk {[s;d] 42}),`enabled`ldapenabled!(1b;1b)]",1,1,init with a bind returning a bare int
 run,0,0,q,"perms.admin.adduser[`bindu;`ldap;`md5;md5 """"]",1,1,an ldap user
 run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,the .z.pw body
 true,0,0,q,"not .pt.pw5[`bindu;""p""]",1,1,a non dict bind result denies rather than writing to a file descriptor
-run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] enlist[`Other]!enlist 0i}],1,1,a dict with no ReturnCode
+run,0,0,q,"perms.init[(.pt.mk {[s;d] enlist[`Other]!enlist 0i}),`enabled`ldapenabled!(1b;1b)]",1,1,a dict with no ReturnCode
 run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,refresh the body
 run,0,0,q,perms.unblock[`bindu],1,1,clear any lockout from the previous attempt
 true,0,0,q,"not .pt.pw5[`bindu;""p2""]",1,1,a dict missing ReturnCode denies
-run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] (::)}],1,1,a null return
+run,0,0,q,"perms.init[(.pt.mk {[s;d] (::)}),`enabled`ldapenabled!(1b;1b)]",1,1,a null return
 run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,refresh the body
 run,0,0,q,perms.unblock[`bindu],1,1,clear lockout
 true,0,0,q,"not .pt.pw5[`bindu;""p3""]",1,1,a null bind result denies
-run,0,0,q,perms.init[`enabled`ldapenabled!(1b;1b);.pt.mk {[s;d] enlist[`ReturnCode]!enlist -1i}],1,1,a valid failure
+run,0,0,q,"perms.init[(.pt.mk {[s;d] enlist[`ReturnCode]!enlist -1i}),`enabled`ldapenabled!(1b;1b)]",1,1,a valid failure
 run,0,0,q,.pt.pw5:first exec f from .pt.reg where event=`.z.pw,1,1,refresh the body
 run,0,0,q,"perms.admin.adduser[`freshu;`ldap;`md5;md5 """"]",1,1,a FRESH user so the cache cannot mask the result
 true,0,0,q,"not .pt.pw5[`freshu;""pw""]",1,1,a valid failure return denies
@@ -515,16 +532,16 @@ run,0,0,q,".pt.bg:""/tmp/dipermbadgrants""",1,1,a scratch directory
 run,0,0,q,"system ""rm -rf "",.pt.bg",1,1,clear leftovers
 run,0,0,q,"system ""mkdir -p "",.pt.bg",1,1,create it
 run,0,0,q,"(hsym `$.pt.bg,""/default.q"") 0: enlist ""'\""deliberate grant file failure\""""",1,1,a grant file that signals
-fail,0,0,q,perms.init[`enabled`grantdirs!(1b;enlist .pt.bg);deps],1,1,init fails loudly when a grant file throws
+fail,0,0,q,"perms.init[deps,`enabled`grantdirs!(1b;enlist .pt.bg)]",1,1,init fails loudly when a grant file throws
 true,0,0,q,0=count (key `.pm) except `,1,1,the root publication is unwound - nothing left behind
 true,0,0,q,0=count .pt.reg,1,1,no handlers were registered
 true,0,0,q,not perms.status[][`enabled],1,1,status honestly reports the module as disabled
 run,0,0,q,"system ""rm -rf "",.pt.bg",1,1,clean up
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,recover
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,recover
 true,0,0,q,8=count (key `.pm) except `,1,1,recovery republishes cleanly
 run,0,0,q,perms.teardown[],1,1,leave clean
 comment,,,,,,,=== allowed and requ must agree on .q keyword joins (TorQ returned 1b unconditionally) ===
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init
 run,0,0,q,.pt.jl:([]k:`x`y;v:1 2),1,1,a table alice may read
 run,0,0,q,.pt.jr:([k:`x`y] s:`p`q),1,1,a keyed table alice may NOT read yet
 run,0,0,q,perms.admin.grantfunction[`lj;`reader;{1b}],1,1,let the reader role call lj
@@ -537,7 +554,7 @@ true,0,0,q,"perms.allowed[`alice;"".pt.jl lj .pt.jr""]",1,1,allowed permits the 
 true,0,0,q,"2=count perms.requ[`alice;"".pt.jl lj .pt.jr""]",1,1,"and requ executes it, returning both rows"
 run,0,0,q,perms.teardown[],1,1,leave clean
 comment,,,,,,,=== getapimeta enumerates the admin sub api rather than hiding 22 callables behind one row ===
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init
 run,0,0,q,.pt.m:perms.getapimeta[],1,1,take the metadata
 true,0,0,q,"(asc (key perms) except `init`getapimeta)~asc exec name from .pt.m where not name like ""admin.*""",1,1,top level rows still match the export list exactly
 true,0,0,q,"(asc (key perms.admin) except `)~asc `$last each ""."" vs/: string exec name from .pt.m where name like ""admin.*""",1,1,every admin member has its own documented row
@@ -565,29 +582,29 @@ run,0,0,q,perms.teardown[],1,1,tear down
 true,0,0,q,not (get `.h.val)~first exec f from .pt.reg where event=`.z.pg,1,1,teardown restores .h.val rather than leaving ours installed
 comment,,,,,,,=== allowed must agree with requ under permissivemode (TorQ pinned it off regardless) ===
 run,0,0,q,.pt.unl2:([]z:1 2),1,1,a table with no grants at all
-run,0,0,q,perms.init[`enabled`permissivemode!(1b;1b);deps],1,1,permissive mode ON
+run,0,0,q,"perms.init[deps,`enabled`permissivemode!(1b;1b)]",1,1,permissive mode ON
 true,0,0,q,"perms.allowed[`alice;""select from .pt.unl2""]",1,1,allowed permits an ungranted table when permissive is on
 true,0,0,q,"2=count perms.requ[`alice;""select from .pt.unl2""]",1,1,and requ agrees - it executes
-run,0,0,q,perms.init[`enabled`permissivemode!(1b;0b);deps],1,1,permissive mode OFF
+run,0,0,q,"perms.init[deps,`enabled`permissivemode!(1b;0b)]",1,1,permissive mode OFF
 true,0,0,q,"not perms.allowed[`alice;""select from .pt.unl2""]",1,1,allowed refuses when permissive is off
 fail,0,0,q,"perms.requ[`alice;""select from .pt.unl2""]",1,1,and requ agrees - it refuses
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore
 comment,,,,,,,"=== root publication is a config choice, not a fixed cost ==="
 run,0,0,q,perms.teardown[],1,1,clean slate
-run,0,0,q,perms.init[`enabled`publishroot!(1b;0b);deps],1,1,init with publishroot off
+run,0,0,q,"perms.init[deps,`enabled`publishroot!(1b;0b)]",1,1,init with publishroot off
 true,0,0,q,0=count (key `.pm) except `,1,1,nothing is published at root
 true,0,0,q,7=count .pt.reg,1,1,but handlers are still registered - the module still enforces
 true,0,0,q,"not perms.allowed[`nosuchuser;""select from .pt.trade""]",1,1,and permission checks still work
 run,0,0,q,perms.teardown[],1,1,tear down
-run,0,0,q,perms.init[`enabled`publishroot!(1b;1b);deps],1,1,init with publishroot on
+run,0,0,q,"perms.init[deps,`enabled`publishroot!(1b;1b)]",1,1,init with publishroot on
 true,0,0,q,8=count (key `.pm) except `,1,1,the legacy names are published again
-fail,0,0,q,"perms.init[`enabled`publishroot!(1b;""yes"");deps]",1,1,a non boolean publishroot is rejected
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
+fail,0,0,q,"perms.init[deps,`enabled`publishroot!(1b;""yes"")]",1,1,a non boolean publishroot is rejected
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,restore
 run,0,0,q,perms.teardown[],1,1,leave clean
 comment,,,,,,,=== a permission check must never EVALUATE the objects it is checking ===
 comment,,,,,,,"a view referenced by a query is a readable object, but evaluating it during the check would let"
 comment,,,,,,,an unpermissioned caller trigger arbitrary computation before any check has passed
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init
 run,0,0,q,.pt.se:0,1,1,a side effect counter
 run,0,0,q,.pt.viewtgt:([]x:1 2),1,1,the table the view reads
 run,0,0,q,.pt.myview::(.pt.se+:1; count .pt.viewtgt)[1],1,1,a view with an observable side effect
@@ -605,7 +622,7 @@ comment,,,,,,,expression naming .pt.secret executes and returns its data - measu
 comment,,,,,,,TorQs query function checks nothing but first q[1] so this gap is inherited not introduced
 comment,,,,,,,the predicate is rbac.isdefinedvar - the same one a bare reference and lamq use - minus the
 comment,,,,,,,target tables own column names; see the block further down that asserts both halves of that
-run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,re-init
+run,0,0,q,"perms.init[deps,enlist[`enabled]!enlist 1b]",1,1,re-init
 true,0,0,q,"0<count perms.requ[`alice;""select from .pt.trade""]",1,1,the ordinary permitted read still works
 fail,0,0,q,"perms.requ[`alice;""select p:count .pt.secret from .pt.trade""]",1,1,a columns expression naming an ungranted table is refused
 fail,0,0,q,"perms.requ[`alice;""select p:first .pt.secret`k from .pt.trade""]",1,1,and so is one extracting an actual value from it

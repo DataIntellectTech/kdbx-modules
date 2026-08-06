@@ -110,6 +110,10 @@ requireinit:{[ctx]
 
 / init
 
+/ the keys of the single init dict that are dependencies rather than config - everything else in
+/ that dict is a config setting. no config key shares a name with one of these
+depkeys:`log`handlers`ldapbind;
+
 validatedeps:{[deps]
   / log and handlers are both required and never defaulted - there is no fallback logger
   if[99h<>type deps;
@@ -133,13 +137,12 @@ validatedeps:{[deps]
       '"di.permissions: ldapbind must be a function taking (session;dict) and returning a dict with a `ReturnCode key"]];
   };
 
-resolveconfig:{[config]
-  / merge the caller's config over the known-key defaults, warning about anything unrecognised rather
-  / than dropping it silently
+resolveconfig:{[deps]
+  / take the config half of the single init dict and merge it over the known-key defaults, warning
+  / about anything unrecognised rather than dropping it silently. depkeys are dependencies, not
+  / config, so they are dropped before the unknown-key check and never reach .z.m.config
   defaults:configdefaults,ldapconfigdefaults;
-  if[config~(::); :defaults];
-  if[99h<>type config;
-    '"di.permissions: config must be a dict of settings, or (::) for defaults"];
+  config:(key[deps] except depkeys)#deps;
   if[count unknown:(key config) except key defaults;
     .z.m.logwarn[`init;"ignoring unrecognised config key(s): ",", " sv string unknown]];
   :defaults,(key[defaults] inter key config)#config;
@@ -200,9 +203,11 @@ resettables:{[]
   .z.m.ldapready:0b;
   };
 
-init:{[config;deps]
+init:{[deps]
   / wire deps, resolve config, and (when enabled) claim the message-handling .z.* events.
-  / config: a dict of settings, or (::) for defaults. deps: a dict with `log and `handlers.
+  / deps: ONE dict carrying `log and `handlers (required), `ldapbind (optional), and any config
+  / settings alongside them - the same call shape every di.* module takes, so di.torq can wire it.
+  / e.g. perms.init[(`log`handlers!(logdep;handlersdep)),`enabled`readonly!(1b;1b)]
   / idempotent - a second call reclaims the same registrations and leaves grant data intact
   validatedeps[deps];
   .z.m.loginfo:(deps`log)`info;
@@ -210,7 +215,7 @@ init:{[config;deps]
   .z.m.logerr:(deps`log)`error;
   .z.m.register:(deps`handlers)`register;
   .z.m.removehandler:(deps`handlers)`remove;
-  cfg:resolveconfig[config];
+  cfg:resolveconfig[deps];
   validateconfig[cfg];
   validateengine[cfg`engine];
   if[not initialised[];resettables[]];

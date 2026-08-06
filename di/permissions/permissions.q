@@ -101,6 +101,19 @@ requirestring:{[ctx;nm;x]
     raiseerror[ctx;nm," must be a string, got ",.Q.s1 type x]];
   };
 
+normdescription:{[ctx;x]
+  / normalise a description to a char VECTOR, and reject anything that is not text.
+  / ⚠ this is load-bearing, not cosmetic. roleinfo/groupinfo declare `description:()` - a general
+  / list - and q COLLAPSES a general column to a typed vector as soon as it holds only atoms. a
+  / one-character description like "x" is a char ATOM, so it turns the column into a char vector,
+  / and the next multi-character description then throws a bare 'type. same for a symbol description.
+  / normalising to a vector here means the column only ever receives vectors and stays general
+  if[-10h=type x;:enlist x];
+  if[10h<>type x;
+    raiseerror[ctx;"description must be a string, got ",.Q.s1 type x]];
+  :x;
+  };
+
 requireint:{[ctx;nm;x]
   / validate a public-api argument that must be an integer handle
   if[not type[x] in -6 -7h;
@@ -280,8 +293,27 @@ init:{[config;deps]
     unpublishroot[];
     .z.m.enabled:0b;
     raiseerror[`init;"grant file failed to load, root names unpublished: ",e]}];
+  ensurepublicscaffolding[];
   registerhandlers[];
   .z.m.loginfo[`init;"di.permissions initialised - engine ",string[.z.m.engine],", readonly ",("disabled";"enabled").z.m.readonly];
+  };
+
+ensurepublicscaffolding:{[]
+  / the anonymous-user path assigns `publicuser and adds to `public. both assignrole and addtogroup
+  / REFUSE an undefined role/group (as TorQ's do), so with public enabled and neither defined, every
+  / anonymous login THROWS out of .z.pw instead of connecting or being cleanly refused.
+  / TorQ has the same gap; it was simply unreachable there because the -public flag threw 'type first
+  / (see authenticate). fixing that made this reachable, so the module now provides its own
+  / scaffolding - created only when ABSENT, so a grant file's own definitions and descriptions win.
+  / the role and group are created EMPTY: an anonymous user gets nothing until an operator grants to
+  / them, so this is fail-closed, not a privilege grant
+  if[not .z.m.public;:(::)];
+  if[not `publicuser in key .z.m.roleinfo;
+    admin.addrole[`publicuser;"anonymous users - created by di.permissions, holds no grants by default"];
+    .z.m.loginfo[`init;"public access is enabled and no publicuser role was defined - created an empty one"]];
+  if[not `public in key .z.m.groupinfo;
+    admin.addgroup[`public;"anonymous users - created by di.permissions, holds no grants by default"];
+    .z.m.loginfo[`init;"public access is enabled and no public group was defined - created an empty one"]];
   };
 
 status:{[]
@@ -322,6 +354,7 @@ admin.removeuser:{[u]
 admin.addgroup:{[n;d]
   requireinit[`addgroup];
   requiresym[`addgroup;"group name";n];
+  d:normdescription[`addgroup;d];
   if[n in key .z.m.user;raiseerror[`addgroup;"cannot add group with same name as existing user: ",string n]];
   .z.m.groupinfo:.z.m.groupinfo upsert (n;d);
   };
@@ -335,6 +368,7 @@ admin.removegroup:{[n]
 admin.addrole:{[n;d]
   requireinit[`addrole];
   requiresym[`addrole;"role name";n];
+  d:normdescription[`addrole;d];
   .z.m.roleinfo:.z.m.roleinfo upsert (n;d);
   };
 
@@ -566,20 +600,12 @@ rbac.symsin:{[x]
   };
 
 rbac.checkclauses:{[u;q;b;pr]
-  / a select is permission-checked on its TARGET table only, but its where, by and columns clauses can
-  / name OTHER objects: `select p:first secretvec from open` returned secretvec's contents to a user
-  / with no grant on it, even though the identical BARE reference is refused. TorQ has the same gap -
-  / permissions.q's query checks nothing but first q[1].
-  / 2_q is (where;by;columns); the target at q[1] is already checked by the caller.
-  / the predicate is rbac.isdefinedvar - THE SAME ONE a bare reference and lamq use - so all three
-  / paths agree on what counts as a readable object, rather than this one having its own narrower idea.
-  / the target's own COLUMN NAMES are removed FIRST: inside a select a symbol matching a column denotes
-  / that column, not a same-named global, so checking it would deny ordinary queries. measured against
-  / `select id,v from t` with globals `id`/`v` also defined - flagged without this, clean with it
-  / 2_q assumes the (?/!;target;where;by;columns) shape, which rbac.isq guarantees by gating on
-  / count>=5 in a DIFFERENT function. assert it here rather than trust that coupling: on a shorter
-  / list 2_q silently yields (), so refs is empty, so nothing is checked and the query is PERMITTED.
-  / a silent fail-OPEN is the one direction a permission check must never take, so fail loudly instead
+  / read-check every object named in a select's where, by and columns clauses - the target at q[1] is
+  / already checked by the caller, 2_q is the rest. uses rbac.isdefinedvar, the SAME predicate a bare
+  / reference and lamq use, minus the target's own column names.
+  / full rationale, the leak it closes and the false-positive measurements: permissions.md, "Clause checking"
+  / the guard below is defence in depth: rbac.isq gates count>=5 in a DIFFERENT function, and on a short
+  / list 2_q silently yields () - nothing checked, query PERMITTED. fail loudly rather than fail open
   if[5>count q;
     raiseerror[`query;"malformed query tree - expected at least 5 elements, got ",string count q]];
   tgt:$[11h=abs type q 1;first q 1;`];

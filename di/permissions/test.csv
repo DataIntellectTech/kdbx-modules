@@ -278,12 +278,58 @@ comment,,,,,,,"=== EVERY admin entry point validates its arguments through raise
 comment,,,,,,,a raw 'type from a downstream upsert bypasses the log entirely - no audit trail of who sent what
 comment,,,,,,,this asserts the whole surface at once so a newly added admin function cannot quietly skip it
 run,0,0,q,".pt.pfx:{[f] r:@[f;::;{x}]; $[10h=type r;0<count r ss ""di.permissions:"";0b]}",1,1,helper - did the call raise a module prefixed error
-run,0,0,q,".pt.bad:({perms.admin.removeuser[""u""]};{perms.admin.removegroup[""g""]};{perms.admin.removerole[""r""]};{perms.admin.removefromgroup[""u"";""g""]};{perms.admin.unassignrole[""u"";""r""]};{perms.admin.addfunction[""f"";""g""]};{perms.admin.removefunction[""f"";""g""]};{perms.admin.revokeaccess[""t"";""g"";""read""]};{perms.admin.revokefunction[""o"";""r""]};{perms.admin.createvirtualtable[""v"";`t;()]};{perms.admin.removevirtualtable[""v""]};{perms.admin.addpublic[""u"";1i]};{perms.admin.removepublic[""u""]};{perms.admin.addtogroup[""u"";`g]};{perms.admin.assignrole[""u"";`r]};{perms.admin.cloneuser[`orig;`nc;`notastring]})",1,1,one wrong typed call per entry point that previously leaked a raw error
+run,0,0,q,.pt.bad:(),1,1,one wrong typed call per entry point that previously leaked a raw error - built one per row so it stays readable
+run,0,0,q,".pt.bad,:{perms.admin.removeuser[""u""]}",1,1,removeuser
+run,0,0,q,".pt.bad,:{perms.admin.removegroup[""g""]}",1,1,removegroup
+run,0,0,q,".pt.bad,:{perms.admin.removerole[""r""]}",1,1,removerole
+run,0,0,q,".pt.bad,:{perms.admin.removefromgroup[""u"";""g""]}",1,1,removefromgroup
+run,0,0,q,".pt.bad,:{perms.admin.unassignrole[""u"";""r""]}",1,1,unassignrole
+run,0,0,q,".pt.bad,:{perms.admin.addfunction[""f"";""g""]}",1,1,addfunction
+run,0,0,q,".pt.bad,:{perms.admin.removefunction[""f"";""g""]}",1,1,removefunction
+run,0,0,q,".pt.bad,:{perms.admin.revokeaccess[""t"";""g"";""read""]}",1,1,revokeaccess
+run,0,0,q,".pt.bad,:{perms.admin.revokefunction[""o"";""r""]}",1,1,revokefunction
+run,0,0,q,".pt.bad,:{perms.admin.createvirtualtable[""v"";`t;()]}",1,1,createvirtualtable
+run,0,0,q,".pt.bad,:{perms.admin.removevirtualtable[""v""]}",1,1,removevirtualtable
+run,0,0,q,".pt.bad,:{perms.admin.addpublic[""u"";1i]}",1,1,addpublic
+run,0,0,q,".pt.bad,:{perms.admin.removepublic[""u""]}",1,1,removepublic
+run,0,0,q,".pt.bad,:{perms.admin.addtogroup[""u"";`g]}",1,1,addtogroup
+run,0,0,q,".pt.bad,:{perms.admin.assignrole[""u"";`r]}",1,1,assignrole
+run,0,0,q,".pt.bad,:{perms.admin.cloneuser[`orig;`nc;`notastring]}",1,1,cloneuser
 true,0,0,q,16=count .pt.bad,1,1,all sixteen previously unguarded entry points are covered
 true,0,0,q,all .pt.pfx each .pt.bad,1,1,every one raises a module prefixed error rather than a bare type or length
 run,0,0,q,.pt.nerr:count select from .pt.cap where lvl=`error,1,1,error log count before
 run,0,0,q,"@[{perms.admin.removeuser[""u""]};(::);{x}]",1,1,drive one rejection
 true,0,0,q,.pt.nerr<count select from .pt.cap where lvl=`error,1,1,and the rejection reached the injected logger - it is not only thrown
+comment,,,,,,,"=== description columns must not collapse - a 1-char description is a char ATOM ==="
+comment,,,,,,,"roleinfo/groupinfo declare description:() - a general list. q collapses a general column"
+comment,,,,,,,to a typed vector once it holds only atoms so a 1-char description turned it into a char
+comment,,,,,,,vector and the NEXT multi-char description threw a bare 'type. normdescription prevents that
+run,0,0,q,"perms.admin.addrole[`dc1;""x""]",1,1,a ONE CHARACTER role description - a char atom
+run,0,0,q,"perms.admin.addrole[`dc2;""a much longer description""]",1,1,then a multi character one - this threw type before the fix
+run,0,0,q,"perms.admin.addgroup[`dg1;""y""]",1,1,same for groups - one character first
+run,0,0,q,"perms.admin.addgroup[`dg2;""a much longer description""]",1,1,then multi character
+fail,0,0,q,perms.admin.addrole[`dc3;`asymbol],1,1,a symbol description is refused rather than silently collapsing the column
+fail,0,0,q,perms.admin.addgroup[`dg3;`asymbol],1,1,and likewise for groups
+comment,,,,,,,"NB the two run rows above cannot reproduce the collapse mid-suite - by now the column already"
+comment,,,,,,,"holds multi-char strings so it is general already. test normdescriptions CONTRACT directly:"
+run,0,0,q,".pt.mns2:first (key `.m.di) where (string key `.m.di) like ""*permissions*""",1,1,derive the mangled namespace
+run,0,0,q,".pt.nd:get `$"".m.di."",(string .pt.mns2),"".normdescription""",1,1,reach the private normaliser
+true,0,0,q,"10h=type .pt.nd[`t;""x""]",1,1,a one character description comes back as a char VECTOR not an atom - this is what stops the collapse
+true,0,0,q,"1=count .pt.nd[`t;""x""]",1,1,and it still holds its single character
+true,0,0,q,"""abc""~.pt.nd[`t;""abc""]",1,1,a multi character description passes through unchanged
+fail,0,0,q,.pt.nd[`t;`asymbol],1,1,and a non-text description is refused
+true,0,0,q,"perms.allowed[`alice;""select from .pt.trade""]",1,1,and the tables still work afterwards
+comment,,,,,,,"=== public access provides its own scaffolding - assignrole/addtogroup refuse unknown names ==="
+comment,,,,,,,"with public enabled and no publicuser role, TorQs provisioning path THROWS out of .z.pw."
+comment,,,,,,,it was unreachable in TorQ only because the -public flag threw type first - fixing that exposed it
+run,0,0,q,perms.teardown[],1,1,tear down first so this starts from a known handler state
+run,0,0,q,perms.init[`enabled`public!(1b;1b);deps],1,1,enable public access
+run,0,0,q,.pt.pw2:first exec f from .pt.reg where event=`.z.pw,1,1,take the freshly registered .z.pw body
+true,0,0,q,".pt.pw2[`anonA;""""]",1,1,an anonymous login succeeds rather than throwing no such role
+true,0,0,q,".pt.pw2[`anonB;""""]",1,1,and a second one
+true,0,0,q,"not .pt.pw2[`anonC;""apassword""]",1,1,but a password bearing anonymous attempt is still refused
+true,0,0,q,"not perms.allowed[`anonA;""select from .pt.secret""]",1,1,the anonymous user is fail closed - it holds no grants
+run,0,0,q,perms.init[enlist[`enabled]!enlist 1b;deps],1,1,restore
 comment,,,,,,,lambda expressions - the lamq path was previously untested
 run,0,0,q,.pt.pubtab:([]a:1 2),1,1,a readable table
 run,0,0,q,perms.admin.grantaccess[`.pt.pubtab;`inner;`read],1,1,grant read on it to alices group
@@ -587,4 +633,16 @@ run,0,0,q,perms.admin.grantaccess[`.pt.colltab;`inner;`read],1,1,grant alice rea
 true,0,0,q,"0<count perms.requ[`alice;""select zz from .pt.colltab""]",1,1,the column wins over the same named global - no false denial
 comment,,,,,,,NB the virtual table splice is asserted earlier in this suite and still passes with the
 comment,,,,,,,clause check active - that is the regression proof; .pt.vtrade is deliberately revoked by now
+comment,,,,,,,"=== the 2_q shape guard - no public path reaches it, so it is tested where it lives ==="
+comment,,,,,,,rbac.isq gates on count>=5 before rbac.query runs so no client input can present a short tree.
+comment,,,,,,,"the guard exists because 2_q on a short list yields () - refs empty, nothing checked, query"
+comment,,,,,,,PERMITTED. a silent fail-open is the one direction a permission check must never take
+run,0,0,q,".pt.mns:first (key `.m.di) where (string key `.m.di) like ""*permissions*""",1,1,derive this modules mangled namespace rather than hardcoding it
+run,0,0,q,".pt.cc:get `$"".m.di."",(string .pt.mns),"".rbac.checkclauses""",1,1,reach the private checkclauses - there is no public path to a malformed tree
+true,0,0,q,100h=type .pt.cc,1,1,resolved the internal function
+fail,0,0,q,.pt.cc[`alice;(?;`t);1b;0b],1,1,a tree shorter than 5 elements RAISES rather than silently permitting
+fail,0,0,q,.pt.cc[`alice;(?;`t);0b;0b],1,1,and the dry run form raises too - a malformed tree is not a permission verdict
+run,0,0,q,".pt.ccerr:@[{.pt.cc[`alice;(?;`t);1b;0b]};(::);{x}]",1,1,capture the refusal text
+true,0,0,q,"0<count .pt.ccerr ss ""malformed query tree""",1,1,the refusal names the malformed shape
+true,0,0,q,.pt.cc[`alice;(?;`.pt.trade;();0b;());0b;0b],1,1,a well formed tree still passes - the guard does not over trigger
 run,0,0,q,perms.teardown[],1,1,leave clean

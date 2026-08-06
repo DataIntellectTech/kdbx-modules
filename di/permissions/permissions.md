@@ -114,6 +114,12 @@ Unrecognised keys are **warned about**, not silently dropped. Every key is uniqu
 survives `di.config`'s flat cascade — note the `ldap*` prefixes, which exist because legacy ships four
 separate `enabled` settings that would otherwise collapse onto one another.
 
+> **⚠ Breaking config change: `ldapdebug` is now a boolean.** It was an int (`0i`); it is now `0b`.
+> `init` type-checks every setting whose shape is fixed, so a caller passing `ldapdebug:1i` **will now
+> fail `init`** with `config key(s) ldapdebug must be a boolean (1b or 0b)`. The value was only ever
+> read as an on/off flag (`if[.z.m.config`ldapdebug;…]` in `ldap.debuglog`) — nothing graded it as a
+> level — so the int type was a lie the validator now refuses. Set `ldapdebug:1b` instead.
+
 ### ⚠ `ignorelist` defaults to empty, unlike TorQ
 
 TorQ's `zpsignore.q` ships **enabled** with `` (`upd;"upd";`.u.upd;".u.upd") ``, exempting those from
@@ -134,16 +140,28 @@ forms. It applies to `.z.ps` only, matching TorQ; `.z.pg` is never exempted.
 
 ### `init[config;deps]`
 Wire dependencies, resolve config, and (when enabled) publish root names, load grants and register
-handlers. Idempotent.
+handlers. Idempotent — see [Initialisation](#initialisation) for the full worked example.
+```q
+perms.init[`enabled`readonly!(1b;0b);`log`handlers!(logdep;handlersdep)]
+/ or with defaults only (module loads but stays disabled):
+perms.init[(::);`log`handlers!(logdep;handlersdep)]
+```
 
 ### `teardown[]`
 Release everything `init` installed: handler registrations, `.h.val`, and the published `.pm.*` root
 names. Grant data survives, so a later `init` re-registers and re-publishes cleanly.
+```q
+count (key `.pm) except `   / 8   - the published root names
+perms.teardown[]
+count (key `.pm) except `   / 0   - all removed
+perms.status[][`enabled]    / 0b  - and the module reports itself disabled
+```
 
 ### `allowed[user;query]`
 Would this user be permitted to run this query? Never executes it.
 ```q
-perms.allowed[`alice;"select from trade"]   / 1b
+perms.allowed[`alice;"select from trade"]    / 1b - alices group is granted read on trade
+perms.allowed[`alice;"select from secret"]   / 0b - no grant, and nothing was executed
 ```
 
 > **`allowed` is a true predicate.** It returns a boolean and never executes the query. Three earlier
@@ -154,15 +172,43 @@ perms.allowed[`alice;"select from trade"]   / 1b
 
 ### `requ[user;query]`
 Permission-check a query as a user and execute it. Passes the query through untouched when the module
-is disabled.
+is disabled. This is the authority — `allowed` is the dry run.
+```q
+perms.requ[`alice;"select from trade"]
+/ sym px
+/ ---------
+/ a   1
+/ a   2
+/ b   3
+
+perms.requ[`alice;"select from secret"]
+/ 'di.permissions: query: no read permission on [secret]
+```
 
 ### `val[expr]` / `valp[expr]`
 Evaluate a parse tree / a string or parse tree, under `reval` when read-only mode is on. TorQ binds
 these at **load** time (`val:$[readonly;reval;eval]`), so read-only could not be toggled without a
 restart; here the choice resolves per call.
+```q
+perms.valp "2+2"        / 4
+perms.val parse "2+2"   / 4
+```
+Both are used by `di.gateway`, which copies the function value; neither performs a permission check on
+its own — that is `requ`'s job.
 
 ### `execas[query;user]`
 Run a query as another user, subject to that user's permissions.
+```q
+perms.execas["select from trade";`alice]
+/ sym px
+/ ---------
+/ a   1
+/ a   2
+/ b   3
+
+perms.execas["select from secret";`alice]
+/ 'di.permissions: query: no read permission on [secret]
+```
 
 ### `admin`
 The grant-administration sub-API. `admin.wildcard` is the wildcard object (`` `$"*" ``) — grant against
@@ -186,6 +232,9 @@ perms.admin.grantaccess[`trade;`traders;`read];
 perms.admin.adduser[`alice;`local;`md5;md5 "secret"];
 perms.admin.assignrole[`alice;`reader];
 perms.admin.addtogroup[`alice;`traders];
+
+perms.admin.wildcard                              / `*  - the wildcard object
+perms.admin.grantfunction[perms.admin.wildcard;`admin;{1b}];   / superuser: any function
 ```
 
 > **Paramchecks must be functions.** They are applied to the call's parameter dict under protection,
@@ -194,10 +243,19 @@ perms.admin.addtogroup[`alice;`traders];
 
 ### `loadpermissions[]`
 Load the grant cascade — `default` → `proctype` → `procname` — from every configured `grantdirs`
-directory. Missing files are skipped with an info log.
+directory. Missing files are skipped with an info log. Called automatically by `init`; call it again to
+reload after editing a grant file.
+```q
+perms.loadpermissions[]
+/ with no grantdirs configured this logs "nothing to load" and returns
+```
 
 ### `unblock[user]`
 Clear a user's cached LDAP state — both a lockout and any cached successful authentication.
+```q
+perms.unblock[`alice]
+/ a user with no LDAP record logs "no ldap login record for user alice" and returns
+```
 
 > TorQ's equivalent returns early unless the user is actually *blocked*, which leaves no way to force
 > re-authentication for a user who is merely cached: after a password change their cached success
@@ -207,9 +265,27 @@ Clear a user's cached LDAP state — both a lockout and any cached successful au
 ### `status[]`
 What the module is currently enforcing: engine, read-only state, permissive mode, run mode, maxsize,
 public access, and LDAP availability. Legacy has no equivalent introspection.
+```q
+perms.status[]
+/ enabled       | 1b
+/ engine        | `rbac
+/ readonly      | 0b
+/ permissivemode| 0b
+/ runmode       | 1b
+/ maxsize       | 200000000
+/ public        | 0b
+/ publishroot   | 1b
+/ ldapenabled   | 0b
+/ ldapavailable | 0b
+```
+`ldapavailable` reports whether a bind is actually reachable — the native library having loaded, or an
+`ldapbind` having been injected — not merely that `ldapenabled` is set.
 
 ### `version`
-The module version string, e.g. `"0.1.0"`.
+The module version string.
+```q
+perms.version   / "0.1.0"
+```
 
 Read at load time from the **`VERSION` file** in the module directory (`version:first read0`:::VERSION`
 in `init.q`) rather than being hardcoded as a q literal, so a release bump touches one plain-text file.
@@ -223,6 +299,19 @@ if a module omits it. Moving the *value* to a file does not move the *export*.
 This module's api metadata — one `` `name`public`descrip`params`return `` row per callable export, for
 `di.torq` to collect and register with `di.api`. `init` and `getapimeta` are deliberately absent: they
 are framework plumbing `di.torq` calls by convention rather than discovers. Needs no `init`.
+```q
+cols perms.getapimeta[]    / `name`public`descrip`params`return
+count perms.getapimeta[]   / 33 - 11 top-level exports plus the 22 admin.* members
+
+3 sublist select name,public,descrip from perms.getapimeta[]
+/ name     public descrip
+/ ---------------------------------------------------------------------
+/ teardown 1b     "release handler registrations, .h.val and the publi..
+/ version  1b     "module version string"
+/ status   1b     "what this module is currently enforcing - engine, r..
+```
+The `admin.*` members carry `public:0b` — they are real callables registered in `di.api`'s full view
+but kept out of the public summary, which lists `admin` itself.
 
 ---
 
@@ -350,6 +439,56 @@ this schema.
 
 ---
 
+## Usage Example
+
+```q
+/ log dep must already match the binary {[c;m]} contract - write your own, or use di.log:
+/   logging:use`di.log
+/   logdep:logging.logdict
+logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
+
+/ di.handlers is INJECTED, not imported - build its dep dict and hand it over
+perms:use`di.permissions
+handlers:use`di.handlers
+handlers.init[enlist[`log]!enlist logdep];
+handlersdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list);
+
+perms.init[enlist[`enabled]!enlist 1b;`log`handlers!(logdep;handlersdep)];
+
+/ set up a reader who may select from trade and nothing else
+trade:([]sym:`a`a`b;px:1 2 3.0);
+secret:([]pin:1234 5678);
+perms.admin.addrole[`reader;"may select"];
+perms.admin.grantfunction[`select;`reader;{1b}];
+perms.admin.addgroup[`traders;"trading desk"];
+perms.admin.grantaccess[`trade;`traders;`read];
+perms.admin.adduser[`alice;`local;`md5;md5 "secret"];
+perms.admin.assignrole[`alice;`reader];
+perms.admin.addtogroup[`alice;`traders];
+
+/ dry run - allowed never throws, it returns a verdict
+perms.allowed[`alice;"select from trade"]    / 1b
+perms.allowed[`alice;"select from secret"]   / 0b
+
+/ execute - requ returns the result, or RAISES on a refusal
+perms.requ[`alice;"select from trade"]       / the three rows
+/ perms.requ[`alice;"select from secret"]    / 'di.permissions: query: no read permission on [secret]
+/   ^ left commented out: a refusal raises, which would stop this block. catch it if you want to run it:
+@[perms.requ[`alice;];"select from secret";{[e] -1 "refused: ",e;}];
+
+/ what is being enforced right now
+perms.status[]
+
+/ release everything on the way out
+perms.teardown[];
+```
+
+From here a real process would load its grants from files rather than by hand — set `grantdirs` and
+let `init` run the `default` → `proctype` → `procname` cascade. See
+[Root-name publication](#root-name-publication) for why an unmodified TorQ grant file works unchanged.
+
+---
+
 ## Running tests
 
 > **Note on suite structure.** Rows share accumulated state (users, groups and grants created by
@@ -416,7 +555,15 @@ directory-specific behaviour such as referrals or TLS negotiation.
 port and drives a real connection. It exists because **`reval`'s read-only restriction is not applied
 when `.z.w=0`**: at the console `reval parse "g::1"` happily sets `g`, but over a real handle the same
 call throws `'noupdate`. k4unit runs in-process at handle 0, so a unit test asserting a blocked write
-would fail against correct code. `moduletest` only loads `test.csv`, so run this one directly:
+would fail against correct code.
+
+> **⚠ The invocation below is a workaround, not the supported interface.** `di.k4unit.moduletest`
+> hardcodes the filename `test.csv` (`di/k4unit/init.q:9`) and its `KUltf`/`KUrt` primitives are not
+> exported, so there is **no supported way to run a second suite in a module**. The lines below reach
+> into `di.k4unit`'s private, loader-mangled namespace and will break if that mangling changes.
+> **Upstream ask: a `moduletest[module;filename]` overload on `di.k4unit`**, after which this reduces
+> to ``k4unit.moduletest[`di.permissions;`test_integration.csv]``.
+
 ```q
 k4unit:use`di.k4unit
 .m.di.0k4unit.KUltf .Q.dd[hsym`$.Q.m.mp`di.permissions;`test_integration.csv]
@@ -425,6 +572,22 @@ k4unit.getresults[]
 ```
 Run it in a fresh session — running it after `moduletest` re-runs the still-loaded unit tests against
 dirty module state.
+
+> **What this suite does and does not prove.** It verifies read-only enforcement and parse-tree
+> handling over a **real child process and a real IPC handle** — the things that cannot be tested
+> in-process, because `reval` does not enforce at `.z.w=0`.
+>
+> It wires **real `di.handlers` only when that module is on `QPATH`**, falling back to a minimal
+> inline stand-in (a bare `set[ev;f]`) otherwise. `di.handlers` lives on the `feature-handlers`
+> branch, so a checkout of `feature-permissions` alone runs against the stand-in and does **not**
+> exercise real phase/`exec`-ownership dispatch — that is covered by `di.handlers`' own suite, not
+> this one. Check out both branches to exercise the real wiring.
+>
+> Which path ran is **reported, not assumed**: the suite asserts the child returned a boolean for
+> `realhandlers`, and the value is visible in the results. This exists because the "prefer real
+> `di.handlers`" branch was silently dead for weeks — `h.init` on a function-local throws
+> `'h.init` (module dot-sugar resolves only against a *global* name), and the protected apply
+> swallowed it, so the stand-in always ran while the suite reported green.
 
 ---
 

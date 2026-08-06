@@ -47,10 +47,11 @@ h "1+1"
 | `getservers` | `getservers[proctype]` | Live (`w` non-null) `SERVERS` rows for a proctype. |
 | `gethandlebytype` | `gethandlebytype[proctype;selection]` | One live handle via `` `any``/`roundrobin`/`last``; `0Ni` if none. Bumps usage stats. |
 | `waitfortype` | `waitfortype[proctype;timeoutms;pollms]` | Block until a live connection exists or timeout; `1b`/`0b`. Caller decides if a timeout is fatal. `startup` must have run first. |
-| `getapimeta` | `getapimeta[]` | This module's api metadata, one row per **callable** API function (`init`/`getapimeta` plumbing omitted), for `di.torq` to register with `di.api`. |
+| `getapimeta` | `getapimeta[]` | This module's api metadata, one row per **callable** API function (`init`/`getapimeta`/`version` plumbing omitted), for `di.torq` to register with `di.api`. |
+| `version` | `version` | The module's semver string (`"0.1.0"`) — metadata, not a function. Sourced from `version.txt` (priority) with an `init.q` fallback; read by `di.depcheck` to satisfy other modules' declared minimum-version requirements. |
 
 Export is deliberately conservative — only functions `di.torq` or a consumer actually calls
-(so `di.api` lists exactly these). The rest are **internal**: `retry` (the scheduled
+(so `di.api` lists exactly these), plus the `version` metadata string. The rest are **internal**: `retry` (the scheduled
 `serversretry` job — passed to the timer *by value* at init, so it needs no export; it first
 runs `cleanup` to sweep ungracefully-vanished handles, then reopens every dead handle),
 `cleanup`, `formathp`, `opencon`, `readprocesscsv`, `retryrows`, `selector`, `updatestats`,
@@ -92,9 +93,15 @@ priority-ordered fan-out.
   selection, missing or malformed `process.csv`). `init`'s own dependency validation is the one
   exception (plain `'` — no logger yet).
 - **`getapimeta`** exported; a test asserts it documents exactly the module's *callable*
-  exports — `init`/`getapimeta` are plumbing (di.torq calls them by convention) and are
-  deliberately omitted from the registry rows, matching di.toml and the skill convention. No
-  `version` export / VERSION file yet — deferred to the di.depcheck rollout, as in di.config.
+  exports — `init`/`getapimeta`/`version` are plumbing/metadata (di.torq calls or reads them by
+  convention) and are deliberately omitted from the registry rows, matching di.toml and the skill
+  convention.
+- **`version` export** — a bare exported semver string (`"0.1.0"`, numeric `major.minor.patch`),
+  read by di.depcheck to satisfy other modules' declared minimum-version requirements. The source
+  of truth is **`version.txt`** in the module folder: `init.q` reads it module-relative at load
+  (`:::version.txt`) and it takes **priority** over the compiled-in fallback in `init.q`; a missing
+  or empty `version.txt` falls back to that default. Bump the release version by editing
+  `version.txt` alone.
 - **Env-free** — di.servers reads no environment variable; the `process.csv` path arrives via
   `config`processcsv` (di.torq resolves it), holding di.config's env-free boundary.
 

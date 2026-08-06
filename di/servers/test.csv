@@ -49,9 +49,13 @@ fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proc
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection
 fail,0,0,q,"svc.waitfortype[`hdb;""x"";200]",1,1,waitfortype rejects a non-integer timeout
 fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;rtmr;mockhandlers;""rdb"";`p)]",1,1,init rejects a non-symbol proctype
-true,0,0,q,(asc (key svc) except `init`getapimeta)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the callable exports (plumbing omitted)
-true,0,0,q,not any `init`getapimeta in exec name from svc.getapimeta[],1,1,getapimeta omits plumbing (init/getapimeta not registered)
+true,0,0,q,(asc (key svc) except `init`getapimeta`version)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the callable exports (version/plumbing omitted)
+true,0,0,q,not any `init`getapimeta`version in exec name from svc.getapimeta[],1,1,getapimeta omits plumbing (init/getapimeta/version not registered)
 true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapimeta rows carry the registry columns
+comment,,,,,,,module metadata - exported version
+true,0,0,q,10h=type svc.version,1,1,version is a string
+true,0,0,q,0<count svc.version,1,1,version is non-empty
+true,0,0,q,svc.version~trim first read0 hsym`$os.abspath["di/servers/version.txt"],1,1,exported version matches version.txt (the source of truth, priority over the init.q fallback)
 comment,,,,,,,real di.log integration (the merged logger itself - not the recording mock)
 true,0,0,q,all `info`warn`error in key (use`di.log)[`logdict]`log,1,1,di.log logdict provides the info/warn/error keys the injected-log contract requires
 run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!((use`di.log)[`logdict]`log;rtmr;mockhandlers;`selfproc;`selfinst)]",1,1,init accepts di.log's real logdict end-to-end (idempotent re-init against the merged logger)

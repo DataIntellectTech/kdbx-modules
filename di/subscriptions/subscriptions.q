@@ -55,6 +55,14 @@ requiretabspec:{[ctx;nm;x]
   / a table/sym selector is either ` (all) or one or more symbols
   if[not 11h=abs type x;
     raiseerror[ctx;nm," must be ` (all) or a symbol vector, got type ",.Q.s1 type x]];
+  / an EMPTY symbol vector is rejected rather than quietly treated as a filter. as tabs it would
+  / otherwise surface as "tickerplant returned no schema", blaming the tickerplant for the caller's
+  / own input; as syms it would SUCCEED SILENTLY - narrowed path, zero rows replayed, a defined but
+  / empty table and no warning at any level. every other rejection here goes through raiseerror and
+  / every mismatch gets a warn, so a silent no-op would be the module contradicting its own standard.
+  / NB 11h is the VECTOR case - the ` all-sentinel is -11h and has count 1, so it is unaffected
+  if[(11h=type x) and 0=count x;
+    raiseerror[ctx;nm," is an empty symbol vector - pass ` for all, or name at least one"]];
   };
 
 normspec:{[x]
@@ -182,6 +190,44 @@ fetchdetails:{[tph;tabs;syms]
     raiseerror[`subscribe;(string .z.m.subdetailsfunc)," schemalist entries must be (tablename;schema) pairs"]];
   if[not all -11h=type each entries[;0];
     raiseerror[`subscribe;(string .z.m.subdetailsfunc)," schemalist entries must name their table with a symbol"]];
+  / the SCHEMA half must actually be a table. without this a tickerplant that sends a dict or an atom
+  / gets it planted at root under the caller's table name by createtables' @[`.;name;:;schema] - which
+  / succeeds for any value - and subscribe then reports success over a root name that is not a table.
+  / .Q.qt, not 98h=type: a KEYED table is 99h and must still be accepted, while a column-less ([]) is
+  / also 99h and must not be (its cols are empty, so replaying into it is meaningless)
+  if[not all .Q.qt each entries[;1];
+    raiseerror[`subscribe;(string .z.m.subdetailsfunc)," schemalist entries must give a table as the schema"]];
+  / a duplicate table name would be carried straight through to subtables, which di.rdb and di.wdb
+  / iterate over, and into the registry's tabs column. reject rather than silently dedupe - every
+  / other malformed response here fails loud, and deduping would hide the tickerplant's own bug
+  / NB `where` over the dict `count each group nms` yields the duplicated NAMES directly - indexing
+  / nms by it instead would index by symbol and throw a bare 'type that bypasses the log
+  nms:entries[;0];
+  if[(count distinct nms)<>count nms;
+    raiseerror[`subscribe;(string .z.m.subdetailsfunc)," schemalist names a table more than once: ",
+      ", " sv string where 1<count each group nms]];
+  / the same shape discipline for the other half of the response. two shapes stay legitimate and are
+  / covered by tests: an EMPTY logfilelist (a tickerplant with nothing logged yet) and a NULL log
+  / symbol (preflightone rejects that with its own, more specific message)
+  lfl:d`logfilelist;
+  if[0>type lfl;
+    raiseerror[`subscribe;(string .z.m.subdetailsfunc)," logfilelist must be a list of (messagecount;logfile) pairs"]];
+  lfe:lfl where not 0=count each lfl;
+  if[not all 2=count each lfe;
+    raiseerror[`subscribe;(string .z.m.subdetailsfunc)," logfilelist entries must be (messagecount;logfile) pairs"]];
+  if[not all (type each lfe[;0]) in -7 -6h;
+    raiseerror[`subscribe;(string .z.m.subdetailsfunc)," logfilelist entries must give the message count as an integer"]];
+  if[not all -11h=type each lfe[;1];
+    raiseerror[`subscribe;(string .z.m.subdetailsfunc)," logfilelist entries must name the log file with a symbol"]];
+  / a NEGATIVE count is a malformed response, not "nothing to replay" - a shape check cannot catch it
+  / because -1 is a perfectly good integer. rejected HERE rather than in preflightone so it is caught
+  / even when replay is 0b; preflight only ever runs on the replay path
+  / NB not `neg` - that is a q reserved word and a bare assignment to it throws 'assign at PARSE
+  / time, taking the whole module down at load
+  badcount:lfe where 0>lfe[;0];
+  if[0<count badcount;
+    raiseerror[`subscribe;(string .z.m.subdetailsfunc)," reported a negative message count (",
+      (", " sv .Q.s1 each badcount[;0]),") - a count must be zero or more"]];
   :d;
   };
 
@@ -269,6 +315,19 @@ requirerootupd:{[]
     raiseerror[`replay;"replay was requested but no upd is defined at root - define one before subscribing"]];
   };
 
+requiretablesexist:{[wanted]
+  / with setschema 0b the caller keeps its own schemas, so nothing here defines the target tables -
+  / and a replay would then drive upd into tables that may not exist. that fails differently on each
+  / path and NEITHER failure reaches raiseerror or the log: the all-syms path dies inside the
+  / caller's own upd, the narrowed path throws from `cols get t` in payloadtable. check it up front.
+  / tables[`.] is specifically the ROOT table list - it excludes a non-table root name that happens
+  / to collide, which a bare `in key `.` would not (both measured from module context)
+  missing:(),wanted where not wanted in tables[`.];
+  if[0<count missing;
+    raiseerror[`subscribe;"setschema is 0b but no table is defined at root for ",(", " sv string missing),
+      " - define them first, or subscribe with setschema 1b"]];
+  };
+
 replaynarrowed:{[nmsg;lf;subtabs;syms]
   / a narrowed subscription: the log holds every table and sym, so install a filtering wrapper as the
   / ROOT upd for the duration of the replay and restore the original afterwards - on the failure path
@@ -316,7 +375,9 @@ preflightone:{[entry]
   lf:last entry;
   if[null lf;
     raiseerror[`replay;"tickerplant reported a message count but no log file"]];
-  if[0>=nmsg; :(::)];
+  / 0=, not 0>= - fetchdetails has already rejected a negative count as a malformed response, so a
+  / negative can no longer reach here and must not be quietly folded into "nothing to replay"
+  if[0=nmsg; :(::)];
   good:goodcount lf;
   if[good<nmsg;
     raiseerror[`replay;"log ",(string lf)," holds only ",(string good)," readable message(s) but the tickerplant reported ",
@@ -404,6 +465,7 @@ subscribe:{[tph;tabs;syms;setschema;replay]
   / preflight EVERY log before defining a single table, so a short log leaves the process untouched
   if[replay;
     requirerootupd[];
+    if[not setschema;requiretablesexist[wanted]];
     preflightlogs[details]];
   if[setschema;createtables[schemapairs]];
   if[replay;replaylogs[details;wanted;syms;tabs~`]];
@@ -413,6 +475,40 @@ subscribe:{[tph;tabs;syms;setschema;replay]
     ([]handle:enlist tph;tabs:enlist wanted;syms:enlist syms;subtime:enlist .z.p;active:enlist 1b);
   .z.m.loginfo[`subscribe;"subscribed to ",(", " sv string wanted)," on tickerplant handle ",.Q.s1 tph];
   :buildreturn[details;wanted];
+  };
+
+unsubscribe:{[tph]
+  / release the subscriptions held on this handle, and return the tables released.
+  / call this BEFORE hclose. it exists because of the one liveness signal kdb+ cannot give us: a
+  / handle the CALLER closes fires no .z.pc, and kdb+ then reissues the freed descriptor to the next
+  / connection - so a stale row would go on reporting live, and the duplicate guard would refuse a
+  / legitimate re-subscribe to a table nobody holds any more. the .z.pc observer covers tickerplant
+  / death; this covers a deliberate local close, which nothing else can observe
+  / the caller owns the connection, so this NEVER closes the handle. it also never messages the
+  / tickerplant: the subdetails protocol has no unsubscribe verb, and inventing one would break the
+  / property that this module speaks TorQ's real protocol rather than a private dialect
+  / a deliberate release DELETES its rows rather than flagging them dead: the caller already knows it
+  / closed the handle, so the row carries no information it does not have. a .z.pc drop is the
+  / opposite case and KEEPS its row (see markdead) - an unexpected disconnect is worth seeing after
+  / the fact. that asymmetry is deliberate; see subscriptions.md for what it does and does not bound
+  / idempotent by design - a release path must be safe to call twice, and a subscription the
+  / tickerplant already dropped is dead before we get here, so neither case is an error
+  requireinit[`unsubscribe];
+  requirehandle[`unsubscribe;tph];
+  / select on the STORED active flag, NOT the effective one activesubscriptions computes. a caller
+  / that closed the handle before calling us leaves a row that is stored-active but effectively dead
+  / (.z.W has already lost the handle) - and that is exactly the row whose revival on a reissued
+  / descriptor this function exists to prevent, so it must still be found and removed here.
+  / tph is a function LOCAL, so it resolves inside the where clause - a module-level name would not
+  / (see activesubscriptions). match-each, not =, because handle is a general column
+  held:select from .z.m.subscriptions where active, handle~\:tph;
+  if[0=count held;
+    .z.m.logwarn[`unsubscribe;"no live subscription on handle ",(.Q.s1 tph)," - nothing to release"];
+    :`$()];
+  .z.m.subscriptions:delete from .z.m.subscriptions where active, handle~\:tph;
+  released:distinct (),raze held`tabs;
+  .z.m.loginfo[`unsubscribe;"released ",(", " sv string released)," on tickerplant handle ",.Q.s1 tph];
+  :released;
   };
 
 subscribed:{[]
@@ -441,6 +537,8 @@ getapimeta:{[]
     (`subscribe;        1b; "subscribe over an open tickerplant handle, optionally defining schemas and replaying the log";
        "[int|function: tickerplant handle; symbol(list): tables (` for all); symbol(list): syms (` for all); boolean: setschema; boolean: replay]";
        "dict: subtables, tplogdate, rowcounts, date (and logdir if supplied)");
+    (`unsubscribe;      1b; "release the subscriptions held on a tickerplant handle, before the caller closes it";
+       "[int|function: tickerplant handle]";                                      "symbol list: tables released");
     (`subscribed;       1b; "is any subscription currently live?";
        "[]";                                                                     "boolean: at least one live subscription");
     (`getsubscriptions; 1b; "the subscription registry, with a live/active flag per subscription";

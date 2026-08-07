@@ -10,6 +10,7 @@ fail,0,0,q,sub.subscribed[],1,1,subscribed[] before init errors
 fail,0,0,q,sub.getsubscriptions[],1,1,getsubscriptions[] before init errors
 fail,0,0,q,sub.teardown[],1,1,teardown[] before init errors
 fail,0,0,q,sub.subscribe[tphfor[`x;0;`:/nosuch];`;`;1b;1b],1,1,subscribe before init errors
+fail,0,0,q,sub.unsubscribe[4i],1,1,unsubscribe before init errors
 
 comment,,,,,,,init dependency validation - log and handlers are both required and never defaulted
 fail,0,0,q,sub.init[(::)],1,1,init rejects a non-dict deps
@@ -110,11 +111,71 @@ fail,0,0,q,sub.subscribe[tphfor[`alpha;4;lfa];enlist`alpha;`;1b;1b],1,1,re-subsc
 fail,0,0,q,sub.subscribe[tphfor[`alpha;4;lfa];`;`;1b;1b],1,1,an all-tables subscribe is refused while tables are live
 true,0,0,q,4=count alpha,1,1,the refusal left the existing table untouched
 
+comment,,,,,,,unsubscribe - a deliberate release DELETES its rows; a .z.pc drop KEEPS them. that asymmetry is the decision, not an accident
+run,0,0,q,"lfz:buildlog[""sg"";`sigma;3]",1,1,build a real log for the unsubscribe scenario
+run,0,0,q,hz:tphfor[`sigma;3;lfz],1,1,keep the handle in a variable so it can be released by identity later
+run,0,0,q,nbefore:count sub.getsubscriptions[],1,1,record the registry size before subscribing
+run,0,0,q,sub.subscribe[hz;enlist`sigma;`;1b;0b],1,1,subscribe to sigma on that handle
+true,0,0,q,1=sum exec active from sub.getsubscriptions[] where handle~\:hz,1,1,the subscription is live
+true,0,0,q,(nbefore+1)=count sub.getsubscriptions[],1,1,the registry grew by exactly one row
+fail,0,0,q,sub.subscribe[hz;enlist`sigma;`;1b;0b],1,1,while it is live the duplicate guard refuses a second subscribe
+run,0,0,q,relz:sub.unsubscribe[hz],1,1,release the handle
+true,0,0,q,(enlist`sigma)~relz,1,1,unsubscribe returns the tables it released
+true,0,0,q,0=count select from sub.getsubscriptions[] where handle~\:hz,1,1,the released row was DELETED not flagged - a deliberate close leaves no residue
+true,0,0,q,nbefore=count sub.getsubscriptions[],1,1,the registry is back to the size it was before the subscribe
+run,0,0,q,resetcap[],1,1,clear the captured log before the idempotency check
+true,0,0,q,0=count sub.unsubscribe[hz],1,1,unsubscribe is idempotent - a second release finds nothing and returns an empty list
+true,0,0,q,"logged[`warn;""nothing to release""]",1,1,and says so at warn rather than throwing - a release path must be safe to call twice
+run,0,0,q,sub.subscribe[hz;enlist`sigma;`;1b;0b],1,1,after the release the same table can be subscribed again
+true,0,0,q,1=count select from sub.getsubscriptions[] where handle~\:hz,1,1,exactly one row for the handle - the released one really is gone not merely dead
+run,0,0,q,sub.unsubscribe[hz],1,1,release it again so this scenario does not hold sigma live for later ones
+
+comment,,,,,,,setschema 0b with replay 1b - the caller keeps its own schema so the table must ALREADY exist at root
+run,0,0,q,"lom:buildlog[""om"";`omega;3]",1,1,build a log for the setschema-0b replay scenario
+run,0,0,q,resetupd[],1,1,define the root upd the replay would drive
+fail,0,0,q,sub.subscribe[tphfor[`omega;3;lom];enlist`omega;`;0b;1b],1,1,replay with setschema 0b is refused when nothing is defined at root
+true,0,0,q,not `omega in tables[],1,1,and the refusal created nothing
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"@[{sub.subscribe[tphfor[`omega;3;lom];enlist`omega;`;0b;1b]};(::);{[e] e}]",1,1,trigger the refusal again to inspect the log
+true,0,0,q,"logged[`error;""setschema is 0b""]",1,1,the refusal was logged before it was signalled
+run,0,0,q,@[`.;`omega;:;genschema[]],1,1,now pre-load the schema ourselves as a subscriber that owns its schemas would
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[tphfor[`omega;3;lom];enlist`omega;`;0b;1b],1,1,and the same subscribe now succeeds through the NARROWED replay path
+true,0,0,q,3=count omega,1,1,the log replayed into the caller's own table
+true,0,0,q,3=updcalls,1,1,the root upd ran once per message
+run,0,0,q,"ltau:buildlog[""tau"";`tau;2]",1,1,build a log for the all-tables variant
+fail,0,0,q,sub.subscribe[tphfor[`tau;2;ltau];`;`;0b;1b],1,1,the guard covers the all-tables all-syms path too - it fails inside the caller's upd otherwise
+run,0,0,q,@[`.;`tau;:;genschema[]],1,1,pre-load that schema as well
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[tphfor[`tau;2;ltau];`;`;0b;1b],1,1,and it replays through replayall
+true,0,0,q,2=count tau,1,1,both messages landed in the caller's table
+true,0,0,q,2=updcalls,1,1,once per message on the all-syms path too
+
 comment,,,,,,,a malformed tickerplant response is rejected rather than half-applied
 fail,0,0,q,sub.subscribe[mocktphthrows;`;`;1b;1b],1,1,a tickerplant that throws is reported
 fail,0,0,q,sub.subscribe[mocktphbadshape;`;`;1b;1b],1,1,a non-dictionary response is rejected
 fail,0,0,q,sub.subscribe[mocktphmissingkeys;`;`;1b;1b],1,1,a response missing the required keys is rejected
 fail,0,0,q,sub.subscribe[mocktphnotables;`;`;1b;1b],1,1,a response carrying no schemas is rejected
+
+comment,,,,,,,the SCHEMA half of a schemalist entry must be a table - createtables plants any value at root, so this is the guard that stops a bad tickerplant doing it
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`schdict;`a`b!1 2);enlist(1;lfa);(enlist `schdict)!enlist 1];`;`;1b;0b]",1,1,a dict schema is rejected instead of being planted at root under the table name
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`schatom;42);enlist(1;lfa);(enlist `schatom)!enlist 1];`;`;1b;0b]",1,1,an atom schema is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`schnocol;([]));enlist(1;lfa);(enlist `schnocol)!enlist 1];`;`;1b;0b]",1,1,a column-less () is 99h not a table and is rejected - replaying into it could never work
+run,0,0,q,"sub.subscribe[mkrawtph[enlist(`schkeyed;([id:`long$()]v:`long$()));();(enlist `schkeyed)!enlist 0];`;`;1b;0b]",1,1,but a KEYED table IS accepted - .Q.qt was chosen over 98h=type which would have wrongly rejected it
+true,0,0,q,`schkeyed in tables[],1,1,and the keyed schema really was defined at root
+true,0,0,q,not `schdict in key `.,1,1,the rejected dict schema left nothing behind at root
+fail,0,0,q,"sub.subscribe[mkrawtph[((`duptab;genschema[]);(`duptab;genschema[]));enlist(1;lfa);(enlist `duptab)!enlist 1];`;`;1b;0b]",1,1,a schemalist naming a table twice is rejected - it would otherwise duplicate subtables and the registry tabs
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"@[{sub.subscribe[mkrawtph[enlist(`schdict2;`a`b!1 2);enlist(1;lfa);(enlist `schdict2)!enlist 1];`;`;1b;0b]};(::);{[e] e}]",1,1,trigger the non-table schema rejection
+true,0,0,q,"logged[`error;""table as the schema""]",1,1,the rejection was logged before it was signalled
+
+comment,,,,,,,logfilelist gets the same shape discipline schemalist already has - and a SIGN check a shape check cannot give
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);42;(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a non-list logfilelist is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);enlist enlist 1;(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a one-element entry is not a (count;logfile) pair
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);enlist(""x"";`:/tmp/x);(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a non-integer message count is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);enlist(1;""notasym"");(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a non-symbol log file is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`negtab;genschema[]);enlist(-1;`:/tmp/neg);(enlist `negtab)!enlist 1];`;`;1b;1b]",1,1,a negative message count is malformed - not silently treated as nothing to replay
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`negtab;genschema[]);enlist(-1;`:/tmp/neg);(enlist `negtab)!enlist 1];`;`;1b;0b]",1,1,and rejected with replay 0b too - proving the guard sits in fetchdetails not behind the replay branch
 
 comment,,,,,,,setschema 0b must not touch an already-populated table
 run,0,0,q,"lfg:buildlog[""g"";`theta;3]",1,1,build a theta log
@@ -141,6 +202,12 @@ fail,0,0,q,"sub.subscribe[tphfor[`x;0;lfa];""trade"";`;1b;1b]",1,1,subscribe rej
 fail,0,0,q,"sub.subscribe[tphfor[`x;0;lfa];`;""S1"";1b;1b]",1,1,subscribe rejects a non-symbol syms
 fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`;`;1;1b],1,1,subscribe rejects a non-boolean setschema
 fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`;`;1b;1],1,1,subscribe rejects a non-boolean replay
+fail,0,0,q,sub.unsubscribe[`notahandle],1,1,unsubscribe rejects a handle that is neither an int nor a function
+fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`$();`;1b;0b],1,1,an empty tabs vector is rejected rather than blamed on the tickerplant
+fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`;`$();1b;0b],1,1,an empty syms vector is rejected - it would otherwise replay zero rows and report success
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"@[{sub.subscribe[tphfor[`x;0;lfa];`;`$();1b;0b]};(::);{[e] e}]",1,1,trigger the empty-syms rejection
+true,0,0,q,"logged[`error;""empty symbol vector""]",1,1,the empty-selector rejection was logged before it was signalled
 run,0,0,q,resetcap[],1,1,clear the captured log
 run,0,0,q,"@[{sub.subscribe[""notahandle"";`;`;1b;1b]};(::);{[e] e}]",1,1,trigger a validation failure
 true,0,0,q,"logged[`error;""tph must be""]",1,1,the validation failure was logged before it was signalled
@@ -227,6 +294,21 @@ fail,0,0,q,sub.subscribe[mkrawtph[42;enlist (1;lbp);(enlist `badpairtab)!enlist 
 run,0,0,q,sub.subscribe[mkrawtph[((`okpairtab;genschema[]);());enlist (1;lbp);(enlist `okpairtab)!enlist 1];enlist`okpairtab;`;1b;0b],1,1,an EMPTY schemalist entry is still tolerated as legacy does
 true,0,0,q,`okpairtab in tables[],1,1,the valid entry alongside the empty one was still defined
 
+comment,,,,,,,lifecycle abuse - teardown/re-init cycles must leave the module usable and the registry intact
+run,0,0,q,nlife:count sub.getsubscriptions[],1,1,record the registry size before the cycle
+run,0,0,q,sub.teardown[],1,1,tear down
+run,0,0,q,sub.teardown[],1,1,and again - a release path must be safe to call twice
+true,0,0,q,not `subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,the observer really is gone
+run,0,0,q,"llife:buildlog[""life"";`lifetab;2]",1,1,build a log for the post-teardown subscribe
+run,0,0,q,sub.subscribe[tphfor[`lifetab;2;llife];enlist`lifetab;`;1b;0b],1,1,subscribe still works after teardown - only liveness tracking degrades
+true,0,0,q,1=(count sub.getsubscriptions[])-nlife,1,1,and the subscription was still recorded
+run,0,0,q,sub.init[deps[]],1,1,re-init after teardown
+true,0,0,q,`subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,re-init reinstalled the observer
+true,0,0,q,nlife<count sub.getsubscriptions[],1,1,and left the registry intact rather than clearing it
+run,0,0,q,"sub.init[deps[],enlist[`subdetailsfunc]!enlist `otherentry]",1,1,re-init with a different tickerplant entry point
+run,0,0,q,sub.init[deps[]],1,1,and back to the default
+true,0,0,q,0=count sub.unsubscribe[{[m] m}],1,1,unsubscribe on a handle never subscribed returns empty rather than throwing
+
 comment,,,,,,,=== INTEGRATION - a genuinely separate q process acting as a tickerplant over real IPC ===
 run,0,0,q,spawnpeer[],1,1,launch a real tickerplant peer that writes its own log and serves subdetails
 run,0,0,q,PH:peerhandle[],1,1,open a real IPC handle to it
@@ -271,6 +353,49 @@ true,0,0,q,100f=last exec price from peertrade,1,1,the live message is the most 
 run,0,0,q,(neg PH2)(`pub;101;`S1),1,1,publish a second live message
 run,0,0,q,flushpeer[PH2],1,1,service it
 true,0,0,q,8=count peertrade,1,1,live updates keep flowing through the root upd after the replay
+
+comment,,,,,,,unsubscribe closes the residual liveness gap - MEASURED: a handle the caller hcloses fires NO .z.pc, and kdb+ reissues the freed descriptor
+run,0,0,q,relph:sub.unsubscribe[PH2],1,1,declare we are finished with the handle BEFORE closing it
+true,0,0,q,(enlist`peertrade)~relph,1,1,it reports the table it released
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH2,1,1,the row is dead the instant we say so - no .z.pc and no dead tickerplant involved
+run,0,0,q,hclose PH2,1,1,now close the handle ourselves - the tickerplant is still alive so nothing fires .z.pc
+run,0,0,q,PH3:peerhandle[],1,1,open a fresh connection to the same live tickerplant
+true,0,0,q,PH2~PH3,1,1,kdb+ reissued the freed descriptor - this is the case the .z.W half alone cannot see through
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH3,1,1,the stale row still reports dead - without unsubscribe the reissued number would have revived it
+run,0,0,q,sub.subscribe[PH3;`;`;0b;0b],1,1,and a fresh subscribe on the reissued handle is allowed rather than refused by the guard
+run,0,0,q,sub.unsubscribe[PH3],1,1,release it
+run,0,0,q,hclose PH3,1,1,tidy up
+
+comment,,,,,,,STORED vs EFFECTIVE - unsubscribe must find a row whose handle is already closed. selecting on the effective flag would miss exactly this row
+run,0,0,q,n4:count sub.getsubscriptions[],1,1,record the registry size (earlier dead rows share this descriptor number so counts must be deltas)
+run,0,0,q,d4:sum not exec active from sub.getsubscriptions[],1,1,and the dead-row count - there IS at least one dead row on this descriptor so the delta below has teeth
+run,0,0,q,PH4:peerhandle[],1,1,open another handle to the still-live tickerplant
+run,0,0,q,sub.subscribe[PH4;`;`;0b;0b],1,1,subscribe on it
+true,0,0,q,(n4+1)=count sub.getsubscriptions[],1,1,one new row
+true,0,0,q,1=sum exec active from sub.getsubscriptions[] where handle~\:PH4,1,1,and it is live
+run,0,0,q,hclose PH4,1,1,close it WITHOUT unsubscribing - .z.W loses the handle but the STORED flag is still 1b
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH4,1,1,it now reports dead through the .z.W half alone
+true,0,0,q,(n4+1)=count sub.getsubscriptions[],1,1,but the row is still present carrying its stored flag - the row a reissued descriptor would revive
+run,0,0,q,rel4:sub.unsubscribe[PH4],1,1,unsubscribe AFTER the close must still remove it
+true,0,0,q,(enlist`peertrade)~rel4,1,1,it found the row even though the effective flag read dead
+true,0,0,q,n4=count sub.getsubscriptions[],1,1,and deleted it - selecting on activesubscriptions would have warned nothing to release and left it behind
+true,0,0,q,d4=sum not exec active from sub.getsubscriptions[],1,1,every markdead row survived - unsubscribe deletes only what it released, which is the whole asymmetry
+
+comment,,,,,,,di.handlers ISOLATION - a co-registrant that throws AHEAD of our observer must not suppress markdead. this is a cross-module contract nothing about editing this module would prompt anyone to re-check
+run,0,0,q,`tailfired set 0b,1,1,reset the tail flag
+run,0,0,q,"realhandlers[`register][`.z.pc;`;`noisyneighbour;-1;{[w] '""neighbour exploded""}]",1,1,a throwing observer at priority -1 - MEASURED to run before ours, which init registers at 0j
+run,0,0,q,realhandlers[`register][`.z.pc;`;`tailobserver;9;{[w] `tailfired set 1b}],1,1,and a quiet one behind ours at priority 9
+true,0,0,q,{(x?`noisyneighbour)<x?`subscriptions} exec name from `priority xasc realhandlers[`list][`.z.pc],1,1,the throwing observer really is ordered ahead of ours - otherwise this proves nothing
+run,0,0,q,PH5:peerhandle[],1,1,open a handle to the still-live tickerplant
+run,0,0,q,sub.subscribe[PH5;`;`;0b;0b],1,1,subscribe on it
+true,0,0,q,1=sum exec active from sub.getsubscriptions[] where handle~\:PH5,1,1,the subscription is live
+run,0,0,q,killpeer[],1,1,kill the tickerplant so .z.pc fires for real
+run,0,0,q,noticedrop[PH5],1,1,touch the handle so the drop is detected
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH5,1,1,the row reports dead - but NB this alone is vacuous here, the .z.W half would say the same
+true,0,0,q,0=count sub.unsubscribe[PH5],1,1,THE REAL ASSERTION - unsubscribe matches on the STORED flag, so finding nothing proves markdead actually cleared it. had the throwing registrant ahead of us suppressed markdead the flag would still be 1b and this would return peertrade
+true,0,0,q,tailfired,1,1,and the observer behind ours ran too - one throw does not abort the rest of the chain
+run,0,0,q,realhandlers[`remove][`.z.pc;`;`noisyneighbour],1,1,remove the noisy neighbour
+run,0,0,q,realhandlers[`remove][`.z.pc;`;`tailobserver],1,1,and the tail observer
 
 comment,,,,,,,teardown releases the process-global registration init installed
 run,0,0,q,sub.teardown[],1,1,tear down

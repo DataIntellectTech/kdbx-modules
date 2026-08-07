@@ -1,0 +1,461 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load the module with capturing mocks for every injected dependency
+before,0,0,q,hb:use`di.heartbeat,1,1,load di.heartbeat
+before,0,0,q,.pt.cap:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,log capture table
+before,0,0,q,"caplog:`info`warn`error!({[c;m] if[not 10h=type m;'`msgnotastring]; `.pt.cap insert (`info;c;m)};{[c;m] if[not 10h=type m;'`msgnotastring]; `.pt.cap insert (`warn;c;m)};{[c;m] if[not 10h=type m;'`msgnotastring]; `.pt.cap insert (`error;c;m)})",1,1,capturing binary logger that REJECTS a non-flat message exactly as real di.log does - a permissive mock hid a nested-list message for a whole session
+before,0,0,q,.pt.jobs:([]id:`symbol$();period:();mode:()),1,1,timer job capture
+before,0,0,q,"mocktimer:`addjob`deletejobs!((enlist`custom)!enlist {[i;f;p;pe;m;o] if[i in exec id from .pt.jobs;'`duplicateid]; `.pt.jobs insert (i;pe;m)};{[ids] delete from `.pt.jobs where id in ids})",1,1,timer mock - variant dict exposing custom; THROWS on duplicate id as real di.timer addjob.custom does
+before,0,0,q,.pt.pub:(),1,1,publish capture
+before,0,0,q,"mockps:`publish`subscribe!({[t;x] .pt.pub,:enlist (t;x)};{[t;f] .pt.sub:(t;f)})",1,1,pubsub mock capturing publish and subscribe
+before,0,0,q,.pt.reg:([]event:`symbol$();phase:`symbol$();nm:`symbol$();pri:`long$()),1,1,handler registration capture
+before,0,0,q,"mockh:`register`remove!({[e;p;n;pr;f] `.pt.reg insert (e;p;n;pr)};{[e;p;n] delete from `.pt.reg where event=e,phase=p,nm=n})",1,1,handlers mock - register is 5-arg
+before,0,0,q,"mocksrv:enlist[`getservers]!enlist {[p] ([]w:`int$())}",1,1,servers mock returning an empty server TABLE
+before,0,0,q,.pt.asked:(),1,1,records which proctype getservers was asked for
+before,0,0,q,"mocksrvrows:enlist[`getservers]!enlist {[p] .pt.asked,:enlist p; ([]proctype:`rdb`hdb`dead`self;w:4 5 0Ni,0i)}",1,1,servers mock returning a POPULATED table - live handles plus a dead (null) row and handle 0
+before,0,0,q,"deps:(`log`timer`pubsub!(caplog;mocktimer;mockps)),`proctype`procname!(`rdb;`rdb1)",1,1,the base deps dict - deps plus required identity
+
+comment,,,,,,,init must be called before any other function (asserted FIRST - the module is a singleton and cannot be un-initialised later)
+true,0,0,q,"0<count (@[{hb.gethb[];""""};::;{x}]) ss ""init must be called""",1,1,gethb before init reports the real cause not a raw type error
+true,0,0,q,"0<count (@[{hb.publishheartbeat[];""""};::;{x}]) ss ""init must be called""",1,1,publishheartbeat before init reports the real cause
+true,0,0,q,"0<count (@[{hb.teardown[];""""};::;{x}]) ss ""init must be called""",1,1,teardown before init reports the real cause
+
+comment,,,,,,,init - dependency validation (plain signal; the logger is not wired yet)
+fail,0,0,q,hb.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,hb.init[()!()],1,1,init rejects an empty deps
+fail,0,0,q,"hb.init[(`timer`pubsub!(mocktimer;mockps)),`proctype`procname!(`rdb;`rdb1)]",1,1,init rejects deps missing log
+fail,0,0,q,"hb.init[(`log`pubsub!(caplog;mockps)),`proctype`procname!(`rdb;`rdb1)]",1,1,init rejects deps missing timer
+fail,0,0,q,"hb.init[(`log`timer!(caplog;mocktimer)),`proctype`procname!(`rdb;`rdb1)]",1,1,init rejects deps missing pubsub
+fail,0,0,q,"hb.init[(`log`timer`pubsub!(42;mocktimer;mockps)),`proctype`procname!(`rdb;`rdb1)]",1,1,init rejects a non-dict log value
+fail,0,0,q,"hb.init[(`log`timer`pubsub!((enlist[`info]!enlist caplog`info);mocktimer;mockps)),`proctype`procname!(`rdb;`rdb1)]",1,1,init rejects a log dict missing warn and error
+fail,0,0,q,"hb.init[(`log`timer`pubsub!(caplog;(enlist[`addjob]!enlist mocktimer`addjob);mockps)),`proctype`procname!(`rdb;`rdb1)]",1,1,init rejects a timer dict missing deletejobs
+fail,0,0,q,"hb.init[(`log`timer`pubsub!(caplog;`addjob`deletejobs!({[i;f;p;pe;m;o]};{[ids]});mockps)),`proctype`procname!(`rdb;`rdb1)]",1,1,init rejects a bare addjob - it must be a variant dict exposing custom
+fail,0,0,q,hb.init[`log`timer`pubsub!(caplog;mocktimer;mockps)],1,1,init rejects deps without proctype/procname identity
+fail,0,0,q,"hb.init[(`log`timer`pubsub!(caplog;mocktimer;mockps)),`proctype`procname!(""rdb"";`rdb1)]",1,1,init rejects a non-symbol proctype
+run,0,0,q,.pt.errstr:@[{hb.init[()!()]};(::);{x}],1,1,capture the error string from a bad init
+true,0,0,q,"0<count .pt.errstr ss ""di.heartbeat:""",1,1,init errors are prefixed di.heartbeat:
+true,0,0,q,"0<count .pt.errstr ss ""di.log""",1,1,the error names which module supplies the missing dependency
+
+comment,,,,,,,init - monitor deps are required only when subenabled
+fail,0,0,q,"hb.init[deps,enlist[`subenabled]!enlist 1b]",1,1,subenabled without servers or handlers errors
+fail,0,0,q,"hb.init[deps,`subenabled`servers!(1b;mocksrv)]",1,1,subenabled with servers but no handlers errors
+run,0,0,q,hb.init[deps],1,1,publisher-only init needs neither servers nor handlers
+
+comment,,,,,,,init - config validation catches quietly-broken settings
+fail,0,0,q,"hb.init[deps,`warningtolerance`errortolerance!(3f;2f)]",1,1,errortolerance below warningtolerance is rejected - warning would never fire
+fail,0,0,q,"hb.init[deps,`warningtolerance`errortolerance!(2f;2f)]",1,1,equal tolerances are rejected for the same reason
+fail,0,0,q,"hb.init[deps,enlist[`enabled]!enlist 1]",1,1,a non-boolean enabled is rejected
+fail,0,0,q,"hb.init[deps,enlist[`publishinterval]!enlist 30]",1,1,a non-timespan publishinterval is rejected
+fail,0,0,q,"hb.init[deps,enlist[`publishinterval]!enlist 0D00:00:00]",1,1,a non-positive publishinterval is rejected
+fail,0,0,q,"hb.init[deps,enlist[`onwarning]!enlist 42]",1,1,a non-function onwarning is rejected
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,"hb.init[deps,enlist[`nosuchkey]!enlist 1b]",1,1,an unrecognised config key is accepted
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""nosuchkey""} each msg",1,1,but it is warned about rather than dropped silently
+
+comment,,,,,,,init - wiring and shipped defaults
+run,0,0,q,delete from `.pt.jobs,1,1,clear the job capture
+run,0,0,q,hb.init[deps],1,1,init with the base deps
+true,0,0,q,`hbcheck`hbpublish~asc exec id from .pt.jobs,1,1,publisher registers the publish and check jobs only
+true,0,0,q,not `hbsubscribe in exec id from .pt.jobs,1,1,the subscribe job is monitor-only
+true,0,0,q,2=count select from .pt.jobs where mode=2h,1,1,both jobs use mode 2 - period after previous ACTUAL start
+true,0,0,q,30=first exec period from .pt.jobs where id=`hbpublish,1,1,publishinterval converted to whole seconds for di.timer
+true,0,0,q,10=first exec period from .pt.jobs where id=`hbcheck,1,1,checkinterval converted to whole seconds
+run,0,0,q,hb.init[deps],1,1,re-init must be idempotent
+true,0,0,q,2=count .pt.jobs,1,1,idempotent re-init did NOT add duplicate timer jobs
+
+comment,,,,,,,every config key reaches module state (guards a forgotten explicit .z.m write)
+true,0,0,q,"all (key .m.di.0heartbeat.configdefaults) in key`.m.di.0heartbeat",1,1,each configdefaults key was written into module state by init - a missed assignment would leave the bare read resolving to nothing
+
+comment,,,,,,,root publication - publishroot 1b (the default)
+true,0,0,q,`heartbeat in tables[],1,1,the root publish schema table exists - di.pubsub discovers it by scanning root tables
+true,0,0,q,"@[{value`.heartbeat.subscribe;1b};::;0b]",1,1,the remote-subscribe entry point is published at root
+true,0,0,q,0=count value`heartbeat,1,1,the root table is an empty schema holder - rows go out over pub/sub not into it
+true,0,0,q,`time`sym`procname`counter`pid`host`port~cols value`heartbeat,1,1,root schema matches the published row shape
+
+comment,,,,,,,publishheartbeat under publishroot 1b
+run,0,0,q,.pt.pub:(),1,1,clear the publish capture
+run,0,0,q,hb.publishheartbeat[],1,1,publish a heartbeat
+true,0,0,q,1=count .pt.pub,1,1,publish dependency called exactly once
+true,0,0,q,`heartbeat~first first .pt.pub,1,1,published to the heartbeat table
+true,0,0,q,`rdb~first exec sym from last first .pt.pub,1,1,published row carries the process type as sym
+true,0,0,q,`rdb1~first exec procname from last first .pt.pub,1,1,published row carries the process name
+true,0,0,q,0=count hb.getownhb[],1,1,nothing retained locally - the row went out over pub/sub
+
+comment,,,,,,,publishroot 0b must NOT publish at all and MUST retain locally (both directions)
+run,0,0,q,hb.teardown[],1,1,tear down the publishroot 1b instance first
+run,0,0,q,.pt.pub:(),1,1,clear the publish capture
+run,0,0,q,"hb.init[deps,enlist[`publishroot]!enlist 0b]",1,1,init with publishroot disabled
+true,0,0,q,not `heartbeat in tables[],1,1,no root table is created
+true,0,0,q,"not @[{value`.heartbeat.subscribe;1b};::;0b]",1,1,no root subscribe entry point is created
+run,0,0,q,hb.publishheartbeat[],1,1,attempt to publish
+true,0,0,q,0=count .pt.pub,1,1,publish was NOT called - not publish-into-the-void
+true,0,0,q,1=count hb.getownhb[],1,1,the row was retained locally instead
+true,0,0,q,`rdb~first exec sym from hb.getownhb[],1,1,the retained row carries this process's identity
+true,0,0,q,1=count hb.getownhb[],1,1,storage stays bounded - only the last own heartbeat is kept
+run,0,0,q,hb.publishheartbeat[],1,1,publish again
+true,0,0,q,1=count hb.getownhb[],1,1,still one row after a second beat - not an unbounded history
+
+comment,,,,,,,disabled publishing is a no-op under either publishroot setting
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,.pt.pub:(),1,1,clear the publish capture
+run,0,0,q,"hb.init[deps,enlist[`enabled]!enlist 0b]",1,1,init with publishing disabled
+run,0,0,q,hb.publishheartbeat[],1,1,attempt to publish while disabled
+true,0,0,q,0=count .pt.pub,1,1,nothing published when disabled
+true,0,0,q,0=count select from .pt.jobs where id in `hbpublish`hbcheck,1,1,and no publish/check timer jobs were registered
+
+comment,,,,,,,storeheartbeat records incoming beats with state cleared
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,hb.init[deps],1,1,re-init clean
+run,0,0,q,.pt.now:2025.01.01D00:00:00.000,1,1,controllable current time
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,point the module clock at it
+run,0,0,q,"batch:([]time:enlist .pt.now;sym:enlist`rdb;procname:enlist`rdb1;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 5000i)",1,1,build an incoming heartbeat
+run,0,0,q,hb.storeheartbeat[batch],1,1,store it
+true,0,0,q,1=count hb.gethb[],1,1,one process recorded
+true,0,0,q,not first exec warning from hb.gethb[],1,1,stored beat has warning cleared
+true,0,0,q,not first exec error from hb.gethb[],1,1,stored beat has error cleared
+run,0,0,q,hb.storeheartbeat[0#batch],1,1,an empty batch is a safe no-op
+true,0,0,q,1=count hb.gethb[],1,1,empty batch changed nothing
+
+comment,,,,,,,addprocs seeds an expected process without overwriting a real beat
+run,0,0,q,hb.addprocs[`rdb;`rdb2],1,1,seed a process that has never beaten
+true,0,0,q,`rdb2 in exec procname from hb.gethb[],1,1,seeded process present
+true,0,0,q,1=count select from hb.gethb[] where procname=`rdb1,1,1,the real beat was not duplicated
+true,0,0,q,1=first exec counter from hb.gethb[] where procname=`rdb1,1,1,and the real beat's data survived the seed
+
+comment,,,,,,,checkheartbeat flags warning then error at the SHIPPED tolerances (2f and 3f)
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,hb.init[deps],1,1,re-init with a clean store
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,re-point the clock after re-init
+run,0,0,q,.pt.now:2025.01.01D00:00:00.000,1,1,reset to t0
+run,0,0,q,hb.addprocs[`rdb;`stale],1,1,seed a process that will go stale
+run,0,0,q,hb.checkheartbeat[],1,1,check immediately - nothing is stale yet
+true,0,0,q,not first exec warning from hb.gethb[] where procname=`stale,1,1,a fresh process is not flagged
+run,0,0,q,.pt.now:2025.01.01D00:01:05.000,1,1,advance to 65s - past 2f*30s warning but not 3f*30s error
+run,0,0,q,hb.checkheartbeat[],1,1,run the check
+true,0,0,q,first exec warning from hb.gethb[] where procname=`stale,1,1,warning at 65s confirms warningtolerance defaults to the SHIPPED 2f not the in-file 1.5f
+true,0,0,q,not first exec error from hb.gethb[] where procname=`stale,1,1,not yet in error at 65s
+run,0,0,q,.pt.now:2025.01.01D00:02:00.000,1,1,advance to 120s - past the 90s error period
+run,0,0,q,hb.checkheartbeat[],1,1,run the check again
+true,0,0,q,first exec error from hb.gethb[] where procname=`stale,1,1,error at 120s confirms errortolerance defaults to the SHIPPED 3f not the in-file 2f
+run,0,0,q,hb.checkheartbeat[],1,1,check again with no further time passing
+true,0,0,q,1=count select from hb.gethb[] where procname=`stale,1,1,an already-flagged process is not duplicated or re-flagged
+
+comment,,,,,,,onwarning and onerror callbacks fire with the affected rows
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,.pt.warned:();.pt.errored:(),1,1,reset callback captures
+run,0,0,q,"hb.init[deps,`onwarning`onerror!({[p] .pt.warned,:enlist p};{[p] .pt.errored,:enlist p})]",1,1,init with capturing callbacks
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,re-point the clock
+run,0,0,q,.pt.now:2025.01.01D00:00:00.000,1,1,reset to t0
+run,0,0,q,hb.addprocs[`rdb;`cb],1,1,seed a process
+run,0,0,q,.pt.now:2025.01.01D00:01:05.000,1,1,advance past warning
+run,0,0,q,hb.checkheartbeat[],1,1,trigger the warning transition
+true,0,0,q,1=count .pt.warned,1,1,onwarning fired once
+true,0,0,q,`cb in exec procname from first .pt.warned,1,1,onwarning received the affected row
+run,0,0,q,.pt.now:2025.01.01D00:02:00.000,1,1,advance past error
+run,0,0,q,hb.checkheartbeat[],1,1,trigger the error transition
+true,0,0,q,1=count .pt.errored,1,1,onerror fired once
+true,0,0,q,`cb in exec procname from first .pt.errored,1,1,onerror received the affected row
+
+comment,,,,,,,monitor mode - .z.pc registered via the 5-arg di.handlers contract
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,delete from `.pt.reg,1,1,clear the registration capture
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrv;mockh)]",1,1,init as a monitor
+true,0,0,q,"1=count select from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,registered exactly one .z.pc handler
+true,0,0,q,"null first exec phase from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,.z.pc is a SIMPLE event so the phase is null - not pre/exec/post
+true,0,0,q,"0=first exec pri from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,registered at priority 0
+true,0,0,q,`hbsubscribe in exec id from .pt.jobs,1,1,the monitor also schedules the subscription job
+
+comment,,,,,,,monitor - `ALL resolution and getservers table handling (integration point 4)
+run,0,0,q,hb.teardown[],1,1,tear down before re-initing as a monitor with a populated servers mock
+run,0,0,q,.pt.asked:(),1,1,clear the getservers call record
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrvrows;mockh)]",1,1,init as a monitor with a servers mock that returns rows
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,run the subscription sweep the timer would run
+true,0,0,q,1=count .pt.asked,1,1,getservers was consulted exactly once
+true,0,0,q,all null raze .pt.asked,1,1,the shipped `ALL default resolved to the null match-all symbol not a literal lookup for `ALL
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`connections!(1b;mocksrvrows;mockh;`rdb`hdb)]",1,1,re-init with an explicit proctype list
+run,0,0,q,.pt.asked:(),1,1,clear the record
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again
+true,0,0,q,`rdb`hdb~raze .pt.asked,1,1,an explicit connections list is passed through unchanged
+
+comment,,,,,,,monitor - handles are read from the w COLUMN and unusable handles are dropped
+comment,,,,,,,"NB the mock handles are not real IPC handles so every attempt fails; that is what makes the ERROR LOG the evidence of which handles were attempted"
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.subscribedhandles:`int$(),1,1,clear the tracked set
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,run the sweep against the populated servers table
+true,0,0,q,2=count select from .pt.cap where lvl=`error,1,1,exactly two subscribe attempts were made - the two live handles from the w column
+true,0,0,q,"0<count select from .pt.cap where lvl=`error,{0<count x ss ""handle 4""} each msg",1,1,handle 4 was read out of the w column and attempted
+true,0,0,q,"0<count select from .pt.cap where lvl=`error,{0<count x ss ""handle 5""} each msg",1,1,handle 5 was read out of the w column and attempted
+true,0,0,q,"0=count select from .pt.cap where lvl=`error,{0<count x ss ""handle 0""} each msg",1,1,neither handle 0 nor the dead row's null handle was attempted
+true,0,0,q,0=count .m.di.0heartbeat.subscribedhandles,1,1,a failed subscribe is not recorded so the next sweep retries it
+run,0,0,q,.m.di.0heartbeat.subscribedhandles:4 5i,1,1,pretend both live handles subscribed successfully
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again
+true,0,0,q,0=count select from .pt.cap where lvl=`error,1,1,already-subscribed handles are excluded so nothing was re-attempted
+
+comment,,,,,,,monitor - subscribe input validation and the handle 0 guard
+fail,0,0,q,hb.subscribe[`notahandle],1,1,subscribe rejects a non-integer handle
+fail,0,0,q,"hb.subscribe[""abc""]",1,1,subscribe rejects a string
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,hb.subscribe[0i],1,1,subscribing handle 0 is accepted but skipped
+true,0,0,q,not 0i in .m.di.0heartbeat.subscribedhandles,1,1,handle 0 was NOT tracked - it would subscribe this process to its own heartbeats
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""0i is this process""} each msg",1,1,and the skip was warned about rather than done silently
+run,0,0,q,hb.subscribe[0Ni],1,1,a null handle is likewise skipped
+true,0,0,q,not 0Ni in .m.di.0heartbeat.subscribedhandles,1,1,null handle not tracked
+
+comment,,,,,,,monitor - closeconnection drops a handle (regression cover - Olly's suite had this)
+run,0,0,q,.m.di.0heartbeat.subscribedhandles:4 5i,1,1,seed the tracked set directly
+run,0,0,q,.m.di.0heartbeat.closeconnection[4i],1,1,simulate the .z.pc callback firing for handle 4
+true,0,0,q,not 4i in .m.di.0heartbeat.subscribedhandles,1,1,the closed handle was dropped from the tracked set
+true,0,0,q,5i in .m.di.0heartbeat.subscribedhandles,1,1,other handles are untouched
+
+comment,,,,,,,monitor - an empty connections list is legal but must not look configured
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`connections!(1b;mocksrvrows;mockh;`$())]",1,1,init as a monitor watching nothing
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""will monitor""} each msg",1,1,monitoring nothing is warned about - the same shape as legacy's silent connections:() default
+
+comment,,,,,,,root table collision - never take over a table this module did not create
+run,0,0,q,hb.teardown[],1,1,tear down so no root heartbeat table remains
+run,0,0,q,"set[`heartbeat;([]someoneelsescol:`int$())]",1,1,another part of the process installs its own heartbeat table
+fail,0,0,q,hb.init[deps],1,1,init refuses a different table already at that root name
+true,0,0,q,`someoneelsescol in cols value`heartbeat,1,1,the other table survived untouched
+run,0,0,q,"![`.;();0b;enlist`heartbeat]",1,1,remove the foreign table
+run,0,0,q,"set[`heartbeat;([]time:`timestamp$();sym:`symbol$();procname:`symbol$();counter:`long$();pid:`int$();host:`symbol$();port:`int$())]",1,1,now a foreign table with columns IDENTICAL to our schema
+fail,0,0,q,hb.init[deps],1,1,a column-identical foreign table is refused too - matching columns are not evidence the table means the same thing
+true,0,0,q,`time`sym`procname`counter`pid`host`port~cols value`heartbeat,1,1,it survived untouched
+run,0,0,q,"![`.;();0b;enlist`heartbeat]",1,1,remove it
+run,0,0,q,hb.init[deps],1,1,init succeeds once the name is free
+true,0,0,q,`heartbeat in tables[],1,1,and this time the module created the table itself
+run,0,0,q,hb.init[deps],1,1,re-init over our OWN table is fine - ownership persists
+true,0,0,q,`heartbeat in tables[],1,1,still there after re-init
+run,0,0,q,hb.teardown[],1,1,teardown removes it because we own it
+true,0,0,q,not `heartbeat in tables[],1,1,our own table is removed on teardown
+run,0,0,q,hb.init[deps],1,1,restore a working instance
+
+comment,,,,,,,input validation on the public api routes through the logger
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+fail,0,0,q,hb.storeheartbeat[42],1,1,storeheartbeat rejects a non-table
+fail,0,0,q,"hb.storeheartbeat[([]nosuchcol:1 2)]",1,1,storeheartbeat rejects a table without sym and procname
+fail,0,0,q,hb.addprocs[`a`b;`c],1,1,addprocs rejects mismatched proctype and procname lengths
+fail,0,0,q,hb.addprocs[42;`c],1,1,addprocs rejects non-symbol proctypes
+fail,0,0,q,hb.setcp[42],1,1,setcp rejects a non-function
+true,0,0,q,4<count select from .pt.cap where lvl=`error,1,1,every one of those logged an error before signalling rather than throwing a raw type error
+
+comment,,,,,,,teardown releases timers handlers and root names
+run,0,0,q,hb.teardown[],1,1,tear down the monitor instance
+true,0,0,q,0=count .pt.jobs,1,1,all timer jobs deleted
+true,0,0,q,"0=count select from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,the .z.pc registration was removed
+true,0,0,q,not `heartbeat in tables[],1,1,the root publish table was removed
+true,0,0,q,"not @[{value`.heartbeat.subscribe;1b};::;0b]",1,1,the root subscribe entry point was removed
+
+comment,,,,,,,re-init preserves received heartbeats (deliberate - a restart must not lose the store)
+run,0,0,q,hb.init[deps],1,1,restore a working instance for the remaining tests
+true,0,0,q,`stale in exec procname from hb.gethb[],1,1,heartbeats received before the re-init survived it
+
+comment,,,,,,,version and the VERSION file
+true,0,0,q,`version in key hb,1,1,version is still an export - di.depcheck resolves it from the export dict
+true,0,0,q,"3=count ""."" vs hb.version",1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any hb.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+
+comment,,,,,,,getapimeta documents exactly the callable exports
+true,0,0,q,`name`public`descrip`params`return~cols hb.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,"(asc (key hb) except `init`getapimeta)~asc exec name from hb.getapimeta[]",1,1,every callable export has a metadata row and nothing extra
+true,0,0,q,"not any `init`getapimeta in exec name from hb.getapimeta[]",1,1,framework plumbing is deliberately not registered in the api
+true,0,0,q,all 10h=type each exec descrip from hb.getapimeta[],1,1,descriptions are strings
+
+comment,,,,,,,edge cases - config that would guarantee wrong behaviour is rejected up front
+fail,0,0,q,"hb.init[deps,`warningtolerance`errortolerance!(-2f;-1f)]",1,1,negative tolerances rejected - a negative grace period flags every process instantly and permanently
+fail,0,0,q,"hb.init[deps,`warningtolerance`errortolerance!(0f;1f)]",1,1,a zero warningtolerance is rejected for the same reason
+fail,0,0,q,"hb.init[deps,`warningtolerance`errortolerance!(0n;0n)]",1,1,null tolerances rejected - they would silently never fire
+fail,0,0,q,"hb.init[deps,enlist[`publishinterval]!enlist 0D00:00:00.500]",1,1,a sub-second publishinterval is rejected - di.timer schedules in whole seconds
+fail,0,0,q,"hb.init[deps,enlist[`checkinterval]!enlist 0D00:00:00.250]",1,1,a sub-second checkinterval rounds to a period of 0 and would run every timer cycle
+run,0,0,q,"hb.init[deps,`publishinterval`checkinterval!(0D00:00:01;0D00:00:01)]",1,1,exactly one second is the lower bound and is accepted
+fail,0,0,q,"hb.init[deps,`proctype`procname!(`;`rdb1)]",1,1,a null proctype is rejected - it keys the monitor's store
+fail,0,0,q,"hb.init[deps,`proctype`procname!(`rdb;`)]",1,1,a null procname is rejected for the same reason
+
+comment,,,,,,,edge cases - storeheartbeat hardening against what arrives over the wire
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,hb.init[deps],1,1,clean init
+run,0,0,q,.m.di.0heartbeat.hb:.m.di.0heartbeat.storeschema,1,1,clear the store for a clean count
+fail,0,0,q,"hb.storeheartbeat[([]sym:enlist`x;procname:enlist`y)]",1,1,a batch without a time column is rejected - checkheartbeat needs it and a raw rank error would bypass the log
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,"hb.storeheartbeat[([]time:(0Np;2025.01.01D00:00:00);sym:`bad`good;procname:`b1`g1)]",1,1,a batch mixing a null time with a good row
+true,0,0,q,not `b1 in exec procname from hb.gethb[],1,1,the null-time row was dropped - it could never be flagged as stale
+true,0,0,q,`g1 in exec procname from hb.gethb[],1,1,the good row in the same batch was still stored
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""null time""} each msg",1,1,and the drop was warned about rather than done silently
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,"hb.storeheartbeat[([]time:enlist 2025.01.01D00:00:00;sym:enlist`v;procname:enlist`v1;newcol:enlist 99)]",1,1,a publisher on a NEWER schema sends an extra column
+true,0,0,q,`v1 in exec procname from hb.gethb[],1,1,version skew does not make a live publisher look dead - the known columns are kept
+true,0,0,q,`sym`procname`time`counter`pid`host`port`warning`error~cols hb.gethb[],1,1,and the unknown column did not leak into the store
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""newer schema""} each msg",1,1,skew was warned about once
+run,0,0,q,"hb.storeheartbeat[([]time:enlist 2025.01.01D00:00:00;sym:enlist`v;procname:enlist`v1;newcol:enlist 99)]",1,1,a second identical batch
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""newer schema""} each msg",1,1,still only one warning - skew is visible without a log line per beat
+
+comment,,,,,,,edge cases - a broken callback or publisher must not disable the timer job that calls it
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,"hb.init[deps,`onwarning`onerror!({[p] '`boom};{[p] '`boom})]",1,1,init with callbacks that always throw
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,point the clock
+run,0,0,q,.pt.now:2025.01.01D00:00:00,1,1,reset time
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,hb.addprocs[`rdb;`boom],1,1,seed a process that will go stale
+run,0,0,q,.pt.now:2025.01.01D00:01:05,1,1,advance past the warning period
+run,0,0,q,hb.checkheartbeat[],1,1,checkheartbeat must SURVIVE the throwing callback - di.timer disables a job that throws
+true,0,0,q,first exec warning from hb.gethb[] where procname=`boom,1,1,and the warning state was still recorded - state is updated before the callback runs
+true,0,0,q,"0<count select from .pt.cap where lvl=`error,{0<count x ss ""onwarning failed""} each msg",1,1,the callback failure was logged at error rather than swallowed
+run,0,0,q,.pt.now:2025.01.01D00:02:00,1,1,advance past the error period
+run,0,0,q,hb.checkheartbeat[],1,1,and again for the error transition
+true,0,0,q,first exec error from hb.gethb[] where procname=`boom,1,1,error state recorded despite the throwing onerror
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,"hb.init[(`log`timer`pubsub!(caplog;mocktimer;`publish`subscribe!({[t;x] '`pubdown};{[t;f]}))),`proctype`procname!(`rdb;`rdb1)]",1,1,init with a pub/sub that always throws
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,hb.publishheartbeat[],1,1,publishheartbeat must survive a failing publish so a transient outage does not stop heartbeating forever
+true,0,0,q,"0<count select from .pt.cap where lvl=`error,{0<count x ss ""publish failed""} each msg",1,1,the publish failure was logged at error
+true,0,0,q,0<.m.di.0heartbeat.hbcounter,1,1,the counter still advanced - it counts beats attempted so subscribers can see the gap
+
+comment,,,,,,,edge cases - flipping a flag off on re-init must not orphan what the previous init installed
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,delete from `.pt.reg,1,1,clear the registration capture
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrv;mockh)]",1,1,init as a monitor
+true,0,0,q,1=count .pt.reg,1,1,the .z.pc observer is registered
+run,0,0,q,hb.init[deps],1,1,re-init with subenabled back to 0b
+true,0,0,q,0=count .pt.reg,1,1,the observer was DEREGISTERED - leaving it would orphan it permanently since teardown keyed off the current subenabled
+true,0,0,q,`heartbeat in tables[],1,1,publishroot is still on so the root names remain
+run,0,0,q,"hb.init[deps,enlist[`publishroot]!enlist 0b]",1,1,re-init with publishroot turned off
+true,0,0,q,not `heartbeat in tables[],1,1,the root table published by the earlier init was removed
+true,0,0,q,"not @[{value`.heartbeat.subscribe;1b};::;0b]",1,1,and so was the remote-subscribe entry point - otherwise a monitor could subscribe successfully and then receive nothing forever
+run,0,0,q,hb.init[deps],1,1,restore a publishing instance
+true,0,0,q,`heartbeat in tables[],1,1,turning publishroot back on republishes
+run,0,0,q,hb.teardown[],1,1,final teardown
+true,0,0,q,not `heartbeat in tables[],1,1,teardown leaves no root residue
+run,0,0,q,hb.init[deps],1,1,restore a working instance
+
+comment,,,,,,,store growth is bounded by age - a monitor watching churning process names must not grow forever
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,hb.init[deps],1,1,init with the default one-day maxage
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,point the clock
+run,0,0,q,.pt.now:2025.01.01D00:00:00,1,1,reset time
+run,0,0,q,.m.di.0heartbeat.hb:.m.di.0heartbeat.storeschema,1,1,clear the store
+run,0,0,q,"{[i] hb.storeheartbeat[([]time:enlist .pt.now;sym:enlist`rdb;procname:enlist `$""w"",string i;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 1i)]} each til 50",1,1,50 short-lived publishers each under a different procname
+run,0,0,q,hb.addprocs[`rdb;`expected],1,1,plus one operator-seeded expectation that never heartbeats
+true,0,0,q,51=count hb.gethb[],1,1,all 51 rows present
+run,0,0,q,.pt.now:2025.01.01D00:02:00,1,1,advance past the error period but well inside maxage
+run,0,0,q,hb.checkheartbeat[],1,1,check
+true,0,0,q,51=count hb.gethb[],1,1,nothing evicted yet - eviction must never pre-empt the error transition
+true,0,0,q,"all exec error from hb.gethb[] where not null counter",1,1,and every observed process reached error first
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.pt.now:2025.01.03D00:00:00,1,1,advance two days - past the one-day maxage
+run,0,0,q,hb.checkheartbeat[],1,1,check again
+true,0,0,q,1=count hb.gethb[],1,1,the 50 churned rows were evicted - growth is bounded by age
+true,0,0,q,`expected~first exec procname from hb.gethb[],1,1,the seeded row SURVIVED - it is operator intent not an observation and must not be silently forgotten
+true,0,0,q,"0<count select from .pt.cap where lvl=`info,{0<count x ss ""evicting""} each msg",1,1,eviction is logged rather than silent
+run,0,0,q,"hb.storeheartbeat[([]time:enlist .pt.now;sym:enlist`rdb;procname:enlist`alive;counter:enlist 9;pid:enlist 1i;host:enlist`h;port:enlist 1i)]",1,1,a currently-live process
+run,0,0,q,.pt.now:2025.01.03D00:02:00,1,1,advance a couple of minutes
+run,0,0,q,hb.checkheartbeat[],1,1,check
+true,0,0,q,`alive in exec procname from hb.gethb[],1,1,a recently-heard-from process is never evicted
+
+comment,,,,,,,removeprocs - the counterpart to addprocs for rows eviction deliberately never touches
+fail,0,0,q,hb.removeprocs[`a`b;`c],1,1,removeprocs rejects mismatched lengths
+fail,0,0,q,hb.removeprocs[42;`c],1,1,removeprocs rejects non-symbols
+true,0,0,q,`expected in exec procname from hb.gethb[],1,1,the seeded row is still there
+run,0,0,q,hb.removeprocs[`rdb;`expected],1,1,remove it explicitly
+true,0,0,q,not `expected in exec procname from hb.gethb[],1,1,seeded rows can be cleared - otherwise a decommissioned process could never be forgotten
+true,0,0,q,`alive in exec procname from hb.gethb[],1,1,and other rows are untouched
+run,0,0,q,hb.removeprocs[`rdb;`nosuchproc],1,1,removing an unknown process is a safe no-op
+
+comment,,,,,,,maxage validation and the 0Wn opt-out
+fail,0,0,q,"hb.init[deps,enlist[`maxage]!enlist 0D00:00:30]",1,1,a maxage below the error period is rejected - a process could vanish before anyone was told it stopped
+fail,0,0,q,"hb.init[deps,enlist[`maxage]!enlist 42]",1,1,a non-timespan maxage is rejected
+run,0,0,q,"hb.init[deps,enlist[`maxage]!enlist 0Wn]",1,1,0Wn opts out of eviction entirely
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,point the clock
+run,0,0,q,.m.di.0heartbeat.hb:.m.di.0heartbeat.storeschema,1,1,clear the store
+run,0,0,q,.pt.now:2025.01.01D00:00:00,1,1,reset time
+run,0,0,q,"hb.storeheartbeat[([]time:enlist .pt.now;sym:enlist`rdb;procname:enlist`forever;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 1i)]",1,1,one heartbeat
+run,0,0,q,.pt.now:2035.01.01D00:00:00,1,1,advance ten years
+run,0,0,q,hb.checkheartbeat[],1,1,check
+true,0,0,q,1=count hb.gethb[],1,1,0Wn really does keep everything - guards the trap that now>time+0Wn is 1b not 0b
+run,0,0,q,hb.init[deps],1,1,restore the default instance
+
+comment,,,,,,,escalation flag semantics - both flags set is deliberate and legacy-faithful (queried on PR #109)
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,hb.init[deps],1,1,clean init
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,point the clock
+run,0,0,q,.m.di.0heartbeat.hb:.m.di.0heartbeat.storeschema,1,1,clear the store
+run,0,0,q,.pt.now:2025.01.01D00:00:00,1,1,reset time
+run,0,0,q,hb.addprocs[`rdb;`esc],1,1,seed a process that will escalate
+run,0,0,q,.pt.now:2025.01.01D00:01:05,1,1,past the warning threshold
+run,0,0,q,hb.checkheartbeat[],1,1,check
+true,0,0,q,first exec warning from hb.gethb[] where procname=`esc,1,1,warning set
+true,0,0,q,not first exec error from hb.gethb[] where procname=`esc,1,1,error not yet set
+run,0,0,q,.pt.now:2025.01.01D00:02:00,1,1,past the error threshold
+run,0,0,q,hb.checkheartbeat[],1,1,check again
+true,0,0,q,first exec error from hb.gethb[] where procname=`esc,1,1,error set
+true,0,0,q,first exec warning from hb.gethb[] where procname=`esc,1,1,warning DELIBERATELY still set - the process is past both thresholds and legacy sets each flag independently
+run,0,0,q,"hb.storeheartbeat[([]time:enlist .pt.now;sym:enlist`rdb;procname:enlist`esc;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 1i)]",1,1,a fresh heartbeat arrives
+true,0,0,q,not first exec warning from hb.gethb[] where procname=`esc,1,1,recovery clears warning
+true,0,0,q,not first exec error from hb.gethb[] where procname=`esc,1,1,and clears error - storeheartbeat is the only thing that clears either
+
+comment,,,,,,,init is atomic - a root-name clash must not leave a half-configured module behind
+run,0,0,q,hb.teardown[],1,1,tear down so the root name is free
+run,0,0,q,"set[`heartbeat;([]foreign:`int$())]",1,1,another module takes the root name
+run,0,0,q,delete from `.pt.jobs,1,1,clear the job capture
+run,0,0,q,delete from `.pt.reg,1,1,clear the registration capture
+fail,0,0,q,hb.init[deps],1,1,init refuses the clash
+true,0,0,q,0=count .pt.jobs,1,1,no timer jobs were registered before the throw
+true,0,0,q,0=count .pt.reg,1,1,no handlers were registered before the throw
+true,0,0,q,`foreign in cols value`heartbeat,1,1,the foreign table is untouched
+run,0,0,q,"![`.;();0b;enlist`heartbeat]",1,1,free the name
+run,0,0,q,hb.init[deps],1,1,init now succeeds
+true,0,0,q,`heartbeat in tables[],1,1,and claims the root name properly
+
+comment,,,,,,,eviction must never pre-empt the error report - a paused monitor's first check must still tell you
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,.pt.fired:0,1,1,reset the callback counter
+run,0,0,q,"hb.init[deps,enlist[`onerror]!enlist {[p] .pt.fired+:1}]",1,1,init with a counting onerror
+run,0,0,q,.pt.now:2025.01.01D00:00:00,1,1,set the clock variable BEFORE setcp - setcp now calls the function to check its return type
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,point the clock
+run,0,0,q,.m.di.0heartbeat.hb:.m.di.0heartbeat.storeschema,1,1,clear the store
+run,0,0,q,"hb.storeheartbeat[([]time:enlist .pt.now;sym:enlist`rdb;procname:enlist`ghost;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 1i)]",1,1,one heartbeat
+run,0,0,q,.pt.now:2025.01.03D00:00:00,1,1,jump two days - past maxage - WITHOUT any check in between
+run,0,0,q,hb.checkheartbeat[],1,1,the first check since the beat
+true,0,0,q,1=count hb.gethb[],1,1,the row was NOT evicted on the first check - it had never been reported
+true,0,0,q,1=.pt.fired,1,1,onerror fired instead - you are told the process stopped
+true,0,0,q,first exec error from hb.gethb[] where procname=`ghost,1,1,and the row is flagged error
+run,0,0,q,hb.checkheartbeat[],1,1,the next check
+true,0,0,q,0=count hb.gethb[],1,1,NOW it is evicted - reported first, forgotten second
+true,0,0,q,1=.pt.fired,1,1,and onerror did not fire twice
+
+comment,,,,,,,a wrong-arity callback is silently never called - reject it at init
+fail,0,0,q,"hb.init[deps,enlist[`onwarning]!enlist {[a;b] }]",1,1,a two-argument onwarning is rejected - applying it to one argument yields a projection not a call
+fail,0,0,q,"hb.init[deps,enlist[`onerror]!enlist {[a;b] }]",1,1,a two-argument onerror is rejected
+run,0,0,q,"hb.init[deps,enlist[`onwarning]!enlist {[] }]",1,1,a niladic callback is ACCEPTED - q gives it arity 1 and it is genuinely invoked, it just ignores the rows
+run,0,0,q,"hb.init[deps,enlist[`onwarning]!enlist {[p] }]",1,1,an explicit unary callback is accepted
+run,0,0,q,"hb.init[deps,enlist[`onwarning]!enlist {x}]",1,1,and so is the implicit-argument form
+
+comment,,,,,,,the clock must actually return a timestamp - a bad one silently disables monitoring
+run,0,0,q,hb.init[deps],1,1,clean init
+fail,0,0,q,hb.setcp[{[] 42}],1,1,a clock returning a long is rejected - the staleness comparison would just evaluate false against every row
+fail,0,0,q,hb.setcp[{[] `notatime}],1,1,a clock returning a symbol is rejected
+fail,0,0,q,hb.setcp[{[] 2025.01.01}],1,1,a clock returning a date is rejected
+run,0,0,q,.pt.now:2025.01.01D00:00:00,1,1,define the clock variable first
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,a timestamp-returning clock is accepted
+
+comment,,,,,,,handles that cannot work are filtered rather than tracked on no evidence
+true,0,0,q,"(enlist 4i)~.m.di.0heartbeat.validhandles -5 4 0Ni,0i",1,1,negative null and zero handles are all dropped - only the positive one survives
+run,0,0,q,hb.subscribe[-5i],1,1,subscribing a negative handle is accepted but skipped
+true,0,0,q,not -5i in .m.di.0heartbeat.subscribedhandles,1,1,a negative handle is async so it would be recorded as subscribed on no evidence and closeconnection could never clear it
+
+comment,,,,,,,storeheartbeat validates the time column TYPE not just its presence
+fail,0,0,q,"hb.storeheartbeat[([]time:enlist 2025.01.01;sym:enlist`rdb;procname:enlist`d;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 1i)]",1,1,a date time column is rejected by name rather than throwing a raw type from the keyed upsert
+run,0,0,q,.pt.errstr2:@[{hb.storeheartbeat[([]time:enlist 2025.01.01;sym:enlist`rdb;procname:enlist`d)]};(::);{x}],1,1,capture the message
+true,0,0,q,"0<count .pt.errstr2 ss ""di.heartbeat: storeheartbeat""",1,1,and it is a named module error
+
+comment,,,,,,,a process jumping straight past BOTH thresholds between checks gets error without warning
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,hb.init[deps],1,1,clean init
+run,0,0,q,.pt.now:2025.01.01D00:00:00,1,1,set the clock variable
+run,0,0,q,hb.setcp[{[] .pt.now}],1,1,point the clock
+run,0,0,q,.m.di.0heartbeat.hb:.m.di.0heartbeat.storeschema,1,1,clear the store
+run,0,0,q,"hb.storeheartbeat[([]time:enlist .pt.now;sym:enlist`rdb;procname:enlist`jump;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 1i)]",1,1,one heartbeat
+run,0,0,q,.pt.now:2025.01.01D00:02:00,1,1,jump past warning AND error in one step
+run,0,0,q,hb.checkheartbeat[],1,1,single check
+true,0,0,q,first exec error from hb.gethb[] where procname=`jump,1,1,error is set
+true,0,0,q,not first exec warning from hb.gethb[] where procname=`jump,1,1,warning is NOT set - it was never in warning so the transition never fired; both flags only coexist on a gradual escalation

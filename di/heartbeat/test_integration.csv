@@ -1,0 +1,65 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration - a real publisher process and a real di.pubsub. mocks cannot reach these paths
+before,0,0,q,hbm:use`di.heartbeat,1,1,load di.heartbeat in the monitor
+before,0,0,q,os:use`di.os,1,1,di.os for abspath (harness only)
+before,0,0,q,"system ""l "", os.abspath[""di/heartbeat/test.q""]",1,1,load the spawn/fixture helpers
+before,0,0,q,.ht.lg:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent logger for the monitor
+before,0,0,q,".ht.tmr:`addjob`deletejobs!((enlist`custom)!enlist {[i;f;p;pe;m;o]};{[ids]})",1,1,stub timer - this suite drives the calls by hand
+before,0,0,q,".ht.ps:`publish`subscribe!({[t;x]};{[t;f]})",1,1,monitor-side pubsub stub - the monitor never publishes here
+before,0,0,q,".ht.hnd:`register`remove!({[e;p;n;pr;f]};{[e;p;n]})",1,1,handlers stub
+before,0,0,q,".ht.srv:enlist[`getservers]!enlist {[p] ([]w:`int$())}",1,1,servers stub - handles are supplied directly to subscribe
+before,0,0,q,"handle:spawnpublisher[]",1,1,launch a genuinely separate q process running di.heartbeat as a publisher
+before,0,0,q,installupd[],1,1,install the monitor's own upd - the module never does this itself
+
+comment,,,,,,,the publisher published its root names into its OWN process
+true,0,0,q,"handle""`heartbeat in tables[]""",1,1,the publisher created the root schema table di.pubsub needs to discover
+true,0,0,q,"handle""@[{value`.heartbeat.subscribe;1b};::;0b]""",1,1,the publisher published the remote-subscribe entry point
+true,0,0,q,"`time`sym`procname`counter`pid`host`port~handle""cols value`heartbeat""",1,1,the published schema matches the row shape
+
+comment,,,,,,,the remote-subscribe handshake - the mechanism a pubsub mock cannot exercise
+run,0,0,q,"base:(`log`timer`pubsub!(.ht.lg;.ht.tmr;.ht.ps)),`proctype`procname!(`montype;`monproc)",1,1,build the base deps dict first - an inline k!(v) followed by a comma binds the comma to the VALUE list not the dict
+run,0,0,q,"hbm[`init][base,`subenabled`servers`handlers!(1b;.ht.srv;.ht.hnd)]",1,1,init the monitor with the monitor-only deps joined last
+run,0,0,q,hbm[`subscribe][handle],1,1,subscribe to the publisher over the real handle
+true,0,0,q,"0<handle""count raze value .m.di.0pubsub.reqalldict""",1,1,the publisher registered a subscriber - .z.w resolved to the monitor's connection inside the inbound call
+
+comment,,,,,,,a published row actually crosses the wire and lands in the monitor's store
+true,0,0,q,0=count hbm[`gethb][],1,1,monitor store starts empty
+run,0,0,q,"handle""hb.publishheartbeat[]""",1,1,make the publisher publish one heartbeat
+run,0,0,q,drain[handle],1,1,force the monitor to process the async upd the publisher pushed
+true,0,0,q,1=count hbm[`gethb][],1,1,the published row reached the monitor and was stored
+true,0,0,q,`childtype in exec sym from hbm[`gethb][],1,1,the row carries the publisher's process type
+true,0,0,q,`childproc in exec procname from hbm[`gethb][],1,1,the row carries the publisher's process name
+true,0,0,q,not first exec warning from hbm[`gethb][],1,1,a freshly received heartbeat is not in warning
+run,0,0,q,"handle""hb.publishheartbeat[]""",1,1,publish a second heartbeat
+run,0,0,q,drain[handle],1,1,drain again
+true,0,0,q,1=count hbm[`gethb][],1,1,the second beat updated the existing row rather than adding one
+true,0,0,q,1=first exec counter from hbm[`gethb][],1,1,and the counter advanced - proving the second row was genuinely received
+
+comment,,,,,,,teardown on the publisher removes its root names
+run,0,0,q,"handle""hb.teardown[]""",1,1,tear the publisher down
+true,0,0,q,"handle""not `heartbeat in tables[]""",1,1,the publisher's root schema table was removed
+true,0,0,q,"handle""not @[{value`.heartbeat.subscribe;1b};::;0b]""",1,1,the publisher's root subscribe entry point was removed
+run,0,0,q,cleanup[],1,1,close the handle and remove the child script and log
+
+comment,,,,,,,di.torq-shaped wiring - REAL di.log/di.timer/di.handlers/di.pubsub instead of mocks
+comment,,,,,,,"a suite written only in the module's own mock dialect can only prove self-consistency; this block caught a nested-list log message that every mock accepted"
+run,0,0,q,logging:use`di.log,1,1,real di.log
+run,0,0,q,realtimer:use`di.timer,1,1,real di.timer
+run,0,0,q,realhandlers:use`di.handlers,1,1,real di.handlers
+run,0,0,q,realps:use`di.pubsub,1,1,real di.pubsub
+run,0,0,q,realtimer[`init][],1,1,init the real timer
+run,0,0,q,realhandlers[`init][logging[`logdict]],1,1,init real di.handlers off di.log's ready-made logdict
+run,0,0,q,"realdeps:logging[`logdict],`timer`pubsub`handlers`servers`proctype`procname`subenabled!(realtimer;realps;realhandlers;enlist[`getservers]!enlist {[p]([]w:`int$())};`rdb;`rdb1;1b)",1,1,wire with real module export dicts exactly as di.torq will
+run,0,0,q,hbm[`init][realdeps],1,1,init against the REAL logger - a non-flat message throws here where a permissive mock accepted it
+true,0,0,q,"1=count select from realhandlers[`list][`.z.pc] where name=`heartbeat",1,1,the registration landed in the REAL di.handlers registry
+true,0,0,q,"null first exec phase from realhandlers[`list][`.z.pc] where name=`heartbeat",1,1,and real di.handlers agrees .z.pc is a simple event with a null phase
+true,0,0,q,3=count select from realtimer[`getalljobs][] where id in `hbpublish`hbcheck`hbsubscribe,1,1,all three jobs landed in the REAL di.timer
+true,0,0,q,"all 2h=exec mode from realtimer[`getalljobs][] where id in `hbpublish`hbcheck",1,1,real di.timer recorded mode 2 as intended
+true,0,0,q,`heartbeat in tables[],1,1,root schema table published
+run,0,0,q,realps[`init][],1,1,pubsub init AFTER heartbeat init - the documented ordering
+true,0,0,q,`heartbeat in .m.di.0pubsub.t,1,1,di.pubsub now serves the heartbeat topic - the ordering constraint holds end to end
+run,0,0,q,hbm[`publishheartbeat][],1,1,publish through the real pubsub with no subscribers attached
+run,0,0,q,hbm[`teardown][],1,1,teardown against the real registries
+true,0,0,q,0=count realhandlers[`list][`.z.pc],1,1,the real handlers registry was cleaned
+true,0,0,q,0=count realtimer[`getalljobs][],1,1,the real timer jobs were cleaned
+true,0,0,q,not `heartbeat in tables[],1,1,the root names were cleaned

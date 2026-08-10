@@ -44,9 +44,6 @@ resolvedir:{[base;dir]
   $[dir like "/*";dir;base,"/",dir]
   }
 
-/ bridge di.torq's DYADIC log dep (ctx;msg) to di.dbwrite's MONADIC (msg) contract
-monadiclog:{[dl] `info`warn`error!({[f;m] f[`wdb;m]}[dl`info];{[f;m] f[`wdb;m]}[dl`warn];{[f;m] f[`wdb;m]}[dl`error])}
-
 / per-table flush threshold: numtab override if present, else the global numrows
 maxrows:{[t] $[t in key .z.m.numtab;.z.m.numtab t;.z.m.numrows]}
 
@@ -192,9 +189,10 @@ init:{[config;deps]
   system "mkdir -p ",1_string .z.m.savedir;
   clearwdbdata[];
 
-  / di.dbwrite for the EOD sort/attr (monadic-log bridge; optional sort.csv config)
+  / di.dbwrite for the EOD sort/attr (optional sort.csv config). Takes the injected binary
+  / (ctx;msg) log dep directly - no adapter, since di.dbwrite now uses the same contract.
   .z.m.dbw:use`di.dbwrite;
-  (.z.m.dbw`init)[enlist[`log]!enlist monadiclog deps`log];
+  (.z.m.dbw`init)[enlist[`log]!enlist deps`log];
   if[`sortcsv in key config;(.z.m.dbw`readcsv)[resolvedir[apphome[];config`sortcsv]]];
 
   / connect to the tickerplant + hdb(s) + rdb(s) (+ gateway) via the INJECTED di.torq.servers

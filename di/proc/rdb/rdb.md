@@ -15,9 +15,10 @@ savedown → HDB reload, and nothing else yet.
   (subscribe + replay), `di.dbwrite` (savedown/sort/attr/gc), `di.tplogmgr` (via
   di.subscriptions, for replay).
 
-`di.dbwrite` expects a **monadic** logger (`log[`info]["msg"]`, kx.log style); di.proc.rdb
-bridges the injected **dyadic** di.util.log dep (`log[`info][`ctx;"msg"]`) with a small adapter
-that folds in a fixed `` `rdb `` context. No kx.log install is required.
+`di.dbwrite` takes the injected **binary** `di.util.log` dep (`log[`info][`ctx;"msg"]`) directly —
+it uses the same contract, so no adapter is needed. (It previously wanted a monadic kx.log-style
+logger and di.proc.rdb bridged it; that adapter was removed when dbwrite was re-synced from
+`main`.) No kx.log install is required.
 
 ## Config
 

@@ -15,8 +15,9 @@ Chesterton's-Fence audit of wdb.q).
 - **Hard** (`use`-imported): `di.torq.servers` (connect to TP/HDB/RDB), `di.subscriptions`
   (subscribe + replay), `di.dbwrite` (EOD sort/attr only), `di.tplogmgr` (via di.subscriptions).
 
-`di.dbwrite` expects a **monadic** logger; di.proc.wdb bridges the injected **dyadic** di.util.log dep
-with a `` `wdb ``-context adapter (same as di.proc.rdb). No kx.log install is required.
+`di.dbwrite` takes the injected **binary** `di.util.log` dep directly — same contract, no adapter
+(the `` `wdb ``-context bridge was removed when dbwrite was re-synced from `main`, same as
+di.proc.rdb). No kx.log install is required.
 
 ## Config
 

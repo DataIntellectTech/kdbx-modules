@@ -34,11 +34,6 @@ resolvedir:{[base;dir]
   $[dir like "/*";dir;base,"/",dir]
   }
 
-/ bridge di.torq's DYADIC log dep (ctx;msg) to di.dbwrite's MONADIC (msg) contract,
-/ folding a fixed `rdb context into each message. (di.dbwrite was switched to kx.log-style
-/ monadic loggers upstream; no kx.log install is needed - just this adapter.)
-monadiclog:{[dl] `info`warn`error!({[f;m] f[`rdb;m]}[dl`info];{[f;m] f[`rdb;m]}[dl`warn];{[f;m] f[`rdb;m]}[dl`error])}
-
 / root-namespace-safe upd: append to the ROOT table t. Handles a table payload (live, from
 / di.pubsub) and a list-of-columns payload (replay, from di.tplogmgr's -11!). @[`.;..] targets
 / root explicitly so it works from the module / -11! context.
@@ -142,9 +137,10 @@ init:{[config;deps]
   sd:(.z.m.subs`subscribe)[tph;subscribeto;subscribesyms;replaylog];
   .z.m.log[`info][`rdb;"subscribed; replayed ",(string sd`rowcount)," message(s), partition date ",string sd`date];
 
-  / di.dbwrite for savedown (monadic-log bridge; optional sort.csv sort/attr config)
+  / di.dbwrite for savedown (optional sort.csv sort/attr config). Takes the injected binary
+  / (ctx;msg) log dep directly - no adapter, since di.dbwrite now uses the same contract.
   .z.m.dbw:use`di.dbwrite;
-  (.z.m.dbw`init)[enlist[`log]!enlist monadiclog deps`log];
+  (.z.m.dbw`init)[enlist[`log]!enlist deps`log];
   if[`sortcsv in key config;(.z.m.dbw`readcsv)[resolvedir[apphome[];config`sortcsv]]];
 
   / publish the EOD entry points at root (the TP calls endofday[date]; .u.end is the alias).

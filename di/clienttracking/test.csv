@@ -61,6 +61,11 @@ run,0,0,q,ct.addclient[0i],1,1,record the console handle (.z.w is 0i) as an open
 run,0,0,q,"(value `.z.pg) ""2+2""",1,1,drive a query through di.handlers - exec then usage post
 true,0,0,q,"0<first exec hits from ct.getclients[] where w=0i,null endp",1,1,the served request bumped the client hit count
 
+comment,,,,,,,re-init preserves the existing session table (first-init guard)
+run,0,0,q,ct.addclient[7007i],1,1,record a client before re-init
+run,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,re-init the module
+true,0,0,q,"1=count select from ct.getclients[] where w=7007i,null endp",1,1,the existing session survived the re-init
+
 comment,,,,,,,re-init with trackusage:0b removes the usage post-handlers
 run,0,0,q,"ct.init[`log`handlers`trackusage!(logdep;hdep;0b)]",1,1,re-init with usage tracking disabled
 true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,usage post handler removed on re-init

@@ -197,7 +197,7 @@ TorQ's `trackclients.q` follow from it.
 
 Needs KDB-X (the `use` module system + k4unit).
 
-**Unit suite** (`test.csv`, 41 checks) — hermetic, no sockets. Runs against the **real, merged
+**Unit suite** (`test.csv`, 44 checks) — hermetic, no sockets. Runs against the **real, merged
 di.handlers and di.log** (nothing is mocked); drives di.handlers' actual dispatcher by invoking the
 function bound to each `.z.*` event with synthetic handles. `moduletest` loads and runs it:
 

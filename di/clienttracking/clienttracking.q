@@ -38,6 +38,8 @@ usageevents:`.z.pg`.z.ps`.z.ws;
 
 ipa:{[a]
   / format a raw .z.a int ip address as a dotted-decimal symbol
+  / .z.a is a signed int32 (high ips are negative); 0x0 vs takes its two's-complement bytes and
+  / "i"$ casts each byte UNSIGNED (0-255), so octets >= 128 render correctly (e.g. 192.168.0.1)
   :`$"." sv string "i"$0x0 vs a;
   };
 
@@ -50,7 +52,7 @@ raiseerror:{[ctx;msg]
 track:{[h]
   / record a newly-seen client handle - sweep first, then append an open session row for h
   cleanup[];
-  .z.m.clients:.z.m.clients upsert (h;ipa .z.a;.z.u;.z.a;.z.p;0Np;.z.p;0;0);
+  .z.m.clients:.z.m.clients upsert (h;ipa .z.a;.z.u;.z.a;.z.p;0Np;.z.p;0j;0j);
   };
 
 closeclient:{[h]
@@ -118,8 +120,8 @@ init:{[deps]
   .z.m.maxidle:$[`maxidle in key deps;deps`maxidle;defaultmaxidle];
   .z.m.retain:$[`retain in key deps;deps`retain;defaultretain];
   .z.m.trackusage:$[`trackusage in key deps;deps`trackusage;1b];
-  / create the session table only on first init - a direct (module-rewritten) reference detects prior setup
-  if[not @[{.z.m.clients;1b};::;0b];.z.m.clients:clientschema];
+  / create the session table on first init only; a re-init must leave the existing table intact
+  if[not `clients in key .z.m;.z.m.clients:clientschema];
   registerlifecycle[];
   $[.z.m.trackusage;enableusage[];disableusage[]];
   .z.m.loginfo[`init;"di.clienttracking initialised"];

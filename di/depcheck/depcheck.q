@@ -3,9 +3,6 @@
 / introspecting the session namespace the kdb-x `use` loader already populates (`.m.di.0<shortname>`), so it stays
 / standalone with no hard di.* dependency of its own
 
-/ module version - di.depcheck is the first module to carry one, dogfooding the convention it introduces
-version:"0.1.0";
-
 / the fixed set of core dependency contracts di.depcheck knows how to validate, keyed by the module that provides
 / each one - not a generic self-declaration registry, since no such mechanism exists anywhere in this codebase yet
 contracts:`di.log`di.timer`di.handlers!(

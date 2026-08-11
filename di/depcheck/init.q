@@ -3,4 +3,7 @@
 
 \l ::depcheck.q
 
+/ Module version
+version:first read0`:::VERSION
+
 export:([init;version;checkcontract])

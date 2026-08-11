@@ -38,12 +38,11 @@ key. No adaptation is performed — pass dicts that already conform.
 ```q
 handlers:use`di.handlers
 ct:use`di.clienttracking
+logger:use`di.log
 
-/ a conforming log dict (di.log would supply one)
-logdep:`info`warn`error!(
-  {[c;m] -1 string[c],": INFO  ",m;};
-  {[c;m] -1 string[c],": WARN  ",m;};
-  {[c;m] -2 string[c],": ERROR ",m;});
+/ di.log supplies the log dependency - `logdict`log is an info..fatal level dict
+/ (a superset of the required info/warn/error); it is passed straight through, no adaptation
+logdep:logger.logdict`log
 
 / di.handlers must be initialised before it is handed on
 handlers.init[enlist[`log]!enlist logdep]
@@ -51,6 +50,9 @@ hdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list)
 
 ct.init[`log`handlers!(logdep;hdep)]
 ```
+
+Any dict with binary `` `info`warn`error `` `{[c;m]}` functions works — a hand-rolled one for a quick
+test, or `di.log`'s `logdict`log` in a real process.
 
 `init` must be called before any other function (there is no default logger). It is idempotent —
 re-calling re-wires the dependencies, re-registers the lifecycle handlers in place, and preserves the
@@ -193,12 +195,39 @@ TorQ's `trackclients.q` follow from it.
 
 ## Running tests
 
-Needs KDB-X (the `use` module system + k4unit). It drives dispatch by invoking the function di.handlers
-binds to each `.z.*` event with synthetic handles — no sockets required — and covers dependency
-validation, the four lifecycle registrations, open/close through real di.handlers dispatch (which also
-proves the registered callbacks resolve this module's own `.z.m` state), `addclient`, cleanup of dead
-handles, usage-counting deferral without an owner and activation with one, and the api-metadata/version
-contract.
+Needs KDB-X (the `use` module system + k4unit).
+
+**Unit suite** (`test.csv`, 41 checks) — hermetic, no sockets. Runs against the **real, merged
+di.handlers and di.log** (nothing is mocked); drives di.handlers' actual dispatcher by invoking the
+function bound to each `.z.*` event with synthetic handles. `moduletest` loads and runs it:
+
+```q
+k4unit:use`di.k4unit
+k4unit.moduletest`di.clienttracking      / "All tests passed"
+```
+
+It covers dependency + config-type validation, the four lifecycle registrations, open/close through
+real di.handlers dispatch (which also proves the registered callbacks resolve this module's own `.z.m`
+state), `addclient`, cleanup of dead handles, usage-counting deferral without an owner and activation
+with one, teardown on `trackusage:0b` re-init, and the api-metadata/version contract.
+
+**Integration suite** (`test_integration.csv`, 6 checks) — stands up a real child q process, tracks the
+outgoing handle to it, then reaps it as idle. This is the one path the unit suite cannot reach: the
+idle-reap branch force-closes a handle that must genuinely be in `.z.W`. It needs a q/kdb-x binary via
+`QHOME`, needs no other configuration, and skips cleanly if none is available. `moduletest` only loads
+`test.csv`, so run this suite directly, in a fresh session:
+
+```q
+k4unit:use`di.k4unit
+.m.di.0k4unit.KUltf .Q.dd[hsym`$.Q.m.mp`di.clienttracking;`test_integration.csv]
+.m.di.0k4unit.KUrt[]
+k4unit.getresults[]                / one row per assertion; ok=1 is a pass
+```
+
+The *incoming*-connection (`.z.po`) direction is deliberately not integration-tested: a process only
+accepts an inbound connection at its top-level event loop, which a k4unit script never reaches. That
+di.handlers binds `.z.*` to the socket layer at all is covered by di.handlers' own integration suite;
+here the `.z.po`/`.z.pc` dispatch is exercised via the unit suite's synthetic-handle drives.
 
 ```q
 k4unit:use`di.k4unit

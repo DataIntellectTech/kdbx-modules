@@ -1,0 +1,47 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration test - exercises the idle-reap branch (force-close + endp stamp) on a REAL live handle
+comment,,,,,,,this is the one path the hermetic suite cannot cover - it needs a handle actually in .z.W
+comment,,,,,,,stands up a child q server, tracks the outgoing handle to it, then reaps it as idle
+comment,,,,,,,requires a q binary via QHOME (or q on PATH); skips cleanly if the child never comes up
+comment,,,,,,,child self-exits when its connection drops and is also killed by PID - robust to mid-suite failure
+
+before,0,0,q,handlers:use`di.handlers,1,1,load di.handlers
+before,0,0,q,ct:use`di.clienttracking,1,1,load di.clienttracking
+before,0,0,q,logger:use`di.log,1,1,load the real di.log
+before,0,0,q,logdep:logger.logdict`log,1,1,di.log level dict
+before,0,0,q,handlers.init[enlist[`log]!enlist logdep],1,1,init di.handlers
+before,0,0,q,"hdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list)",1,1,handlers injectable
+before,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,init di.clienttracking
+before,0,0,q,qcands:$[count qh:getenv[`QHOME];(raze(qh;"/bin/q");raze(qh;"/";string .z.o;"/q"));()],1,1,candidate q binary locations
+before,0,0,q,qbin:$[count ex:qcands where {not ()~key hsym `$x} each qcands;first ex;"q"],1,1,pick an existing binary else q on PATH
+before,0,0,q,.it.wait:{[p;n] $[n<=0;0Ni;not null h:@[{hopen(`$"" sv (":localhost:";string x);500)};p;0Ni];h;[system"sleep 0.3";.it.wait[p;n-1]]]},1,1,poll for the child to accept
+before,0,0,q,system"p 0W",1,1,ask the OS for a free ephemeral port
+before,0,0,q,cport:system"p",1,1,read the OS-assigned port
+before,0,0,q,system"p 0",1,1,release the listener so the child can bind it
+before,0,0,q,cpid:"J"$last system "" sv (qbin;" -q -p ";string cport;" </dev/null >/dev/null 2>&1 & echo $!"),1,1,launch a blank child q server and capture its PID
+before,0,0,q,h:.it.wait[cport;20],1,1,open an outgoing handle to the child
+before,0,0,q,if[null h;@[{system "" sv ("kill -9 ";string cpid)};::;{x}];exit 0],1,1,skip cleanly if the child never came up
+before,0,0,q,@[{h ".z.pc:{exit 0}"};::;{x}],1,1,backstop - child self-exits when its connection drops
+before,0,0,q,roundtrip:@[{4=h"2+2"};::;{0b}],1,1,a real synchronous round-trip works
+before,0,0,q,ct.addclient[h],1,1,track the real live handle
+before,0,0,q,"tracked:0<count select from ct.getclients[] where w=h,null endp",1,1,capture that the live handle is tracked and open
+before,0,0,q,livebefore:h in key .z.W,1,1,capture that the handle is genuinely live before the sweep
+before,0,0,q,"ct.init[`log`handlers`maxidle!(logdep;hdep;0D00:00:00.000000001)]",1,1,re-init with a 1ns idle threshold so the handle counts as idle
+before,0,0,q,system"sleep 0.2",1,1,let time pass beyond the idle threshold
+before,0,0,q,ct.cleanup[],1,1,run the sweep - the idle-reap branch should force-close and stamp the handle
+before,0,0,q,reaped:not null first exec endp from ct.getclients[] where w=h,1,1,capture that endp was stamped on the reaped session
+before,0,0,q,closed:not h in key .z.W,1,1,capture that the idle handle was actually force-closed
+before,0,0,q,@[{system "" sv ("kill -9 ";string cpid)};::;{x}],1,1,forceful child kill as a belt in case self-exit did not take
+before,0,0,q,system"sleep 0.3",1,1,give the OS a moment to reap the child
+before,0,0,q,gone:0=count @[{system "" sv ("ps -p ";string cpid;" -o pid=")};::;{()}],1,1,verify the child is gone
+
+comment,,,,,,,a real IPC round-trip works while the tracker is loaded
+true,0,0,q,roundtrip,1,1,synchronous query to the real child returned the expected result
+comment,,,,,,,the live handle was tracked and genuinely open before the sweep
+true,0,0,q,tracked,1,1,addclient recorded the real handle as an open session
+true,0,0,q,livebefore,1,1,the handle was in .z.W before the idle sweep
+comment,,,,,,,the idle-reap branch force-closed the handle and stamped its session closed
+true,0,0,q,reaped,1,1,cleanup stamped endp on the idle session
+true,0,0,q,closed,1,1,cleanup force-closed the idle handle
+comment,,,,,,,the child process is fully cleaned up
+true,0,0,q,gone,1,1,the child process is gone after the test

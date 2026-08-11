@@ -1,26 +1,26 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-comment,,,,,,,setup - load di.handlers + di.clienttracking and init with a capturing logger
-before,0,0,q,handlers:use`di.handlers,1,1,load di.handlers module
+comment,,,,,,,setup - load di.handlers + di.clienttracking and init against the real di.log + di.handlers
+before,0,0,q,handlers:use`di.handlers,1,1,load the real di.handlers module
 before,0,0,q,ct:use`di.clienttracking,1,1,load di.clienttracking module
-before,0,0,q,.ct.captbl:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,log capture table for assertions
-before,0,0,q,caplog:`info`warn`error!({[c;m] `.ct.captbl insert (`info;c;m)};{[c;m] `.ct.captbl insert (`warn;c;m)};{[c;m] `.ct.captbl insert (`error;c;m)}),1,1,capturing binary logger {[c;m]}
-before,0,0,q,handlers.init[enlist[`log]!enlist caplog],1,1,init di.handlers with the capturing logger
+before,0,0,q,logger:use`di.log,1,1,load the real di.log module
+before,0,0,q,logdep:logger.logdict`log,1,1,di.log's info..fatal level dict (superset of info/warn/error)
+before,0,0,q,handlers.init[enlist[`log]!enlist logdep],1,1,init di.handlers with the real di.log
 before,0,0,q,"hdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list)",1,1,build the handlers injectable dict
-before,0,0,q,"ct.init[`log`handlers!(caplog;hdep)]",1,1,init di.clienttracking with the required log + handlers deps
+before,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,init di.clienttracking with the real log + handlers deps
 
 comment,,,,,,,init - dependency validation
 fail,0,0,q,ct.init[(::)],1,1,init rejects a non-dict deps
 fail,0,0,q,ct.init[()!()],1,1,init rejects missing log key
 fail,0,0,q,ct.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
-fail,0,0,q,"ct.init[enlist[`log]!enlist `info`warn!(caplog`info;caplog`warn)]",1,1,init rejects a log dict missing the error key
-fail,0,0,q,ct.init[enlist[`log]!enlist caplog],1,1,init rejects missing handlers key
-fail,0,0,q,"ct.init[`log`handlers!(caplog;42)]",1,1,init rejects a non-dict handlers value
-fail,0,0,q,"ct.init[`log`handlers!(caplog;enlist[`register]!enlist{})]",1,1,init rejects a handlers dict missing remove/list keys
-fail,0,0,q,"ct.init[`log`handlers`maxidle!(caplog;hdep;5)]",1,1,init rejects a non-timespan maxidle
-fail,0,0,q,"ct.init[`log`handlers`trackusage!(caplog;hdep;1)]",1,1,init rejects a non-boolean trackusage
+fail,0,0,q,"ct.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)]",1,1,init rejects a log dict missing the error key
+fail,0,0,q,ct.init[enlist[`log]!enlist logdep],1,1,init rejects missing handlers key
+fail,0,0,q,"ct.init[`log`handlers!(logdep;42)]",1,1,init rejects a non-dict handlers value
+fail,0,0,q,"ct.init[`log`handlers!(logdep;enlist[`register]!enlist{})]",1,1,init rejects a handlers dict missing remove/list keys
+fail,0,0,q,"ct.init[`log`handlers`maxidle!(logdep;hdep;5)]",1,1,init rejects a non-timespan maxidle
+fail,0,0,q,"ct.init[`log`handlers`trackusage!(logdep;hdep;1)]",1,1,init rejects a non-boolean trackusage
 run,0,0,q,".ct.errstr:@[{ct.init[(::)]};(::);{x}]",1,1,capture the error string from a bad init
 true,0,0,q,.ct.errstr like "di.clienttracking:*",1,1,init error is prefixed di.clienttracking:
-run,0,0,q,"ct.init[`log`handlers!(caplog;hdep)]",1,1,re-init cleanly for the remaining tests
+run,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,re-init cleanly for the remaining tests
 
 comment,,,,,,,module metadata - exported version
 true,0,0,q,10h=type ct.version,1,1,version is a string
@@ -62,9 +62,9 @@ run,0,0,q,"(value `.z.pg) ""2+2""",1,1,drive a query through di.handlers - exec 
 true,0,0,q,"0<first exec hits from ct.getclients[] where w=0i,null endp",1,1,the served request bumped the client hit count
 
 comment,,,,,,,re-init with trackusage:0b removes the usage post-handlers
-run,0,0,q,"ct.init[`log`handlers`trackusage!(caplog;hdep;0b)]",1,1,re-init with usage tracking disabled
+run,0,0,q,"ct.init[`log`handlers`trackusage!(logdep;hdep;0b)]",1,1,re-init with usage tracking disabled
 true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,usage post handler removed on re-init
-run,0,0,q,"ct.init[`log`handlers!(caplog;hdep)]",1,1,restore the default init for the remaining tests
+run,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,restore the default init for the remaining tests
 
 comment,,,,,,,api metadata - callable exports documented, plumbing omitted
 true,0,0,q,"(asc (key ct) except `init`getapimeta`version)~asc exec name from ct.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing/version omitted)

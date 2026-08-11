@@ -47,33 +47,21 @@ raiseerror:{[ctx;msg]
   '"di.clienttracking: ",string[ctx],": ",msg;
   };
 
-runcleanup:{[]
-  / reap sessions whose handle has gone, force-close idle live handles, purge expired closed rows
-  now:.z.p;
-  .z.m.clients:update endp:now from .z.m.clients where (null endp),not w in key .z.W;
-  if[0D<.z.m.maxidle;
-    idle:exec w from .z.m.clients where (null endp),w in key .z.W,lastp<now-.z.m.maxidle;
-    if[count idle;
-      @[hclose;;::] each idle;
-      .z.m.clients:update endp:now from .z.m.clients where (w in idle),null endp];
-    ];
-  .z.m.clients:delete from .z.m.clients where (not null endp),endp<now-.z.m.retain;
-  };
-
 track:{[h]
   / record a newly-seen client handle - sweep first, then append an open session row for h
-  runcleanup[];
+  cleanup[];
   .z.m.clients:.z.m.clients upsert (h;ipa .z.a;.z.u;.z.a;.z.p;0Np;.z.p;0;0);
   };
 
 closeclient:{[h]
   / mark the open session for handle h as closed, then sweep
   .z.m.clients:update endp:.z.p from .z.m.clients where w=h,null endp;
-  runcleanup[];
+  cleanup[];
   };
 
 hitpost:{[result;args]
-  / usage post-handler - bump the request count and result-byte total for the calling client
+  / usage post-handler - di.handlers calls post[result;args], so this must be binary; args is unused
+  / bumps the request count and result-byte total for the calling client (.z.w)
   / runs only on a successful exec (di.handlers post fires after the owner returns), so it cannot
   / see errors; on a multithreaded (negative \p) process a global write here hits 'noupdate and is
   / isolated/logged by di.handlers rather than counting
@@ -149,8 +137,17 @@ addclient:{[h]
   };
 
 cleanup:{[]
-  / run a cleanup sweep now - reap vanished handles, force-close idle handles, purge expired closed rows
-  runcleanup[];
+  / reap sessions whose handle has gone, force-close idle live handles, purge expired closed rows
+  / runs automatically on every open/close; also exported so a host can drive it periodically (di.timer)
+  now:.z.p;
+  .z.m.clients:update endp:now from .z.m.clients where null endp,not w in key .z.W;
+  if[0D<.z.m.maxidle;
+    idle:exec w from .z.m.clients where null endp,w in key .z.W,lastp<now-.z.m.maxidle;
+    if[count idle;
+      @[hclose;;::] each idle;
+      .z.m.clients:update endp:now from .z.m.clients where w in idle,null endp];
+    ];
+  .z.m.clients:delete from .z.m.clients where not null endp,endp<now-.z.m.retain;
   };
 
 enableusage:{[]

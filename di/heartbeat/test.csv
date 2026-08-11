@@ -193,7 +193,7 @@ true,0,0,q,-11h=type first .pt.asked,1,1,passed as an atom
 run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`connections!(1b;mocksrvrows;mockh;`rdb`hdb)]",1,1,re-init with an explicit proctype list
 run,0,0,q,.pt.asked:(),1,1,clear the record
 run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again
-true,0,0,q,2=count .pt.asked,1,1,ONE CALL PER PROCTYPE - passing the whole list throws against the real di.servers and di.timer would then disable the job permanently
+true,0,0,q,2=count .pt.asked,1,1,ONE CALL PER PROCTYPE - a bare symbol is the shape EVERY version of the getservers contract accepts so this works against an older di.servers that throws on a list
 true,0,0,q,all -11h=type each .pt.asked,1,1,each call got a symbol ATOM not the vector
 true,0,0,q,`rdb`hdb~raze .pt.asked,1,1,and between them they covered every configured proctype
 
@@ -264,7 +264,7 @@ true,0,0,q,"0=count select from .pt.cap where lvl=`error,{0<count x ss ""sweep f
 true,0,0,q,0=count 0!.m.di.0heartbeat.unseen,1,1,and the never-beaten counters are cleared since nothing is being monitored
 true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""consecutive sweeps""} each msg",1,1,an explicitly empty connections list is a deliberate choice already warned about at init - it must NOT also trip the discovered-nothing warning
 
-comment,,,,,,,"a monitor that is configured to watch something and discovers NOTHING must say so - the `ALL default does exactly this against the real di.servers"
+comment,,,,,,,"a monitor that is configured to watch something and discovers NOTHING must say so - a connections list naming types di.servers never connects to does exactly this"
 run,0,0,q,hb.teardown[],1,1,tear down
 run,0,0,q,"hb.init[deps,`subenabled`servers`connections`subscribewarnsweeps!(1b;mocksrv;`rdb;3)]",1,1,init as a monitor whose servers dep returns an EMPTY table for every proctype
 run,0,0,q,.m.di.0heartbeat.emptysweeps:0,1,1,reset the consecutive-empty counter
@@ -277,7 +277,7 @@ run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 3 - the threshold
 true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""consecutive sweeps""} each msg",1,1,the discovered-nothing warning fires at exactly the threshold sweep
 true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""no peer discovered yet""} each msg",1,1,a process that has never seen a peer gets the COLD START wording - not the alarming lost-my-peers one
 true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""a recovery line follows""} each msg",1,1,and it tells the reader the warning will resolve itself if it was only a slow rollout
-true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""ALL currently matches nothing""} each msg",1,1,while still naming the likeliest cause today - the `ALL gap against di.servers
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""connections names process types""} each msg",1,1,and points at the actionable check - whether connections names types di.servers is actually connected to
 run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 4
 true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""consecutive sweeps""} each msg",1,1,and does NOT repeat - a permanently misconfigured monitor must not log every sweep forever
 

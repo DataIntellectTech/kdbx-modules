@@ -99,7 +99,7 @@ Passed in the same dict as the dependencies. Every key is optional.
 | `errortolerance` | `3f` | **shipped** | error after `tolerance * publishinterval` |
 | `subscribewarnsweeps` | `3` | new | consecutive-sweep threshold for both monitor warnings: a subscribed peer sending nothing, and discovering no peer at all |
 | `maxage` | `0D24:00:00` | new | forget a process silent this long; `0Wn` to keep forever |
-| `connections` | `` `ALL `` | **shipped** | process types to monitor; `` `ALL `` means every one. **See the caveat below - `` `ALL `` does not currently work** |
+| `connections` | `` `ALL `` | **shipped** | process types to monitor; `` `ALL `` means every one |
 | `onwarning` | no-op | new | unary callback given the rows entering warning |
 | `onerror` | no-op | new | unary callback given the rows entering error |
 | `pid` / `host` / `port` | `.z.i` / `.z.h` / `system"p"` | legacy | captured once at load, as legacy did |
@@ -126,32 +126,22 @@ Setting `subenabled:1b` with an **empty** `connections` list is legal but warns:
 as legacy's in-file `connections:()` default, where the entire monitor path silently did nothing. Use
 `` `ALL ``, or name the process types to watch.
 
-### ⚠️ `` `ALL `` does not currently work - a regression in `di.servers`, not yet raised
+### How `` `ALL `` resolves, and why the sweep still iterates
 
-The shipped default resolves to a null symbol, which every ancestor of `getservers` treats as
-match-all. `di.servers`' version does not:
+`` `ALL `` converts to a null symbol, which `di.servers.getservers` treats as match-all — the same
+contract legacy TorQ's `.servers.getservers` (`trackservers.q:75`) and `di.serverselect.getservers`
+both implement (`` ` `` → every server, otherwise `proctype in lookups`).
 
-| Implementation | Contract |
-|---|---|
-| legacy TorQ `.servers.getservers` (`trackservers.q:75`) | `` `~lookups `` → every server; otherwise `proctype in lookups` (so a **list** works) |
-| `di.serverselect.getservers` | identical - `` ` `` as `lookups` returns all active servers |
-| **`di.servers.getservers`** | requires a symbol **atom** and matches `proctype=pt` - a null matches **nothing**, a list **throws** |
+The sweep nonetheless calls `getservers` **once per proctype** rather than passing the whole list.
+That is deliberate: it is the one shape every version of the contract accepts, so this module works
+against a `di.servers` that predates the list/null support as well as one that has it. The cost is
+one call per configured proctype per sweep, which is not worth optimising away for the coupling it
+would add.
 
-So this is a regression against both its ancestors, not a missing feature. Consequences today:
-
-- **`` connections:`ALL ``** (the default) discovers zero servers, silently.
-- **`` connections:`rdb`hdb ``** works, because `di.heartbeat` calls `getservers` **once per
-  proctype** rather than passing the list. That iteration is this module's workaround and is
-  forward-compatible - a one-element iteration still works if `getservers` later accepts vectors.
-
-**Until `di.servers` is fixed, name the process types explicitly.** The `` `ALL `` path cannot be
-worked around from this side: there is no proctype universe to iterate over without `di.servers`
-providing one.
-
-It is, however, no longer **silent**. A monitor that is configured to watch something and discovers
-no usable peer for `subscribewarnsweeps` consecutive sweeps warns once, naming `` `ALL `` as the
-likeliest cause. See *The discovered-nothing warning* below — that check is deliberately
-cause-agnostic, so it needs no maintenance when `di.servers` is fixed.
+> **Requires `di.servers` with the null/list contract.** An older build accepting only a symbol atom
+> returns nothing for `` `ALL `` and *throws* on a list — and because the sweep runs in a `di.timer`
+> job with `disableonfail:1b`, that throw would permanently disable monitor discovery. If a monitor
+> discovers nothing, the discovered-nothing warning below is what surfaces it.
 
 **`connections` is not the same key as `di.servers.connections`.** They share a name and mean
 different things: `di.servers.connections` decides which process types this process *connects to at
@@ -356,9 +346,9 @@ warns once.
 It is deliberately **cause-agnostic**, watching the consequence rather than any single mechanism, so
 one check covers all of:
 
-- `` connections:`ALL `` matching nothing against the current `di.servers` (see above);
 - a `connections` list naming a process type `di.servers` is not configured to connect to — the
   name-collision trap described earlier;
+- a `di.servers` too old for the null/list `getservers` contract, so `` `ALL `` matches nothing;
 - an injected `servers` dependency that returns nothing for the configured types;
 - every watched peer being genuinely down.
 
@@ -403,8 +393,8 @@ If your deployments routinely start monitors well ahead of their peers and you w
 the warning at all, raise `subscribewarnsweeps` — the threshold is in sweeps, so the wall-clock grace
 is `subscribewarnsweeps × subscribeinterval` (3 minutes on the defaults).
 
-Because the check never names a mechanism in its logic, it stays correct once `di.servers` is fixed;
-only the `` `ALL `` hint in the cold-start message would become stale.
+Because the check never names a mechanism in its logic, it needs no maintenance as the causes it
+catches come and go — which is why it survived the `di.servers` `getservers` fix unchanged.
 
 **Only the sweep feeds this check, not `subscribe[]`.** The manual entry point takes bare handles with
 no identity attached, so there is nothing to key a pending row on — a handle number alone cannot be

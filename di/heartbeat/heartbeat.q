@@ -420,7 +420,7 @@ emptysweepmsg:{[]
   :"no peer discovered yet, after ",(string subscribewarnsweeps)," consecutive sweeps - on a cold ",
     "start the peers may simply still be coming up, in which case this resolves itself and a ",
     "recovery line follows. otherwise check that connections names process types di.servers is ",
-    "connected to. NB `ALL currently matches nothing against di.servers (see heartbeat.md)";
+    "actually connected to (see heartbeat.md)";
   };
 
 warnemptysweeps:{[]
@@ -428,8 +428,9 @@ warnemptysweeps:{[]
   / threshold. deliberately cause-AGNOSTIC: it watches the consequence, not any single cause, so it
   / stays correct whatever the reason - a connections list naming a process type di.servers never
   / connects to, a servers dependency returning nothing, or peers that are simply all down. that also
-  / means it needs no maintenance when the `ALL gap below is closed. reuses subscribewarnsweeps: it
-  / is the same "consecutive sweeps" unit as the never-beaten warning
+  / means it needs no maintenance as those causes come and go - it survived the di.servers getservers
+  / fix unchanged. reuses subscribewarnsweeps: it is the same "consecutive sweeps" unit as the
+  / never-beaten warning
   .z.m.emptysweeps:emptysweeps+1;
   if[emptysweeps<>subscribewarnsweeps;:()];
   / record that a warning was actually EMITTED, rather than leaving the recovery line to re-derive it
@@ -463,10 +464,11 @@ notediscovery:{[n]
 getheartbeats:{[proctypes]
   / di.servers.getservers returns a TABLE of server rows - the handles are its w column, and a
   / disconnected row carries a null handle.
-  / ONE CALL PER PROCTYPE: di.servers.getservers takes a symbol ATOM and matches with =, so passing
-  / the whole list throws - and di.timer's disableonfail would then end monitor discovery for the
-  / process lifetime. forward-compatible either way: a one-element iteration still works if getservers
-  / later accepts vectors
+  / ONE CALL PER PROCTYPE, deliberately, even though di.servers.getservers now accepts a list: a bare
+  / symbol is the one shape EVERY version of that contract takes, so this works against a di.servers
+  / that predates the null/list support as well as one that has it. an older build throws on a list,
+  / and di.timer's disableonfail would then end monitor discovery for the process lifetime - a
+  / permanent failure to buy an optimisation worth one call per proctype per sweep
   pts:(),proctypes;
   / an empty connections list is a LEGAL "monitor nothing" configuration - init warns about it rather
   / than rejecting it - so it must be a clean no-op here. without this guard `each` over no proctypes

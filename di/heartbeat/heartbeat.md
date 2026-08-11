@@ -29,11 +29,17 @@ All injected via `init`; there are no hard module dependencies (`deps.q` is empt
 | `log` | always | `info`, `warn`, `error` | binary `{[ctx;msg]}` - `di.log`'s `logdict` fits directly |
 | `timer` | always | `addjob`, `deletejobs` | `addjob` must be the variant dict exposing `custom` |
 | `pubsub` | always | `publish`, `subscribe` | `di.pubsub` |
-| `servers` | when `subenabled` | `getservers` | `di.servers`; returns a **table**, handles are its `w` column |
-| `handlers` | when `subenabled` | `register`, `remove` | `di.handlers`; 5-arg `register[event;phase;nm;pri;func]` |
+| `servers` | when `subenabled` | `getservers` | `di.servers`; returns a **table**, handles are its `w` column. `procname` and `proctype` are used for the never-beaten warning, and skipped if absent |
 
 Nothing is silently defaulted. A missing or malformed dependency throws from `init` with a message
 naming the module that supplies it.
+
+> **No `handlers` dependency.** This module used to register a `.z.pc` observer, purely to prune a
+> cache of already-subscribed handles. That cache is gone (see *How a monitor subscribes*), and the
+> observer went with it. A `handlers` key passed anyway is **silently accepted and ignored**, so
+> `di.torq` can keep wiring every module with one uniform dict — it is deliberately still listed in
+> the module's `depkeys` so it is never mistaken for a stray config key and warned about on every
+> publisher-only boot.
 
 ## Initialisation
 
@@ -46,9 +52,12 @@ ps:use`di.pubsub
 hb:use`di.heartbeat
 
 timer.init[]
-hb.init[logging.logdict,`timer`pubsub`proctype`procname!(timerdep;psdep;`rdb;`rdb1)]
+hb.init[logging.logdict,`timer`pubsub`proctype`procname!(timer;ps;`rdb;`rdb1)]
 ps.init[]                              / MUST run after hb.init - see Ordering below
 ```
+
+The module export dicts (`timer`, `ps`) are passed straight through - `di.heartbeat` reads the keys it
+needs off them.
 
 `proctype` and `procname` are **required**. They are published as the heartbeat's `sym` and `procname`
 and have no sensible default. (Legacy took them from `.proc.*`; a module cannot.)
@@ -85,10 +94,12 @@ Passed in the same dict as the dependencies. Every key is optional.
 | `publishroot` | `1b` | new | publish at root; see below |
 | `publishinterval` | `0D00:00:30` | both agree | how often to publish |
 | `checkinterval` | `0D00:00:10` | both agree | how often to check |
+| `subscribeinterval` | `0D00:01:00` | legacy value, now configurable | how often to sweep for newly connected publishers |
 | `warningtolerance` | `2f` | **shipped** | warning after `tolerance * publishinterval` |
 | `errortolerance` | `3f` | **shipped** | error after `tolerance * publishinterval` |
+| `subscribewarnsweeps` | `3` | new | consecutive-sweep threshold for both monitor warnings: a subscribed peer sending nothing, and discovering no peer at all |
 | `maxage` | `0D24:00:00` | new | forget a process silent this long; `0Wn` to keep forever |
-| `connections` | `` `ALL `` | **shipped** | process types to monitor; `` `ALL `` means every one |
+| `connections` | `` `ALL `` | **shipped** | process types to monitor; `` `ALL `` means every one. **See the caveat below - `` `ALL `` does not currently work** |
 | `onwarning` | no-op | new | unary callback given the rows entering warning |
 | `onerror` | no-op | new | unary callback given the rows entering error |
 | `pid` / `host` / `port` | `.z.i` / `.z.h` / `system"p"` | legacy | captured once at load, as legacy did |
@@ -115,9 +126,42 @@ Setting `subenabled:1b` with an **empty** `connections` list is legal but warns:
 as legacy's in-file `connections:()` default, where the entire monitor path silently did nothing. Use
 `` `ALL ``, or name the process types to watch.
 
-Setting `subenabled:1b` with an **empty** `connections` list is legal but warns: it is the same shape
-as legacy's in-file `connections:()` default, where the entire monitor path silently did nothing. Use
-`` `ALL ``, or name the process types to watch.
+### ⚠️ `` `ALL `` does not currently work - a regression in `di.servers`, tracked
+
+The shipped default resolves to a null symbol, which every ancestor of `getservers` treats as
+match-all. `di.servers`' version does not:
+
+| Implementation | Contract |
+|---|---|
+| legacy TorQ `.servers.getservers` (`trackservers.q:75`) | `` `~lookups `` → every server; otherwise `proctype in lookups` (so a **list** works) |
+| `di.serverselect.getservers` | identical - `` ` `` as `lookups` returns all active servers |
+| **`di.servers.getservers`** | requires a symbol **atom** and matches `proctype=pt` - a null matches **nothing**, a list **throws** |
+
+So this is a regression against both its ancestors, not a missing feature. Consequences today:
+
+- **`` connections:`ALL ``** (the default) discovers zero servers, silently.
+- **`` connections:`rdb`hdb ``** works, because `di.heartbeat` calls `getservers` **once per
+  proctype** rather than passing the list. That iteration is this module's workaround and is
+  forward-compatible - a one-element iteration still works if `getservers` later accepts vectors.
+
+**Until `di.servers` is fixed, name the process types explicitly.** The `` `ALL `` path cannot be
+worked around from this side: there is no proctype universe to iterate over without `di.servers`
+providing one.
+
+It is, however, no longer **silent**. A monitor that is configured to watch something and discovers
+no usable peer for `subscribewarnsweeps` consecutive sweeps warns once, naming `` `ALL `` as the
+likeliest cause. See *The discovered-nothing warning* below — that check is deliberately
+cause-agnostic, so it needs no maintenance when `di.servers` is fixed.
+
+**`connections` is not the same key as `di.servers.connections`.** They share a name and mean
+different things: `di.servers.connections` decides which process types this process *connects to at
+all*; `di.heartbeat.connections` filters which of those already-connected types get *heartbeat
+subscribed*. A type named here but absent there is silently inert - `getservers` simply has no rows
+for it. A config that looks complete can therefore monitor nothing.
+
+**Discovery is gradual on a cold start.** `hbsubscriptions` only finds what `di.servers.startup` /
+`retry` has actually connected to by the time it sweeps, so a freshly started monitor picks peers up
+over the first few sweeps rather than all at once. Not a bug, but worth expecting.
 
 ## Robustness
 
@@ -133,7 +177,7 @@ monitoring off. (Consequence: the clock's state must exist when `setcp` is calle
 
 **A broken callback cannot stop heartbeating.** `onwarning`, `onerror` and the `pubsub.publish` call
 all run isolated: a throw is logged at error and execution continues. This matters more than it looks.
-Both timer jobs are scheduled through `di.timer`, whose `addjob.opts` defaults `disableonfail:1b` — so
+All three timer jobs are scheduled through `di.timer`, whose `addjob.opts` defaults `disableonfail:1b` — so
 an unprotected throw would not merely skip one beat, it would **permanently disable** the job. A single
 bug in a client's `onwarning`, or one transient pub/sub outage, would silently end the monitoring this
 module exists to provide. State is always updated *before* a callback fires, so isolation never leaves
@@ -174,11 +218,11 @@ anyone ever being told the process had stopped. Gating on `error` makes "forgott
 reported" structurally true rather than dependent on check cadence — the row simply survives one extra
 check cycle. Set `maxage:0Wn` to disable eviction entirely.
 
-**Flipping a flag off on re-`init` cleans up after the previous one.** `registertimers`,
-`registerhandlers` and the root-name sync all *reconcile* rather than only add. Re-initialising with
-`subenabled:0b` deregisters the `.z.pc` observer; with `publishroot:0b` it removes the published root
-names. Both leaks were real and both were permanent: `teardown` used to key off the *current* config,
-so once a flag was off nothing could remove what the earlier init had installed. A lingering
+**Flipping a flag off on re-`init` cleans up after the previous one.** `registertimers` and the
+root-name sync both *reconcile* rather than only add. Re-initialising with `subenabled:0b` removes the
+subscription sweep job; with `publishroot:0b` it removes the published root names. Both leaks were
+real and both were permanent: `teardown` used to key off the *current* config, so once a flag was off
+nothing could remove what the earlier init had installed. A lingering
 `.heartbeat.subscribe` is the worse of the two — a remote monitor can still subscribe *successfully*
 and then receive nothing for the life of the process, while believing it is watching you.
 
@@ -231,21 +275,150 @@ addition, not a port.
 `di.pubsub.subscribe` registers **the caller's own `.z.w`**. A monitor therefore cannot subscribe
 itself to a remote publisher by calling it locally - it would only ever subscribe itself to itself.
 
-Legacy solved this with a synchronous IPC call (`heartbeat.q:92`), and so does this module: the monitor
-calls the publisher's root ``.heartbeat.subscribe`` over the handle. During that inbound call the
-publisher's `.z.w` *is* the connection back to the monitor, so the subscription lands correctly.
+Legacy solved this with an IPC call (`heartbeat.q:92`), and so does this module: the monitor calls the
+publisher's root ``.heartbeat.subscribe`` over the handle. During that inbound call the publisher's
+`.z.w` *is* the connection back to the monitor, so the subscription lands correctly.
 
 ```q
 hb.subscribe[handle]        / monitor side; sends `.heartbeat.subscribe to the publisher
 ```
 
-A failed subscribe is logged and **not** recorded, so the next `hbsubscribe` tick retries it.
+### The send is asynchronous, and why that matters
+
+Legacy sent this **synchronously**. That is an availability hazard in a module whose entire job is
+detecting unresponsive processes: a sync call waits as long as the peer takes to answer, and a peer
+that is *alive but stalled* — a GC pause, a heavy query, exactly the condition heartbeats exist to
+surface — never answers promptly. Because the sweep runs inside a `di.timer` job on a single thread,
+that wait stalled `publishheartbeat` and `checkheartbeat` along with it, so **the monitor fell silent
+to its own monitors at precisely the moment a peer was misbehaving.** A failed attempt was never
+recorded either, so it was retried — and re-blocked — on every sweep. Measured: 10s of blocking
+against a peer hung for 10s, versus 36µs for the async send. (`hopen`'s timeout does not help; it
+bounds connection *establishment*, not later requests on an established handle.)
+
+The async send costs nothing in correctness — `.z.w` resolves to the monitor's connection during an
+async inbound call just as it does for a sync one — but it does change what failures are visible:
+
+| Failure | Reported |
+|---|---|
+| dead handle, null handle | **yes**, immediately, at `error` — the send itself throws |
+| the remote throws, or has no `.heartbeat.subscribe` | **no** — an async send gets no answer |
+
+That second row is covered indirectly instead. See *The never-beaten warning* below.
+
+### There is no cache of subscribed handles
+
+An earlier version tracked which handles it had already subscribed, to skip them on later sweeps.
+That was removed rather than repaired, because **a handle number is not an identity**: kdb+ reissues
+the lowest free descriptor immediately (measured: handle `4` → close → reopen → handle `4`), and
+`hclose` does not fire `.z.pc` at all (also measured). A stale entry therefore made the monitor skip a
+live peer *forever*, with nothing in any log to explain it — and no cheap liveness probe fixes it,
+because after a close-and-reopen the recycled number is back in `.z.W` and looks perfectly valid.
+
+Nothing is lost by dropping the cache: `di.pubsub` already dedupes subscribers by handle
+(`pubsub.q:11`), so a repeat subscribe is a no-op on the publisher, and an async send is far too cheap
+to be worth caching around. Removing it also removed this module's only reason to register a `.z.pc`
+handler, and with it the `handlers` dependency.
+
+### The never-beaten warning
+
+Since an async send cannot report a *remote* failure, the sweep watches for the consequence instead:
+a peer it has subscribed to that never produces a heartbeat. After `subscribewarnsweeps` consecutive
+sweeps (default 3) in which a discovered, attempted peer has no observed beat in the store, it warns
+once — naming the peers.
+
+Three details are deliberate:
+
+- **Only peers actually attempted are counted.** A row with a null handle or handle `0` was skipped on
+  purpose, so warning that it never beat would be a false alarm about a peer nobody asked.
+- **An `addprocs` seed does not count as an observation.** Those rows carry a null `counter`, the same
+  discriminator `evictstale` uses to tell operator *intent* from a real observation.
+- **The count restarts if a peer leaves the discovered set and returns.** A connectivity blip is not
+  the continuously-stuck subscribe this warning exists to catch; only an uninterrupted run trips it.
+
+It warns at exactly the threshold sweep, not past it, so a permanently broken peer does not log
+forever.
+
+### The discovered-nothing warning
+
+A companion to the above, one level further out. The never-beaten warning covers *"we found a peer and
+subscribed to it, but nothing arrives"*. This one covers *"we never found a peer at all"* — a monitor
+with `subenabled:1b` that discovers no usable handle for `subscribewarnsweeps` consecutive sweeps
+warns once.
+
+It is deliberately **cause-agnostic**, watching the consequence rather than any single mechanism, so
+one check covers all of:
+
+- `` connections:`ALL `` matching nothing against the current `di.servers` (see above);
+- a `connections` list naming a process type `di.servers` is not configured to connect to — the
+  name-collision trap described earlier;
+- an injected `servers` dependency that returns nothing for the configured types;
+- every watched peer being genuinely down.
+
+Two deliberate exclusions. An **explicitly empty** `connections` list does not trip it — that is a
+considered "monitor nothing" choice, already warned about at `init`, and repeating it every sweep
+would be noise. And it fires **once**, at the threshold, not on every subsequent sweep.
+
+**Cold start and peer loss are reported differently**, because they have nothing in common but the
+symptom:
+
+| Situation | Message |
+|---|---|
+| no peer has been discovered **yet** | *"no peer discovered yet, after N consecutive sweeps — on a cold start the peers may simply still be coming up, in which case this resolves itself and a recovery line follows…"* |
+| peers were discovered, and are now **all gone** | *"every previously-discovered peer has gone — N consecutive sweeps found none. the peers may be down, or di.servers may have dropped their connections"* |
+
+**A cold-start warning is always closed out.** When peers become visible again after a warning, the
+module logs `peer discovery recovered - now watching N connection(s)` — gated on whether a warning was
+actually emitted, so it can never claim to resolve an outage nobody was told about.
+
+It is logged at **`warn`**, not `info`, even though recovery is good news. The alert fires exactly
+once, so a resolution at a lower level would be invisible to anyone whose pipeline filters to warn and
+above — they would see a dangling alert and nothing else. Matching the alert's level is what makes a
+once-only warning safe to act on. This matters more than it
+looks: a staggered rollout that starts the monitor before its peers will legitimately trip the
+warning, and an alert that fires once and then goes quiet is indistinguishable from an alert that
+fired and was ignored. The recovery line is what makes the warning safe to act on. It is logged once
+per outage, not on every healthy sweep.
+
+**`teardown` forgets everything this check learned.** A monitor re-`init`ed after a teardown is
+usually watching a different set of process types, and is cold starting in every sense that matters to
+whoever reads the log — so it gets the cold-start wording rather than a claim about peers it never
+watched. All three pieces of discovery state reset together; resetting only "have we ever seen a peer"
+would be worse than resetting none, because a carried-over sweep count already past a new, lower
+threshold never equals it again and the warning would then *silently never fire* for the new
+configuration.
+
+This is the one place `teardown` discards state. The heartbeat store, its counter and the never-beaten
+counters are all deliberately preserved — the store by design, and the never-beaten counters because
+they are rebuilt from the current discovered set on every sweep and so self-heal anyway.
+
+If your deployments routinely start monitors well ahead of their peers and you would rather not see
+the warning at all, raise `subscribewarnsweeps` — the threshold is in sweeps, so the wall-clock grace
+is `subscribewarnsweeps × subscribeinterval` (3 minutes on the defaults).
+
+Because the check never names a mechanism in its logic, it stays correct once `di.servers` is fixed;
+only the `` `ALL `` hint in the cold-start message would become stale.
+
+**Only the sweep feeds this check, not `subscribe[]`.** The manual entry point takes bare handles with
+no identity attached, so there is nothing to key a pending row on — a handle number alone cannot be
+matched against the store. An operator subscribing by hand should check `gethb[]` directly. This is
+structural, not an oversight: giving `subscribe[]` the same coverage would mean asking the caller for
+a `proctype`/`procname` it does not currently have to supply.
+
+> **Known coupling.** This matches `di.servers`' `procname`/`proctype` against the `sym`/`procname` a
+> publisher puts in its own heartbeats. If `process.csv` disagrees with a process's own identity
+> config, the warning fires spuriously — which is itself a deployment bug nothing else currently
+> catches. If the injected `getservers` returns rows without those columns, the check is skipped
+> entirely rather than guessing.
 
 **Handle 0 and null handles are refused.** A "remote" call on handle `0i` evaluates *locally*, so
 subscribing it would register this process as a subscriber to its own heartbeats and then publish to
 handle 0; a null handle is a disconnected server row. Both are dropped from `subscribe` and from the
-`getservers` sweep, with a warning. Legacy guarded the same case by seeding
+`getservers` sweep, with a warning. Legacy guarded the same case by seeding its own
 `subscribedhandles:0 0Ni` (`heartbeat.q:21`) — the guard is deliberate, not incidental.
+
+A **negative** handle is dropped for a sharper reason now that the send is async: `neg` of an
+already-negative handle is *positive*, so a negative handle reaching `subscribeone` would silently
+become the blocking synchronous call the async switch exists to remove.
 
 > **Security note.** `.heartbeat.subscribe` is callable by anyone holding a handle to this process,
 > exactly as legacy's `.ps.subscribe` was. It takes no arguments and only subscribes the caller to the
@@ -257,7 +430,7 @@ handle 0; a null handle is a disconnected server row. Both are dropped from `sub
 | Function | Signature | Description |
 |---|---|---|
 | `init` | `[dict]` | wire dependencies and config; idempotent |
-| `teardown` | `[]` | release timer jobs, the `.z.pc` registration and the root names |
+| `teardown` | `[]` | release the timer jobs and the published root names, and reset the discovery-warning state (the heartbeat store is preserved) |
 | `version` | - | module version string, read from `VERSION` |
 | `getapimeta` | `[]` | api metadata rows for `di.torq` to register with `di.api` |
 | `publishheartbeat` | `[]` | publish one row and bump the counter (timer job) |
@@ -327,6 +500,10 @@ choice, not a missed port.
   ```q
   upd:{[t;x] if[t=`heartbeat;hb.storeheartbeat x]; ... }
   ```
+  > **Use `:` here, not `::`.** At the top level of a script, `upd::{…}` defines a **view**, not a
+  > global assignment — `type upd` is then `101h`, and every published row throws `'rank` before your
+  > handler is reached. Nothing logs, and the publisher looks dead to this monitor. Inside a function
+  > `::` *is* the correct global assign, which is why `test.q` sets `upd` from within `installupd`.
 - **No `.servers.connectcustom` wrapper.** Legacy wrapped it to filter auto-connections by
   `.hb.CONNECTIONS`, mutating the table handed to whatever had registered before it - a cross-feature
   side effect. `di.servers` owns its own connection strategy now; this module resolves handles through
@@ -334,6 +511,11 @@ choice, not a missed port.
 - **No `.html.pub`.** Legacy's `processwarning`/`processerror` published straight to a dashboard.
   Those are now the `onwarning`/`onerror` callbacks. `di.html` is `di.monitor`'s dependency, not this
   module's.
+- **The subscribe is async, and there is no subscribed-handle cache.** Legacy did both synchronously
+  and cached `subscribedhandles`. Both were removed for measured reasons — a stalled peer could block
+  the monitor's whole timer thread, and a recycled handle number could make it skip a live peer
+  forever. See *How a monitor subscribes*. The confirmation the sync call used to provide is replaced
+  by the never-beaten warning.
 
 ## Running tests
 
@@ -356,11 +538,21 @@ the monitor's store.
 
 ## Notes
 
-- `warningperiod` and `errorperiod` take a process type so a deployment can vary grace periods per
-  type. The default implementations ignore it, as legacy's did.
-- Both timer jobs use **mode 2** (period after the previous *actual* start). A heartbeat asserts
+- **Known limitation.** `warningperiod` and `errorperiod` take a process type so a deployment can vary
+  grace periods per type, as legacy documented — but `init` exposes no way to *supply* a per-type
+  override, so the extensibility point is not reachable without editing the module. Designing that
+  config shape is deferred until there is a real requirement to shape it against.
+- All three timer jobs use **mode 2** (period after the previous *actual* start). A heartbeat asserts
   "alive now", so missed beats must not be replayed as a catch-up storm, which mode 1 would do.
   Periods are converted to whole seconds, which is what `di.timer` expects.
+- **Both timer entry points that can throw are isolated.** `hbsubscriptions` runs its whole sweep
+  through `safecall`, because `di.timer`'s `addjob.opts` defaults `disableonfail:1b` — an unprotected
+  throw would not skip one sweep, it would end monitor discovery for the life of the process.
+  `checkheartbeat`'s `cp[]` call is deliberately *not* wrapped: `setcp` probes the clock once at swap
+  time, so a clock with external dependencies could still throw there. That is an accepted, much
+  narrower risk than the sweep's — noted in the source so it reads as a decision, not an oversight.
+- `test.q`'s `freeport[]` binds a port and immediately releases it, so it carries an inherent
+  bind-release-reuse race. Known and accepted as an occasional integration-suite flake source.
 - `pid`, `host` and `port` are captured once at load, matching legacy. A runtime port change is not
   picked up.
 - Re-running `init` is safe: it clears its own timer jobs before re-registering, and deliberately

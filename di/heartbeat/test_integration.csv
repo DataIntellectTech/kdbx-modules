@@ -39,6 +39,11 @@ comment,,,,,,,teardown on the publisher removes its root names
 run,0,0,q,"handle""hb.teardown[]""",1,1,tear the publisher down
 true,0,0,q,"handle""not `heartbeat in tables[]""",1,1,the publisher's root schema table was removed
 true,0,0,q,"handle""not @[{value`.heartbeat.subscribe;1b};::;0b]""",1,1,the publisher's root subscribe entry point was removed
+
+comment,,,,,,,"a stalled publisher must not block the monitor - the availability bug the async switch exists to fix"
+comment,,,,,,,"the synchronous subscribe waited out the entire hang; inside a di.timer job on a single thread that stalled publishheartbeat and checkheartbeat too"
+run,0,0,q,hangpeer[handle;3],1,1,make the publisher alive but unresponsive for three seconds
+true,0,0,q,0D00:00:01>elapsed[hbm[`subscribe];handle],1,1,subscribing to a stalled peer returns immediately instead of blocking for the full hang
 run,0,0,q,cleanup[],1,1,close the handle and remove the child script and log
 
 comment,,,,,,,di.torq-shaped wiring - REAL di.log/di.timer/di.handlers/di.pubsub instead of mocks
@@ -48,18 +53,26 @@ run,0,0,q,realtimer:use`di.timer,1,1,real di.timer
 run,0,0,q,realhandlers:use`di.handlers,1,1,real di.handlers
 run,0,0,q,realps:use`di.pubsub,1,1,real di.pubsub
 run,0,0,q,realtimer[`init][],1,1,init the real timer
+run,0,0,q,.ht.now:.z.p,1,1,a simulated clock that BOTH di.timer and di.heartbeat will share
+run,0,0,q,realtimer[`setcp][{.ht.now}],1,1,point the REAL scheduler at it BEFORE any job is added so each nextstart is computed from it
 run,0,0,q,realhandlers[`init][logging[`logdict]],1,1,init real di.handlers off di.log's ready-made logdict
 run,0,0,q,"realdeps:logging[`logdict],`timer`pubsub`handlers`servers`proctype`procname`subenabled!(realtimer;realps;realhandlers;enlist[`getservers]!enlist {[p]([]w:`int$())};`rdb;`rdb1;1b)",1,1,wire with real module export dicts exactly as di.torq will
 run,0,0,q,hbm[`init][realdeps],1,1,init against the REAL logger - a non-flat message throws here where a permissive mock accepted it
-true,0,0,q,"1=count select from realhandlers[`list][`.z.pc] where name=`heartbeat",1,1,the registration landed in the REAL di.handlers registry
-true,0,0,q,"null first exec phase from realhandlers[`list][`.z.pc] where name=`heartbeat",1,1,and real di.handlers agrees .z.pc is a simple event with a null phase
+true,0,0,q,"0=count select from realhandlers[`list][`.z.pc] where name=`heartbeat",1,1,nothing is registered on .z.pc even with a real di.handlers available - the cache that observer maintained was removed
 true,0,0,q,3=count select from realtimer[`getalljobs][] where id in `hbpublish`hbcheck`hbsubscribe,1,1,all three jobs landed in the REAL di.timer
 true,0,0,q,"all 2h=exec mode from realtimer[`getalljobs][] where id in `hbpublish`hbcheck",1,1,real di.timer recorded mode 2 as intended
 true,0,0,q,`heartbeat in tables[],1,1,root schema table published
 run,0,0,q,realps[`init][],1,1,pubsub init AFTER heartbeat init - the documented ordering
 true,0,0,q,`heartbeat in .m.di.0pubsub.t,1,1,di.pubsub now serves the heartbeat topic - the ordering constraint holds end to end
 run,0,0,q,hbm[`publishheartbeat][],1,1,publish through the real pubsub with no subscribers attached
+
+comment,,,,,,,"the REAL scheduler must actually FIRE the jobs - asserting they were registered is a different claim, and di.handlers has already shown a registry can report a handler that is no longer live"
+run,0,0,q,hbm[`setcp][{.ht.now}],1,1,point di.heartbeat's own clock at the same simulated now
+run,0,0,q,.ht.c0:.m.di.0heartbeat.hbcounter,1,1,record the beat counter before stepping the clock
+run,0,0,q,.ht.now+:0D00:00:31,1,1,advance past the 30s publishinterval
+run,0,0,q,.z.ts 0,1,1,drive ONE scheduler cycle by hand - a system sleep would block q's event loop so .z.ts would never fire at all
+true,0,0,q,.m.di.0heartbeat.hbcounter>.ht.c0,1,1,the REAL di.timer invoked publishheartbeat unattended - the job is live not merely registered
+true,0,0,q,all exec status from realtimer[`getalljobs][],1,1,and no job was disabled - di.timer's disableonfail did not trip on any of them
 run,0,0,q,hbm[`teardown][],1,1,teardown against the real registries
-true,0,0,q,0=count realhandlers[`list][`.z.pc],1,1,the real handlers registry was cleaned
 true,0,0,q,0=count realtimer[`getalljobs][],1,1,the real timer jobs were cleaned
 true,0,0,q,not `heartbeat in tables[],1,1,the root names were cleaned

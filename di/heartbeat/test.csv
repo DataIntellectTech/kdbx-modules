@@ -11,7 +11,7 @@ before,0,0,q,.pt.reg:([]event:`symbol$();phase:`symbol$();nm:`symbol$();pri:`lon
 before,0,0,q,"mockh:`register`remove!({[e;p;n;pr;f] `.pt.reg insert (e;p;n;pr)};{[e;p;n] delete from `.pt.reg where event=e,phase=p,nm=n})",1,1,handlers mock - register is 5-arg
 before,0,0,q,"mocksrv:enlist[`getservers]!enlist {[p] ([]w:`int$())}",1,1,servers mock returning an empty server TABLE
 before,0,0,q,.pt.asked:(),1,1,records which proctype getservers was asked for
-before,0,0,q,"mocksrvrows:enlist[`getservers]!enlist {[p] .pt.asked,:enlist p; ([]proctype:`rdb`hdb`dead`self;w:4 5 0Ni,0i)}",1,1,servers mock returning a POPULATED table - live handles plus a dead (null) row and handle 0
+before,0,0,q,"mocksrvrows:enlist[`getservers]!enlist {[p] .pt.asked,:enlist p; t:([]proctype:`rdb`hdb`dead`self;procname:`rdb1`hdb1`dead1`self1;w:4 5 0Ni,0i); $[null p;t;select from t where proctype=p]}",1,1,servers mock returning a POPULATED table - live handles plus a dead (null) row and handle 0. FILTERS BY ITS ARGUMENT as real di.servers.getservers does - a mock that ignores its input cannot catch a caller passing the wrong shape
 before,0,0,q,"deps:(`log`timer`pubsub!(caplog;mocktimer;mockps)),`proctype`procname!(`rdb;`rdb1)",1,1,the base deps dict - deps plus required identity
 
 comment,,,,,,,init must be called before any other function (asserted FIRST - the module is a singleton and cannot be un-initialised later)
@@ -36,8 +36,13 @@ true,0,0,q,"0<count .pt.errstr ss ""di.heartbeat:""",1,1,init errors are prefixe
 true,0,0,q,"0<count .pt.errstr ss ""di.log""",1,1,the error names which module supplies the missing dependency
 
 comment,,,,,,,init - monitor deps are required only when subenabled
-fail,0,0,q,"hb.init[deps,enlist[`subenabled]!enlist 1b]",1,1,subenabled without servers or handlers errors
-fail,0,0,q,"hb.init[deps,`subenabled`servers!(1b;mocksrv)]",1,1,subenabled with servers but no handlers errors
+fail,0,0,q,"hb.init[deps,enlist[`subenabled]!enlist 1b]",1,1,subenabled without a servers dependency errors
+run,0,0,q,"hb.init[deps,`subenabled`servers!(1b;mocksrv)]",1,1,servers alone is enough - no handlers dependency since the .z.pc cache it existed for was removed
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,delete from `.pt.reg,1,1,clear the registration capture
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrv;mockh)]",1,1,a handlers dict passed anyway is silently accepted so di.torq's uniform wiring needs no special case
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""unrecognised config key""} each msg",1,1,handlers is NOT reported as an unrecognised config key - it stays in depkeys for exactly this reason
+true,0,0,q,0=count .pt.reg,1,1,and nothing was registered on any handler event
 run,0,0,q,hb.init[deps],1,1,publisher-only init needs neither servers nor handlers
 
 comment,,,,,,,init - config validation catches quietly-broken settings
@@ -61,6 +66,15 @@ true,0,0,q,30=first exec period from .pt.jobs where id=`hbpublish,1,1,publishint
 true,0,0,q,10=first exec period from .pt.jobs where id=`hbcheck,1,1,checkinterval converted to whole seconds
 run,0,0,q,hb.init[deps],1,1,re-init must be idempotent
 true,0,0,q,2=count .pt.jobs,1,1,idempotent re-init did NOT add duplicate timer jobs
+run,0,0,q,delete from `.pt.jobs,1,1,clear the job capture
+run,0,0,q,"hb.init[deps,`subenabled`servers`subscribeinterval!(1b;mocksrv;0D00:00:45)]",1,1,init as a monitor with a non-default sweep cadence
+true,0,0,q,45=first exec period from .pt.jobs where id=`hbsubscribe,1,1,the sweep interval is configurable rather than hardcoded at 60
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,delete from `.pt.jobs,1,1,clear the job capture
+run,0,0,q,"hb.init[deps,`subenabled`servers!(1b;mocksrv)]",1,1,init as a monitor with the default cadence
+true,0,0,q,60=first exec period from .pt.jobs where id=`hbsubscribe,1,1,and the shipped default is still one minute as legacy scheduled it
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,hb.init[deps],1,1,back to a publisher-only instance
 
 comment,,,,,,,every config key reaches module state (guards a forgotten explicit .z.m write)
 true,0,0,q,"all (key .m.di.0heartbeat.configdefaults) in key`.m.di.0heartbeat",1,1,each configdefaults key was written into module state by init - a missed assignment would leave the bare read resolving to nothing
@@ -155,14 +169,12 @@ run,0,0,q,hb.checkheartbeat[],1,1,trigger the error transition
 true,0,0,q,1=count .pt.errored,1,1,onerror fired once
 true,0,0,q,`cb in exec procname from first .pt.errored,1,1,onerror received the affected row
 
-comment,,,,,,,monitor mode - .z.pc registered via the 5-arg di.handlers contract
+comment,,,,,,,monitor mode - no handler registration at all (the .z.pc cache it served was removed)
 run,0,0,q,hb.teardown[],1,1,tear down
 run,0,0,q,delete from `.pt.reg,1,1,clear the registration capture
-run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrv;mockh)]",1,1,init as a monitor
-true,0,0,q,"1=count select from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,registered exactly one .z.pc handler
-true,0,0,q,"null first exec phase from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,.z.pc is a SIMPLE event so the phase is null - not pre/exec/post
-true,0,0,q,"0=first exec pri from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,registered at priority 0
-true,0,0,q,`hbsubscribe in exec id from .pt.jobs,1,1,the monitor also schedules the subscription job
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrv;mockh)]",1,1,init as a monitor with a handlers dict available
+true,0,0,q,0=count .pt.reg,1,1,nothing is registered on .z.pc - a handle number is not an identity so the cache was deleted rather than made trustworthy
+true,0,0,q,`hbsubscribe in exec id from .pt.jobs,1,1,the monitor still schedules the subscription job
 
 comment,,,,,,,monitor - `ALL resolution and getservers table handling (integration point 4)
 run,0,0,q,hb.teardown[],1,1,tear down before re-initing as a monitor with a populated servers mock
@@ -171,47 +183,152 @@ run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrvrows;mockh)]",1,
 run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,run the subscription sweep the timer would run
 true,0,0,q,1=count .pt.asked,1,1,getservers was consulted exactly once
 true,0,0,q,all null raze .pt.asked,1,1,the shipped `ALL default resolved to the null match-all symbol not a literal lookup for `ALL
+true,0,0,q,-11h=type first .pt.asked,1,1,and it was passed as a symbol ATOM - real di.servers.getservers rejects anything else
+comment,,,,,,,"regression cover - a single bare symbol is the only connections shape that works against the REAL di.servers today"
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`connections!(1b;mocksrvrows;mockh;`rdb)]",1,1,re-init with one bare proctype
+run,0,0,q,.pt.asked:(),1,1,clear the record
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep
+true,0,0,q,1=count .pt.asked,1,1,a single symbol still produces exactly one getservers call
+true,0,0,q,-11h=type first .pt.asked,1,1,passed as an atom
 run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`connections!(1b;mocksrvrows;mockh;`rdb`hdb)]",1,1,re-init with an explicit proctype list
 run,0,0,q,.pt.asked:(),1,1,clear the record
 run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again
-true,0,0,q,`rdb`hdb~raze .pt.asked,1,1,an explicit connections list is passed through unchanged
+true,0,0,q,2=count .pt.asked,1,1,ONE CALL PER PROCTYPE - passing the whole list throws against the real di.servers and di.timer would then disable the job permanently
+true,0,0,q,all -11h=type each .pt.asked,1,1,each call got a symbol ATOM not the vector
+true,0,0,q,`rdb`hdb~raze .pt.asked,1,1,and between them they covered every configured proctype
 
 comment,,,,,,,monitor - handles are read from the w COLUMN and unusable handles are dropped
 comment,,,,,,,"NB the mock handles are not real IPC handles so every attempt fails; that is what makes the ERROR LOG the evidence of which handles were attempted"
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrvrows;mockh)]",1,1,re-init back to the `ALL default so the mock returns its dead and zero rows too
 run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
-run,0,0,q,.m.di.0heartbeat.subscribedhandles:`int$(),1,1,clear the tracked set
 run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,run the sweep against the populated servers table
 true,0,0,q,2=count select from .pt.cap where lvl=`error,1,1,exactly two subscribe attempts were made - the two live handles from the w column
 true,0,0,q,"0<count select from .pt.cap where lvl=`error,{0<count x ss ""handle 4""} each msg",1,1,handle 4 was read out of the w column and attempted
 true,0,0,q,"0<count select from .pt.cap where lvl=`error,{0<count x ss ""handle 5""} each msg",1,1,handle 5 was read out of the w column and attempted
 true,0,0,q,"0=count select from .pt.cap where lvl=`error,{0<count x ss ""handle 0""} each msg",1,1,neither handle 0 nor the dead row's null handle was attempted
-true,0,0,q,0=count .m.di.0heartbeat.subscribedhandles,1,1,a failed subscribe is not recorded so the next sweep retries it
-run,0,0,q,.m.di.0heartbeat.subscribedhandles:4 5i,1,1,pretend both live handles subscribed successfully
 run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
 run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again
-true,0,0,q,0=count select from .pt.cap where lvl=`error,1,1,already-subscribed handles are excluded so nothing was re-attempted
+true,0,0,q,2=count select from .pt.cap where lvl=`error,1,1,every live handle is re-attempted every sweep - di.pubsub dedupes subscribers by .z.w so there is nothing to cache around
+true,0,0,q,"0=count select from .pt.cap where lvl=`error,{0<count x ss ""0Ni""} each msg",1,1,and the dead row is still never attempted however many sweeps run
 
 comment,,,,,,,monitor - subscribe input validation and the handle 0 guard
 fail,0,0,q,hb.subscribe[`notahandle],1,1,subscribe rejects a non-integer handle
 fail,0,0,q,"hb.subscribe[""abc""]",1,1,subscribe rejects a string
 run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
 run,0,0,q,hb.subscribe[0i],1,1,subscribing handle 0 is accepted but skipped
-true,0,0,q,not 0i in .m.di.0heartbeat.subscribedhandles,1,1,handle 0 was NOT tracked - it would subscribe this process to its own heartbeats
+true,0,0,q,0=count select from .pt.cap where lvl=`error,1,1,handle 0 was never attempted - a remote call on it evaluates LOCALLY and would subscribe this process to itself
 true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""0i is this process""} each msg",1,1,and the skip was warned about rather than done silently
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
 run,0,0,q,hb.subscribe[0Ni],1,1,a null handle is likewise skipped
-true,0,0,q,not 0Ni in .m.di.0heartbeat.subscribedhandles,1,1,null handle not tracked
+true,0,0,q,0=count select from .pt.cap where lvl=`error,1,1,a null handle is a dead server row and is never attempted
 
-comment,,,,,,,monitor - closeconnection drops a handle (regression cover - Olly's suite had this)
-run,0,0,q,.m.di.0heartbeat.subscribedhandles:4 5i,1,1,seed the tracked set directly
-run,0,0,q,.m.di.0heartbeat.closeconnection[4i],1,1,simulate the .z.pc callback firing for handle 4
-true,0,0,q,not 4i in .m.di.0heartbeat.subscribedhandles,1,1,the closed handle was dropped from the tracked set
-true,0,0,q,5i in .m.di.0heartbeat.subscribedhandles,1,1,other handles are untouched
+comment,,,,,,,"the never-beaten warning - the replacement for the confirmation the sync subscribe used to give"
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`subscribewarnsweeps!(1b;mocksrvrows;mockh;3)]",1,1,init as a monitor with a three-sweep warning threshold
+comment,,,,,,,"NB the store is deliberately NOT wiped here - a later section asserts earlier heartbeats survive re-init. the mock's peers simply have no rows in it"
+run,0,0,q,.m.di.0heartbeat.unseen:.m.di.0heartbeat.unseenschema,1,1,reset the sweep counter
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 1
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""no heartbeat in""} each msg",1,1,one sweep is not enough to warn - a peer has had no chance to answer yet
+true,0,0,q,`hdb1 in exec procname from 0!.m.di.0heartbeat.unseen,1,1,an attempted peer with no heartbeat in the store is tracked
+true,0,0,q,not `rdb1 in exec procname from 0!.m.di.0heartbeat.unseen,1,1,but rdb1 is NOT - it already has a real beat in the store from earlier in this suite so there is nothing to warn about
+true,0,0,q,"not any `dead1`self1 in exec procname from 0!.m.di.0heartbeat.unseen",1,1,and neither is a null-handle row or a handle-0 row - both were deliberately skipped so warning they never beat would be a false alarm about a peer we never asked
+true,0,0,q,"0=count select from .pt.cap where lvl=`error,{0<count x ss ""sweep failed""} each msg",1,1,and the sweep itself did not throw - a qsql where clause cannot resolve a module-level name so the threshold must be hoisted into a local
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 2
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""no heartbeat in""} each msg",1,1,nor two
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 3 - the threshold
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""no heartbeat in""} each msg",1,1,the never-beaten warning fires at exactly the threshold sweep
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 4
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""no heartbeat in""} each msg",1,1,and does NOT fire again - a permanently broken peer must not log forever
+run,0,0,q,"hb.addprocs[`hdb;`hdb1]",1,1,seed a row for the still-unseen peer - addprocs leaves counter null
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again
+true,0,0,q,`hdb1 in exec procname from 0!.m.di.0heartbeat.unseen,1,1,a null counter is operator intent not an observation so the peer still counts as never-beaten - the same discriminator evictstale uses
+run,0,0,q,"hb.storeheartbeat[([]time:enlist .z.p;sym:enlist`hdb;procname:enlist`hdb1;counter:enlist 1)]",1,1,now a real beat arrives from it
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again
+true,0,0,q,0=count 0!.m.di.0heartbeat.unseen,1,1,a peer that has genuinely beaten drops out of the unseen set entirely
+run,0,0,q,"hb.removeprocs[`hdb;`hdb1]",1,1,clear the row again
+run,0,0,q,hb.teardown[],1,1,tear down
 
 comment,,,,,,,monitor - an empty connections list is legal but must not look configured
 run,0,0,q,hb.teardown[],1,1,tear down
 run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
 run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`connections!(1b;mocksrvrows;mockh;`$())]",1,1,init as a monitor watching nothing
 true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""will monitor""} each msg",1,1,monitoring nothing is warned about - the same shape as legacy's silent connections:() default
+comment,,,,,,,"and the sweep must then be a clean NO-OP - legal config, so it must not error every tick"
+run,0,0,q,.pt.asked:(),1,1,clear the getservers call record
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,run the sweep with nothing configured to monitor
+true,0,0,q,0=count .pt.asked,1,1,getservers is not called at all - there is no proctype to ask about
+true,0,0,q,0=count select from .pt.cap where lvl=`error,1,1,and NOTHING is logged as an error - an empty proctype list razes to a general empty list that exec cannot read
+true,0,0,q,"0=count select from .pt.cap where lvl=`error,{0<count x ss ""sweep failed""} each msg",1,1,specifically the sweep did not fail - before the guard this threw type on every single tick forever
+true,0,0,q,0=count 0!.m.di.0heartbeat.unseen,1,1,and the never-beaten counters are cleared since nothing is being monitored
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""consecutive sweeps""} each msg",1,1,an explicitly empty connections list is a deliberate choice already warned about at init - it must NOT also trip the discovered-nothing warning
+
+comment,,,,,,,"a monitor that is configured to watch something and discovers NOTHING must say so - the `ALL default does exactly this against the real di.servers"
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,"hb.init[deps,`subenabled`servers`connections`subscribewarnsweeps!(1b;mocksrv;`rdb;3)]",1,1,init as a monitor whose servers dep returns an EMPTY table for every proctype
+run,0,0,q,.m.di.0heartbeat.emptysweeps:0,1,1,reset the consecutive-empty counter
+run,0,0,q,.m.di.0heartbeat.everdiscovered:0b,1,1,and present as a process that has never yet seen a peer
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 1 - discovers nothing
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""consecutive sweeps""} each msg",1,1,one empty sweep is not enough - a monitor may simply be starting before its peers
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 2
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 3 - the threshold
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""consecutive sweeps""} each msg",1,1,the discovered-nothing warning fires at exactly the threshold sweep
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""no peer discovered yet""} each msg",1,1,a process that has never seen a peer gets the COLD START wording - not the alarming lost-my-peers one
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""a recovery line follows""} each msg",1,1,and it tells the reader the warning will resolve itself if it was only a slow rollout
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""ALL currently matches nothing""} each msg",1,1,while still naming the likeliest cause today - the `ALL gap against di.servers
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 4
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""consecutive sweeps""} each msg",1,1,and does NOT repeat - a permanently misconfigured monitor must not log every sweep forever
+
+comment,,,,,,,"a cold-start warning must not DANGLE - when peers appear the loop is closed with a recovery line"
+run,0,0,q,"hb.init[deps,`subenabled`servers`connections!(1b;mocksrvrows;`rdb)]",1,1,re-init against a servers dep that DOES return a live peer
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep - peers are now visible
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""peer discovery recovered""} each msg",1,1,the earlier warning is explicitly closed out rather than left hanging in the log
+true,0,0,q,0=.m.di.0heartbeat.emptysweeps,1,1,and the counter resets so a later outage warns afresh
+true,0,0,q,not .m.di.0heartbeat.emptywarned,1,1,the warned flag is cleared so the next recovery needs its own warning first
+
+comment,,,,,,,"a recovery line must NEVER appear for an outage nobody was warned about - the gate is 'did we warn', not a count against the current threshold"
+run,0,0,q,"hb.init[deps,`subenabled`servers`connections`subscribewarnsweeps!(1b;mocksrv;`rdb;5)]",1,1,init with a HIGH threshold
+run,0,0,q,.m.di.0heartbeat.emptysweeps:0,1,1,reset the counter
+run,0,0,q,.m.di.0heartbeat.emptywarned:0b,1,1,and the warned flag
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 1 - below threshold
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 2
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 3 - still below 5 so nothing was reported
+true,0,0,q,not .m.di.0heartbeat.emptywarned,1,1,no warning was emitted
+run,0,0,q,"hb.init[deps,`subenabled`servers`connections`subscribewarnsweeps!(1b;mocksrvrows;`rdb;2)]",1,1,re-init LOWERING the threshold below the carried-over sweep count
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep - peers are visible again
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""peer discovery recovered""} each msg",1,1,no recovery is claimed - there was no warning to recover from
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep again while peers are still present
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""peer discovery recovered""} each msg",1,1,recovery is reported once per outage - a healthy monitor does not log it every sweep
+
+comment,,,,,,,"having HAD peers and lost them is a different diagnosis and gets different wording"
+run,0,0,q,"hb.init[deps,`subenabled`servers`connections`subscribewarnsweeps!(1b;mocksrv;`rdb;2)]",1,1,re-init against a servers dep that now returns nothing - everdiscovered is still set from above
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 1
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 2 - the threshold
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""previously-discovered peer has gone""} each msg",1,1,a monitor that lost its peers is told exactly that - not that it might still be starting up
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""no peer discovered yet""} each msg",1,1,and does NOT get the cold-start wording
+
+comment,,,,,,,"teardown forgets what the session learned about discovery - a monitor re-inited to watch something DIFFERENT is cold starting in every sense that matters to a reader"
+run,0,0,q,hb.teardown[],1,1,tear down while mid-outage with everdiscovered set and a warning already emitted
+true,0,0,q,not .m.di.0heartbeat.everdiscovered,1,1,teardown cleared everdiscovered
+true,0,0,q,0=.m.di.0heartbeat.emptysweeps,1,1,and the consecutive-empty counter
+true,0,0,q,not .m.di.0heartbeat.emptywarned,1,1,and the warned flag - all three move together or none should
+run,0,0,q,"hb.init[deps,`subenabled`servers`connections`subscribewarnsweeps!(1b;mocksrv;`hdb;2)]",1,1,re-init to watch a DIFFERENT proctype with nothing connected
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 1
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep 2 - the threshold
+true,0,0,q,"0<count select from .pt.cap where lvl=`warn,{0<count x ss ""no peer discovered yet""} each msg",1,1,the re-inited monitor gets the COLD START wording - not a claim about peers it never watched
+true,0,0,q,"0=count select from .pt.cap where lvl=`warn,{0<count x ss ""previously-discovered peer has gone""} each msg",1,1,and specifically not the peers-lost wording
+run,0,0,q,"hb.init[deps,`subenabled`servers`connections`subscribewarnsweeps!(1b;mocksrvrows;`rdb;2)]",1,1,peers become available again under the new configuration
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep
+true,0,0,q,"1=count select from .pt.cap where lvl=`warn,{0<count x ss ""peer discovery recovered""} each msg",1,1,and the warning raised AFTER the teardown is the one that gets closed out
+run,0,0,q,hb.teardown[],1,1,tear down
 
 comment,,,,,,,root table collision - never take over a table this module did not create
 run,0,0,q,hb.teardown[],1,1,tear down so no root heartbeat table remains
@@ -240,10 +357,9 @@ fail,0,0,q,hb.addprocs[42;`c],1,1,addprocs rejects non-symbol proctypes
 fail,0,0,q,hb.setcp[42],1,1,setcp rejects a non-function
 true,0,0,q,4<count select from .pt.cap where lvl=`error,1,1,every one of those logged an error before signalling rather than throwing a raw type error
 
-comment,,,,,,,teardown releases timers handlers and root names
+comment,,,,,,,teardown releases timer jobs and root names
 run,0,0,q,hb.teardown[],1,1,tear down the monitor instance
 true,0,0,q,0=count .pt.jobs,1,1,all timer jobs deleted
-true,0,0,q,"0=count select from .pt.reg where event=`.z.pc,nm=`heartbeat",1,1,the .z.pc registration was removed
 true,0,0,q,not `heartbeat in tables[],1,1,the root publish table was removed
 true,0,0,q,"not @[{value`.heartbeat.subscribe;1b};::;0b]",1,1,the root subscribe entry point was removed
 
@@ -268,7 +384,12 @@ fail,0,0,q,"hb.init[deps,`warningtolerance`errortolerance!(0f;1f)]",1,1,a zero w
 fail,0,0,q,"hb.init[deps,`warningtolerance`errortolerance!(0n;0n)]",1,1,null tolerances rejected - they would silently never fire
 fail,0,0,q,"hb.init[deps,enlist[`publishinterval]!enlist 0D00:00:00.500]",1,1,a sub-second publishinterval is rejected - di.timer schedules in whole seconds
 fail,0,0,q,"hb.init[deps,enlist[`checkinterval]!enlist 0D00:00:00.250]",1,1,a sub-second checkinterval rounds to a period of 0 and would run every timer cycle
-run,0,0,q,"hb.init[deps,`publishinterval`checkinterval!(0D00:00:01;0D00:00:01)]",1,1,exactly one second is the lower bound and is accepted
+fail,0,0,q,"hb.init[deps,enlist[`subscribeinterval]!enlist 0D00:00:00.250]",1,1,a sub-second subscribeinterval is rejected for the same reason
+fail,0,0,q,"hb.init[deps,enlist[`subscribeinterval]!enlist 60]",1,1,a non-timespan subscribeinterval is rejected
+fail,0,0,q,"hb.init[deps,enlist[`subscribewarnsweeps]!enlist 0]",1,1,a zero warning threshold would never match the post-increment sweep count
+fail,0,0,q,"hb.init[deps,enlist[`subscribewarnsweeps]!enlist -1]",1,1,a negative warning threshold is rejected
+fail,0,0,q,"hb.init[deps,enlist[`subscribewarnsweeps]!enlist 3f]",1,1,a non-long warning threshold is rejected
+run,0,0,q,"hb.init[deps,`publishinterval`checkinterval`subscribeinterval!(0D00:00:01;0D00:00:01;0D00:00:01)]",1,1,exactly one second is the lower bound for all three and is accepted
 fail,0,0,q,"hb.init[deps,`proctype`procname!(`;`rdb1)]",1,1,a null proctype is rejected - it keys the monitor's store
 fail,0,0,q,"hb.init[deps,`proctype`procname!(`rdb;`)]",1,1,a null procname is rejected for the same reason
 
@@ -313,11 +434,10 @@ true,0,0,q,0<.m.di.0heartbeat.hbcounter,1,1,the counter still advanced - it coun
 
 comment,,,,,,,edge cases - flipping a flag off on re-init must not orphan what the previous init installed
 run,0,0,q,hb.teardown[],1,1,tear down
-run,0,0,q,delete from `.pt.reg,1,1,clear the registration capture
 run,0,0,q,"hb.init[deps,`subenabled`servers`handlers!(1b;mocksrv;mockh)]",1,1,init as a monitor
-true,0,0,q,1=count .pt.reg,1,1,the .z.pc observer is registered
+true,0,0,q,`hbsubscribe in exec id from .pt.jobs,1,1,the subscription job is scheduled
 run,0,0,q,hb.init[deps],1,1,re-init with subenabled back to 0b
-true,0,0,q,0=count .pt.reg,1,1,the observer was DEREGISTERED - leaving it would orphan it permanently since teardown keyed off the current subenabled
+true,0,0,q,not `hbsubscribe in exec id from .pt.jobs,1,1,the subscription job was removed - registertimers reconciles rather than only adding
 true,0,0,q,`heartbeat in tables[],1,1,publishroot is still on so the root names remain
 run,0,0,q,"hb.init[deps,enlist[`publishroot]!enlist 0b]",1,1,re-init with publishroot turned off
 true,0,0,q,not `heartbeat in tables[],1,1,the root table published by the earlier init was removed
@@ -397,10 +517,8 @@ comment,,,,,,,init is atomic - a root-name clash must not leave a half-configure
 run,0,0,q,hb.teardown[],1,1,tear down so the root name is free
 run,0,0,q,"set[`heartbeat;([]foreign:`int$())]",1,1,another module takes the root name
 run,0,0,q,delete from `.pt.jobs,1,1,clear the job capture
-run,0,0,q,delete from `.pt.reg,1,1,clear the registration capture
 fail,0,0,q,hb.init[deps],1,1,init refuses the clash
 true,0,0,q,0=count .pt.jobs,1,1,no timer jobs were registered before the throw
-true,0,0,q,0=count .pt.reg,1,1,no handlers were registered before the throw
 true,0,0,q,`foreign in cols value`heartbeat,1,1,the foreign table is untouched
 run,0,0,q,"![`.;();0b;enlist`heartbeat]",1,1,free the name
 run,0,0,q,hb.init[deps],1,1,init now succeeds
@@ -440,8 +558,9 @@ run,0,0,q,hb.setcp[{[] .pt.now}],1,1,a timestamp-returning clock is accepted
 
 comment,,,,,,,handles that cannot work are filtered rather than tracked on no evidence
 true,0,0,q,"(enlist 4i)~.m.di.0heartbeat.validhandles -5 4 0Ni,0i",1,1,negative null and zero handles are all dropped - only the positive one survives
+run,0,0,q,delete from `.pt.cap,1,1,clear the log capture
 run,0,0,q,hb.subscribe[-5i],1,1,subscribing a negative handle is accepted but skipped
-true,0,0,q,not -5i in .m.di.0heartbeat.subscribedhandles,1,1,a negative handle is async so it would be recorded as subscribed on no evidence and closeconnection could never clear it
+true,0,0,q,0=count select from .pt.cap where lvl=`error,1,1,a negative handle is never attempted - neg of an already-negative handle is POSITIVE so it would become the blocking sync call the async switch removed
 
 comment,,,,,,,storeheartbeat validates the time column TYPE not just its presence
 fail,0,0,q,"hb.storeheartbeat[([]time:enlist 2025.01.01;sym:enlist`rdb;procname:enlist`d;counter:enlist 1;pid:enlist 1i;host:enlist`h;port:enlist 1i)]",1,1,a date time column is rejected by name rather than throwing a raw type from the keyed upsert

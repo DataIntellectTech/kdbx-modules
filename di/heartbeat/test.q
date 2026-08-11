@@ -67,6 +67,22 @@ drain:{[h]
   h"1";
   };
 
+/ make the publisher unresponsive for a while WITHOUT killing it - the "alive but stalled" state a
+/ heartbeat exists to detect. sent async so this call itself does not block
+hangpeer:{[h;secs]
+  (neg h)"system\"sleep ",string[secs],"\"";
+  };
+
+/ elapsed time for a unary call. used to prove the subscribe does not block against a hung peer:
+/ the synchronous version waited out the ENTIRE hang, and because it runs inside a di.timer job on a
+/ single thread it stalled publishheartbeat and checkheartbeat with it, so the monitor fell silent to
+/ its own monitors at exactly the moment a peer was misbehaving
+elapsed:{[f;arg]
+  t0:.z.p;
+  f arg;
+  :.z.p-t0;
+  };
+
 cleanup:{[]
   / terminate the child FIRST - hclose only drops our end of the socket and would leave the process
   / running for the lifetime of the test host. sent SYNC inside a protected apply: the call cannot

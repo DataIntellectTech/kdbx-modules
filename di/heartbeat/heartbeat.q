@@ -5,7 +5,7 @@
 / the module handles both publishing heartbeats and, on the monitoring side, storing received
 / heartbeats and raising warnings / errors when they stop
 / config and dependencies arrive in a single dictionary passed to init: config keys are optional and
-/ fall back to the defaults below; log/timer/pubsub are required (servers/handlers when subenabled)
+/ fall back to the defaults below; log/timer/pubsub are required (servers too when subenabled)
 / and init errors immediately if a required dependency is missing
 / module-local state convention: constants are bare top-level names, mutable state lives in .z.m, and
 / injected dependencies are read through .z.m at every call site
@@ -28,21 +28,30 @@ schema:(
 / keyed store of the latest received heartbeat per process, with warning / error state
 storeschema:update warning:0b,error:0b from `sym`procname xkey schema;
 
+/ keyed count of consecutive sweeps a discovered peer has gone without producing a heartbeat
+unseenschema:2!([]sym:`symbol$();procname:`symbol$();sweeps:`long$());
+
 / the table name published over pub/sub, and the root name di.pubsub discovers it under
 tablename:`heartbeat;
 
-/ the dependency keys of the single init dict - everything else in that dict is config
+/ the dependency keys of the single init dict - everything else in that dict is config.
+/ NB handlers stays in this list only to absorb di.torq's uniform wiring: nothing in this module uses
+/ it any more (the .z.pc subscription cache it existed for was removed). do not "clean it up" -
+/ dropping it makes resolveconfig warn about handlers on every publisher-only boot, which is the
+/ common case since subenabled defaults off
 depkeys:`log`timer`pubsub`servers`handlers;
 
 / config defaults. proctype and procname are deliberately absent - they are self-identity and are
 / required, not defaulted, matching di.servers. legacy captured pid/host/port once at load time and
 / so do we, so a runtime port change is not picked up
 configdefaults:(
-  `enabled`subenabled`debug`publishroot`publishinterval`checkinterval`warningtolerance`errortolerance,
-  `maxage`pid`host`port`connections`onwarning`onerror
+  `enabled`subenabled`debug`publishroot`publishinterval`checkinterval`subscribeinterval,
+  `warningtolerance`errortolerance`subscribewarnsweeps`maxage,
+  `pid`host`port`connections`onwarning`onerror
   )!(
-  1b;0b;1b;1b;0D00:00:30;0D00:00:10;2f;3f;
-  0D24:00:00;.z.i;.z.h;`int$system"p";`ALL;{[procs]};{[procs]}
+  1b;0b;1b;1b;0D00:00:30;0D00:00:10;0D00:01:00;
+  2f;3f;3;0D24:00:00;
+  .z.i;.z.h;`int$system"p";`ALL;{[procs]};{[procs]}
   );
 
 / timer job ids this module owns - deleted before re-registering so init is safe to call again
@@ -117,10 +126,12 @@ safecall:{[ctx;nm;f;arg]
 validhandles:{[handles]
   / drop nulls (a dead server row) and handle 0. a "remote" call on handle 0 evaluates LOCALLY, so
   / subscribing it registers this process as a subscriber to its own heartbeats and then publishes
-  / to handle 0. legacy guarded exactly this by seeding subscribedhandles with 0 0Ni (heartbeat.q:21)
-  / a negative handle is an ASYNC handle in q: the subscribe call would return immediately without
-  / confirming anything, so it would be recorded as subscribed on no evidence - and closeconnection
-  / matches against .z.w, which is always positive, so the row could never be cleaned up either
+  / to handle 0. legacy guarded exactly this by seeding its subscribedhandles with 0 0Ni
+  / (heartbeat.q:21)
+  / a negative handle is an ASYNC handle in q, and this guard is LOAD-BEARING rather than defensive
+  / now that subscribeone sends with (neg h): neg of an already-negative handle is POSITIVE, so a
+  / negative handle slipping through here would silently become the blocking synchronous call the
+  / async switch exists to remove
   h:(),handles;
   :h where not (null h) or 0i>=h;
   };
@@ -130,8 +141,8 @@ validhandles:{[handles]
 / ============================================================
 
 validatedeps:{[deps]
-  / log, timer and pubsub are always required; servers and handlers only when this process monitors
-  / others. nested if guards rather than and - and evaluates both sides eagerly, so key would be
+  / log, timer and pubsub are always required; servers only when this process monitors others.
+  / nested if guards rather than and - and evaluates both sides eagerly, so key would be
   / reached on a non-dict. no dependency is ever silently defaulted
   if[99h<>type deps;
     '"di.heartbeat: deps must be a dict of injectables + config - see di.log, di.timer, di.pubsub"];
@@ -166,17 +177,15 @@ validatedeps:{[deps]
   };
 
 validatemonitordeps:{[deps]
-  / servers and handlers are required only when subenabled - a publisher-only process needs neither.
-  / split out so the conditional in init stays a single statement, per the style guide
+  / servers is required only when subenabled - a publisher-only process does not need it. split out
+  / so the conditional in init stays a single statement, per the style guide.
+  / NB no handlers requirement: this module registered a .z.pc observer solely to prune a cache of
+  / subscribed handles, and that cache is gone. a handlers dict passed anyway is silently accepted
+  / (see depkeys) so di.torq's uniform wiring keeps working unchanged
   if[99h<>type deps`servers;
     '"di.heartbeat: subenabled is set, so a servers dependency is required (see di.servers)"];
   if[not `getservers in key deps`servers;
     '"di.heartbeat: servers dict must expose `getservers (see di.servers)"];
-  if[99h<>type deps`handlers;
-    '"di.heartbeat: subenabled is set, so a handlers dependency is required (see di.handlers)"];
-  if[not all `register`remove in key deps`handlers;
-    '"di.heartbeat: handlers dict must have `register`remove keys; got: ",
-      (", " sv string key deps`handlers)];
   };
 
 resolveconfig:{[deps]
@@ -192,14 +201,21 @@ validateconfig:{[cfg]
   / catch config that would leave the module quietly doing nothing rather than failing loudly
   if[not all -1h=type each cfg`enabled`subenabled`debug`publishroot;
     raiseerror[`init;"enabled, subenabled, debug and publishroot must be booleans"]];
-  if[not all -16h=type each cfg`publishinterval`checkinterval;
-    raiseerror[`init;"publishinterval and checkinterval must be timespans"]];
+  if[not all -16h=type each cfg`publishinterval`checkinterval`subscribeinterval;
+    raiseerror[`init;"publishinterval, checkinterval and subscribeinterval must be timespans"]];
   / di.timer schedules in whole SECONDS and tosecs rounds, so anything under half a second becomes a
   / period of 0 - a job that then runs on every timer cycle. reject the whole sub-second range rather
   / than silently accept a schedule that cannot be represented
-  if[any 0D00:00:01>cfg`publishinterval`checkinterval;
-    raiseerror[`init;"publishinterval and checkinterval must be at least one second - di.timer ",
-      "schedules in whole seconds, so a shorter interval cannot be represented"]];
+  if[any 0D00:00:01>cfg`publishinterval`checkinterval`subscribeinterval;
+    raiseerror[`init;"publishinterval, checkinterval and subscribeinterval must be at least one ",
+      "second - di.timer schedules in whole seconds, so a shorter interval cannot be represented"]];
+  / the never-beaten warning counts sweeps, so a non-positive threshold would either fire on a peer
+  / that has had no chance to answer yet, or (at 0) never match the post-increment count at all
+  if[not -7h=type cfg`subscribewarnsweeps;
+    raiseerror[`init;"subscribewarnsweeps must be a long"]];
+  if[1>cfg`subscribewarnsweeps;
+    raiseerror[`init;"subscribewarnsweeps must be at least 1 - it counts consecutive sweeps a ",
+      "discovered peer has gone without heartbeating, and the count starts at 1"]];
   if[not all -9h=type each cfg`warningtolerance`errortolerance;
     raiseerror[`init;"warningtolerance and errortolerance must be floats"]];
   / a zero or negative tolerance makes the grace period zero or negative, so now>time+period is true
@@ -237,7 +253,7 @@ validateroot:{[cfg]
   / check the root name is available BEFORE init writes any state. claiming it is the only step that
   / can fail on something outside this module, and letting installroot throw part-way through init
   / would leave the module marked initialised, with config written and deps wired, but with no
-  / timers, no handlers and no root table - so publishheartbeat would happily run and publish into a
+  / timers and no root table - so publishheartbeat would happily run and publish into a
   / topic di.pubsub cannot serve. exactly the silent failure this module exists to avoid
   if[not cfg`publishroot;:()];
   if[not tablename in tables[];:()];
@@ -312,7 +328,7 @@ uninstallroot:{[]
   };
 
 / ============================================================
-/ wiring - timers and handlers
+/ wiring - timers
 / ============================================================
 
 registertimers:{[]
@@ -324,22 +340,7 @@ registertimers:{[]
     .z.m.timeraddjob[`custom][`hbpublish;publishheartbeat;();tosecs publishinterval;2;()!()];
     .z.m.timeraddjob[`custom][`hbcheck;checkheartbeat;();tosecs checkinterval;2;()!()]];
   if[subenabled;
-    .z.m.timeraddjob[`custom][`hbsubscribe;hbsubscriptions;();60;2;()!()]];
-  };
-
-registerhandlers:{[]
-  / .z.pc is a SIMPLE event in di.handlers - side-effect only, return value discarded, so any number
-  / of registrants coexist and the phase must be ` (null). register is 5-arg [event;phase;nm;pri;func]
-  / drop any registration from an earlier init FIRST and unconditionally, mirroring registertimers.
-  / a re-init that turns subenabled off would otherwise orphan the observer permanently: teardown
-  / keys off whether we are registered, but before this it keyed off the CURRENT subenabled, which is
-  / now false - so nothing could ever remove it
-  if[handlerregistered;
-    .z.m.handlersremove[`.z.pc;`;`heartbeat];
-    .z.m.handlerregistered:0b];
-  if[subenabled;
-    .z.m.handlersregister[`.z.pc;`;`heartbeat;0j;closeconnection];
-    .z.m.handlerregistered:1b];
+    .z.m.timeraddjob[`custom][`hbsubscribe;hbsubscriptions;();tosecs subscribeinterval;2;()!()]];
   };
 
 / ============================================================
@@ -348,34 +349,159 @@ registerhandlers:{[]
 
 subscribeone:{[h]
   / ask the REMOTE publisher to subscribe us. calling di.pubsub.subscribe locally cannot work - it
-  / reads the caller's own .z.w and so can only ever subscribe the caller. a failed subscribe is not
-  / recorded, so the next tick retries it
+  / reads the caller's own .z.w and so can only ever subscribe the caller.
+  / sent ASYNC: .z.w still resolves to the monitor's connection during an async inbound call, so the
+  / handshake is unaffected, and an async send to a hung peer returns in microseconds where the sync
+  / call blocked for the FULL duration of the hang. that mattered because this runs inside a di.timer
+  / job on a single thread - a peer that is merely slow (a gc pause, a heavy query) stalled
+  / publishheartbeat and checkheartbeat with it, so the monitor went quiet to ITS monitors.
+  / a LOCAL failure (a dead or null handle) still throws here and is still logged; a REMOTE failure is
+  / invisible to an async send, which is what trackunseen exists to catch
   / the error handler's first parameter is named hdl, not h: the projection [h] supplies the outer
   / handle either way, but reusing the name would shadow it and a later refactor could silently bind
   / the wrong value (raised on PR #109 and worth keeping fixed)
-  ok:@[{[h] h(`.heartbeat.subscribe;::);1b};h;
-    {[hdl;e] .z.m.logerr[`subscribeone;"failed to subscribe to heartbeats on handle ",(string hdl),": ",e];0b}[h]];
-  if[ok;.z.m.subscribedhandles:distinct subscribedhandles,h];
+  @[{[h] (neg h)(`.heartbeat.subscribe;::)};h;
+    {[hdl;e] .z.m.logerr[`subscribeone;"failed to send heartbeat subscribe on handle ",
+      (string hdl),": ",e]}[h]];
+  };
+
+trackunseen:{[rows]
+  / an async subscribe cannot report a REMOTE failure (a root-name collision on the publisher, a
+  / di.pubsub that has not initialised there, a refused call), so watch for the consequence instead:
+  / a peer we have subscribed to that never produces a beat. a null counter means an addprocs seed
+  / rather than an observation - the same discriminator evictstale uses. warned once, at exactly the
+  / threshold sweep, so a permanently broken peer does not log forever.
+  / NB the count is rebuilt from the CURRENT discovered set each sweep, so a peer that drops out of
+  / di.servers' view and comes back starts again from 1. that is deliberate: a connectivity blip is
+  / not the continuously-stuck subscribe this warning exists to catch, and only an uninterrupted run
+  / of pending sweeps should trip it
+  if[not all `proctype`procname in cols rows;:()];
+  / the threshold is hoisted into a LOCAL first: a qsql where clause inside module code cannot resolve
+  / a module-level name and throws 'subscribewarnsweeps. same reason checkheartbeat hoists wp and ep
+  n:subscribewarnsweeps;
+  live:select sym:proctype,procname from rows;
+  observed:select sym,procname from 0!hb where not null counter;
+  pending:select sym,procname from live where not ([]sym;procname) in observed;
+  carried:select from 0!unseen where ([]sym;procname) in pending;
+  fresh:select sym,procname,sweeps:0 from pending where not ([]sym;procname) in `sym`procname#carried;
+  .z.m.unseen:2!update sweeps:sweeps+1 from carried,fresh;
+  due:select from 0!unseen where sweeps=n;
+  / NB "no heartbeat", not "never heartbeated" - a peer whose row was evicted by maxage re-enters this
+  / set, and it HAS beaten before, just not recently. the alert is still correct; the wording must be
+  if[count due;
+    .z.m.logwarn[`hbsubscriptions;"subscribed to ",(string count due)," peer(s) with no heartbeat in ",
+      (string n)," sweeps - the remote subscribe may have failed (an async subscribe cannot report a ",
+      "remote error): ",", " sv string exec procname from due]];
+  };
+
+resetdiscovery:{[]
+  / internal - forget what this monitoring session learned about peer discovery. all three vars move
+  / together because they are ONE mechanism, and resetting only everdiscovered would be worse than
+  / resetting none: a carried-over emptysweeps already past a new, lower threshold never equals it
+  / again, so the discovered-nothing warning would silently never fire for the new configuration -
+  / and a carried-over emptywarned would let the next recovery close out an outage from the old one.
+  / NB the heartbeat store, its counter and unseen are deliberately NOT reset here: the store persists
+  / across re-init by design, and unseen is rebuilt from the current discovered set on every sweep, so
+  / it self-heals where these three do not
+  .z.m.everdiscovered:0b;
+  .z.m.emptysweeps:0;
+  .z.m.emptywarned:0b;
+  };
+
+emptysweepmsg:{[]
+  / internal - the two ways of discovering nothing have completely different diagnoses, so the message
+  / says which one this is. a monitor that has NEVER seen a peer is usually still coming up: di.servers
+  / connects on its own retry cycle, which in a staggered rollout can easily outlast a few sweeps. one
+  / that HAD peers and now has none has lost them - not a startup condition at all, and it reads very
+  / differently to whoever is on call
+  if[everdiscovered;
+    :"every previously-discovered peer has gone - ",(string subscribewarnsweeps)," consecutive ",
+      "sweeps found none. the peers may be down, or di.servers may have dropped their connections"];
+  :"no peer discovered yet, after ",(string subscribewarnsweeps)," consecutive sweeps - on a cold ",
+    "start the peers may simply still be coming up, in which case this resolves itself and a ",
+    "recovery line follows. otherwise check that connections names process types di.servers is ",
+    "connected to. NB `ALL currently matches nothing against di.servers (see heartbeat.md)";
+  };
+
+warnemptysweeps:{[]
+  / internal - count consecutive sweeps that discovered no usable peer at all, and warn ONCE at the
+  / threshold. deliberately cause-AGNOSTIC: it watches the consequence, not any single cause, so it
+  / stays correct whatever the reason - a connections list naming a process type di.servers never
+  / connects to, a servers dependency returning nothing, or peers that are simply all down. that also
+  / means it needs no maintenance when the `ALL gap below is closed. reuses subscribewarnsweeps: it
+  / is the same "consecutive sweeps" unit as the never-beaten warning
+  .z.m.emptysweeps:emptysweeps+1;
+  if[emptysweeps<>subscribewarnsweeps;:()];
+  / record that a warning was actually EMITTED, rather than leaving the recovery line to re-derive it
+  / from the counter. a re-init may change subscribewarnsweeps, and comparing a carried-over count
+  / against a new threshold claimed a recovery for an outage that had never been reported
+  .z.m.emptywarned:1b;
+  .z.m.logwarn[`hbsubscriptions;emptysweepmsg[]];
+  };
+
+notediscovery:{[n]
+  / internal - peers are visible again. if we had already warned, close the loop with an info line:
+  / a cold start that merely took longer than the threshold would otherwise leave a lone warning in
+  / the log with nothing to say it resolved, which is the failure mode of every "it warned once and
+  / then went quiet" alert. the recovery line is what makes the warning safe to act on
+  / gated on whether a warning was emitted, NOT on the sweep count against the current threshold -
+  / so a recovery line can never appear for an outage nobody was told about.
+  / NB "connection(s)": n is the count of distinct usable HANDLES, which is what was actually
+  / subscribed. it is not necessarily the number of server rows, since handles are deduped
+  / logged at WARN, not info, even though recovery is good news: the discovered-nothing warning fires
+  / exactly ONCE, so if its resolution went to a lower level then anyone whose pipeline filters to
+  / warn and above would see the alert and never the close-out - which is the dangling-alert problem
+  / this line exists to remove. matching the alert's level is what makes a once-only warning safe
+  if[emptywarned;
+    .z.m.logwarn[`hbsubscriptions;"peer discovery recovered - now watching ",(string n),
+      " connection(s)"];
+    .z.m.emptywarned:0b];
+  .z.m.everdiscovered:1b;
+  .z.m.emptysweeps:0;
   };
 
 getheartbeats:{[proctypes]
   / di.servers.getservers returns a TABLE of server rows - the handles are its w column, and a
-  / disconnected row carries a null handle
-  handles:validhandles exec w from .z.m.serversgetservers proctypes;
-  handles:handles except subscribedhandles;
+  / disconnected row carries a null handle.
+  / ONE CALL PER PROCTYPE: di.servers.getservers takes a symbol ATOM and matches with =, so passing
+  / the whole list throws - and di.timer's disableonfail would then end monitor discovery for the
+  / process lifetime. forward-compatible either way: a one-element iteration still works if getservers
+  / later accepts vectors
+  pts:(),proctypes;
+  / an empty connections list is a LEGAL "monitor nothing" configuration - init warns about it rather
+  / than rejecting it - so it must be a clean no-op here. without this guard `each` over no proctypes
+  / razes to a general empty list, which exec cannot read: it threw 'type on every sweep. clear the
+  / never-beaten counters too, since nothing is being monitored to be pending about
+  if[0=count pts;
+    .z.m.unseen:unseenschema;
+    :()];
+  rows:raze {[pt] .z.m.serversgetservers pt} each pts;
+  / distinct across the per-proctype results: a well-behaved servers impl puts each row under exactly
+  / one proctype, but a repeated entry in connections would otherwise send the same peer two subscribes
+  handles:distinct validhandles exec w from rows;
+  / no tracked handle set: di.pubsub dedupes subscribers by .z.w, so a repeat subscribe is a no-op on
+  / the publisher and an async send costs nothing worth caching around. tracking handles here was
+  / actively harmful - a handle number is not an identity, kdb+ reissues the lowest free descriptor,
+  / and hclose does not fire .z.pc, so a stale entry made the monitor skip a live peer forever
   if[count handles;
-    .z.m.loginfo[`getheartbeats;"subscribing to new heartbeat handle(s) ",", " sv string handles];
+    notediscovery count handles;
+    .z.m.loginfo[`getheartbeats;"subscribing to heartbeat handle(s) ",", " sv string handles];
     subscribeone each handles];
+  / a monitor configured to watch something that nonetheless discovers NOTHING is the exact
+  / looks-configured-but-silent failure this module exists to eliminate - say so rather than sit quiet
+  if[0=count handles;warnemptysweeps[]];
+  / only peers we ACTUALLY attempted are candidates for the never-beaten warning. a row carrying a
+  / null handle (a disconnected server) or handle 0 was deliberately skipped, so warning that it never
+  / heartbeated would be a false alarm about a peer we never asked
+  trackunseen[select from rows where w in handles];
   };
 
 hbsubscriptions:{[]
-  / timer job - pick up any newly connected publisher of a configured process type
-  getheartbeats resolveconnections[];
-  };
-
-closeconnection:{[h]
-  / drop a closed handle from the tracked subscriptions - registered against .z.pc
-  .z.m.subscribedhandles:subscribedhandles except h;
+  / timer job - pick up any newly connected publisher of a configured process type. isolated for the
+  / same reason the publish call and the callbacks are: di.timer's addjob.opts defaults
+  / disableonfail:1b, so an unprotected throw does not skip one sweep, it ends monitor discovery for
+  / the lifetime of the process
+  safecall[`hbsubscriptions;`sweep;getheartbeats;resolveconnections[]];
   };
 
 / ============================================================
@@ -466,6 +592,9 @@ checkheartbeat:{[]
   / status: 0 healthy, 1 warning, 2+ error. grace periods are computed as locals first, since module
   / functions do not resolve inside qsql
   requireinit[`checkheartbeat];
+  / NB cp[] is deliberately outside any safecall. setcp probes the clock once at swap time, so a
+  / clock with external dependencies could still throw here and take this job out under di.timer's
+  / disableonfail. accepted as a much narrower risk than the sweep's (see hbsubscriptions), not missed
   now:cp[];
   / evict first: maxage is validated to exceed the error period, so nothing can be evicted before it
   / has already been through its error transition
@@ -556,7 +685,8 @@ removeprocs:{[proctypes;procnames]
   };
 
 subscribe:{[handles]
-  / subscribe to heartbeats on the given remote handle(s), tracking successful subscriptions
+  / subscribe to heartbeats on the given remote handle(s). the send is async, so a failure on the
+  / REMOTE side is not reported here - the sweep's never-beaten warning is what surfaces that
   requireinit[`subscribe];
   h:(),handles;
   if[not type[h] within 5 7h;
@@ -595,26 +725,28 @@ setcp:{[f]
   };
 
 teardown:{[]
-  / release everything init installed: timer jobs, the .z.pc registration and the root names
+  / release everything init installed: the timer jobs and the root names
   requireinit[`teardown];
   .z.m.timerdeletejobs jobids;
   / keyed off what is actually installed, NOT off the current config - a re-init that flipped
-  / subenabled or publishroot off would otherwise leave teardown unable to clean up its own residue
-  if[handlerregistered;
-    .z.m.handlersremove[`.z.pc;`;`heartbeat];
-    .z.m.handlerregistered:0b];
+  / publishroot off would otherwise leave teardown unable to clean up its own residue
   if[rootinstalled;uninstallroot[]];
   .z.m.enabled:0b;
   .z.m.subenabled:0b;
-  .z.m.loginfo[`teardown;"di.heartbeat torn down - timers, handlers and root names released"];
+  / a monitor re-inited after teardown is typically watching a DIFFERENT set of process types, and is
+  / cold starting in every sense that matters to whoever reads the log - so it must get the cold-start
+  / wording, not "every previously-discovered peer has gone"
+  resetdiscovery[];
+  .z.m.loginfo[`teardown;"di.heartbeat torn down - timer jobs and root names released"];
   };
 
 init:{[deps]
-  / wire the injected deps and this process's config from ONE dict, then install the timer jobs, the
-  / .z.pc observer (when monitoring) and the root names (when publishroot). idempotent - a second
-  / call clears its own timer jobs first and re-registers, leaving the heartbeat store intact
-  / deps: `log`timer`pubsub (required), `servers`handlers (required when subenabled),
-  /       `proctype`procname (required identity), plus any config key alongside them
+  / wire the injected deps and this process's config from ONE dict, then install the timer jobs and
+  / the root names (when publishroot). idempotent - a second call clears its own timer jobs first and
+  / re-registers, leaving the heartbeat store intact
+  / deps: `log`timer`pubsub (required), `servers` (required when subenabled),
+  /       `proctype`procname (required identity), plus any config key alongside them.
+  / a `handlers` key is accepted and ignored, so di.torq's uniform wiring needs no special case
   / e.g. hb.init[(`log`timer`pubsub!(logdep;timerdep;psdep)),`proctype`procname!(`rdb;`rdb1)]
   validatedeps[deps];
   .z.m.loginfo:(deps`log)`info;
@@ -630,17 +762,15 @@ init:{[deps]
   .z.m.pubsubpublish:(deps`pubsub)`publish;
   .z.m.pubsubsubscribe:(deps`pubsub)`subscribe;
   if[cfg`subenabled;
-    .z.m.serversgetservers:(deps`servers)`getservers;
-    .z.m.handlersregister:(deps`handlers)`register;
-    .z.m.handlersremove:(deps`handlers)`remove];
+    .z.m.serversgetservers:(deps`servers)`getservers];
   / first init only - a re-init must not discard heartbeats already received
   if[not initialised[];
     .z.m.hb:storeschema;
     .z.m.ownhb:0#schema;
-    .z.m.subscribedhandles:`int$();
+    .z.m.unseen:unseenschema;
+    resetdiscovery[];
     .z.m.rootowned:0b;
     .z.m.rootinstalled:0b;
-    .z.m.handlerregistered:0b;
     .z.m.warnedcols:`symbol$();
     .z.m.hbcounter:0];
   .z.m.config:cfg;
@@ -654,8 +784,10 @@ init:{[deps]
   .z.m.publishroot:cfg`publishroot;
   .z.m.publishinterval:cfg`publishinterval;
   .z.m.checkinterval:cfg`checkinterval;
+  .z.m.subscribeinterval:cfg`subscribeinterval;
   .z.m.warningtolerance:cfg`warningtolerance;
   .z.m.errortolerance:cfg`errortolerance;
+  .z.m.subscribewarnsweeps:cfg`subscribewarnsweeps;
   .z.m.maxage:cfg`maxage;
   .z.m.pid:cfg`pid;
   .z.m.host:cfg`host;
@@ -671,7 +803,6 @@ init:{[deps]
     .z.m.loginfo[`init;"publishroot is 0b - nothing published at root and no pub/sub publishing; ",
       "own heartbeats are tracked locally and readable via getownhb"]];
   registertimers[];
-  registerhandlers[];
   / NB the index expressions are parenthesised deliberately. juxtaposition binds to the WHOLE
   / right-hand expression, so ("disabled";"enabled")enabled,", monitoring ",... parses as
   / ("disabled";"enabled")[enabled,", monitoring ",...] - indexing by the rest of the string, which
@@ -686,7 +817,7 @@ getapimeta:{[]
   / one row per CALLABLE api function, for di.torq to register with di.api. init and getapimeta are
   / plumbing di.torq calls by convention and are deliberately omitted. names are bare
   :flip `name`public`descrip`params`return!flip(
-    (`teardown;         1b; "release timer jobs, the .z.pc registration and the published root names";
+    (`teardown;         1b; "release the timer jobs and the published root names";
        "[]";                                            "null");
     (`version;          1b; "module version string";
        "[]";                                            "string: version");

@@ -24,6 +24,13 @@ true,0,0,q,0=count svc.getservers[`selfproc],1,1,self is excluded even though it
 true,0,0,q,1=count svc.getservers[`otherproc],1,1,otherproc connected successfully
 true,0,0,q,0=count svc.getservers[`deadproc],1,1,deadproc failed (nothing listening) so it is not live
 true,0,0,q,"warnlogged[""failed to open connection""]",1,1,the failed dial was logged at warn
+comment,,,,,,,"getservers contract - ` matches EVERY proctype and a list matches any of them (legacy trackservers.q:75 and di.serverselect both implement this; = against an atom was a regression against both)"
+true,0,0,q,"(count svc.getservers[`])=sum count each svc.getservers each `selfproc`otherproc`deadproc",1,1,` returns exactly the union of the per-proctype results - match-all is not a special case with its own filter
+true,0,0,q,1=count svc.getservers[`otherproc`deadproc],1,1,a list returns live rows for any listed proctype - deadproc is not live so contributes none
+true,0,0,q,1=count svc.getservers[`otherproc`nosuchtype],1,1,an unknown proctype in the list is simply absent rather than an error
+true,0,0,q,0=count svc.getservers[`nosuchtype`alsonone],1,1,a list matching nothing returns an empty table not an error
+true,0,0,q,svc.getservers[`otherproc]~svc.getservers[enlist`otherproc],1,1,a one-element list is identical to the bare symbol - the existing atom path is unchanged
+fail,0,0,q,svc.getservers[42],1,1,getservers still rejects a non-symbol non-list
 comment,,,,,,,gethandlebytype - a genuinely live remote handle
 run,0,0,q,h:svc.gethandlebytype[`otherproc;`any],1,1,get a handle to the peer
 true,0,0,q,"2=h ""1+1""",1,1,the handle is a live remote connection to a separate process
@@ -46,6 +53,13 @@ run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`connections`processcsv
 fail,0,0,q,svc.startup[],1,1,startup signals on the bad header rather than silently misreading columns
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
+
+comment,,,,,,,"startup must not dial ITSELF when process.csv disagrees with the configured identity"
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`connections`processcsv!(mocklog;rtmr;mockhandlers;`selfproc;`selfinst;`rdb;writedriftcsv[])]",1,1,re-init against a csv listing OUR procname (selfinst) under a different proctype
+run,0,0,q,delete from `logrows,1,1,clear the log capture
+run,0,0,q,svc.startup[],1,1,startup - the exact (proctype;procname) match cannot recognise the drifted self row
+true,0,0,q,0=count select from .m.di.0servers.SERVERS where procname=`selfinst,1,1,no row was added for this process - the guard skipped it rather than opening a connection to itself
+true,0,0,q,"warnlogged[""connecting to myself""]",1,1,and the drift was reported rather than skipped silently
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection
 fail,0,0,q,"svc.waitfortype[`hdb;""x"";200]",1,1,waitfortype rejects a non-integer timeout
 fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;rtmr;mockhandlers;""rdb"";`p)]",1,1,init rejects a non-symbol proctype
@@ -55,7 +69,7 @@ true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapime
 comment,,,,,,,module metadata - exported version
 true,0,0,q,10h=type svc.version,1,1,version is a string
 true,0,0,q,0<count svc.version,1,1,version is non-empty
-true,0,0,q,svc.version~trim first read0 hsym`$os.abspath["di/servers/version.txt"],1,1,exported version matches version.txt (the source of truth, priority over the init.q fallback)
+true,0,0,q,"svc.version~trim first read0 hsym`$os.abspath[""di/servers/VERSION""]",1,1,exported version matches the VERSION file (the single source of truth)
 comment,,,,,,,real di.log integration (the merged logger itself - not the recording mock)
 true,0,0,q,all `info`warn`error in key (use`di.log)[`logdict]`log,1,1,di.log logdict provides the info/warn/error keys the injected-log contract requires
 run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!((use`di.log)[`logdict]`log;rtmr;mockhandlers;`selfproc;`selfinst)]",1,1,init accepts di.log's real logdict end-to-end (idempotent re-init against the merged logger)

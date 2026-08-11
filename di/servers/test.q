@@ -71,5 +71,15 @@ teardownfixture:{[] killpeer[]; system "rm -rf ",FIXDIR;};
 / shape that used to silently misparse) and return its path - used to prove readprocesscsv fails loud.
 writebadcsv:{[] (`$":",p:FIXDIR,"/bad.csv") 0: ("port,host,proctype,procname"; "5010,localhost,rdb,rdb1"); p};
 
+/ write a process.csv listing THIS process's procname (selfinst) under a DIFFERENT proctype than its
+/ configured identity (selfproc), and return its path. that is the identity-drift shape the exact
+/ (proctype;procname) self-exclusion cannot recognise - without the guard, startup dials its own row.
+writedriftcsv:{[]
+  (`$":",p:FIXDIR,"/drift.csv") 0: (
+    "host,port,proctype,procname";
+    "localhost,",string[PEERPORT-2],",rdb,selfinst";
+    "localhost,",string[PEERPORT],",otherproc,otherinst");
+  p};
+
 / build the deps dict di.torq would assemble: injectables + this process's config slice.
 svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv!(mocklog;rtmr;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv")};

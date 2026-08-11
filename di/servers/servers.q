@@ -140,6 +140,17 @@ startup:{[]
   procs:update isme:(proctype=pt)&procname=pn from procs;
   procs:select from procs where not isme;
   procs:select from procs where proctype in conns;
+  / SELF-CONNECTION GUARD. the exclusion above is an exact (proctype;procname) match against the
+  / identity from config. if process.csv disagrees - a drifted proctype for this procname - the self
+  / row is not recognised and this process dials ITSELF. procname is process.csv's unique key (the
+  / idempotency filter below relies on that too), so a surviving row carrying our procname IS us:
+  / drop it and say why, rather than opening a self-connection nobody would think to look for.
+  / checked AFTER the connections filter: a row that could never be connected to was never at risk
+  if[count mismatched:select from procs where procname=pn;
+    .z.m.logwarn[`startup;"process.csv lists procname ",(string pn)," as proctype ",
+      (string first mismatched`proctype),", but this process is configured as proctype ",(string pt),
+      " - identity drift, skipping that row rather than connecting to myself"];
+    procs:select from procs where not procname=pn];
   / idempotent: skip any proc already tracked in SERVERS. a repeat startup (or a process.csv that has
   / grown since) then adds only NEW rows - never a duplicate row or a leaked second handle to a proc
   / already connected. reconnecting a dropped peer is retry's job, not startup's.
@@ -183,9 +194,15 @@ retry:{[]
   };
 
 getservers:{[pt]
-  / every live (non-null handle) SERVERS row for a proctype.
-  if[not -11h=type pt;raiseerror[`getservers;"proctype must be a symbol"]];
-  select from .z.m.SERVERS where proctype=pt, not null w
+  / every live (non-null handle) SERVERS row for a proctype. ` matches EVERY proctype and a list
+  / matches any of them - the contract legacy TorQ's .servers.getservers (trackservers.q:75) and
+  / di.serverselect.getservers both implement, and which any consumer written against either expects.
+  / matching with `in` rather than `=` is what makes both shapes work; a bare symbol still behaves
+  / exactly as before, so every existing caller is unaffected
+  if[not 11h=abs type pt;raiseerror[`getservers;"proctype must be a symbol or symbol list"]];
+  $[`~pt;
+    select from .z.m.SERVERS where not null w;
+    select from .z.m.SERVERS where proctype in pt, not null w]
   };
 
 selector:{[tab;selection]
@@ -246,7 +263,7 @@ getapimeta:{[]
   / listed - the registry describes the callable api, not plumbing. names are bare (di.torq qualifies).
   :flip `name`public`descrip`params`return!flip(
     (`startup;         1b; "open connections to configured proctypes from process.csv (reads init config)"; "[]";                                       "null");
-    (`getservers;      1b; "live SERVERS rows for a proctype";                                      "[symbol: proctype]";                              "table: live server rows");
+    (`getservers;      1b; "live SERVERS rows for a proctype, a list of proctypes, or ` for all";   "[symbol|list: proctype, or ` for all]";           "table: live server rows");
     (`gethandlebytype; 1b; "one live handle for a proctype via any/roundrobin/last selection";      "[symbol: proctype; symbol: selection]";           "int: handle, 0Ni if none");
     (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };

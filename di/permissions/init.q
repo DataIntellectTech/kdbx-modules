@@ -4,10 +4,7 @@
 
 \l ::permissions.q
 
-/ module version, read from the VERSION file rather than hardcoded in the implementation - the
-/ convention Jamie Grant's TorqX modules use, so a release bump touches one plain-text file.
-/ NB `version` STAYS in the export: di.depcheck reads it from the export dict (checkdepversion),
-/ and reports "exports no version" - failing the dependency check - if a module drops it
+/ Module version
 version:first read0`:::VERSION
 
 / NB: export:([...]) EVALUATES each name, so it can only list names that already exist - the export

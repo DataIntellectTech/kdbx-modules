@@ -471,7 +471,9 @@ getheartbeats:{[proctypes]
   / an empty connections list is a LEGAL "monitor nothing" configuration - init warns about it rather
   / than rejecting it - so it must be a clean no-op here. without this guard `each` over no proctypes
   / razes to a general empty list, which exec cannot read: it threw 'type on every sweep. clear the
-  / never-beaten counters too, since nothing is being monitored to be pending about
+  / never-beaten counters too, since nothing is being monitored to be pending about.
+  / NB returning here also bypasses warnemptysweeps, deliberately: discovering nothing is exactly what
+  / was asked for, and it was already warned about once at init - repeating it every sweep is noise
   if[0=count pts;
     .z.m.unseen:unseenschema;
     :()];

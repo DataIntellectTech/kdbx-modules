@@ -126,7 +126,7 @@ Setting `subenabled:1b` with an **empty** `connections` list is legal but warns:
 as legacy's in-file `connections:()` default, where the entire monitor path silently did nothing. Use
 `` `ALL ``, or name the process types to watch.
 
-### ⚠️ `` `ALL `` does not currently work - a regression in `di.servers`, tracked
+### ⚠️ `` `ALL `` does not currently work - a regression in `di.servers`, not yet raised
 
 The shipped default resolves to a null symbol, which every ancestor of `getservers` treats as
 match-all. `di.servers`' version does not:
@@ -318,6 +318,14 @@ Nothing is lost by dropping the cache: `di.pubsub` already dedupes subscribers b
 (`pubsub.q:11`), so a repeat subscribe is a no-op on the publisher, and an async send is far too cheap
 to be worth caching around. Removing it also removed this module's only reason to register a `.z.pc`
 handler, and with it the `handlers` dependency.
+
+**What cleans up, then?** The publisher does. `di.pubsub` registers its own `.z.pc` (`pubsub.q:75`)
+which calls `closesub` to drop a dead subscriber's handle from `reqalldict` and `reqfilteredtbl`.
+Subscriber lifetime is the publisher's concern, not the monitor's — which is why losing the
+monitor-side cache costs nothing. A monitor that dies is forgotten by every publisher it was watching,
+without this module tracking anything. (`di.pubsub` assigns `.z.pc` flatly rather than through
+`di.handlers`, so on a shared process it can clobber other modules' cleanup — but not its own: it is
+the last assignment to win, so subscriber cleanup stays reliable regardless.)
 
 ### The never-beaten warning
 

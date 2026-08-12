@@ -49,11 +49,13 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 | Function                  | Description                                                                  |
 |---------------------------|------------------------------------------------------------------------------|
 | `pubsub.setsubtables`     | Set a specified list of tables that are available for subscription.          | 
+| `pubsub.getsubtables`     | Read the list of tables currently available for subscription - the counterpart to `setsubtables`, which replaces it. Empty until `init` has run. |
 | `pubsub.callendofday`     | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
 | `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
 | `pubsub.closesub`         | Remove handle upon connection close.                                         | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
 | `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas).  |
+| `pubsub.version`          | Module version string, read from the `VERSION` file. `di.depcheck` resolves a dependency's minimum from here. |
 ---
 
 ### Example: 
@@ -79,6 +81,24 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 ```
 ---
 ## Notes:
+
+- **The string entry points signal on failure.** `subscribestr` and `subscribestrfilter` exist so a
+  non-kdb+ client can subscribe, and such a client cannot inspect a q result shape. A request that
+  matched **no** table therefore signals rather than returning the error message as a value that
+  merely reads like one. (The guard that previously did this could never fire: `errmsg` is built with
+  `` `$ `` so it is a symbol, and `last` of either success shape is the schema list — never the `10h`
+  string it tested for.) A *partial* match still returns, because those tables really were subscribed
+  and signalling would report failure while leaving the client registered.
+- **`.z.pc` chains, it does not replace.** This module installs a `.z.pc` handler at load so a
+  dropped connection is deregistered (`closesub`). It captures whatever already owned the event and
+  calls it afterwards. This matters: a bare `.z.pc:{closesub[x]}` silently destroyed every observer
+  another module had already registered — measured against `di.handlers`, whose registry went on
+  reporting the registration as live while it no longer fired, so the loss was invisible. The guard
+  is asserted in `test.csv` by a child process that installs a handler *before* loading this module,
+  which is the only way to observe load-time ordering.
+- It stays a raw assignment rather than a `di.handlers` registration because the modularisation plan
+  classifies `di.pubsub` as **standalone** — it takes no injected dependencies, so reaching
+  `di.handlers` would contradict its own tier.
 
 - By default, all tables on top level of the process are available for subscription.
 - The user should define the `.u.sub` and the `.u.pub` functions within the process.

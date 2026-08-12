@@ -1,0 +1,34 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,"integration test - spins up a real, separate child kdb-x process, loads real modules via QPATH,"
+comment,,,,,,,"and calls depcheck.init[] for real, proving two things test.csv structurally cannot: that a real"
+comment,,,,,,,"signalled failure actually terminates a real host process (non-zero exit, real error on stderr),"
+comment,,,,,,,and that a genuine zero-failure success path completes cleanly end to end - unreachable in test.csv
+comment,,,,,,,"since di.timer, always loaded there as a live negative control, permanently fails its own contract"
+comment,,,,,,,"the child must be kdb-x-capable (needs use/QPATH), unlike a plain q peer, so this deliberately reuses"
+comment,,,,,,,the currently-running process's own binary via /proc/<pid>/exe rather than guessing from QHOME -
+comment,,,,,,,QHOME on this dev machine resolves to a pre-kdb-x q build with no use keyword at all
+comment,,,,,,,note k4unit runs every before row first then the asserts - so results are captured in befores and checked in trues
+,,,,,,,
+before,0,0,q,"qbin:first system ""readlink -f /proc/"",(string .z.i),""/exe""",1,,"resolve the currently-running process's own binary - guaranteed kdb-x-capable, no QHOME guess, no hardcoded path"
+before,0,0,q,.it.haveqbin:not ()~key hsym `$qbin,1,,confirm the resolved binary actually exists on disk
+before,0,0,q,if[not .it.haveqbin;exit 0],1,,skip this entire suite cleanly if the binary could not be resolved
+before,0,0,q,".it.dir:(first "":"" vs getenv`QPATH),""/di/zzintegration""",1,,scratch directory derived from QPATH at runtime - no hardcoded path
+before,0,0,q,"system ""mkdir -p "",.it.dir",1,,create the scratch directory
+before,0,0,q,"(hsym `$.it.dir,""/success.q"") 0: enlist ""depcheck:use`di.depcheck; logdep:`info`warn`error!({[c;m] -1 m};{[c;m] -1 m};{[c;m] -2 m}); depcheck.init[enlist[`log]!enlist logdep]; exit 0;""",1,,"write a real child script loading ONLY di.depcheck - no di.timer, so no real contract gap exists - a genuine zero-failure success case"
+before,0,0,q,"(hsym `$.it.dir,""/failure.q"") 0: enlist ""timer:use`di.timer; depcheck:use`di.depcheck; logdep:`info`warn`error!({[c;m] -1 m};{[c;m] -1 m};{[c;m] -2 m}); depcheck.init[enlist[`log]!enlist logdep]; exit 0;""",1,,"write a real child script that also loads di.timer - its real, permanent Timer-contract gap (missing cp) drives a real failure"
+before,0,0,q,".it.successresult:system qbin,"" "",.it.dir,""/success.q -q < /dev/null > "",.it.dir,""/success.out 2>&1; echo EXITCODE:$?""",1,,"run the success child to completion synchronously, capturing combined stdout+stderr and its real exit code"
+before,0,0,q,".it.successexit:""I""$9_last .it.successresult",1,,parse the real exit code
+before,0,0,q,".it.successout:sv[""\n"";read0 hsym `$.it.dir,""/success.out""]",1,,read the child's real captured output
+before,0,0,q,".it.failureresult:system qbin,"" "",.it.dir,""/failure.q -q < /dev/null > "",.it.dir,""/failure.out 2>&1; echo EXITCODE:$?""",1,,"run the failure child to completion synchronously, capturing combined stdout+stderr and its real exit code"
+before,0,0,q,".it.failureexit:""I""$9_last .it.failureresult",1,,parse the real exit code
+before,0,0,q,".it.failureout:sv[""\n"";read0 hsym `$.it.dir,""/failure.out""]",1,,read the child's real captured output
+before,0,0,q,"system ""rm -rf "",.it.dir",1,,remove the scratch fixture directory
+,,,,,,,
+comment,,,,,,,genuine zero-failure success path - unreachable in test.csv since di.timer always fails its own contract there
+true,0,0,q,0=.it.successexit,1,,the child process loading only di.depcheck exited cleanly with a real 0 exit code
+true,0,0,q,".it.successout like ""*dependency check complete: 0 failure(s), 0 warning(s)*""",1,,the real captured log shows the genuine zero-failure summary line - proves the true success path works end to end in a real process
+,,,,,,,
+comment,,,,,,,a real signalled failure actually terminates a real host process
+true,0,0,q,0<>.it.failureexit,1,,the child process crashed with a real non-zero exit code when a real dependency check failed
+true,0,0,q,".it.failureout like ""*DEPENDENCY CHECK FAILED*""",1,,the real crash output contains the real error-level report - not a captured mock
+true,0,0,q,".it.failureout like ""*di.timer is missing required contract key(s): cp*""",1,,the real report names the real di.timer contract gap

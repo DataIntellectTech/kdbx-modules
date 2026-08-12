@@ -710,9 +710,24 @@ handoffpublisher:{[]
   / would throw there. drop those rather than hand over a name the publisher cannot resolve
   tabs:tabs where tabs in tables[];
   if[0=count tabs;:()];
-  @[{[t] pubsub.setsubtables t; pubsub.init[]};tabs;
-    {[e] raiseerror[`handoffpublisher;"failed to register subscribed tables with di.pubsub: ",e,registerednote]}];
-  .z.m.loginfo[`handoffpublisher;"registered ",(", " sv string tabs)," with the local publisher for republishing"];
+  / WARN, not raiseerror: unlike every other raiseerror site in this module, a failure here does not
+  / mean the subscribe failed. it already fully succeeded - schemas defined, replay done, registry row
+  / committed - before this runs at all (see the call site, last statement of subscribe).
+  / registerednote's remedy, "close the handle before retrying", describes a DIFFERENT failure - a
+  / subdetails call that registered live delivery before subscribe could be validated - and would be
+  / actively wrong advice here: the connection is healthy, and a retry would immediately hit
+  / guardduplicate against the row this very call committed.
+  / this matches how unsubscribe handles the identical shape (local state already committed, an
+  / optional notification step then fails): warn and return, because what mattered locally already
+  / happened. republish is opt-in and secondary by design, so it must not take down a successful
+  / subscribe
+  r:@[{[t] pubsub.setsubtables t; pubsub.init[]; (1b;t)};tabs;{[e] (0b;e)}];
+  $[first r;
+    .z.m.loginfo[`handoffpublisher;"registered ",(", " sv string tabs)," with the local ",
+      "publisher for republishing"];
+    .z.m.logwarn[`handoffpublisher;"failed to register subscribed tables with the local ",
+      "publisher: ",(last r)," - the subscribe itself succeeded; this process is not serving ",
+      "them downstream until this is retried or di.pubsub is checked"]];
   };
 
 subscribe:{[tph;tabs;syms;setschema;replay]

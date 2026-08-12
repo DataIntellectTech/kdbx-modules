@@ -696,19 +696,25 @@ run,0,0,q,markdeadfor[rpeh],1,1,fire .z.pc for that handle - this only works if 
 true,0,0,q,"not any exec active from sub.getsubscriptions[] where handle~\:rpeh",1,1,the observer fired and marked it dead - importing di.pubsub did not silently unhook us
 
 
-comment,,,,,,,the handoff's ERROR branch. no natural trigger exists - every table is filtered to ones defined at root before di.pubsub sees them - so it is reached by replacing the module handle init.q captured. without this the branch would ship never having executed
+comment,,,,,,,the handoff's FAILURE path. no natural trigger exists - every table is filtered to ones defined at root before di.pubsub sees them - so it is reached by replacing the module handle init.q captured. without this the branch would ship never having executed
+comment,,,,,,,it must WARN and let the subscribe stand. by the time the handoff runs the subscribe has fully succeeded - schemas defined, replay done, registry committed - so throwing would discard completed work over an optional secondary step, and telling the caller to close the handle would be wrong advice: a retry would hit guardduplicate against the row this call just committed
 run,0,0,q,sub.init[depsrepub[]],1,1,republish on
 run,0,0,q,savedpubsub:.m.di.0subscriptions.pubsub,1,1,keep the real handle
 run,0,0,q,"`.m.di.0subscriptions.pubsub set `setsubtables`init`getsubtables!({[x] '""publisher exploded""};{[] };{[] `symbol$()})",1,1,swap in a publisher whose setsubtables throws
 run,0,0,q,resetcap[],1,1,clear the captured log
 run,0,0,q,"lhx:buildlog[""hx"";`hx;2]",1,1,build a log
-fail,0,0,q,sub.subscribe[tphfor[`hx;2;lhx];enlist`hx;`;1b;1b],1,1,a failing handoff makes subscribe signal rather than pass silently
-true,0,0,q,`handoffpublisher in exec ctx from caprows where lvl=`error,1,1,"logged under the handoffpublisher context - the logged[] fixture matches message text, the function name is the ctx"
-true,0,0,q,"logged[`error;""failed to register subscribed tables""]",1,1,and the message says what failed
-true,0,0,q,"logged[`error;""already registered""]",1,1,"and carries registerednote - the handoff fires AFTER the tickerplant has registered this handle, so the caller must be told to close it"
-true,0,0,q,1=count select from sub.getsubscriptions[] where tabs~\:enlist`hx,1,1,"KNOWN ORDERING - the subscription IS registered even though subscribe threw. the handoff runs last, after the registry insert, which is exactly why the error carries registerednote"
+run,0,0,q,rhx:sub.subscribe[tphfor[`hx;2;lhx];enlist`hx;`;1b;1b],1,1,the subscribe RETURNS - a failing handoff no longer signals
+true,0,0,q,99h=type rhx,1,1,"and returns the normal buildreturn dict, not some degraded value"
+true,0,0,q,(enlist`hx)~rhx`subtables,1,1,reporting the table it actually subscribed to
+true,0,0,q,2=count hx,1,1,the replay really happened - the work the throw would have discarded
+true,0,0,q,1=count select from sub.getsubscriptions[] where tabs~\:enlist`hx,1,1,and the registry row is committed and usable
+true,0,0,q,`handoffpublisher in exec ctx from caprows where lvl=`warn,1,1,the failure was logged as a WARN under the handoffpublisher context
+true,0,0,q,"logged[`warn;""publisher exploded""]",1,1,carrying the underlying reason
+true,0,0,q,"logged[`warn;""subscribe itself succeeded""]",1,1,and saying plainly that the subscribe stands
+true,0,0,q,0=count select from caprows where lvl=`error,1,1,"THE DISCRIMINATING ASSERTION - nothing was logged at error level. this is what separates the new behaviour from the old, where raiseerror logged an error and threw"
+true,0,0,q,"not logged[`warn;""already registered""]",1,1,and registerednote is NOT applied - its remedy (close the handle) describes a different failure and would be wrong here
 run,0,0,q,`.m.di.0subscriptions.pubsub set savedpubsub,1,1,restore the real publisher
-run,0,0,q,sub.unsubscribe[tphfor[`hx;2;lhx]],1,1,release the row the failed subscribe left behind
+run,0,0,q,sub.unsubscribe[tphfor[`hx;2;lhx]],1,1,"release the subscription, which is live and healthy"
 
 comment,,,,,,,resubscribe does NOT re-run the handoff - it re-establishes existing subscriptions over a new handle and never changes the table set, and the handoff is additive so the publisher already has them
 run,0,0,q,sub.init[depsrepub[]],1,1,republish on

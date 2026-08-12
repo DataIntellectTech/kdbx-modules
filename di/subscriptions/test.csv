@@ -1,7 +1,8 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,setup - fixtures are defined inline as before rows. k4unit runs every before row first and in file order so a fixture may call one defined above it
 before,0,0,q,sub:use`di.subscriptions,1,1,load di.subscriptions
-before,0,0,q,"BASE:""/tmp/disubscriptionstest"";",1,1,fixture: BASE
+before,0,0,q,"tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i; };",1,1,"fixture: tmpdir - honours TMPDIR rather than assuming /tmp exists, and appends the pid so two runs on one machine cannot collide"
+before,0,0,q,"BASE:tmpdir""disubscriptionstest"";",1,1,fixture: BASE
 before,0,0,q,D:2026.08.06;,1,1,fixture: D
 before,0,0,q,caprows:([]lvl:`symbol$();ctx:`symbol$();msg:());,1,1,fixture: caprows
 before,0,0,q,resetcap:{[] `caprows set 0#caprows; };,1,1,fixture: resetcap
@@ -9,6 +10,9 @@ before,0,0,q,caplog:`info`warn`error!( {[c;m] `caprows insert (`info;c;m)}; {[c;
 before,0,0,q,realhandlers:use`di.handlers;,1,1,fixture: realhandlers
 before,0,0,q,handlerdep:{[] :`register`remove!(realhandlers[`register];realhandlers[`remove]); };,1,1,fixture: handlerdep
 before,0,0,q,deps:{[] :`log`handlers!(caplog;handlerdep[]); };,1,1,fixture: deps
+before,0,0,q,realservers:use`di.servers;,1,1,fixture: realservers - di.servers is a HARD dependency (init.q `use`s it) so the suite drives the REAL module rather than a mock
+before,0,0,q,"srvseed:([]procname:`tp1`tp2`rdb1`dead1;proctype:`tickerplant`tickerplant`rdb`tickerplant;hpup:`::5010`::5011`::5012`::5013;w:3 4 5 0Ni;hits:4#0i;startp:4#.z.p;lastp:4#.z.p;endp:4#0Np);",1,1,fixture: srvseed - rows in di.servers' OWN SERVERS schema; dead1 carries a null handle and must never be returned
+before,0,0,q,seedservers:{[] `.m.di.0servers.SERVERS set srvseed; };,1,1,fixture: seedservers - populate di.servers' registry directly so the selection logic runs against the real getservers with no sockets and no mock
 before,0,0,q,markdeadfor:{[h] .z.pc h; };,1,1,fixture: markdeadfor
 before,0,0,q,mkreconnecttph:{[t;n;lf] :{[t;n;lf;msg] if[0b;()]; $[`tablelist~first msg;enlist t; `schemalist`logfilelist`rowcounts`date!(enlist(t;genschema[]);enlist(n;lf);(enlist t)!enlist n;D)]}[t;n;lf]; };,1,1,fixture: mkreconnecttph
 before,0,0,q,"throwingregdep:{[] :`register`remove!({[e;p;n;pr;f] '""register exploded""};realhandlers[`remove]); };",1,1,fixture: throwingregdep
@@ -57,6 +61,9 @@ before,0,0,q,mktphnolist:{[inner] :throwinglist[inner]; };,1,1,fixture: mktphnol
 before,0,0,q,"faithfultph:{[publishes;n;lf;msg] if[`tablelist~first msg; :publishes]; tabs:(),msg 1; pairs:{[pub;t] :$[t in pub;(t;genschema[]); (t;""Table "",string[t],"" not in list of stp pub/sub tables"")]}[publishes] each tabs; :`schemalist`logfilelist`rowcounts`date!(pairs;$[0=n;();enlist (n;lf)];tabs!count[tabs]#n;D); };",1,1,fixture: faithfultph
 before,0,0,q,mkfaithfultph:{[publishes;n;lf] :faithfultph[publishes;n;lf]; };,1,1,fixture: mkfaithfultph
 before,0,0,q,tphfor:{[t;n;lf] :mktph[enlist (t;genschema[]);n;lf]; };,1,1,fixture: tphfor
+before,0,0,q,realpubsub:use`di.pubsub;,1,1,fixture: realpubsub - di.pubsub is a HARD dependency (init.q `use`s it) so the republish handoff is asserted against the REAL publisher
+before,0,0,q,pubtables:{[] :@[{.m.di.0pubsub.t};::;{[e] `symbol$()}]; };,1,1,fixture: pubtables - what the local publisher is currently serving; empty before di.pubsub has been initialised
+before,0,0,q,depsrepub:{[] :`log`handlers`republish!(caplog;handlerdep[];1b); };,1,1,fixture: depsrepub - deps with the chained/segmented tickerplant republish role switched on
 before,0,0,q,"mktphlogdir:{[t;n;lf] f:tphfor[t;n;lf]; :{[f;msg] :(f msg),enlist[`logdir]!enlist `$BASE; }[f]; };",1,1,fixture: mktphlogdir
 before,0,0,q,mocktphbadshape:{[msg] :42; };,1,1,fixture: mocktphbadshape
 before,0,0,q,mocktphmissingkeys:{[msg] :enlist[`schemalist]!enlist enlist (`nosuch;genschema[]); };,1,1,fixture: mocktphmissingkeys
@@ -471,7 +478,7 @@ run,0,0,q,"lps:buildlog[""ps"";`pstab;2]",1,1,build a log
 run,0,0,q,sub.subscribe[tphfor[`pstab;2;lps];enlist`pstab;`;1b;1b],1,1,the rejected re-init left the working entry point intact - config is validated before any state is mutated
 
 comment,,,,,,,what the tickerplant reports about its logs - unreadable; absent; and empty
-fail,0,0,q,"sub.subscribe[tphfor[`ghosttab;3;hsym`$""/tmp/disubscriptionstest/nosuchlog""];enlist`ghosttab;`;1b;1b]",1,1,a log file that cannot be read is reported rather than silently skipped
+fail,0,0,q,"sub.subscribe[tphfor[`ghosttab;3;hsym`$BASE,""/nosuchlog""];enlist`ghosttab;`;1b;1b]",1,1,a log file that cannot be read is reported rather than silently skipped
 fail,0,0,q,sub.subscribe[mkrawtph[enlist(`nulltab;genschema[]);enlist (3;`);(enlist `nulltab)!enlist 3];enlist`nulltab;`;1b;1b],1,1,a message count with no log file is rejected
 run,0,0,q,"lzl:buildlog[""zl"";`zerotab;0]",1,1,build an empty log file
 run,0,0,q,resetupd[],1,1,reset the upd counter
@@ -598,8 +605,122 @@ run,0,0,q,"rfd:sub.subscribe[tphfor[`fdtab;2;lffd];enlist`fdtab;fdsyms;1b;1b]",1
 true,0,0,q,(enlist`fdtab)~rfd`subtables,1,1,the dict form is accepted rather than rejected as a bad sym selector
 true,0,0,q,2=count fdtab,1,1,and the replay runs UNFILTERED as legacy replayupd does - the dict is a tickerplant-side filter the log replay cannot evaluate
 
+comment,,,,,,,getsubscriptionhandles - resolve live tickerplant handles by proctype and/or procname. ported from TorQ .sub.getsubscriptionhandles (code/common/subscriptions.q:11)
+comment,,,,,,,di.servers is a HARD dependency reached through init.q's `use`, so there is nothing to inject and no absent-dependency case to test. seeding its registry exercises the REAL getservers
+run,0,0,q,seedservers[],1,1,populate di.servers with four processes - three live, one with a null handle
+true,0,0,q,4=count .m.di.0servers.SERVERS,1,1,the seed landed in di.servers' own state
+true,0,0,q,3=count realservers.getservers[`],1,1,and the real getservers sees three live rows through it
+
+comment,,,,,,,the two call shapes the four shipped TorQ processes actually use
+true,0,0,q,(`tp1`tp2)~exec procname from sub.getsubscriptionhandles[`tickerplant;()],1,1,rdb.q:163 and wdb.q:540 shape - a proctype with () for procname returns the tickerplants
+true,0,0,q,(enlist`tp2)~exec procname from sub.getsubscriptionhandles[`;`tp2],1,1,chainedtp.q:71 and sctp.q:15 shape - ` for proctype with a named process returns just that process
+
+comment,,,,,,,` matches every row and () matches none - and () additionally flips the combine from intersection to union
+true,0,0,q,(`tp1`tp2`rdb1)~exec procname from sub.getsubscriptionhandles[`;`],1,1,both arguments ` returns every live row
+true,0,0,q,0=count sub.getsubscriptionhandles[();()],1,1,both arguments () is a union of nothing with nothing
+true,0,0,q,(enlist`rdb1)~exec procname from sub.getsubscriptionhandles[`rdb;()],1,1,union mode - the proctype match alone
+true,0,0,q,(enlist`tp1)~exec procname from sub.getsubscriptionhandles[();`tp1],1,1,union mode - the procname match alone
+true,0,0,q,(enlist`tp1)~exec procname from sub.getsubscriptionhandles[`tickerplant;`tp1],1,1,intersection mode - both arguments agree on one row
+true,0,0,q,0=count sub.getsubscriptionhandles[`rdb;`tp1],1,1,intersection mode - the arguments disagree so nothing matches
+true,0,0,q,(`tp1`tp2`rdb1)~exec procname from sub.getsubscriptionhandles[`tickerplant`rdb;()],1,1,a proctype LIST matches any of the listed types
+true,0,0,q,(`tp1`rdb1)~exec procname from sub.getsubscriptionhandles[`;`tp1`rdb1],1,1,a procname LIST matches any of the listed names
+true,0,0,q,0=count sub.getsubscriptionhandles[`nosuch;()],1,1,an unmatched proctype returns an empty table rather than signalling
+
+comment,,,,,,,result shape and hygiene
+true,0,0,q,`procname`proctype`w~cols sub.getsubscriptionhandles[`;`],1,1,the result is projected to the three columns a subscribe caller needs
+true,0,0,q,98h=type sub.getsubscriptionhandles[`;`],1,1,the result is a table
+true,0,0,q,not `dead1 in exec procname from sub.getsubscriptionhandles[`;`],1,1,a null handle is never returned - di.servers yields live rows only
+true,0,0,q,"(count distinct r)=count r:sub.getsubscriptionhandles[`tickerplant;`tp1]",1,1,combining the two lookups leaves no duplicate rows
+
+comment,,,,,,,argument validation
+fail,0,0,q,sub.getsubscriptionhandles[42;()],1,1,a non-symbolic proctype is refused
+fail,0,0,q,sub.getsubscriptionhandles[`;42],1,1,a non-symbolic procname is refused
+fail,0,0,q,"sub.getsubscriptionhandles[(1;`a);()]",1,1,a NON-EMPTY general list is refused - only () is meaningful as a general list here
+
+comment,,,,,,,api registration
+true,0,0,q,`getsubscriptionhandles in exec name from sub.getapimeta[],1,1,getsubscriptionhandles is documented in the api metadata
+
+comment,,,,,,,the hard dependency survives a re-init - there is no wiring to lose
+run,0,0,q,sub.init[deps[]],1,1,re-init
+true,0,0,q,(`tp1`tp2)~exec procname from sub.getsubscriptionhandles[`tickerplant;()],1,1,still resolves after a re-init - a module import is not per-init state
+
+
+comment,,,,,,,republish - the di.pubsub half of the FRAMEWORK tier edge. a chained or segmented tickerplant subscribes upstream and serves the SAME tables downstream (TorQ chainedtp.q:71-82 and sctp.q:15-25)
+comment,,,,,,,OFF by default - a plain rdb or wdb subscriber consumes a feed and must not silently start publishing one
+run,0,0,q,sub.init[deps[]],1,1,init with republish left at its default
+run,0,0,q,"lrpa:buildlog[""rpa"";`rpa;2]",1,1,build a log for the default-off case
+run,0,0,q,"sub.subscribe[tphfor[`rpa;2;lrpa];enlist`rpa;`;1b;1b]",1,1,subscribe normally
+true,0,0,q,not `rpa in pubtables[],1,1,the local publisher was NOT told about the table - republish is off
+
+comment,,,,,,,switched on - the tables subscribe defines at root are handed to the local di.pubsub
+run,0,0,q,sub.init[depsrepub[]],1,1,re-init with republish on
+run,0,0,q,"lrpb:buildlog[""rpb"";`rpb;2]",1,1,build a log
+run,0,0,q,"sub.subscribe[tphfor[`rpb;2;lrpb];enlist`rpb;`;1b;1b]",1,1,subscribe with republish on
+true,0,0,q,`rpb in pubtables[],1,1,di.pubsub is now serving the subscribed table downstream
+true,0,0,q,"`time`sym`price`size~cols (.m.di.0pubsub.schemas)`rpb",1,1,and di.pubsub extracted its schema from the table defined at root - the handoff is real, not just a name in a list
+
+comment,,,,,,,di.pubsub setsubtables REPLACES its table list (pubsub.q:119) so the handoff must pass the accumulated union - a per-call list would silently drop earlier subscriptions
+run,0,0,q,"lrpc:buildlog[""rpc"";`rpc;2]",1,1,build a second log
+run,0,0,q,"sub.subscribe[tphfor[`rpc;2;lrpc];enlist`rpc;`;1b;1b]",1,1,subscribe to a SECOND table
+true,0,0,q,`rpc in pubtables[],1,1,the new table is served
+true,0,0,q,`rpb in pubtables[],1,1,AND the first one still is - the second subscribe did not replace it
+
+comment,,,,,,,ADDITIVE - the handoff unions with what the publisher already serves. a registry-only union would drop a table at the next UNRELATED subscribe, because unsubscribe deletes its registry rows. and shrinking toward empty is worse than useless: setsubtables with an empty list makes di.pubsub fall back to publishing EVERY table at root (pubsub.q:125)
+run,0,0,q,"lrpu:buildlog[""rpu"";`rpu;2]",1,1,build a log for the table that will be unsubscribed
+run,0,0,q,rpuh:tphfor[`rpu;2;lrpu],1,1,a tickerplant stand-in
+run,0,0,q,sub.subscribe[rpuh;enlist`rpu;`;1b;1b],1,1,subscribe to it with republish on
+true,0,0,q,`rpu in pubtables[],1,1,it is served
+run,0,0,q,sub.unsubscribe[rpuh],1,1,unsubscribe - this deletes the registry row
+true,0,0,q,`rpu in pubtables[],1,1,unsubscribe alone leaves the publisher untouched
+run,0,0,q,"lrpv:buildlog[""rpv"";`rpv;2]",1,1,build a log for an UNRELATED table
+run,0,0,q,sub.subscribe[tphfor[`rpv;2;lrpv];enlist`rpv;`;1b;1b],1,1,subscribe to something else entirely
+true,0,0,q,`rpv in pubtables[],1,1,the new table is served
+true,0,0,q,`rpu in pubtables[],1,1,"THE REGRESSION - the unsubscribed table SURVIVES. a registry-only union dropped it here, silently stopping republishing at a moment unconnected to the unsubscribe that caused it"
+
+comment,,,,,,,a table that is not defined at root must not be handed over - di.pubsub.init calls value on each name (pubsub.q:84) and would throw
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"lrpd:buildlog[""rpd"";`rpd;2]",1,1,build a log
+run,0,0,q,"sub.subscribe[tphfor[`rpd;2;lrpd];enlist`rpd;`;1b;1b]",1,1,a normal subscribe still succeeds with the guard in place
+true,0,0,q,0=count select from caprows where lvl=`error,1,1,the handoff logged no error - every table it passed on was resolvable at root
+
+comment,,,,,,,init validates the key
+fail,0,0,q,"sub.init[`log`handlers`republish!(caplog;handlerdep[];`yes)]",1,1,a non-boolean republish is rejected
+
+comment,,,,,,,REGRESSION - di.pubsub assigns .z.pc at load. it now chains rather than replacing, but importing it must never cost this module its observer. asserted through the STORED flag, since di.handlers list was MEASURED to keep reporting registrations that no longer fire
+run,0,0,q,sub.init[deps[]],1,1,re-init to reinstall the observer
+run,0,0,q,"lrpe:buildlog[""rpe"";`rpe;2]",1,1,build a log
+run,0,0,q,"rpeh:tphfor[`rpe;2;lrpe]",1,1,a tickerplant stand-in to subscribe over
+run,0,0,q,"sub.subscribe[rpeh;enlist`rpe;`;1b;0b]",1,1,subscribe
+true,0,0,q,"any exec active from sub.getsubscriptions[] where handle~\:rpeh",1,1,the subscription is live
+run,0,0,q,markdeadfor[rpeh],1,1,fire .z.pc for that handle - this only works if our observer is genuinely still wired
+true,0,0,q,"not any exec active from sub.getsubscriptions[] where handle~\:rpeh",1,1,the observer fired and marked it dead - importing di.pubsub did not silently unhook us
+
+
+comment,,,,,,,the handoff's ERROR branch. no natural trigger exists - every table is filtered to ones defined at root before di.pubsub sees them - so it is reached by replacing the module handle init.q captured. without this the branch would ship never having executed
+run,0,0,q,sub.init[depsrepub[]],1,1,republish on
+run,0,0,q,savedpubsub:.m.di.0subscriptions.pubsub,1,1,keep the real handle
+run,0,0,q,"`.m.di.0subscriptions.pubsub set `setsubtables`init`getsubtables!({[x] '""publisher exploded""};{[] };{[] `symbol$()})",1,1,swap in a publisher whose setsubtables throws
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"lhx:buildlog[""hx"";`hx;2]",1,1,build a log
+fail,0,0,q,sub.subscribe[tphfor[`hx;2;lhx];enlist`hx;`;1b;1b],1,1,a failing handoff makes subscribe signal rather than pass silently
+true,0,0,q,`handoffpublisher in exec ctx from caprows where lvl=`error,1,1,"logged under the handoffpublisher context - the logged[] fixture matches message text, the function name is the ctx"
+true,0,0,q,"logged[`error;""failed to register subscribed tables""]",1,1,and the message says what failed
+true,0,0,q,"logged[`error;""already registered""]",1,1,"and carries registerednote - the handoff fires AFTER the tickerplant has registered this handle, so the caller must be told to close it"
+true,0,0,q,1=count select from sub.getsubscriptions[] where tabs~\:enlist`hx,1,1,"KNOWN ORDERING - the subscription IS registered even though subscribe threw. the handoff runs last, after the registry insert, which is exactly why the error carries registerednote"
+run,0,0,q,`.m.di.0subscriptions.pubsub set savedpubsub,1,1,restore the real publisher
+run,0,0,q,sub.unsubscribe[tphfor[`hx;2;lhx]],1,1,release the row the failed subscribe left behind
+
+comment,,,,,,,resubscribe does NOT re-run the handoff - it re-establishes existing subscriptions over a new handle and never changes the table set, and the handoff is additive so the publisher already has them
+run,0,0,q,sub.init[depsrepub[]],1,1,republish on
+run,0,0,q,"lry:buildlog[""ry"";`ry;2]",1,1,build a log
+run,0,0,q,ryh:tphfor[`ry;2;lry],1,1,a tickerplant stand-in
+run,0,0,q,sub.subscribe[ryh;enlist`ry;`;1b;1b],1,1,subscribe
+true,0,0,q,`ry in pubtables[],1,1,the publisher is serving it
+run,0,0,q,markdeadfor[ryh],1,1,drop the connection
+run,0,0,q,sub.resubscribe[tphfor[`ry;2;lry]],1,1,re-establish over a new handle
+true,0,0,q,`ry in pubtables[],1,1,the publisher still serves it after a resubscribe - nothing was lost by not re-running the handoff
 comment,,,,,,,teardown releases the process-global registration init installed
 run,0,0,q,sub.teardown[],1,1,tear down
 true,0,0,q,not `subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,the .z.pc registration was removed
 
-after,0,0,q,teardownfixture[],1,1,kill the peer and remove the temp directories
+after,0,0,q,teardownfixture[],1,1,remove the temp log directory

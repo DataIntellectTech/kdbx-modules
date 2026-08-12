@@ -28,11 +28,39 @@ Tickerplant subscription management for kdb+ subscriber processes (RDB, WDB, cha
 | logger | `` `log `` | yes | `info`, `warn` and `error` - each binary `{[c;m]}` where `c` is a symbol context and `m` is a string. All three are called by this module |
 | handlers | `` `handlers `` | yes | `register` and `remove`, per the `di.handlers` contract. Used to install a `.z.pc` observer that marks a dropped connection's subscriptions dead |
 
-**Hard dependencies:** none. Both dependencies are injected, so the module imports no other `di.*` module.
+**Hard dependencies.** The modularisation plan places `di.subscriptions` in the **FRAMEWORK** tier with `-> di.servers, di.pubsub`. Both are genuine module imports, `use`d in `init.q` before the implementation loads (the shape `di.eodtime` uses for `di.tz`), declared in `deps.q` and enforced by `di.depcheck` (`di.servers` ≥ `0.1.0`, `di.pubsub` ≥ **`0.2.0`** — that release adds `getsubtables` and, critically, makes `di.pubsub` *chain* `.z.pc` instead of replacing it; a `0.1.0` `di.pubsub` would silently destroy this module's own dropped-connection observer). The module will not load without them.
 
-Both deps must be passed to `init` inside the `deps` dict. The module throws immediately if either is absent or malformed - there is no fallback logger and no degraded no-handlers mode. The `log` dict must already match the binary `{[c;m]}` contract; the module does not detect or adapt other shapes (e.g. a raw `kx.log` instance, which is monadic). To use `di.log`, pass its `logdict``log`.
+| Import | Used for |
+|---|---|
+| `di.servers` | `getsubscriptionhandles` resolves tickerplant handles off `di.servers.SERVERS`, calling only `getservers` |
+| `di.pubsub` | the **local** publisher this process republishes through — see `republish` below |
 
-Handle resolution is the **caller's** job. `di.rdb` and `di.wdb` obtain a tickerplant handle from `di.servers.gethandlebytype` and pass it in, so there is no `di.servers` dependency here.
+`log` and `handlers` must be passed to `init` inside the `deps` dict. The module throws immediately if either is absent or malformed - there is no fallback logger and no degraded no-handlers mode. The `log` dict must already match the binary `{[c;m]}` contract; the module does not detect or adapt other shapes (e.g. a raw `kx.log` instance, which is monadic). To use `di.log`, pass its `logdict``log`.
+
+**`republish` (default `0b`) turns on the `di.pubsub` half.** A chained or segmented tickerplant subscribes upstream and serves the *same* tables downstream — TorQ splits that across `chainedtp.q:71-82` and `sctp.q:15-25`, which subscribe, then publish through `.ps.publish` and serve their own table list straight out of the pubsub registry (`chainedtp.q:7`, `tablelist:{.stpps.t}`). With `republish` set, a successful `subscribe` hands the tables it defined at root to the local `di.pubsub` (`setsubtables` then `init`), so it extracts their schemas and can fan out to this process's own subscribers.
+
+It is **off by default**: a plain RDB or WDB consumes a feed and must not silently start publishing one.
+
+The handoff is **additive** — it unions the registry's tables with what `di.pubsub` already serves (read back via `getsubtables`), so the published set only ever grows within a process. Two measured reasons:
+
+- `di.pubsub`'s `setsubtables` **replaces** its list (`pubsub.q:119`), and `unsubscribe` deletes its registry rows. A union computed purely from the registry therefore dropped an unsubscribed table at the next *unrelated* `subscribe` — downstream subscribers silently stopped receiving it, at a moment disconnected from the `unsubscribe` that caused it.
+- Shrinking toward empty is worse than useless: `setsubtables` with an empty list does **not** mean "publish nothing". `di.pubsub` then falls back to publishing **every** table at root (`pubsub.q:125`).
+
+**What `republish` does and does not do.** It makes the local publisher *able to serve* the subscribed tables — schemas extracted, ready for a downstream `subscribe`. It does **not** forward the data: that is the process's own `upd`, exactly as in TorQ, where `chainedtp.q`'s `tickpub` (`:96-99`) is chainedtp's code, not `.sub`'s. A chained tickerplant built on this module therefore wires one line:
+
+```q
+upd:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]; pubsub.publish[t;x]}
+```
+
+That split is deliberate: this module owns the *subscription*, the caller owns what it does with each message. The integration suite proves the whole chain across three real processes — an upstream tickerplant, a middle process using this module with `republish` on, and a downstream subscriber.
+
+Legacy's chained tickerplants also seed `.u.d`/`.u.icounts` from the subscribe result. Those are tickerplant sequence-and-date state, which `di.pubsub` does not own (it has no `i`, `j`, `icounts` or `d`); the values are returned to the caller in `subscribe`'s result as `d` and `icounts` so whatever owns a tickerplant log can apply them.
+
+A table that is unsubscribed stays advertised and simply stops receiving data — a visible, inert condition rather than a silent disappearance. Tables not defined at root are filtered out first, since `di.pubsub.init` calls `value` on each name (`pubsub.q:84`).
+
+Note the module still speaks the publisher's **wire** protocol separately: `subdetailsfunc` and `tablelistfunc` name functions evaluated on the *remote* tickerplant, so they resolve in that process. Legacy is the same shape — its `.u.sub`/`.u.i`/`.u.L`/`.u.icounts`/`.u.d` references (`subscriptions.q:100-101`) sit inside lambdas sent to the tickerplant handle. The integration suite's peer runs the real `di.pubsub`, so that half is exercised across a genuine process boundary.
+
+**⚠️ Import order is load-bearing.** `di.pubsub` assigns `.z.pc` at load (`pubsub.q:75`). It now *chains* onto whatever already owns the event, but the `use` in `init.q` runs at module load and `init` registers this module's `.z.pc` observer afterwards — that ordering is what keeps the observer alive, and it is asserted in `test.csv` rather than left to comment.
 
 The configuration keys `subdetailsfunc` and `tablelistfunc` are optional - omit them and the module calls the tickerplant's `subdetails` and `tablelist`. See Initialisation.
 
@@ -49,6 +77,7 @@ The configuration keys `subdetailsfunc` and `tablelistfunc` are optional - omit 
 | `` `subdetailsfunc `` | no | Symbol naming the tickerplant-side function to call. Default: `` `subdetails `` |
 | `` `tablelistfunc `` | no | Symbol naming the tickerplant-side function that lists the available tables, used to resolve a `` ` `` request into a concrete list. Default: `` `tablelist `` |
 | `` `unsubscribefunc `` | no | Symbol naming a tickerplant-side function that releases this connection's subscriptions, called by `unsubscribe`. Default: `` ` `` (none) — see Notes |
+| `` `republish `` | no | Boolean. Hand the subscribed tables to the local `di.pubsub` so this process can serve them downstream — the chained/segmented tickerplant role. Default: `0b` |
 
 `init` must be called before any operational function - `subscribe`, `unsubscribe`, `subscribed`, `getsubscriptions` and `teardown` each throw a clear error if it has not been. `getapimeta` and `version` are metadata and deliberately work without it, so `di.torq` can collect api rows and `di.depcheck` can read the version before anything is initialised. `init` registers a `.z.pc` observer through `di.handlers` and is idempotent - a second call refreshes the dependencies and replaces the registration in place rather than duplicating it, and leaves the registry intact.
 
@@ -116,6 +145,33 @@ sub.getsubscriptions[]
 ```
 `tabs` and `syms` are general columns, so symbols display without backticks and an all-syms subscription shows an empty `syms`.
 
+### `getsubscriptionhandles[proctype;procname]`
+Resolve live tickerplant handles by proctype and/or procname, projected to the `procname`, `proctype`, `w` triple a caller needs before it can subscribe. Reads `di.servers`, this module's one hard dependency. Ported from legacy `.sub.getsubscriptionhandles` (`code/common/subscriptions.q:11`), which is registered public api there (`apidetails.q:67`) and called by `rdb.q:163`, `wdb.q:540`, `chainedtp.q:71` and `sctp.q:15`.
+
+```q
+sub.getsubscriptionhandles[`tickerplant;()]      / rdb / wdb shape - by proctype
+/ procname proctype    w
+/ ----------------------
+/ tp1      tickerplant 4
+
+sub.getsubscriptionhandles[`;`tp1]               / chained / segmented tp shape - by procname
+```
+
+The two arguments are **not interchangeable**, and this is the whole of the function's behaviour:
+
+| Argument value | Meaning |
+|---|---|
+| `` ` `` | match **every** row |
+| `()` | match **nothing**, and switch the combine from intersection to union |
+| symbol or symbol list | match those values |
+
+So `[`tickerplant;()]` unions the proctype matches with nothing and yields the tickerplants, while `` [`;`tp1] `` intersects every row with the named one and yields just that process. Only live connections are ever returned — `di.servers` excludes null handles.
+
+**Two deliberate differences from legacy**, both forced by `di.servers`' contract:
+
+- Legacy took a third `attributes` argument and filtered on `.servers.SERVERS`'s `attributes` column. `di.servers`' `SERVERS` carries no such column, so the parameter is **dropped** rather than accepted and silently ignored — a filter that quietly does nothing hands back handles the caller believes were filtered. All four legacy call sites pass `()!()`.
+- Legacy passed `autoopen:1b` to retry dead connections on demand. `di.servers` returns live rows only and runs its own retry job, so reconnection is its concern now.
+
 ### `teardown[]`
 Remove the `.z.pc` registration installed by `init`, leaving no process-global residue. Afterwards `subscribe` is refused until `init` is called again — see Notes. `getsubscriptions`, `subscribed` and `unsubscribe` keep working, so a shutdown path can still inspect and release what it holds, and the registry is left intact.
 ```q
@@ -156,10 +212,13 @@ sub.init[`log`handlers!(logging.logdict`log;handlerdep)]
 / part way through a sym-filtered replay
 upd:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]];}
 
-/ the caller resolves the tickerplant handle. NB di.servers is not merged yet (feature-server), so
-/ on main today obtain the handle however the process already does - any open handle works
+/ the caller resolves the tickerplant handle. the usual route is di.servers directly:
 servers:use`di.servers
 tph:servers.gethandlebytype[`tickerplant;`any]
+
+/ or, having passed di.servers in as the `servers dep, through this module - the legacy
+/ .sub.getsubscriptionhandles route the TorQ rdb and wdb take:
+/   tph:first exec w from sub.getsubscriptionhandles[`tickerplant;()]
 
 / subscribe to everything and replay the log
 r:sub.subscribe[tph;`;`;1b;1b]
@@ -184,15 +243,32 @@ Two suites, following the convention `di.handlers` and `di.permissions` use. Bot
 fixtures inline as `before` rows; there is no separate fixture file, so neither depends on the
 working directory.
 
-**Unit suite** (`test.csv`) - 450 assertions, no child processes, no ports, no `QHOME`:
+**Unit suite** (`test.csv`) - 529 assertions, no child processes, no ports, no `QHOME`. It does need `di.servers` on `QPATH`, since the module imports it, and it drives the **real** `di.servers` rather than a mock: the fixtures seed its `SERVERS` registry directly, so the whole selection matrix runs against the genuine `getservers` without opening a socket:
 
 ```q
 k4unit:use`di.k4unit
 k4unit.moduletest`di.subscriptions
 ```
 
-**Integration suite** (`test_integration.csv`) - 73 assertions. It stands up a real q process as a
-tickerplant and drives it over genuine IPC, so it needs a q binary reachable via `QHOME`.
+**Integration suite** (`test_integration.csv`) - 131 assertions. It stands up a real q process as a
+tickerplant and drives it over genuine IPC, so it needs a q binary reachable via `QHOME`, plus
+`di.pubsub` and `di.servers` on `QPATH` - the two modules the dependency tree names, both exercised
+here as real modules rather than mocks.
+
+It runs up to **three** processes at once for the `republish` block: an upstream tickerplant, a
+middle process that subscribes through this module with `republish` on, and this test process acting
+as the downstream subscriber. That is the only way to prove the chained-tickerplant role - a
+subscriber that serves its own subscribers has to be at its own main loop, so it cannot be tested
+in-process. It does NOT need `di.timer`: `di.servers` validates a timer
+dict and schedules one retry job through it, which a stub satisfies, and this suite asserts nothing
+about that job.
+
+The peer is built on **`di.pubsub`** — it loads the real publisher, registers subscriptions through
+`di.pubsub.subscribe` and fans out through `di.pubsub.publish`, with only a thin `subdetails`
+adapter on top of the kind a modular tickerplant process would own. So the publisher half of the
+wire protocol is exercised by the actual module rather than a hand-rolled stand-in, including
+sym-filtered delivery, which `di.pubsub` decides. Assertions read `di.pubsub`'s own registry on the
+peer (`reqalldict`, `reqfilteredtbl`) so this cannot silently regress into a fake.
 `moduletest` only ever loads `test.csv` (`di/k4unit/init.q`), which is why these rows live in their
 own file - otherwise every unit run would spawn a process and bind a port. Load it explicitly:
 
@@ -211,7 +287,7 @@ loaded and would re-run against dirty module state, reporting spurious failures.
 self-contained: it inits `di.handlers` and `di.subscriptions` itself rather than inheriting setup
 from the unit rows.
 
-Together the two suites are 523 assertions (`true`, `fail` and `run` rows, excluding the fixture `before`/`after` rows) and wire the real merged `di.log` and `di.handlers` rather than mocks, so both injected contracts are proven end to end. Between them they cover: pre-`init` guards on every export; dependency validation (non-dict deps, each missing key, each malformed value); `init` arity asserted by observable effect rather than by "it did not throw"; idempotent re-init; the `VERSION` file and exported `version`; `getapimeta`; all-tables and sym-filtered replay; all four payload shapes a tickerplant may log; symbol-atom table and sym selectors; a multi-table log where only the requested table is defined; replay across two log files; requested-but-absent and offered-but-unrequested tables; a configured `subdetailsfunc`; partial, unreadable, absent and empty logs; a replay requested with no root `upd`; malformed `schemalist` **and** `logfilelist` shapes, including a non-table schema, a column-less table, a duplicated table name, and a keyed schema that must still be accepted; a negative message count, asserted with `replay:0b` as well so the guard cannot drift behind the replay branch; every `setschema`/`replay` combination, including `setschema:0b` with `replay:1b` on both the narrowed and all-syms paths; empty `tabs` and `syms` selectors; the double-subscribe guard and its release by `unsubscribe`; `unsubscribe` deleting rather than flagging, its idempotency, and its `warn` on an unheld handle; malformed tickerplant responses; `setschema:0b` preserving a populated table; `logdir` passthrough; and input validation on every argument.
+Together the two suites are 660 assertions (`true`, `fail` and `run` rows, excluding the fixture `before`/`after` rows) and wire the real merged `di.log` and `di.handlers` rather than mocks, so both injected contracts are proven end to end. Between them they cover: pre-`init` guards on every export; dependency validation (non-dict deps, each missing key, each malformed value); `init` arity asserted by observable effect rather than by "it did not throw"; idempotent re-init; the `VERSION` file and exported `version`; `getapimeta`; all-tables and sym-filtered replay; all four payload shapes a tickerplant may log; symbol-atom table and sym selectors; a multi-table log where only the requested table is defined; replay across two log files; requested-but-absent and offered-but-unrequested tables; a configured `subdetailsfunc`; partial, unreadable, absent and empty logs; a replay requested with no root `upd`; malformed `schemalist` **and** `logfilelist` shapes, including a non-table schema, a column-less table, a duplicated table name, and a keyed schema that must still be accepted; a negative message count, asserted with `replay:0b` as well so the guard cannot drift behind the replay branch; every `setschema`/`replay` combination, including `setschema:0b` with `replay:1b` on both the narrowed and all-syms paths; empty `tabs` and `syms` selectors; the double-subscribe guard and its release by `unsubscribe`; `unsubscribe` deleting rather than flagging, its idempotency, and its `warn` on an unheld handle; malformed tickerplant responses; `setschema:0b` preserving a populated table; `logdir` passthrough; and input validation on every argument.
 
 It also covers the TorQ-protocol cases this module is built to survive: a `0W` message count replaying a whole log, and the same count over a **truncated** log being refused with nothing replayed and no table defined; a **shared** log reported once per table being collapsed to one full replay, with the per-table row counts asserted individually so a regression to the old per-entry replay is caught rather than merely the total; an unshared file in the same response keeping its own count and raising no warn; a corrupt shared log refused, proving the corruption guard covers the collapse trigger and not only the `0W` sentinel; an exact duplicate entry rejected; `` ` `` resolved through `tablelist` with the *resolved* list asserted to be what `subdetails` actually received; the fallback to `` ` `` when a tickerplant offers no `tablelist`; a configured `tablelistfunc` asserted to be called **first**, ahead of `subdetails`; and the two legitimate `rowcounts` shapes accepted with atoms and tables rejected.
 
@@ -256,7 +332,7 @@ The integration block subscribes to a genuinely separate tickerplant process ove
 - **After `teardown`, a new `subscribe` is refused — reading and releasing still work.** `teardown` removes the `.z.pc` observer, and without it a dropped tickerplant's registry row keeps reporting live for as long as `.z.W` still holds the handle number, and *indefinitely* once kdb+ reissues that number to another connection. That is exactly the failure the `handlers` dependency exists to prevent, so taking a **new** subscription in that state now throws and names the recovery (`call init again`) rather than degrading silently into the `.z.W`-only mode this module documents as insufficient. `getsubscriptions`, `subscribed` and `unsubscribe` deliberately keep working, because a shutdown path needs to inspect and release what it already holds. `init` is idempotent and restores the observer. This reverses an earlier deliberate choice — the previous behaviour let the subscribe through and accepted degraded liveness tracking — because silent degradation is inconsistent with how every other guard in this module behaves
 - **The root `upd` must accept two payload shapes, and which one it gets depends on the subscription.** An unfiltered replay hands `upd` the logged payload exactly as the tickerplant wrote it — normally a list of columns. A **sym-filtered** replay hands it a **table**, because `replayfilter` has to materialise one to filter by column name rather than by position. Legacy's `replayupd` behaves the same way, so this is inherited rather than introduced, but it is a real contract: an `upd` written only for the column-list shape throws part-way through a filtered replay, after earlier messages have already been applied. Write it as `` {[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]} ``, which is what the usage example and the test fixtures use. The live feed is unaffected — it never passes through `replayfilter`
 - **Live-feed filtering is the tickerplant's job, not this module's.** `replayfilter` is installed only for the duration of a narrowed replay and torn down the moment it ends; live messages after that reach the caller's `upd` unfiltered by anything here. That is correct, not a leak: the `subdetails` call itself registers the handle for tickerplant-side filtered delivery as a *side effect*. In shipped TorQ, `subdetails` calls `.ps.subscribe`, which **is** `.u.sub`, which routes through `suball`/`subfiltered` to `selfiltered` - and that records `(tbl;handle;filts;columns)` with `filts` built as `` (in;`sym;syms) ``, which `pub` then evaluates per subscriber. Replay needs its own filter only because it bypasses the publish layer entirely and reads the log file directly. Without this note a reader seeing `replayfilter` removed right after the replay would reasonably read it as a bug
-- **That delegation is verified end to end.** Measured against a live TorQ segmented tickerplant: a sym-filtered subscribe on a fresh connection registers `` filts: ,,,(in;`sym;,,`S1) `` in the tickerplant's `.stpps.subrequestfiltered`, leaves `subrequestall` empty for that table, and delivers only the matching rows live — two of three published. So the filtering really is the tickerplant's, not an assumption about it
+- **That delegation is verified end to end.** Measured against a live TorQ v1.0 segmented tickerplant (`singular` multilog, `replayperiod day`) at the time the delegation was written — that instance is long gone, so treat it as a recorded measurement of the subscribe/filter path, not of later additions such as `getsubscriptionhandles` or `republish`, which are covered by the suites instead: a sym-filtered subscribe on a fresh connection registers `` filts: ,,,(in;`sym;,,`S1) `` in the tickerplant's `.stpps.subrequestfiltered`, leaves `subrequestall` empty for that table, and delivers only the matching rows live — two of three published. So the filtering really is the tickerplant's, not an assumption about it
 - **The `0W` message count means "replay everything", not "more than I have".** A segmented tickerplant reports `0Wj` for every **closed** log under `replayperiod` `` `day ``. It is resolved to the log's own readable total rather than forwarded to `-11!`, because `-11!(0W;log)` over a corrupt log replays the good prefix and only *then* throws - precisely the half-populated state the preflight exists to prevent. A corrupt log is **refused** on this path, even though its readable prefix could be replayed: the whole log was asked for, so a prefix would be a silently incomplete history. On the ordinary finite-count path, damage lying *beyond* the messages actually needed is still tolerated
 - **A shared log is replayed once, in full.** In `singular` and `periodic` multilog modes a segmented tickerplant writes every table to **one** file, and reports that file once *per table* with a different count each time. Replaying it once per entry re-applies the head of the file - measured, `(4;LF)` then `(2;LF)` over a six-message log applies messages 0 and 1 twice and never reaches 4 and 5. Duplicate entries for one file are therefore collapsed to a single replay of the whole file, with the table filter discarding the rest, and the condition is logged at `warn`. **The trade-off is trailing duplicates, not missing rows:** messages logged between the `subdetails` call and the replay arrive twice, once from the log and once on the live feed. That is deliberate - the alternative (summing the per-table counts) never duplicates but silently *drops* rows whenever the shared log also carries tables you did not subscribe to, and a missing row is invisible and permanent where a duplicate is visible and diagnosable. An **exact** duplicate entry - same file *and* same count - is rejected instead, because no shipped tickerplant can emit one: the segmented producer applies `distinct` to these pairs itself, and the chained and standard producers emit at most one entry each
 - **A whole-file replay is narrowed to the offered tables; a per-table one is not.** An all-tables, all-syms subscribe normally replays the log raw, with no filter wrapper — correct for a per-table log, because the tickerplant returned that file *because* it belongs to a table it offered. It is not correct for a file read to its end, and the difference is structural rather than hypothetical: a segmented tickerplant opens logs for `` tables[`.] except `currlog `` (`stplog.q`, `logtabs`) but publishes only `` tables[] except `currlog`heartbeat`logmsg`svrstoload `` (`segmentedtickerplant.q`, `.stpps.init`), and `.stpps.upd` applies **no** membership check before logging. So in `singular` and `periodic` multilog modes the one shared file can legitimately carry tables the tickerplant declined to offer a schema for, and replaying it raw would drive the caller's `upd` with a table it never subscribed to — throwing part-way through a replay, or silently creating a wrongly-shaped table at root. Both whole-file triggers are narrowed to the subscribed set: the shared-log collapse and the `0W` `` `day `` sentinel, which has the same exposure. The sym filter still passes straight through when `syms` is `` ` ``, so the cost is one table-membership test per message on that path and nothing else. This was found by adversarial probe rather than by the suite, and it pre-dated the shared-log collapse — the collapse widened it from a leaked prefix to a leaked whole file rather than introducing it
@@ -266,5 +342,5 @@ The integration block subscribes to a genuinely separate tickerplant process ove
 - A malformed `logfilelist` is rejected on the same terms as `schemalist` — a non-list, an entry that is not a `(messagecount;logfile)` pair, a non-integer count or a non-symbol log file. A **negative** count is rejected too, which no shape check catches, since `-1` is a perfectly good integer; that guard lives in the response validation rather than the replay preflight so it also fires when `replay` is `0b`
 - `subdetails` is TorQ's real protocol, defined at root by `chainedtp.q` and `segmentedtickerplant.q`, returning `` `schemalist`logfilelist`rowcounts`date `` and optionally `` `logdir ``. Both also define `tablelist` at root, which is how `` ` `` is resolved. The key names and shapes here were taken from that source and are exercised against a tickerplant process built to the same protocol in the integration tests; the module has **not** yet been run against a live TorQ chained or segmented tickerplant. `di.tickerplant` is not built yet - when it lands, point `subdetailsfunc` at its entry point if the name differs
 - Not implemented: remote-log streaming. The subscriber is assumed to share the tickerplant's filesystem and replays from the log path the tickerplant reports — the classic tick assumption, and what legacy `.sub` does. This is a capability TorQ does not have either, rather than a port omission
-- The modularisation plan lists `di.servers` and `di.pubsub` as dependencies of this module. Neither is used: handle resolution is the caller's job, and `di.pubsub` is the publisher side - the tickerplant's own subscriber registry - which a subscribing process never calls
+- The modularisation plan places this module in the FRAMEWORK tier with `-> di.servers, di.pubsub`. Both are real module imports, `use`d in `init.q` and declared in `deps.q`. `di.servers` backs `getsubscriptionhandles`; `di.pubsub` is the **local** publisher a chained or segmented tickerplant republishes through, wired by the `republish` config key. The module also speaks the *remote* publisher's wire protocol over IPC, which is a separate thing from the local import and is exercised by the integration suite's peer. See Dependencies
 - `unsubscribe` is the supported way to close the local-close liveness gap, but it is a **cooperative** mechanism, not a structural one: kdb+ exposes no way to detect an *unannounced* `hclose`, and no way to tell whether a reissued descriptor is still the same remote. A caller that closes a tickerplant handle without calling `unsubscribe` first, and whose descriptor is then reissued, can still leave a stale row appearing live. Tickerplant death, and any local close that goes through `unsubscribe`, are both exact. With `unsubscribefunc` configured the tickerplant-side release is exact too

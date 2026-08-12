@@ -38,6 +38,12 @@ defaulttablelistfunc:`tablelist;
 / a real release; leave it unset and unsubscribe stays local bookkeeping and says so
 defaultunsubscribefunc:`;
 
+/ whether a successful subscribe hands the tables it defined at root to the LOCAL di.pubsub, so this
+/ process can serve them downstream. off by default: a plain rdb or wdb subscriber consumes a feed and
+/ must not silently start publishing one. set it and this module fills the chained/segmented
+/ tickerplant role TorQ splits across chainedtp.q and sctp.q - see handoffpublisher
+defaultrepublish:0b;
+
 / appended to every error raised AFTER the subdetails call. asking a tickerplant for the schemas IS
 / .u.sub (pubsub.q defines .ps.subscribe:.u.sub), so the call registers this handle for live delivery
 / as a side effect, and the subdetails protocol has no unsubscribe verb to undo it - tickerplant-side
@@ -161,6 +167,8 @@ init:{[deps]
   / module's config. ONE dict carrying dependency and config keys side by side - the call shape
   / di.torq wires every module with.
   / e.g. sub.init[`log`handlers!(logging.logdict`log;handlerdep)]
+  / NB di.servers is NOT injected - it is a HARD dependency imported with `use` in init.q, per the
+  / modularisation plan's tier table (di.subscriptions -> di.servers, di.pubsub). see deps.q
   / NB build deps as ONE multi-key dict. joining logdict to a single-key dict - i.e.
   / logdict,enlist[`handlers]!enlist handlerdep - throws 'mismatch: both value sides are tables
   / init has ONE process-global side effect: a .z.pc observer registered through di.handlers, which
@@ -192,6 +200,10 @@ init:{[deps]
   usf:$[`unsubscribefunc in key deps;deps`unsubscribefunc;defaultunsubscribefunc];
   if[not -11h=type usf;
     '"di.subscriptions: unsubscribefunc must be a symbol naming the tickerplant-side function, or ` for none"];
+  / off by default: only a chained or segmented tickerplant republishes what it subscribed to
+  rpb:$[`republish in key deps;deps`republish;defaultrepublish];
+  if[not -1h=type rpb;
+    '"di.subscriptions: republish must be a boolean"];
   fresh:not initialised[];
   .z.m.loginfo:(deps`log)`info;
   .z.m.logwarn:(deps`log)`warn;
@@ -201,6 +213,7 @@ init:{[deps]
   .z.m.subdetailsfunc:sdf;
   .z.m.tablelistfunc:tlf;
   .z.m.unsubscribefunc:usf;
+  .z.m.republish:rpb;
   if[fresh;.z.m.subscriptions:subscriptionsschema];
   / cleared BEFORE the registration is attempted and set only once it has succeeded, so a register
   / that throws leaves the flag false rather than unset or stale. that matters twice: .z.m.subscriptions
@@ -669,6 +682,39 @@ buildreturn:{[details;subtabs]
 
 / public api
 
+handoffpublisher:{[]
+  / hand the tables this process has subscribed to over to the LOCAL di.pubsub, so it can serve them
+  / downstream. this is the chained/segmented tickerplant role: TorQ's chainedtp.q (:71-82) and
+  / sctp.q (:15-25) subscribe upstream and republish the same tables, serving their own table list
+  / straight out of the pubsub registry (chainedtp.q:7, tablelist:{.stpps.t}).
+  / OFF by default - a plain rdb or wdb subscriber must not silently become a publisher.
+  / passes the union across the WHOLE registry, not just the tables from this subscribe call:
+  / di.pubsub's setsubtables REPLACES its table list (pubsub.q:119), so sending only the latest
+  / call's tables would drop everything subscribed before it
+  / read EXPLICITLY - a bare read would resolve to .z.m.republish just the same, but every other
+  / state access in this module is explicit and the bare form is the one thing qlint flags
+  if[not .z.m.republish;:()];
+  / ADDITIVE - unions with what the publisher already serves rather than recomputing purely from the
+  / registry. two reasons, both measured:
+  /   - unsubscribe DELETES its registry rows, so a registry-only union would drop those tables at the
+  /     next unrelated subscribe. downstream subscribers would silently stop receiving a table, at a
+  /     moment unconnected to the unsubscribe that caused it
+  /   - setsubtables with an EMPTY list does not mean "publish nothing": di.pubsub then falls back to
+  /     every table at root (pubsub.q:125), so shrinking toward empty is actively dangerous
+  / the set therefore only grows within a process. a table that is unsubscribed stays advertised and
+  / simply stops receiving data - a visible, inert condition rather than a silent disappearance
+  tabs:distinct (),raze exec tabs from .z.m.subscriptions;
+  tabs:distinct tabs,pubsub.getsubtables[];
+  / di.pubsub.init reads each table from ROOT (extractschema:{0#value table}, pubsub.q:84), so a name
+  / that was never defined - a subscribe with setschema:0b against a table this process does not hold -
+  / would throw there. drop those rather than hand over a name the publisher cannot resolve
+  tabs:tabs where tabs in tables[];
+  if[0=count tabs;:()];
+  @[{[t] pubsub.setsubtables t; pubsub.init[]};tabs;
+    {[e] raiseerror[`handoffpublisher;"failed to register subscribed tables with di.pubsub: ",e,registerednote]}];
+  .z.m.loginfo[`handoffpublisher;"registered ",(", " sv string tabs)," with the local publisher for republishing"];
+  };
+
 subscribe:{[tph;tabs;syms;setschema;replay]
   / subscribe over an ALREADY-OPEN tickerplant handle - this module never opens a connection; the
   / caller resolves one (di.servers.gethandlebytype) and passes it in.
@@ -758,6 +804,7 @@ subscribe:{[tph;tabs;syms;setschema;replay]
   .z.m.subscriptions:.z.m.subscriptions,
     ([]handle:enlist tph;tabs:enlist wanted;syms:enlist syms;subtime:enlist .z.p;active:enlist 1b);
   .z.m.loginfo[`subscribe;"subscribed to ",(", " sv string wanted)," on tickerplant handle ",.Q.s1 tph];
+  handoffpublisher[];
   :buildreturn[details;wanted];
   };
 
@@ -873,6 +920,42 @@ getsubscriptions:{[]
   :activesubscriptions[];
   };
 
+getsubscriptionhandles:{[proctype;procname]
+  / resolve tickerplant handles by proctype and/or procname, projected to the (procname;proctype;w)
+  / triple a caller needs before it can subscribe. ported from TorQ .sub.getsubscriptionhandles
+  / (code/common/subscriptions.q:11) - registered public API there (apidetails.q:67), called by
+  / rdb.q:163, wdb.q:540, chainedtp.q:71 and sctp.q:15.
+  / the two lookup arguments are NOT interchangeable and this is the whole of the function's logic:
+  / ` matches EVERY row, () matches NONE and additionally switches the combine from intersection to
+  / union. that is what makes both real call shapes work off one function - rdb/wdb pass [types;()]
+  / and want the proctype matches, chainedtp/sctp pass [`;name] and want the single named process.
+  / TWO deliberate differences from legacy, both forced by di.servers' contract:
+  /   - legacy took a third `attributes` argument and filtered on .servers.SERVERS's attributes
+  /     column. di.servers' SERVERS carries no such column, so the parameter is DROPPED rather than
+  /     accepted and ignored - a filter that silently does nothing returns handles the caller
+  /     believes were filtered, which surfaces far from its cause
+  /   - legacy passed autoopen:1b to retry dead connections on demand. di.servers returns live rows
+  /     only (where not null w) and runs its own retry job, so reconnection is its concern now
+  / di.servers is reached directly as a hard dependency (init.q's `use`), not through an injected
+  / dict - the plan's tier table makes it a hard edge, and a module import needs no wiring
+  requireinit[`getsubscriptionhandles];
+  if[not all (type each (proctype;procname)) in -11 11 0h;
+    raiseerror[`getsubscriptionhandles;"proctype and procname must each be a symbol, a symbol list or ()"]];
+  if[any {(0h=type x) and 0<count x} each (proctype;procname);
+    raiseerror[`getsubscriptionhandles;"a general-list argument must be empty: use () to match nothing, ` to match everything"]];
+  / hoisted OUT of the where clause below: q-sql resolves procname to the COLUMN, so comparing
+  / against the parameter of the same name inside the select would silently compare the column
+  / with itself and match every row
+  pn:(),procname;
+  srvs:servers.getservers[`];
+  bytype:$[0h=type proctype;0#srvs;servers.getservers[proctype]];
+  byname:$[0h=type procname;0#srvs;$[`~procname;srvs;select from srvs where procname in pn]];
+  / project BEFORE combining - inter requires identical column sets, and legacy projects first too
+  bytype:select procname,proctype,w from bytype;
+  byname:select procname,proctype,w from byname;
+  :$[0h in type each (proctype;procname);distinct bytype,byname;bytype inter byname];
+  };
+
 / api metadata
 
 getapimeta:{[]
@@ -893,5 +976,8 @@ getapimeta:{[]
     (`subscribed;       1b; "is any subscription currently live?";
        "[]";                                                                     "boolean: at least one live subscription");
     (`getsubscriptions; 1b; "the subscription registry, with a live/active flag per subscription";
-       "[]";                                                                     "table: handle, tabs, syms, subtime, active"));
+       "[]";                                                                     "table: handle, tabs, syms, subtime, active");
+    (`getsubscriptionhandles; 1b; "resolve live tickerplant handles by proctype and/or procname (` matches all, () matches none)";
+       "[symbol(list): proctype (` for all, () for none); symbol(list): procname (` for all, () for none)]";
+       "table: procname, proctype, w"));
   };

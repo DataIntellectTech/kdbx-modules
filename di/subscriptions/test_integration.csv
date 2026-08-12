@@ -6,7 +6,8 @@ comment,,,,,,,needs a q binary reachable via QHOME - the peer is launched with $
 comment,,,,,,,run it in a FRESH q session: after moduletest the unit tests are still loaded and would re-run against dirty module state
 
 before,0,0,q,sub:use`di.subscriptions,1,1,load di.subscriptions
-before,0,0,q,"BASE:""/tmp/disubscriptionstest"";",1,1,fixture: BASE
+before,0,0,q,"tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i; };",1,1,"fixture: tmpdir - honours TMPDIR rather than assuming /tmp exists, and appends the pid so two runs on one machine cannot collide"
+before,0,0,q,"BASE:tmpdir""disubscriptionstest"";",1,1,fixture: BASE
 before,0,0,q,D:2026.08.06;,1,1,fixture: D
 before,0,0,q,caprows:([]lvl:`symbol$();ctx:`symbol$();msg:());,1,1,fixture: caprows
 before,0,0,q,resetcap:{[] `caprows set 0#caprows; };,1,1,fixture: resetcap
@@ -23,38 +24,51 @@ before,0,0,q,"setupfixture:{[] system ""rm -rf "",BASE; system ""mkdir -p "",BAS
 before,0,0,q,PEERPORT:0N;,1,1,fixture: PEERPORT
 before,0,0,q,PEERPID:0N;,1,1,fixture: PEERPID
 before,0,0,q,PEERTOKEN:`;,1,1,fixture: PEERTOKEN
-before,0,0,q,"PEERDIR:""/tmp/disubscriptionspeer"";",1,1,fixture: PEERDIR
+before,0,0,q,"PEERDIR:tmpdir""disubscriptionspeer"";",1,1,fixture: PEERDIR
 before,0,0,q,PEERMSGS:6;,1,1,fixture: PEERMSGS
 before,0,0,q,"killstalepeers:{[] @[system;""pkill -f '"",PEERDIR,""/tp.q' 2>/dev/null || true"";{[e] :(::)}]; };",1,1,fixture: killstalepeers
-before,0,0,q,"isfree:{[p] :not @[{hclose hopen x;1b};(`$"":localhost:"",string p;100);{[e] :0b}]; };",1,1,fixture: isfree
-before,0,0,q,pickport:{[start] :first (start+til 500) where isfree each start+til 500; };,1,1,fixture: pickport
-before,0,0,q,"waitlisten:{[port;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; while[(.z.p<deadline) and isfree port; system ""sleep 0.05""]; :not isfree port; };",1,1,fixture: waitlisten
+comment,,,,,,,NO PORT NUMBER APPEARS IN THIS SUITE. every child is started with -p 0W so the OS assigns a free port and the child writes it to a file we read back. scanning from a hardcoded base is not portable and still races - a port held by a blocked or non-q process reads as free to a handshake probe
+before,0,0,q,"readport:{[f;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; p:0N; while[(.z.p<deadline) and null p; if[count key hsym`$f;p:""J""$first read0 hsym`$f]; if[null p;system""sleep 0.05""]]; :p; };",1,1,fixture: readport - wait for a child to report the port the OS gave it
 before,0,0,q,"writepeerscript:{[] (`$"":"",PEERDIR,""/tp.q"") 0: peerlines[]; };",1,1,fixture: writepeerscript
-before,0,0,q,"spawnpeer:{[] killstalepeers[]; system ""rm -rf "",PEERDIR; system ""mkdir -p "",PEERDIR; `PEERTOKEN set `$""peer"",string[`int$.z.i],""run"",string `int$.z.n mod 1000000; `PEERPORT set pickport 21000+`int$.z.i mod 10000; writepeerscript[]; system (getenv[`QHOME]),""/bin/q "",PEERDIR,""/tp.q -p "",string[PEERPORT],"" -q </dev/null >/dev/null 2>&1 &""; if[not waitlisten[PEERPORT;5000];'""test: tickerplant peer failed to listen on "",string PEERPORT]; h:hopen (`$"":localhost:"",string PEERPORT;2000); if[not PEERTOKEN~@[h;""PEERTOKEN"";{[e] `}]; hclose h; '""test: port "",string[PEERPORT],"" is served by a foreign process, not this run's peer""]; `PEERPID set h "".z.i""; hclose h; };",1,1,fixture: spawnpeer
+before,0,0,q,"spawnpeer:{[] killstalepeers[]; system ""rm -rf "",PEERDIR; system ""mkdir -p "",PEERDIR; `PEERTOKEN set `$""peer"",string[`int$.z.i],""run"",string `int$.z.n mod 1000000; writepeerscript[]; system (getenv[`QHOME]),""/bin/q "",PEERDIR,""/tp.q -p 0W -q </dev/null >/dev/null 2>&1 &""; `PEERPORT set readport[PEERDIR,""/port"";8000]; if[null PEERPORT;'""test: tickerplant peer never reported a port""]; h:hopen (`$"":localhost:"",string PEERPORT;2000); if[not PEERTOKEN~@[h;""PEERTOKEN"";{[e] `}]; hclose h; '""test: the peer that answered is not this run's""]; `PEERPID set h "".z.i""; hclose h; };",1,1,"fixture: spawnpeer - OS-assigned port, read back from the peer itself"
 before,0,0,q,"peerhandle:{[] :hopen (`$"":localhost:"",string PEERPORT;2000); };",1,1,fixture: peerhandle
 before,0,0,q,"noticedrop:{[h] @[{x ""1+1""};h;{[e] :(::)}]; system ""sleep 0.3""; };",1,1,fixture: noticedrop
 before,0,0,q,"flushpeer:{[h] h ""1+1""; system ""sleep 0.2""; h ""1+1""; };",1,1,fixture: flushpeer
 before,0,0,q,"killpeer:{[] if[not null PEERPID;@[system;""kill "",string PEERPID;{[e] :(::)}]]; `PEERPID set 0N; system ""sleep 0.3""; };",1,1,fixture: killpeer
 before,0,0,q,peerbody:(),1,1,"the peer q script, one complete line per row - a split literal would silently become several expressions"
+before,0,0,q,"peerbody,:enlist ""ps:use`di.pubsub;""",1,1,peer source - load the REAL publisher rather than hand-rolling a subscriber registry
 before,0,0,q,"peerbody,:enlist ""LF:hsym`$\"""",PEERDIR,""/tp\"",string D;""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""peerschema:([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$());""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""peertrade:([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$());""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""peerschema:0#peertrade;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""ps.setsubtables enlist`peertrade;""",1,1,peer source - di.pubsub publishes exactly this table
+before,0,0,q,"peerbody,:enlist ""ps.init[];""",1,1,peer source - di.pubsub extracts the schema it will hand out
 before,0,0,q,"peerbody,:enlist ""N:"",string PEERMSGS",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""cols4:{[i] (enlist 2026.08.06D10:00+`timespan$60000000000*i;enlist `$\""S\"",string i mod 4;""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""  enlist 1.0*i;enlist `int$10*i)};""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""cols4:{[i] (enlist 2026.08.06D10:00+`timespan$60000000000*i;enlist `$\""S\"",string i mod 4;enlist 1.0*i;enlist `int$10*i)};""",1,1,peer source line
 before,0,0,q,"peerbody,:enlist ""mk:{[i] (`upd;`peertrade;cols4 i)};""",1,1,peer source line
 before,0,0,q,"peerbody,:enlist ""lh:hopen LF set ();""",1,1,peer source line
 before,0,0,q,"peerbody,:enlist ""{[h;i] h enlist mk i}[lh] each til N;""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""subs:();""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""sd:{[tabs;instruments] subs::distinct subs,.z.w;""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""  `schemalist`logfilelist`rowcounts`date!(enlist(`peertrade;peerschema);""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""  enlist(N;LF);(enlist `peertrade)!enlist N;D)};""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""subdetails:sd;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""subdetails:{[tabs;instruments] r:ps.subscribe[tabs;instruments]; if[-11h=type r;:r]; sl:$[-11h=type first r;flip last r;flip r]; `schemalist`logfilelist`rowcounts`date!(sl;enlist(N;LF);(enlist`peertrade)!enlist N;D)};""",1,1,"peer source - the subdetails adapter a modular tickerplant would own: di.pubsub.subscribe does the registration and returns (tabs;schemas), which flip turns into the schemalist pairs this module reads. an errmsg atom is passed straight back"
 before,0,0,q,"peerbody,:enlist ""tablelist:{enlist`peertrade};""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""pub:{[i;s] m:(`upd;`peertrade;(enlist 2026.08.06D11:00+`timespan$1000000000*i;enlist s;""",1,1,peer source line
-before,0,0,q,"peerbody,:enlist ""  enlist 1.0*i;enlist `int$i)); lh enlist m; N+:1; {[m;w] (neg w) m}[m] each subs; N};""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""pub:{[i;s] c:(enlist 2026.08.06D11:00+`timespan$1000000000*i;enlist s;enlist 1.0*i;enlist `int$i); lh enlist (`upd;`peertrade;c); N+:1; ps.publish[`peertrade;flip (cols peertrade)!c]; N};""",1,1,"peer source - di.pubsub.publish does the fan-out, so live delivery and sym filtering are ITS code paths not a stand-in"
 before,0,0,q,"peerbody,:enlist ""logged:{[] N};""",1,1,peer source line
-before,0,0,q,"peerlines:{[] :(""D:2026.08.06;"";""PEERTOKEN:`"",(string PEERTOKEN),"";""),peerbody; };",1,1,prepend the per-run identity token - it is only known once spawnpeer has generated it
-before,0,0,q,"teardownfixture:{[] killpeer[]; killstalepeers[]; system ""rm -rf "",BASE; system ""rm -rf "",PEERDIR; };",1,1,fixture: teardownfixture
+before,0,0,q,"peerlines:{[] :(""D:2026.08.06;"";""PEERTOKEN:`"",(string PEERTOKEN),"";"";""(`$\"":"",PEERDIR,""/port\"") 0: enlist string system\""p\"";""),peerbody; };",1,1,prepend the identity token and make the peer report its OS-assigned port before doing anything else
+before,0,0,q,MIDPORT:0N;,1,1,fixture: MIDPORT
+before,0,0,q,"MIDDIR:tmpdir""disubscriptionsmid"";",1,1,fixture: MIDDIR
+before,0,0,q,"killstalemid:{[] @[system;""pkill -f '"",MIDDIR,""/mid.q' 2>/dev/null || true"";{[e] :(::)}]; };",1,1,fixture: killstalemid
+before,0,0,q,midbody:(),1,1,the middle process source - a chained tickerplant: subscribes upstream through THIS module and republishes through di.pubsub
+before,0,0,q,"midbody,:enlist ""lg:use`di.log;""",1,1,middle source line
+before,0,0,q,"midbody,:enlist ""hnd:use`di.handlers;""",1,1,middle source line
+before,0,0,q,"midbody,:enlist ""ps:use`di.pubsub;""",1,1,middle source line
+before,0,0,q,"midbody,:enlist ""sub:use`di.subscriptions;""",1,1,middle source line
+before,0,0,q,"midbody,:enlist ""hnd.init[lg.logdict];""",1,1,middle source line
+before,0,0,q,"midbody,:enlist ""sub.init[`log`handlers`republish!(lg.logdict`log;`register`remove!(hnd`register;hnd`remove);1b)];""",1,1,"middle source - republish ON, the chained tickerplant role"
+before,0,0,q,"midbody,:enlist ""upd:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]; ps.publish[t;x]};""",1,1,"middle source - the caller owns forwarding: upsert then republish, as TorQ chainedtp.q tickpub does"
+before,0,0,q,"midlines:{[] :(enlist ""(`$\"":"",MIDDIR,""/port\"") 0: enlist string system\""p\"";""),midbody,enlist ""tph:hopen `$\"":localhost:"",(string PEERPORT),""\""; sub.subscribe[tph;`;`;1b;1b]; MIDREADY:1b;""; };",1,1,report the OS-assigned port FIRST so the parent can connect while the upstream subscribe is still running
+before,0,0,q,"writemidscript:{[] (`$"":"",MIDDIR,""/mid.q"") 0: midlines[]; };",1,1,fixture: writemidscript
+before,0,0,q,"spawnmid:{[] killstalemid[]; system ""rm -rf "",MIDDIR; system ""mkdir -p "",MIDDIR; writemidscript[]; system (getenv[`QHOME]),""/bin/q "",MIDDIR,""/mid.q -p 0W -q </dev/null >/dev/null 2>&1 &""; `MIDPORT set readport[MIDDIR,""/port"";10000]; if[null MIDPORT;'""test: middle tickerplant never reported a port""]; };",1,1,"fixture: spawnmid - OS-assigned port, read back from the middle process"
+before,0,0,q,"midhandle:{[] :hopen (`$"":localhost:"",string MIDPORT;2000); };",1,1,fixture: midhandle
+before,0,0,q,"killmid:{[] killstalemid[]; system ""rm -rf "",MIDDIR; system ""sleep 0.3""; };",1,1,fixture: killmid
+before,0,0,q,"teardownfixture:{[] killpeer[]; killstalepeers[]; killmid[]; system ""rm -rf "",BASE; system ""rm -rf "",PEERDIR; };",1,1,fixture: teardownfixture - reaps the peer AND the middle process
 before,0,0,q,setupfixture[],1,1,create the temp directories
 before,0,0,q,realhandlers[`init][enlist[`log]!enlist caplog],1,1,init the real di.handlers - register throws until it has been
 before,0,0,q,sub.init[deps[]],1,1,init di.subscriptions - this suite runs standalone so it does all of its own setup
@@ -73,6 +87,7 @@ true,0,0,q,`g=attr peertrade`sym,1,1,the g# attribute survived the IPC round tri
 true,0,0,q,6=updcalls,1,1,the replay drove the root upd once per message
 true,0,0,q,PH~first exec handle from sub.getsubscriptions[] where handle~\:PH,1,1,the registry holds the real int handle
 true,0,0,q,any exec active from sub.getsubscriptions[] where handle~\:PH,1,1,the subscription over the real handle is live
+true,0,0,q,"0<PH ""count (.m.di.0pubsub.reqalldict)`peertrade""",1,1,di.pubsub ITSELF recorded the subscription in its own registry on the peer - this is what proves the tickerplant routes through the real publisher rather than a hand-rolled stand-in
 
 comment,,,,,,,kill the tickerplant - the .z.pc observer must mark the subscription dead
 run,0,0,q,killpeer[],1,1,kill the peer process
@@ -146,4 +161,70 @@ true,0,0,q,0=count sub.unsubscribe[PH5],1,1,THE REAL ASSERTION - unsubscribe mat
 true,0,0,q,tailfired,1,1,and the observer behind ours ran too - one throw does not abort the rest of the chain
 run,0,0,q,realhandlers[`remove][`.z.pc;`;`noisyneighbour],1,1,remove the noisy neighbour
 run,0,0,q,realhandlers[`remove][`.z.pc;`;`tailobserver],1,1,and the tail observer
+comment,,,,,,,di.pubsub FILTERED subscriptions - a sym-filtered subscribe is registered and applied by di.pubsub ON THE PEER. the unit suite drives sym filtering through mocks; here the publisher's own filter code decides what reaches this module's live feed
+run,0,0,q,spawnpeer[],1,1,fresh tickerplant - the isolation block above killed the last one
+run,0,0,q,PF:peerhandle[],1,1,open a handle for a filtered subscription
+run,0,0,q,@[`.;`peertrade;:;0#peertrade],1,1,clear the table so the counts below are unambiguous
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[PF;enlist`peertrade;enlist`S7;0b;0b],1,1,subscribe to ONE sym - no replay so only the live feed is in play
+true,0,0,q,"0<PF ""count select from .m.di.0pubsub.reqfilteredtbl where table=`peertrade""",1,1,di.pubsub stored a FILTERED subscription rather than an all-data one - a different code path inside the publisher
+run,0,0,q,(neg PF)(`pub;200;`S9),1,1,the tickerplant publishes a NON-matching sym
+run,0,0,q,flushpeer[PF],1,1,round trip so the async message is serviced
+true,0,0,q,0=count peertrade,1,1,di.pubsub filtered it out before it ever reached us - nothing arrived
+true,0,0,q,0=updcalls,1,1,and the root upd was never driven
+run,0,0,q,(neg PF)(`pub;201;`S7),1,1,now publish a MATCHING sym
+run,0,0,q,flushpeer[PF],1,1,service it
+true,0,0,q,1=count peertrade,1,1,the matching message was delivered - di.pubsub's real filtering drives this module's live feed end to end
+true,0,0,q,(enlist`S7)~exec distinct sym from peertrade,1,1,and only the subscribed sym is present
+run,0,0,q,sub.unsubscribe[PF],1,1,release the subscription
+run,0,0,q,hclose PF,1,1,tidy up
+
+comment,,,,,,,di.servers END TO END - the module's servers dependency wired to the REAL di.servers rather than a mock. the unit suite proves the selection logic against a stand-in; this proves the two modules actually compose
+comment,,,,,,,di.servers dials the peer over genuine IPC and getsubscriptionhandles resolves it - then that resolved handle is used to subscribe. this is the whole rdb.q:163 path in one block
+run,0,0,q,"mocktimer:(enlist`addjob)!enlist (enlist`custom)!enlist {[id;func;params;period;mode;opts] }",1,1,di.servers validates a timer dict and schedules one retry job through it - a stub satisfies that contract, so this suite does not drag in di.timer for a job it never asserts on
+run,0,0,q,svc:use`di.servers,1,1,the same di.servers instance di.subscriptions imported - one module instance per process
+run,0,0,q,spawnpeer[],1,1,stand the tickerplant back up - the previous block killed it
+run,0,0,q,"(`$"":"",BASE,""/process.csv"") 0: (""host,port,proctype,procname"";""localhost,"",string[PEERPORT],"",tickerplant,peertp"")",1,1,write the strict 4-column phone book di.servers reads pointing at this run's live peer
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`connections`processcsv!(caplog;mocktimer;handlerdep[];`rdb;`rdb1;enlist`tickerplant;BASE,""/process.csv"")]",1,1,init di.servers as an rdb configured to connect to tickerplants
+run,0,0,q,svc.startup[],1,1,dial the peer over real IPC
+true,0,0,q,1=count svc.getservers[`tickerplant],1,1,di.servers holds a live connection to the peer
+run,0,0,q,sub.init[deps[]],1,1,di.subscriptions needs no servers wiring - di.servers is a hard dependency it imports itself; this re-init just refreshes log and handlers
+run,0,0,q,SH:sub.getsubscriptionhandles[`tickerplant;()],1,1,the rdb.q:163 call shape against a genuinely populated registry
+true,0,0,q,1=count SH,1,1,exactly one tickerplant resolved
+true,0,0,q,(enlist`peertp)~exec procname from SH,1,1,and it is the peer this suite spawned
+true,0,0,q,`procname`proctype`w~cols SH,1,1,projected to the three columns a subscribe caller needs
+true,0,0,q,0<first exec w from SH,1,1,the handle is a real open descriptor rather than a null
+run,0,0,q,RSH:sub.subscribe[first exec w from SH;`;`;0b;0b],1,1,subscribe over the handle di.servers resolved - di.servers to di.subscriptions end to end
+true,0,0,q,0<count RSH`subtables,1,1,THE PAYOFF - the resolved handle is a working tickerplant connection, so the two modules compose for real
+true,0,0,q,sub.subscribed[],1,1,and the subscription is registered as live
+run,0,0,q,sub.unsubscribe[first exec w from SH],1,1,release it
+
+
+comment,,,,,,,REPUBLISH END TO END - three real processes. peer tickerplant -> a MIDDLE process that subscribes through this module with republish on -> this test process as the downstream subscriber
+comment,,,,,,,the middle process is the chained-tickerplant role the FRAMEWORK tier edge exists for. it cannot be tested in-process: a subscriber that serves its own subscribers has to be at its own main loop
+run,0,0,q,spawnpeer[],1,1,fresh upstream tickerplant
+run,0,0,q,spawnmid[],1,1,launch the middle process - it subscribes to the peer through di.subscriptions with republish on
+run,0,0,q,MH:midhandle[],1,1,connect to the middle as a downstream client would
+true,0,0,q,"1b~MH""MIDREADY""",1,1,the middle finished its own upstream subscribe
+true,0,0,q,"`peertrade in MH"".m.di.0pubsub.getsubtables[]""",1,1,"THE FEATURE - the middle's local di.pubsub is serving the table it subscribed to upstream, with no code in the middle beyond setting republish"
+true,0,0,q,"`peertrade in MH""tables[]""",1,1,and the table really was defined at root there by subscribe
+run,0,0,q,@[`.;`peertrade;:;0#peertrade],1,1,clear our local copy so what arrives can only have come through the middle
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,dres:MH(`.m.di.0pubsub.subscribe;`peertrade;`),1,1,"subscribe to the MIDDLE, exactly as a downstream rdb would"
+true,0,0,q,(enlist`peertrade)~first dres,1,1,the middle confirms the subscription
+true,0,0,q,"0<count MH"".m.di.0pubsub.reqalldict""",1,1,the middle recorded US as one of its own subscribers
+true,0,0,q,98h=type dres[1;0],1,1,and hands back a real schema it only has because di.subscriptions gave it one
+run,0,0,q,PHX:peerhandle[],1,1,a handle to the UPSTREAM tickerplant
+true,0,0,q,"0<count PHX"".m.di.0pubsub.reqalldict""",1,1,the MIDDLE is registered as a subscriber on the upstream peer
+run,0,0,q,(neg PHX)(`pub;300;`S3),1,1,publish one message at the very top of the chain
+run,0,0,q,flushpeer[PHX],1,1,flush the async pub on the handle it was SENT on - flushing a different handle leaves it queued
+run,0,0,q,"system ""sleep 0.6""",1,1,let the middle receive and forward it
+true,0,0,q,"7=MH""count peertrade""",1,1,the middle itself received the live message (6 replayed at startup plus this one) - isolates the upstream hop from the downstream one
+run,0,0,q,flushpeer[MH],1,1,round trip so our own async delivery is serviced
+true,0,0,q,1=count peertrade,1,1,THE PAYOFF - the message travelled tickerplant -> middle -> here across three processes
+true,0,0,q,300f=first exec price from peertrade,1,1,"and it is the message that was published, not a replay artefact"
+true,0,0,q,1=updcalls,1,1,our root upd was driven exactly once
+run,0,0,q,hclose MH; hclose PHX,1,1,tidy the handles
+run,0,0,q,killmid[],1,1,stop the middle process
+
 after,0,0,q,teardownfixture[],1,1,kill the peer and remove the temp directories

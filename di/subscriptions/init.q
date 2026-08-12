@@ -14,4 +14,4 @@ version:first read0`:::VERSION
 / NB: export:([...]) EVALUATES each name, so it can only list names that already exist.
 / init and getapimeta are framework plumbing di.torq calls by convention; every other name here has
 / a getapimeta row, which the test suite asserts
-export:([init;teardown;version;getapimeta;subscribe;unsubscribe;subscribed;getsubscriptions])
+export:([init;teardown;version;getapimeta;subscribe;resubscribe;unsubscribe;subscribed;getsubscriptions])

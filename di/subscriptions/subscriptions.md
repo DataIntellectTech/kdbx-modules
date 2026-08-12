@@ -180,14 +180,38 @@ hclose tph
 
 ## Running Tests
 
+Two suites, following the convention `di.handlers` and `di.permissions` use. Both define their
+fixtures inline as `before` rows; there is no separate fixture file, so neither depends on the
+working directory.
+
+**Unit suite** (`test.csv`) - 450 assertions, no child processes, no ports, no `QHOME`:
+
 ```q
 k4unit:use`di.k4unit
 k4unit.moduletest`di.subscriptions
 ```
 
-Run in a fresh q session - the integration layer spawns and kills a real q process, so do not interleave with other modules' tests. Needs `QHOME` set (the peer is launched via `$QHOME/bin/q`) and `di.os` on `QPATH` (the harness uses `os.abspath` to load `test.q`).
+**Integration suite** (`test_integration.csv`) - 73 assertions. It stands up a real q process as a
+tickerplant and drives it over genuine IPC, so it needs a q binary reachable via `QHOME`.
+`moduletest` only ever loads `test.csv` (`di/k4unit/init.q`), which is why these rows live in their
+own file - otherwise every unit run would spawn a process and bind a port. Load it explicitly:
 
-The suite is 523 assertions (`true`, `fail` and `run` rows, excluding the 5 fixture `before`/`after` rows) and wires the real merged `di.log` and `di.handlers` rather than mocks, so both injected contracts are proven end to end. It covers: pre-`init` guards on every export; dependency validation (non-dict deps, each missing key, each malformed value); `init` arity asserted by observable effect rather than by "it did not throw"; idempotent re-init; the `VERSION` file and exported `version`; `getapimeta`; all-tables and sym-filtered replay; all four payload shapes a tickerplant may log; symbol-atom table and sym selectors; a multi-table log where only the requested table is defined; replay across two log files; requested-but-absent and offered-but-unrequested tables; a configured `subdetailsfunc`; partial, unreadable, absent and empty logs; a replay requested with no root `upd`; malformed `schemalist` **and** `logfilelist` shapes, including a non-table schema, a column-less table, a duplicated table name, and a keyed schema that must still be accepted; a negative message count, asserted with `replay:0b` as well so the guard cannot drift behind the replay branch; every `setschema`/`replay` combination, including `setschema:0b` with `replay:1b` on both the narrowed and all-syms paths; empty `tabs` and `syms` selectors; the double-subscribe guard and its release by `unsubscribe`; `unsubscribe` deleting rather than flagging, its idempotency, and its `warn` on an unheld handle; malformed tickerplant responses; `setschema:0b` preserving a populated table; `logdir` passthrough; and input validation on every argument.
+```q
+k4unit:use`di.k4unit
+.m.di.0k4unit.KUltf .Q.dd[hsym`$.Q.m.mp`di.subscriptions;`test_integration.csv]
+.m.di.0k4unit.KUrt[]
+select from .m.di.0k4unit.KUTR where not ok
+```
+
+`KUrt` prints the results table but, unlike `moduletest`, no pass/fail summary - the last line is the
+verdict, and an empty result means everything passed.
+
+Run the integration suite in a **fresh** q session - after `moduletest` the unit tests are still
+loaded and would re-run against dirty module state, reporting spurious failures. It is fully
+self-contained: it inits `di.handlers` and `di.subscriptions` itself rather than inheriting setup
+from the unit rows.
+
+Together the two suites are 523 assertions (`true`, `fail` and `run` rows, excluding the fixture `before`/`after` rows) and wire the real merged `di.log` and `di.handlers` rather than mocks, so both injected contracts are proven end to end. Between them they cover: pre-`init` guards on every export; dependency validation (non-dict deps, each missing key, each malformed value); `init` arity asserted by observable effect rather than by "it did not throw"; idempotent re-init; the `VERSION` file and exported `version`; `getapimeta`; all-tables and sym-filtered replay; all four payload shapes a tickerplant may log; symbol-atom table and sym selectors; a multi-table log where only the requested table is defined; replay across two log files; requested-but-absent and offered-but-unrequested tables; a configured `subdetailsfunc`; partial, unreadable, absent and empty logs; a replay requested with no root `upd`; malformed `schemalist` **and** `logfilelist` shapes, including a non-table schema, a column-less table, a duplicated table name, and a keyed schema that must still be accepted; a negative message count, asserted with `replay:0b` as well so the guard cannot drift behind the replay branch; every `setschema`/`replay` combination, including `setschema:0b` with `replay:1b` on both the narrowed and all-syms paths; empty `tabs` and `syms` selectors; the double-subscribe guard and its release by `unsubscribe`; `unsubscribe` deleting rather than flagging, its idempotency, and its `warn` on an unheld handle; malformed tickerplant responses; `setschema:0b` preserving a populated table; `logdir` passthrough; and input validation on every argument.
 
 It also covers the TorQ-protocol cases this module is built to survive: a `0W` message count replaying a whole log, and the same count over a **truncated** log being refused with nothing replayed and no table defined; a **shared** log reported once per table being collapsed to one full replay, with the per-table row counts asserted individually so a regression to the old per-entry replay is caught rather than merely the total; an unshared file in the same response keeping its own count and raising no warn; a corrupt shared log refused, proving the corruption guard covers the collapse trigger and not only the `0W` sentinel; an exact duplicate entry rejected; `` ` `` resolved through `tablelist` with the *resolved* list asserted to be what `subdetails` actually received; the fallback to `` ` `` when a tickerplant offers no `tablelist`; a configured `tablelistfunc` asserted to be called **first**, ahead of `subdetails`; and the two legitimate `rowcounts` shapes accepted with atoms and tables rejected.
 
@@ -197,7 +221,13 @@ The whole-file narrowing is asserted on a shared log that carries a table the ti
 
 Guard **ordering** is asserted directly rather than inferred, using a fixture that records every remote function name `subscribe` asks for. Each guard that was moved ahead of the `subdetails` call has a row proving the tickerplant was never asked at all when it fires — including the case whose semantics changed, a requested table that is already held *and* no longer offered, which now throws where it previously warned and continued. The residual cases have rows too: an all-tables subscribe to a tickerplant with no `tablelist` reaches the post-reply copy of the duplicate guard, and a short log is caught only after `subdetails` has run, with assertions on both halves of the error text that tells the caller to close the handle.
 
-The suite also covers teardown/re-init lifecycle cycles, and asserts the `di.handlers` isolation contract: a co-registrant that throws at a priority ahead of this module's observer must not suppress `markdead`. That assertion is made through `unsubscribe`, which matches on the stored flag - checking `active` alone would be vacuous, since the closed handle reads dead through `.z.W` either way.
+Everything above is in the **unit** suite except where it needs a live publisher. The **integration**
+suite owns what cannot be faked in process: the replay-then-live exactly-once boundary, a real `.z.pc`
+firing when the peer is killed, the `` ` `` round trip over the wire, `unsubscribe` closing the
+local-close liveness gap against a genuinely reissued descriptor, and the `di.handlers` isolation
+contract below.
+
+The integration suite also covers teardown/re-init lifecycle cycles, and asserts the `di.handlers` isolation contract: a co-registrant that throws at a priority ahead of this module's observer must not suppress `markdead`. That assertion is made through `unsubscribe`, which matches on the stored flag - checking `active` alone would be vacuous, since the closed handle reads dead through `.z.W` either way.
 
 The integration block subscribes to a genuinely separate tickerplant process over IPC, kills it, confirms `.z.pc` marks the subscription dead, reconnects onto a recycled handle number, confirms the stale row stays dead and the re-subscribe succeeds, then drives live updates through the replayed tables to prove the exactly-once boundary. It finishes on the two cases only a real handle can reach: releasing a handle and `hclose`ing it while the tickerplant is still alive (so nothing fires `.z.pc`), reopening onto the same reissued descriptor and confirming no revival; and the reverse order — `hclose` *first*, then `unsubscribe` — which proves the release matches on the stored flag rather than the computed one, and so still finds a row `.z.W` has already given up on.
 

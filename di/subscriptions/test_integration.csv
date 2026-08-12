@@ -1,0 +1,149 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration suite - stands up a real q process as a tickerplant and drives it over genuine IPC
+comment,,,,,,,it is separate because moduletest only ever loads test.csv (di/k4unit/init.q), so keeping these
+comment,,,,,,,rows there would make every unit run spawn a process and bind a port. load this file explicitly
+comment,,,,,,,needs a q binary reachable via QHOME - the peer is launched with $QHOME/bin/q
+comment,,,,,,,run it in a FRESH q session: after moduletest the unit tests are still loaded and would re-run against dirty module state
+
+before,0,0,q,sub:use`di.subscriptions,1,1,load di.subscriptions
+before,0,0,q,"BASE:""/tmp/disubscriptionstest"";",1,1,fixture: BASE
+before,0,0,q,D:2026.08.06;,1,1,fixture: D
+before,0,0,q,caprows:([]lvl:`symbol$();ctx:`symbol$();msg:());,1,1,fixture: caprows
+before,0,0,q,resetcap:{[] `caprows set 0#caprows; };,1,1,fixture: resetcap
+before,0,0,q,caplog:`info`warn`error!( {[c;m] `caprows insert (`info;c;m)}; {[c;m] `caprows insert (`warn;c;m)}; {[c;m] `caprows insert (`error;c;m)});,1,1,fixture: caplog
+before,0,0,q,realhandlers:use`di.handlers;,1,1,fixture: realhandlers
+before,0,0,q,handlerdep:{[] :`register`remove!(realhandlers[`register];realhandlers[`remove]); };,1,1,fixture: handlerdep
+before,0,0,q,deps:{[] :`log`handlers!(caplog;handlerdep[]); };,1,1,fixture: deps
+before,0,0,q,"logged:{[lv;s] :any {[s;m] 0<count m ss s}[s] each (),exec msg from caprows where lvl=lv; };",1,1,fixture: logged
+before,0,0,q,genschema:{[] :([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$()); };,1,1,fixture: genschema
+before,0,0,q,updcalls:0;,1,1,fixture: updcalls
+before,0,0,q,rootupd:{[t;x] `updcalls set updcalls+1; @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]; };,1,1,fixture: rootupd
+before,0,0,q,resetupd:{[] `updcalls set 0; `upd set rootupd; };,1,1,fixture: resetupd
+before,0,0,q,"setupfixture:{[] system ""rm -rf "",BASE; system ""mkdir -p "",BASE; };",1,1,fixture: setupfixture
+before,0,0,q,PEERPORT:0N;,1,1,fixture: PEERPORT
+before,0,0,q,PEERPID:0N;,1,1,fixture: PEERPID
+before,0,0,q,PEERTOKEN:`;,1,1,fixture: PEERTOKEN
+before,0,0,q,"PEERDIR:""/tmp/disubscriptionspeer"";",1,1,fixture: PEERDIR
+before,0,0,q,PEERMSGS:6;,1,1,fixture: PEERMSGS
+before,0,0,q,"killstalepeers:{[] @[system;""pkill -f '"",PEERDIR,""/tp.q' 2>/dev/null || true"";{[e] :(::)}]; };",1,1,fixture: killstalepeers
+before,0,0,q,"isfree:{[p] :not @[{hclose hopen x;1b};(`$"":localhost:"",string p;100);{[e] :0b}]; };",1,1,fixture: isfree
+before,0,0,q,pickport:{[start] :first (start+til 500) where isfree each start+til 500; };,1,1,fixture: pickport
+before,0,0,q,"waitlisten:{[port;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; while[(.z.p<deadline) and isfree port; system ""sleep 0.05""]; :not isfree port; };",1,1,fixture: waitlisten
+before,0,0,q,"writepeerscript:{[] (`$"":"",PEERDIR,""/tp.q"") 0: peerlines[]; };",1,1,fixture: writepeerscript
+before,0,0,q,"spawnpeer:{[] killstalepeers[]; system ""rm -rf "",PEERDIR; system ""mkdir -p "",PEERDIR; `PEERTOKEN set `$""peer"",string[`int$.z.i],""run"",string `int$.z.n mod 1000000; `PEERPORT set pickport 21000+`int$.z.i mod 10000; writepeerscript[]; system (getenv[`QHOME]),""/bin/q "",PEERDIR,""/tp.q -p "",string[PEERPORT],"" -q </dev/null >/dev/null 2>&1 &""; if[not waitlisten[PEERPORT;5000];'""test: tickerplant peer failed to listen on "",string PEERPORT]; h:hopen (`$"":localhost:"",string PEERPORT;2000); if[not PEERTOKEN~@[h;""PEERTOKEN"";{[e] `}]; hclose h; '""test: port "",string[PEERPORT],"" is served by a foreign process, not this run's peer""]; `PEERPID set h "".z.i""; hclose h; };",1,1,fixture: spawnpeer
+before,0,0,q,"peerhandle:{[] :hopen (`$"":localhost:"",string PEERPORT;2000); };",1,1,fixture: peerhandle
+before,0,0,q,"noticedrop:{[h] @[{x ""1+1""};h;{[e] :(::)}]; system ""sleep 0.3""; };",1,1,fixture: noticedrop
+before,0,0,q,"flushpeer:{[h] h ""1+1""; system ""sleep 0.2""; h ""1+1""; };",1,1,fixture: flushpeer
+before,0,0,q,"killpeer:{[] if[not null PEERPID;@[system;""kill "",string PEERPID;{[e] :(::)}]]; `PEERPID set 0N; system ""sleep 0.3""; };",1,1,fixture: killpeer
+before,0,0,q,peerbody:(),1,1,"the peer q script, one complete line per row - a split literal would silently become several expressions"
+before,0,0,q,"peerbody,:enlist ""LF:hsym`$\"""",PEERDIR,""/tp\"",string D;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""peerschema:([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$());""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""N:"",string PEERMSGS",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""cols4:{[i] (enlist 2026.08.06D10:00+`timespan$60000000000*i;enlist `$\""S\"",string i mod 4;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""  enlist 1.0*i;enlist `int$10*i)};""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""mk:{[i] (`upd;`peertrade;cols4 i)};""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""lh:hopen LF set ();""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""{[h;i] h enlist mk i}[lh] each til N;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""subs:();""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""sd:{[tabs;instruments] subs::distinct subs,.z.w;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""  `schemalist`logfilelist`rowcounts`date!(enlist(`peertrade;peerschema);""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""  enlist(N;LF);(enlist `peertrade)!enlist N;D)};""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""subdetails:sd;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""tablelist:{enlist`peertrade};""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""pub:{[i;s] m:(`upd;`peertrade;(enlist 2026.08.06D11:00+`timespan$1000000000*i;enlist s;""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""  enlist 1.0*i;enlist `int$i)); lh enlist m; N+:1; {[m;w] (neg w) m}[m] each subs; N};""",1,1,peer source line
+before,0,0,q,"peerbody,:enlist ""logged:{[] N};""",1,1,peer source line
+before,0,0,q,"peerlines:{[] :(""D:2026.08.06;"";""PEERTOKEN:`"",(string PEERTOKEN),"";""),peerbody; };",1,1,prepend the per-run identity token - it is only known once spawnpeer has generated it
+before,0,0,q,"teardownfixture:{[] killpeer[]; killstalepeers[]; system ""rm -rf "",BASE; system ""rm -rf "",PEERDIR; };",1,1,fixture: teardownfixture
+before,0,0,q,setupfixture[],1,1,create the temp directories
+before,0,0,q,realhandlers[`init][enlist[`log]!enlist caplog],1,1,init the real di.handlers - register throws until it has been
+before,0,0,q,sub.init[deps[]],1,1,init di.subscriptions - this suite runs standalone so it does all of its own setup
+before,0,0,q,resetupd[],1,1,define the root upd the replay drives
+
+run,0,0,q,spawnpeer[],1,1,launch a real tickerplant peer that writes its own log and serves subdetails
+run,0,0,q,PH:peerhandle[],1,1,open a real IPC handle to it
+true,0,0,q,PEERPID<>.z.i,1,1,the peer really is a separate process
+true,0,0,q,`schemalist`logfilelist`rowcounts`date~key PH(`subdetails;`;`),1,1,the peer serves the real TorQ subdetails protocol
+run,0,0,q,resetupd[],1,1,reset the upd counter
+comment,,,,,,,an all-tables subscribe over the real handle - the registry starts empty in this suite
+run,0,0,q,rp:sub.subscribe[PH;`;`;1b;1b],1,1,subscribe over the real handle
+true,0,0,q,`peertrade in tables[],1,1,the table was created at root from the schema sent over IPC
+true,0,0,q,6=count peertrade,1,1,all six logged messages replayed
+true,0,0,q,`g=attr peertrade`sym,1,1,the g# attribute survived the IPC round trip
+true,0,0,q,6=updcalls,1,1,the replay drove the root upd once per message
+true,0,0,q,PH~first exec handle from sub.getsubscriptions[] where handle~\:PH,1,1,the registry holds the real int handle
+true,0,0,q,any exec active from sub.getsubscriptions[] where handle~\:PH,1,1,the subscription over the real handle is live
+
+comment,,,,,,,kill the tickerplant - the .z.pc observer must mark the subscription dead
+run,0,0,q,killpeer[],1,1,kill the peer process
+run,0,0,q,noticedrop[PH],1,1,touch the handle so the drop is detected and .z.pc fires
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH,1,1,the row for the dropped handle was marked dead
+
+comment,,,,,,,restart and reconnect - kdb+ recycles the handle number and the stale row must NOT revive
+run,0,0,q,spawnpeer[],1,1,restart the tickerplant
+run,0,0,q,PH2:peerhandle[],1,1,reconnect
+true,0,0,q,PH~PH2,1,1,kdb+ handed back the same handle number (the recycling a .z.W probe alone cannot see through)
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH2,1,1,the stale row stays dead despite the number being reused
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,@[`.;`peertrade;:;0#peertrade],1,1,clear the table before replaying again
+run,0,0,q,sub.subscribe[PH2;`;`;1b;1b],1,1,re-subscribing after a reconnect is allowed
+true,0,0,q,6=count peertrade,1,1,the log replayed again on the new handle
+true,0,0,q,2=count select from sub.getsubscriptions[] where handle~\:PH2,1,1,both the stale and the new row are for the recycled handle number
+true,0,0,q,1=sum exec active from sub.getsubscriptions[] where handle~\:PH2,1,1,exactly one of them is live - the stale one stayed dead
+
+comment,,,,,,,LIVE updates after the replay - the exactly-once boundary. this is the module's central promise and cannot be tested without a publishing tickerplant
+true,0,0,q,6=updcalls,1,1,the replay drove upd once per logged message and no more
+true,0,0,q,6=PH2"logged[]",1,1,the tickerplant has logged six messages so far
+run,0,0,q,(neg PH2)(`pub;100;`S0),1,1,the tickerplant logs AND publishes one live message
+run,0,0,q,flushpeer[PH2],1,1,round trip so the async live message is serviced
+true,0,0,q,7=PH2"logged[]",1,1,the tickerplant logged the live message too
+true,0,0,q,7=count peertrade,1,1,six replayed plus one live - the boundary message was NOT replayed as well
+true,0,0,q,7=updcalls,1,1,upd ran exactly once per message across replay and live feed
+true,0,0,q,100f=last exec price from peertrade,1,1,the live message is the most recent row
+run,0,0,q,(neg PH2)(`pub;101;`S1),1,1,publish a second live message
+run,0,0,q,flushpeer[PH2],1,1,service it
+true,0,0,q,8=count peertrade,1,1,live updates keep flowing through the root upd after the replay
+
+comment,,,,,,,unsubscribe closes the residual liveness gap - MEASURED: a handle the caller hcloses fires NO .z.pc, and kdb+ reissues the freed descriptor
+run,0,0,q,relph:sub.unsubscribe[PH2],1,1,declare we are finished with the handle BEFORE closing it
+true,0,0,q,(enlist`peertrade)~relph,1,1,it reports the table it released
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH2,1,1,the row is dead the instant we say so - no .z.pc and no dead tickerplant involved
+run,0,0,q,hclose PH2,1,1,now close the handle ourselves - the tickerplant is still alive so nothing fires .z.pc
+run,0,0,q,PH3:peerhandle[],1,1,open a fresh connection to the same live tickerplant
+true,0,0,q,PH2~PH3,1,1,kdb+ reissued the freed descriptor - this is the case the .z.W half alone cannot see through
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH3,1,1,the stale row still reports dead - without unsubscribe the reissued number would have revived it
+run,0,0,q,sub.subscribe[PH3;`;`;0b;0b],1,1,and a fresh subscribe on the reissued handle is allowed rather than refused by the guard
+run,0,0,q,sub.unsubscribe[PH3],1,1,release it
+run,0,0,q,hclose PH3,1,1,tidy up
+
+comment,,,,,,,STORED vs EFFECTIVE - unsubscribe must find a row whose handle is already closed. selecting on the effective flag would miss exactly this row
+run,0,0,q,n4:count sub.getsubscriptions[],1,1,record the registry size (earlier dead rows share this descriptor number so counts must be deltas)
+run,0,0,q,d4:sum not exec active from sub.getsubscriptions[],1,1,and the dead-row count - there IS at least one dead row on this descriptor so the delta below has teeth
+run,0,0,q,PH4:peerhandle[],1,1,open another handle to the still-live tickerplant
+run,0,0,q,sub.subscribe[PH4;`;`;0b;0b],1,1,subscribe on it
+true,0,0,q,(n4+1)=count sub.getsubscriptions[],1,1,one new row
+true,0,0,q,1=sum exec active from sub.getsubscriptions[] where handle~\:PH4,1,1,and it is live
+run,0,0,q,hclose PH4,1,1,close it WITHOUT unsubscribing - .z.W loses the handle but the STORED flag is still 1b
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH4,1,1,it now reports dead through the .z.W half alone
+true,0,0,q,(n4+1)=count sub.getsubscriptions[],1,1,but the row is still present carrying its stored flag - the row a reissued descriptor would revive
+run,0,0,q,rel4:sub.unsubscribe[PH4],1,1,unsubscribe AFTER the close must still remove it
+true,0,0,q,(enlist`peertrade)~rel4,1,1,it found the row even though the effective flag read dead
+true,0,0,q,n4=count sub.getsubscriptions[],1,1,and deleted it - selecting on activesubscriptions would have warned nothing to release and left it behind
+true,0,0,q,d4=sum not exec active from sub.getsubscriptions[],1,1,every markdead row survived - unsubscribe deletes only what it released, which is the whole asymmetry
+
+comment,,,,,,,di.handlers ISOLATION - a co-registrant that throws AHEAD of our observer must not suppress markdead. this is a cross-module contract nothing about editing this module would prompt anyone to re-check
+run,0,0,q,`tailfired set 0b,1,1,reset the tail flag
+run,0,0,q,"realhandlers[`register][`.z.pc;`;`noisyneighbour;-1;{[w] '""neighbour exploded""}]",1,1,a throwing observer at priority -1 - MEASURED to run before ours, which init registers at 0j
+run,0,0,q,realhandlers[`register][`.z.pc;`;`tailobserver;9;{[w] `tailfired set 1b}],1,1,and a quiet one behind ours at priority 9
+true,0,0,q,{(x?`noisyneighbour)<x?`subscriptions} exec name from `priority xasc realhandlers[`list][`.z.pc],1,1,the throwing observer really is ordered ahead of ours - otherwise this proves nothing
+run,0,0,q,PH5:peerhandle[],1,1,open a handle to the still-live tickerplant
+run,0,0,q,sub.subscribe[PH5;`;`;0b;0b],1,1,subscribe on it
+true,0,0,q,1=sum exec active from sub.getsubscriptions[] where handle~\:PH5,1,1,the subscription is live
+run,0,0,q,killpeer[],1,1,kill the tickerplant so .z.pc fires for real
+run,0,0,q,noticedrop[PH5],1,1,touch the handle so the drop is detected
+true,0,0,q,not any exec active from sub.getsubscriptions[] where handle~\:PH5,1,1,the row reports dead - but NB this alone is vacuous here, the .z.W half would say the same
+true,0,0,q,0=count sub.unsubscribe[PH5],1,1,THE REAL ASSERTION - unsubscribe matches on the STORED flag, so finding nothing proves markdead actually cleared it. had the throwing registrant ahead of us suppressed markdead the flag would still be 1b and this would return peertrade
+true,0,0,q,tailfired,1,1,and the observer behind ours ran too - one throw does not abort the rest of the chain
+run,0,0,q,realhandlers[`remove][`.z.pc;`;`noisyneighbour],1,1,remove the noisy neighbour
+run,0,0,q,realhandlers[`remove][`.z.pc;`;`tailobserver],1,1,and the tail observer
+after,0,0,q,teardownfixture[],1,1,kill the peer and remove the temp directories

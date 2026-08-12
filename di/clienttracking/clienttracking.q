@@ -1,9 +1,7 @@
 / track the client sessions connected to a KDB-X process in a session table
 / consumes di.handlers (injected) to observe connection open/close and, once a query owner
 / exists, to count per-request usage - it never assigns .z.* directly
-
-/ module version - the exported semver di.depcheck reads to satisfy other modules' declared minimums
-version:"0.1.0";
+/ NB the exported `version` is defined in init.q (read from the VERSION file), not here
 
 / ============================================================
 / constants (load-time)

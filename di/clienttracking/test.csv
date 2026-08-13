@@ -1,0 +1,77 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load di.handlers + di.clienttracking and init against the real di.log + di.handlers
+before,0,0,q,handlers:use`di.handlers,1,1,load the real di.handlers module
+before,0,0,q,ct:use`di.clienttracking,1,1,load di.clienttracking module
+before,0,0,q,logger:use`di.log,1,1,load the real di.log module
+before,0,0,q,logdep:logger.logdict`log,1,1,di.log's info..fatal level dict (superset of info/warn/error)
+before,0,0,q,handlers.init[enlist[`log]!enlist logdep],1,1,init di.handlers with the real di.log
+before,0,0,q,"hdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list)",1,1,build the handlers injectable dict
+before,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,init di.clienttracking with the real log + handlers deps
+
+comment,,,,,,,init - dependency validation
+fail,0,0,q,ct.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,ct.init[()!()],1,1,init rejects missing log key
+fail,0,0,q,ct.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
+fail,0,0,q,"ct.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)]",1,1,init rejects a log dict missing the error key
+fail,0,0,q,ct.init[enlist[`log]!enlist logdep],1,1,init rejects missing handlers key
+fail,0,0,q,"ct.init[`log`handlers!(logdep;42)]",1,1,init rejects a non-dict handlers value
+fail,0,0,q,"ct.init[`log`handlers!(logdep;enlist[`register]!enlist{})]",1,1,init rejects a handlers dict missing remove/list keys
+fail,0,0,q,"ct.init[`log`handlers`maxidle!(logdep;hdep;5)]",1,1,init rejects a non-timespan maxidle
+fail,0,0,q,"ct.init[`log`handlers`trackusage!(logdep;hdep;1)]",1,1,init rejects a non-boolean trackusage
+run,0,0,q,".ct.errstr:@[{ct.init[(::)]};(::);{x}]",1,1,capture the error string from a bad init
+true,0,0,q,.ct.errstr like "di.clienttracking:*",1,1,init error is prefixed di.clienttracking:
+run,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,re-init cleanly for the remaining tests
+
+comment,,,,,,,module metadata - exported version
+true,0,0,q,10h=type ct.version,1,1,version is a string
+true,0,0,q,0<count ct.version,1,1,version is non-empty
+
+comment,,,,,,,init wires the four connection-lifecycle observers on di.handlers
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.po],1,1,.z.po observer registered
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.pc],1,1,.z.pc observer registered
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.wo],1,1,.z.wo observer registered
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.wc],1,1,.z.wc observer registered
+
+comment,,,,,,,getclients exposes the session schema
+true,0,0,q,`w`ipa`u`a`startp`endp`lastp`hits`sz~cols ct.getclients[],1,1,tracking table has the expected columns
+
+comment,,,,,,,lifecycle via real di.handlers dispatch - proves cross-module callback resolution
+run,0,0,q,(value `.z.po) 8001i,1,1,drive .z.po through the installed dispatcher with a synthetic handle
+true,0,0,q,"1=count select from ct.getclients[] where w=8001i,null endp",1,1,an open session row was added for the handle
+run,0,0,q,(value `.z.pc) 8001i,1,1,drive .z.pc through the installed dispatcher for the same handle
+true,0,0,q,not null first exec endp from ct.getclients[] where w=8001i,1,1,close stamped endp on the session (module state written from di.handlers dispatch)
+
+comment,,,,,,,addclient - manual add and input validation
+run,0,0,q,ct.addclient[8002i],1,1,manually record a handle
+true,0,0,q,"1=count select from ct.getclients[] where w=8002i,null endp",1,1,addclient created an open session row
+fail,0,0,q,ct.addclient[`notanint],1,1,addclient rejects a non-int handle
+
+comment,,,,,,,cleanup - open rows for dead handles get reaped
+run,0,0,q,ct.cleanup[],1,1,run a cleanup sweep
+true,0,0,q,"0=count select from ct.getclients[] where null endp,not w in key .z.W",1,1,no open session remains for a handle that is not live
+
+comment,,,,,,,usage counting is deferred until a query event has an exec owner
+true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,no post handler on .z.pg while it is unowned
+
+comment,,,,,,,usage counting activates once an exec owner exists and a request is served
+run,0,0,q,handlers.register[`.z.pg;`exec;`dummy;0;{value x}],1,1,register a dummy query owner on .z.pg
+run,0,0,q,ct.enableusage[],1,1,(re)wire usage counting now that an owner exists
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.pg] where phase=`post,1,1,usage post handler now registered on .z.pg
+run,0,0,q,ct.addclient[0i],1,1,record the console handle (.z.w is 0i) as an open session
+run,0,0,q,"(value `.z.pg) ""2+2""",1,1,drive a query through di.handlers - exec then usage post
+true,0,0,q,"0<first exec hits from ct.getclients[] where w=0i,null endp",1,1,the served request bumped the client hit count
+
+comment,,,,,,,re-init preserves the existing session table (first-init guard)
+run,0,0,q,ct.addclient[7007i],1,1,record a client before re-init
+run,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,re-init the module
+true,0,0,q,"1=count select from ct.getclients[] where w=7007i,null endp",1,1,the existing session survived the re-init
+
+comment,,,,,,,re-init with trackusage:0b removes the usage post-handlers
+run,0,0,q,"ct.init[`log`handlers`trackusage!(logdep;hdep;0b)]",1,1,re-init with usage tracking disabled
+true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,usage post handler removed on re-init
+run,0,0,q,"ct.init[`log`handlers!(logdep;hdep)]",1,1,restore the default init for the remaining tests
+
+comment,,,,,,,api metadata - callable exports documented, plumbing omitted
+true,0,0,q,"(asc (key ct) except `init`getapimeta`version)~asc exec name from ct.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing/version omitted)
+true,0,0,q,not any `init`getapimeta`version in exec name from ct.getapimeta[],1,1,framework plumbing/version is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols ct.getapimeta[],1,1,getapimeta rows carry the registry columns

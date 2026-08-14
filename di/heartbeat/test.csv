@@ -184,7 +184,7 @@ run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,run the subscription sweep the 
 true,0,0,q,1=count .pt.asked,1,1,getservers was consulted exactly once
 true,0,0,q,all null raze .pt.asked,1,1,the shipped `ALL default resolved to the null match-all symbol not a literal lookup for `ALL
 true,0,0,q,-11h=type first .pt.asked,1,1,and it was passed as a symbol ATOM - real di.servers.getservers rejects anything else
-comment,,,,,,,"regression cover - a single bare symbol is the only connections shape that works against the REAL di.servers today"
+comment,,,,,,,"the per-proctype iteration - a bare symbol is the one shape EVERY version of the getservers contract accepts, which is why the sweep still iterates now that di.servers takes lists too. the `ALL coupling itself is proved against the real di.servers in test_integration.csv"
 run,0,0,q,"hb.init[deps,`subenabled`servers`handlers`connections!(1b;mocksrvrows;mockh;`rdb)]",1,1,re-init with one bare proctype
 run,0,0,q,.pt.asked:(),1,1,clear the record
 run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,sweep
@@ -578,3 +578,17 @@ run,0,0,q,.pt.now:2025.01.01D00:02:00,1,1,jump past warning AND error in one ste
 run,0,0,q,hb.checkheartbeat[],1,1,single check
 true,0,0,q,first exec error from hb.gethb[] where procname=`jump,1,1,error is set
 true,0,0,q,not first exec warning from hb.gethb[] where procname=`jump,1,1,warning is NOT set - it was never in warning so the transition never fired; both flags only coexist on a gradual escalation
+comment,,,,,,,"name resolution - a bare read follows .z.m across a re-init; the trackunseen/checkheartbeat hoists are a qsql-scope problem, not this one (raised three times on PR #122)"
+run,0,0,q,hb.teardown[],1,1,tear down
+run,0,0,q,"hb.init[deps,`subscribewarnsweeps`warningtolerance`errortolerance!(9;7f;9f)]",1,1,re-init with values that differ from the shipped defaults of 3 2f and 3f
+true,0,0,q,"0<count (.m.di.0heartbeat.emptysweepmsg[]) ss ""9 consecutive""",1,1,a bare read of subscribewarnsweeps reports the re-initialised value
+true,0,0,q,"0=count (.m.di.0heartbeat.emptysweepmsg[]) ss ""3 consecutive""",1,1,and never the shipped default - configdefaults is a dict so there is no module-level constant to fall back to
+true,0,0,q,0D00:03:30=.m.di.0heartbeat.warningperiod[`rdb],1,1,warningperiod reads the re-initialised tolerance (7f) and interval (30s) as bare names
+true,0,0,q,0D00:04:30=.m.di.0heartbeat.errorperiod[`rdb],1,1,and so does errorperiod (9f)
+comment,,,,,,,ensureroottable reports its own error rather than a bare 'rootowned when the name is squatted
+run,0,0,q,hb.teardown[],1,1,teardown releases ownership - rootowned goes back to 0b
+run,0,0,q,"set[`heartbeat;([]foreign:`int$())]",1,1,another module takes the root name
+run,0,0,q,".pt.errroot:@[{.m.di.0heartbeat.ensureroottable[]};(::);{x}]",1,1,call the internal directly - the only way to reach the unowned branch
+true,0,0,q,"0<count .pt.errroot ss ""di.heartbeat: installroot""",1,1,it raises this module's own error not a bare 'rootowned
+run,0,0,q,"![`.;();0b;enlist`heartbeat]",1,1,free the name
+run,0,0,q,hb.init[deps],1,1,restore a working instance on the shipped defaults

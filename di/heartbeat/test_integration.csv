@@ -76,3 +76,27 @@ true,0,0,q,all exec status from realtimer[`getalljobs][],1,1,and no job was disa
 run,0,0,q,hbm[`teardown][],1,1,teardown against the real registries
 true,0,0,q,0=count realtimer[`getalljobs][],1,1,the real timer jobs were cleaned
 true,0,0,q,not `heartbeat in tables[],1,1,the root names were cleaned
+
+comment,,,,,,,"the REAL di.servers - the last stub in the di.torq-shaped block above, and the one whose contract heartbeat.md makes a claim about"
+comment,,,,,,,"`ALL resolves to a null symbol and every other test asserts that against a mock di.heartbeat itself wrote. only the real getservers can prove the coupling, and the caveat removed in a2b07ed rests on it"
+run,0,0,q,realservers:use`di.servers,1,1,real di.servers
+run,0,0,q,.ht.h2:spawnpublisher[],1,1,spawn a fresh publisher to be the discovered peer - the earlier child was cleaned up above
+run,0,0,q,.ht.csv:writeserverscsv[.ht.port],1,1,write the 4-column phone book naming that publisher
+run,0,0,q,"realservers[`init][logging[`logdict],`timer`handlers`proctype`procname`connections`processcsv!(realtimer;realhandlers;`montype;`monproc;`childtype;.ht.csv)]",1,1,init the real di.servers against the same real timer and handlers
+run,0,0,q,realservers[`startup][],1,1,open the connection to the publisher
+true,0,0,q,1=count realservers[`getservers][`childtype],1,1,di.servers connected to the publisher
+true,0,0,q,0<count realservers[`getservers][`],1,1,a NULL symbol matches every live server - the getservers contract heartbeat.md relies on, asserted against the real module not a mock
+comment,,,,,,,"and the coupling itself - the shipped `ALL default must reach a real peer through the real getservers"
+run,0,0,q,"hbm[`init][logging[`logdict],`timer`pubsub`handlers`servers`proctype`procname`subenabled`connections!(realtimer;realps;realhandlers;realservers;`montype;`monproc;1b;`ALL)]",1,1,init the monitor with the REAL di.servers export dict and the shipped `ALL default
+true,0,0,q,"0=.ht.h2""count raze value .m.di.0pubsub.reqalldict""",1,1,the fresh publisher has no subscribers before the sweep
+run,0,0,q,.ht.sh:first exec w from realservers[`getservers][`childtype],1,1,the handle DI.SERVERS opened - not the monitor's own hopen
+run,0,0,q,.m.di.0heartbeat.hbsubscriptions[],1,1,run the discovery sweep the timer would run
+run,0,0,q,drain[.ht.sh],1,1,"the subscribe is async and went over di.servers' handle, so it must be flushed on THAT handle; a sync call there also waits for the child to process it in order. draining the monitor's own handle proves nothing and asserted 0 subscribers against a sweep that had in fact worked"
+true,0,0,q,"0<.ht.h2""count raze value .m.di.0pubsub.reqalldict""",1,1,`ALL discovery found the peer through the real getservers and the subscribe reached it
+run,0,0,q,.m.di.0heartbeat.hb:.m.di.0heartbeat.storeschema,1,1,"clear the store - it still holds the FIRST child's beats under the same childtype/childproc identity, and this block must not pass on those"
+run,0,0,q,".ht.h2""hb.publishheartbeat[]""",1,1,make the discovered peer publish one heartbeat
+run,0,0,q,drain[.ht.sh],1,1,drain the handle the subscription was made on - that is the connection the published row arrives over
+true,0,0,q,1=count hbm[`gethb][],1,1,a beat from the `ALL-discovered peer reached the monitor - discovery subscribe and delivery all the way through
+true,0,0,q,`childproc in exec procname from hbm[`gethb][],1,1,and it is the peer di.servers discovered not a row left over from earlier
+run,0,0,q,hbm[`teardown][],1,1,tear the monitor down
+run,0,0,q,cleanup[],1,1,close the handle and remove the child script log and phone book

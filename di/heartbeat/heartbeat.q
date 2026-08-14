@@ -61,6 +61,13 @@ jobids:`hbpublish`hbcheck`hbsubscribe;
 / module state
 / ============================================================
 
+/ name resolution inside this module: a bare READ resolves to the current .z.m value - init writes
+/ .z.m.<name> and every later read follows it, including across a re-init that changes it. a WRITE
+/ must always be explicit .z.m.<name>:, since a bare assignment makes a function-local. the one
+/ exception is a qsql select/where/by clause, which cannot resolve a module-level name at ALL and
+/ throws on it - hence the local hoists in trackunseen (n) and checkheartbeat (wp/ep). those hoists
+/ are about qsql scope, NOT about .z.m. raised three times on PR #122, so it is written down once here
+
 / current-time function - heartbeat owns its clock, separate from di.timer's; override via setcp
 cp:{.z.p};
 
@@ -283,8 +290,13 @@ ensureroottable:{[]
     set[tablename;schema];
     .z.m.rootowned:1b;
     :()];
-  / already there and we created it on an earlier init - keep ownership and leave the table alone
-  if[rootowned;:()];
+  / already there and we created it on an earlier init - keep ownership and leave the table alone.
+  / read rootowned defensively, matching validateroot: it is unset until the first init has run, and a
+  / bare read of an unset module name THROWS rather than returning a null. that path is unreachable
+  / through init (validateroot gates the foreign-table case before any state is written, and the first
+  / init writes rootowned before installroot runs), but a direct call then gets this module's own
+  / error instead of a bare 'rootowned. raised on PR #122
+  if[@[{rootowned};::;0b];:()];
   raiseerror[`installroot;"a table named ",(string tablename)," already exists at root and was not ",
     "created by this module - refusing to use it. if it is left over from an earlier load of ",
     "di.heartbeat, remove it (the publish table is always an empty schema holder, so nothing is ",

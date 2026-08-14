@@ -138,10 +138,17 @@ against a `di.servers` that predates the list/null support as well as one that h
 one call per configured proctype per sweep, which is not worth optimising away for the coupling it
 would add.
 
-> **Requires `di.servers` with the null/list contract.** An older build accepting only a symbol atom
-> returns nothing for `` `ALL `` and *throws* on a list — and because the sweep runs in a `di.timer`
-> job with `disableonfail:1b`, that throw would permanently disable monitor discovery. If a monitor
-> discovers nothing, the discovered-nothing warning below is what surfaces it.
+> **`` `ALL `` requires a `di.servers` with the null match-all contract.** An older build matching
+> `proctype=pt` against an atom returns nothing for a null symbol, so the shipped default discovers
+> zero peers — silently, apart from the discovered-nothing warning below. Naming process types
+> explicitly still works against such a build, which is exactly what the per-proctype iteration buys:
+> the sweep never passes a list, so the *other* half of an old contract's incompatibility (throwing on
+> a vector) is unreachable from this module.
+>
+> This is asserted against the real module, not a mock: `test_integration.csv` stands up a real
+> `di.servers`, connects it to a spawned publisher, and drives a `` connections:`ALL `` sweep through
+> to the subscription landing on that peer. Every other `` `ALL `` test in `test.csv` runs against a
+> mock this module wrote, and so can only show it is self-consistent.
 
 **`connections` is not the same key as `di.servers.connections`.** They share a name and mean
 different things: `di.servers.connections` decides which process types this process *connects to at

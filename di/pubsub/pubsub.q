@@ -148,7 +148,9 @@ getsubtables:{[]
   / REPLACES the list - a consumer that needs to ADD to the publish set has no other way to learn the
   / current one, and reaching into module state from outside is not an interface.
   / empty until init has run, rather than signalling on an unset name
-  :@[{[x] t};::;{[e] `symbol$()}];
+  / read .z.m.t EXPLICITLY - a bare t would resolve to the same module state, but the explicit form is
+  / the one qlint accepts and matches how every other module reads its own state
+  :@[{[] .z.m.t};::;{[e] `symbol$()}];
   };
 setsubtables`;
 

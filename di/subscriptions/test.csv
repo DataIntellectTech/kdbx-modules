@@ -224,6 +224,17 @@ run,0,0,q,resetupd[],1,1,reset the upd counter
 run,0,0,q,sub.subscribe[tphfor[`tau;2;ltau];`;`;0b;1b],1,1,and it replays through replayall
 true,0,0,q,2=count tau,1,1,both messages landed in the caller's table
 true,0,0,q,2=updcalls,1,1,once per message on the all-syms path too
+run,0,0,q,"lfna:buildlog[""na"";`naa;2]",1,1,build a log for the early-check narrowing case
+run,0,0,q,@[`.;`naa;:;genschema[]],1,1,the caller owns this schema - naa exists at root
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,resetcap[],1,1,clear the captured log
+true,0,0,q,"not `nab in tables[]",1,1,nab is deliberately NOT defined at root - and the tickerplant does not publish it either
+run,0,0,q,"rna:sub.subscribe[faithfultph[enlist`naa;2;lfna];`naa`nab;`;0b;1b]",1,1,"THE EARLY-CHECK ASYMMETRY - setschema 0b with replay, asking for a table that is absent at root AND not published. narrowtabs drops it, so it was never going to be part of the subscription and must not be required at root"
+true,0,0,q,(enlist`naa)~rna`subtables,1,1,the subscription is the narrowed list
+true,0,0,q,"logged[`warn;""does not publish""]",1,1,nab was dropped with a warn rather than an early throw
+true,0,0,q,"not logged[`error;""setschema is 0b""]",1,1,and the tables-exist refusal did NOT fire for a table the request was never going to include
+true,0,0,q,2=count naa,1,1,the log replayed into the caller's own table
+fail,0,0,q,"sub.subscribe[faithfultph[`nac`nad;2;lfna];`nac`nad;`;0b;1b]",1,1,the guard still bites when the tickerplant DOES publish the table and it is genuinely missing at root - sendtabs keeps it
 
 comment,,,,,,,a malformed tickerplant response is rejected rather than half-applied
 fail,0,0,q,sub.subscribe[mocktphthrows;`;`;1b;1b],1,1,a tickerplant that throws is reported
@@ -596,6 +607,25 @@ run,0,0,q,sub.resubscribe[rsnew],1,1,and a third call on a timer-driven reconnec
 true,0,0,q,"0=count select from caprows where lvl=`warn",1,1,is SILENT - the replaced dead row was pruned and rows this tickerplant cannot serve are skipped rather than retried and warned about every call
 fail,0,0,q,sub.resubscribe[`nope],1,1,resubscribe validates its handle - a symbol is not one
 true,0,0,q,"`resubscribe in exec name from sub.getapimeta[]",1,1,resubscribe is declared in the api metadata
+
+comment,,,,,,,resubscribe with a PARTIAL narrow - the tickerplant has retired one table of a multi-table subscription. subscribe then SUCCEEDS having re-established only the rest so the row must keep the table that did not come back rather than being reported wholly done and deleted
+run,0,0,q,"pnboth:faithfultph[`pna`pnb;0;`]",1,1,a tickerplant publishing both tables
+run,0,0,q,"sub.subscribe[pnboth;`pna`pnb;`;1b;0b]",1,1,subscribe to both
+run,0,0,q,markdeadfor[pnboth],1,1,the tickerplant drops
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"pnonly:faithfultph[enlist`pna;0;`]",1,1,a NEW handle - but pnb has since been retired at the tickerplant
+run,0,0,q,rpn:sub.resubscribe[pnonly],1,1,re-establish over the new handle
+true,0,0,q,(enlist`pna)~rpn,1,1,only pna came back - resubscribe reports what subscribe ACTUALLY established and not what the row asked for
+true,0,0,q,"logged[`warn;""does not publish""]",1,1,and narrowtabs warned that pnb was dropped
+true,0,0,q,"(enlist`pnb)~raze exec tabs from sub.getsubscriptions[] where not active, handle~\:pnboth",1,1,"THE KEY ASSERTION - the dead row SURVIVES carrying only the table that did not come back. reporting the row's own request as the outcome would have marked it done and deleted it, losing pnb with nothing left to retry"
+true,0,0,q,"any exec active from sub.getsubscriptions[] where handle~\:pnonly",1,1,and pna is live again on the new handle
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,sub.resubscribe[pnonly],1,1,a second call on the timer-driven reconnect path
+true,0,0,q,"0=count select from caprows where lvl=`warn",1,1,is SILENT - the surviving row now holds only pnb which this tickerplant does not publish so it is skipped rather than retried and warned about on every call
+run,0,0,q,"pnback:faithfultph[`pna`pnb;0;`]",1,1,the tickerplant starts publishing pnb again
+true,0,0,q,"`pnb in sub.resubscribe[pnback]",1,1,the table that was kept is retried and re-established once it is available again
+true,0,0,q,"0=count select from sub.getsubscriptions[] where not active, handle~\:pnboth",1,1,"and only NOW is the dead row gone - narrowed to empty and dropped. NB scoped to the dead row: pnback is a structurally identical projection to pnboth so handle~\: alone would match the LIVE row this call just created"
+true,0,0,q,"any exec active from sub.getsubscriptions[] where tabs~\:enlist`pnb",1,1,and pnb is live again on its own row
 
 comment,,,,,,,syms may be a FILTER DICT - TorQ's own shape. rdb.q loads .sub.filterparams from a csv and passes the keyed table straight through as instruments. .u.sub dispatches on its type and legacy replayupd treats it as all-syms for the replay
 run,0,0,q,"lffd:buildlog[""fd"";`fdtab;2]",1,1,build a log for the dict-syms case

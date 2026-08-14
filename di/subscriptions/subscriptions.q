@@ -770,19 +770,28 @@ subscribe:{[tph;tabs;syms;setschema;replay]
   / need a concrete list, so that one case is skipped here and caught by the copies below
   if[replay;requirerootupd[]];
   if[not requested~`;guardduplicate[requested]];
+  / what we actually SEND. an explicit request is narrowed to what the tickerplant publishes, because
+  / one unpublished name fails the whole subdetails call - see narrowtabs
+  sendtabs:$[alltabs or published~`;requested;narrowtabs[tabs;published]];
   / the tables-exist check runs early only for an EXPLICIT request. on the all-tables path
   / `requested` is the TABLELIST list, which may advertise more than schemalist actually returns, and
   / this guard asserts that EVERY name exists at root - so a superset there would refuse a perfectly
   / valid subscribe. the duplicate guard above is unaffected by the same superset, because it only
   / bites where the list INTERSECTS a table already held, and that is a caller mistake either way.
   / the all-tables case is covered by the post-reply copy against `wanted`, once the reply has said
-  / what is really on offer
+  / what is really on offer.
+  / it checks SENDTABS, not the caller's raw list: narrowtabs has already dropped anything the
+  / tickerplant does not publish, with a warn rather than a failure, and those tables were never going
+  / to be part of the subscription - so requiring them at root would throw for a table the caller
+  / never needed to hold. this runs AFTER narrowtabs but still BEFORE fetchdetails, which is what
+  / matters: the tablelist round trip behind `published` is pure and registers nothing, whereas
+  / fetchdetails registers this handle for live delivery as a side effect
+  / sendtabs is the closest approximation to `wanted` obtainable before the reply, not an equal one -
+  / it can still be a superset when schemalist omits a table the tablelist advertised, which is the
+  / gap the post-reply copy below continues to cover
   if[replay;
     if[not alltabs;
-      if[not setschema;requiretablesexist[requested]]]];
-  / what we actually SEND. an explicit request is narrowed to what the tickerplant publishes, because
-  / one unpublished name fails the whole subdetails call - see narrowtabs
-  sendtabs:$[alltabs or published~`;requested;narrowtabs[tabs;published]];
+      if[not setschema;requiretablesexist[sendtabs]]]];
   details:fetchdetails[tph;sendtabs;syms];
   schemapairs:(details`schemalist) where not 0=count each details`schemalist;
   offered:(),schemapairs[;0];
@@ -886,7 +895,11 @@ resubscribe:{[tph]
   requireinit[`resubscribe];
   requireobserver[`resubscribe];
   requirehandle[`resubscribe;tph];
-  dead:select tabs,syms from activesubscriptions[] where not active;
+  / idx: ALIAS the virtual index column - a bare `i` in the select list lands as a column named `x`.
+  / it carries each dead row's position in .z.m.subscriptions, so the cleanup below can rewrite
+  / exactly the rows this call attempted. activesubscriptions is an update over the registry, so it
+  / preserves row order and count and the index maps 1:1
+  dead:select idx:i,tabs,syms from activesubscriptions[] where not active;
   if[0=count dead;
     .z.m.loginfo[`resubscribe;"no dropped subscription to re-establish"];
     :`$()];
@@ -902,22 +915,37 @@ resubscribe:{[tph]
   if[0=count dead;
     .z.m.loginfo[`resubscribe;"no dropped subscription this tickerplant can serve"];
     :`$()];
+  / report what subscribe ACTUALLY established, not what this row asked for. narrowtabs drops a table
+  / the tickerplant no longer publishes with a warn rather than a failure, so a multi-table row can
+  / succeed having re-established only some of its tables - and taking the request as the outcome
+  / would then mark the dropped one done and delete it below, losing every trace of it with nothing
+  / left to retry it. subtables is the narrowed list subscribe actually registered (see buildreturn)
   done:raze {[tph;t;s]
-    r:@[{[tph;t;s] subscribe[tph;t;s;0b;0b]; (1b;t)}[tph;t];s;{[e] (0b;e)}];
+    r:@[{[tph;t;s] res:subscribe[tph;t;s;0b;0b]; (1b;res`subtables)}[tph;t];s;{[e] (0b;e)}];
     if[not first r;
       .z.m.logwarn[`resubscribe;"could not re-establish ",(", " sv string (),t),": ",last r];
       :`$()];
-    :(),t}[tph]'[dead`tabs;dead`syms];
+    :(),r 1}[tph]'[dead`tabs;dead`syms];
   done:distinct (),done;
   if[0<count done;
-    / drop the dead rows we have just replaced. the registry otherwise KEEPS a dropped subscription
-    / on purpose, so a post-mortem can see it - but a row whose tables are live again on a new handle
-    / is superseded history, not evidence, and leaving it makes every later resubscribe retry the same
-    / tables and warn about each one. measured before this: a second call emitted three warnings and
-    / grew with the number of historically-dead rows, on the one path a caller drives from a timer.
-    / f is a LOCAL - a module-level name does not resolve inside q-sql clauses (see activesubscriptions)
-    f:{[d;t] :all ((),t) in d}[done];
-    .z.m.subscriptions:delete from .z.m.subscriptions where not active, f'[tabs];
+    / retire the tables we have just replaced from the dead rows that carried them. the registry
+    / otherwise KEEPS a dropped subscription on purpose, so a post-mortem can see it - but a table
+    / that is live again on a new handle is superseded history, not evidence, and leaving it makes
+    / every later resubscribe retry it and warn. measured before this: a second call emitted three
+    / warnings and grew with the number of historically-dead rows, on the one path a caller drives
+    / from a timer.
+    / rows are NARROWED rather than deleted whole, and a row is dropped only once nothing is left in
+    / it. deleting whole would discard the tables that did NOT come back, and keeping whole would
+    / retry them alongside the ones that did - which now hold a live subscription, so guardduplicate
+    / would reject the retry and warn about it on every call, forever
+    / only the rows this call ATTEMPTED are touched (dead`idx), so a same-named table belonging to a
+    / different tickerplant's dead row is left alone - narrower than matching on table name alone
+    / strip and ix are LOCALS - a module-level name does not resolve inside a q-sql clause, only
+    / function-locals and column names do (see activesubscriptions)
+    strip:{[d;t] :(),((),t) except d}[done];
+    ix:dead`idx;
+    .z.m.subscriptions:update tabs:strip'[tabs] from .z.m.subscriptions where i in ix;
+    .z.m.subscriptions:delete from .z.m.subscriptions where i in ix, 0=count each tabs;
     .z.m.loginfo[`resubscribe;"re-established ",(", " sv string done)," on handle ",.Q.s1 tph]];
   :done;
   };

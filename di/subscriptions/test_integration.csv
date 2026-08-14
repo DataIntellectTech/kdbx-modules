@@ -67,6 +67,7 @@ before,0,0,q,"midlines:{[] :(enlist ""(`$\"":"",MIDDIR,""/port\"") 0: enlist str
 before,0,0,q,"writemidscript:{[] (`$"":"",MIDDIR,""/mid.q"") 0: midlines[]; };",1,1,fixture: writemidscript
 before,0,0,q,"spawnmid:{[] killstalemid[]; system ""rm -rf "",MIDDIR; system ""mkdir -p "",MIDDIR; writemidscript[]; system (getenv[`QHOME]),""/bin/q "",MIDDIR,""/mid.q -p 0W -q </dev/null >/dev/null 2>&1 &""; `MIDPORT set readport[MIDDIR,""/port"";10000]; if[null MIDPORT;'""test: middle tickerplant never reported a port""]; };",1,1,"fixture: spawnmid - OS-assigned port, read back from the middle process"
 before,0,0,q,"midhandle:{[] :hopen (`$"":localhost:"",string MIDPORT;2000); };",1,1,fixture: midhandle
+before,0,0,q,"waitready:{[h;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; r:0b; while[(.z.p<deadline) and not r; r:1b~@[h;""MIDREADY"";{[e] 0b}]; if[not r;system""sleep 0.05""]]; :r; };",1,1,"fixture: waitready - poll MIDREADY the way readport polls the port file. the middle reports its port BEFORE running its own subscribe, so the port file appearing does not mean it is ready. trapped: MIDREADY is undefined until the subscribe returns, and reading an unset name errors rather than returning 0b"
 before,0,0,q,"killmid:{[] killstalemid[]; system ""rm -rf "",MIDDIR; system ""sleep 0.3""; };",1,1,fixture: killmid
 before,0,0,q,"teardownfixture:{[] killpeer[]; killstalepeers[]; killmid[]; system ""rm -rf "",BASE; system ""rm -rf "",PEERDIR; };",1,1,fixture: teardownfixture - reaps the peer AND the middle process
 before,0,0,q,setupfixture[],1,1,create the temp directories
@@ -205,7 +206,7 @@ comment,,,,,,,the middle process is the chained-tickerplant role the FRAMEWORK t
 run,0,0,q,spawnpeer[],1,1,fresh upstream tickerplant
 run,0,0,q,spawnmid[],1,1,launch the middle process - it subscribes to the peer through di.subscriptions with republish on
 run,0,0,q,MH:midhandle[],1,1,connect to the middle as a downstream client would
-true,0,0,q,"1b~MH""MIDREADY""",1,1,the middle finished its own upstream subscribe
+true,0,0,q,"waitready[MH;10000]",1,1,the middle finished its own upstream subscribe - polled rather than read once: the port file appears before the subscribe does
 true,0,0,q,"`peertrade in MH"".m.di.0pubsub.getsubtables[]""",1,1,"THE FEATURE - the middle's local di.pubsub is serving the table it subscribed to upstream, with no code in the middle beyond setting republish"
 true,0,0,q,"`peertrade in MH""tables[]""",1,1,and the table really was defined at root there by subscribe
 run,0,0,q,@[`.;`peertrade;:;0#peertrade],1,1,clear our local copy so what arrives can only have come through the middle

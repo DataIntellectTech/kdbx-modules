@@ -1,360 +1,137 @@
-/ =============================================================================
-/ TEST HELPERS
-/ =============================================================================
+/ fixture helpers for di.tplog's k4unit tests.
+/ di.tplog replays through the ROOT-level upd, so a recorder upd + a trade schema are defined here at
+/ root. message tuples carry commas/backticks, so they are built in these helpers and never written
+/ inline in test.csv (raw commas would break the csv fields). the module handle `tp` and the module's
+/ init are set up by test.csv's `before` rows before any of these run.
 
-upd:{[t;x] t upsert x};
-trade:([] time:`timestamp$(); sym:`symbol$(); price:`float$(); size:`long$());
+base:"/tmp/di_tplog_k4unit"
+d:2026.08.13
 
-/ @function createvalidlog
-/ @description Create a valid tickerplant log file for testing
-/ @param filepath {symbol} Path where to create the log file
-/ @param msgcount {long} Number of messages to write
-createvalidlog:{[filepath;msgcount]
-  / create test table
-  trade:([] time:.z.p + til msgcount; sym:msgcount?`AAPL`GOOGL`MSFT`AMZN`TSLA; price:100+msgcount?100.0; size:100+msgcount?1000);
-  / create log file and write messages
-  h:hopen filepath set ();
-  {[h;i;t] h enlist (`upd;`trade;value t[i])} [h;;trade] each til msgcount;
+/ root-level replay target + a recorder that also captures what was replayed
+trade:([] time:`timestamp$(); sym:`symbol$(); price:`float$())
+replayed:()
+resetstate:{[] `replayed set (); `trade set 0#trade;}
+upd:{[t;x] `replayed set replayed,enlist(t;x); t insert x;}
+
+/ capturing logger - one row per call, so tests can assert on narration and the log contract
+logcap:([] level:`symbol$(); ctx:`symbol$(); msg:())
+capturelog:{[]
+  `logcap set 0#logcap;
+  `info`warn`error!(
+    {[c;m] `logcap insert (`info;c;m);};
+    {[c;m] `logcap insert (`warn;c;m);};
+    {[c;m] `logcap insert (`error;c;m);})
+  }
+
+/ a single trade message matching the trade schema above
+trademsg:{[ts;s] (`upd;`trade;(enlist ts;enlist s;enlist 1.0))}
+
+setupfixture:{[] system "rm -rf ",base; system "mkdir -p ",base;}
+teardownfixture:{[] system "rm -rf ",base;}
+
+/ a fresh, empty per-test directory; returns the dir string
+freshdir:{[sub] dd:base,"/",sub; system "rm -rf ",dd; system "mkdir -p ",dd; dd}
+
+/ write n trade messages into a fresh clean log under sub; close; return the log filename handle
+writelog:{[sub;n]
+  dd:freshdir sub;
+  r:tp[`open][dd;d]; h:r 0;
+  tp[`write][h;] each trademsg[;`AAPL] each d+0D00:01*til n;
   hclose h;
- };
+  tp[`logname][dd;d]
+  }
 
-/ @function createcorruptlog
-/ @description Create a log file with valid messages followed by corruption
-/ @param filepath {symbol} Path where to create the log file
-/ @param msgcount {long} Number of messages in log file
-/ @param corruptpos {long} Message position where to insert corruption
-createcorruptlog:{[filepath;msgcount;corruptpos]
-  / create test table
-  trade:([] time:.z.p + til msgcount; sym:msgcount?`AAPL`GOOGL`MSFT`AMZN`TSLA; price:100+msgcount?100.0; size:100+msgcount?1000);
-  / create log file and write messages
-  h:hopen filepath set ();
-  {[h;i;t;corruptpos] 
-    if[=[i;corruptpos]; 
-      data:enlist (`upd;`trade;value t[i]);
-      databytes:-18!data;
-      data_bytes[10+til 20]:`byte$(20?50);
-      :h data_bytes;
-      ]
-    h enlist (`upd;`trade;value t[i])
-    } [h;;trade;corruptpos] each til msgcount;
-    hclose h;
- };
-
-/ @function countLogMessages
-/ @description Count number of messages in a log file
-/ @param filepath {symbol} Path to log file
-/ @returns {long} Number of messages in the log
-countlogmessages:{[filepath]
-  count -11!(1;filepath)
- };
-
-/ @function cleanup  
-/ @description Delete test files
-/ @param filepaths {symbol[]} List of file paths to delete
-cleanup:{[filepaths]
-  {[fp] @[hdel;fp;{}]} each filepaths;
- };
+/ smash k bytes near the middle of a log file, in place; returns the filename
+corrupt:{[fn;k]
+  b:read1 fn;
+  p:count[b] div 2;
+  fn set @[b;p+til k&count[b]-p;:;k#0xff];
+  fn
+  }
 
 / =============================================================================
-/ BASIC FUNCTIONALITY TESTS
+/ tests (each returns 1b on success)
 / =============================================================================
 
-/ @test Valid log file tplog.check returns original filepath
-testcheckvalidlog: {
-  testfile:`:test_valid.log;
-  msgcount:10;
-  
-  / setup
-  createvalidlog[testfile;msgcount];
-  
-  / test
-  result:tplog.check[testfile;msgcount-1];
-  
-  / assert
-  passes:result~testfile;
-  
-  / cleanup
-  cleanup enlist testfile;
-  
-  / Return
-  passes
- };
+/ logname builds <dir>/tp<date>
+testlogname:{[] (`$":/x/tp2026.08.13")~tp[`logname]["/x";2026.08.13]}
 
-/ @test tplog.check returns original when enough good messages exist
-testcheckcorruptsufficientmessages:{
-  testfile:`:test_corrupt_sufficient.log;
-  validmsgcount:20;
-  lastmsgtoreplay:10j;
-    
-  / setup: corrupt after position where we have enough good messages
-  createcorruptlog[testfile;validmsgcount;500];
-  
-  / test
-  result:tplog.check[testfile;lastmsgtoreplay];
-  
-  / assert - should return original since we have enough good messages
-  goodmsgcount:first -11!(-2;testfile);
-  passes:(result~testfile) and (goodmsgcount > lastmsgtoreplay);
-  
-  / cleanup
-  cleanup enlist testfile;
-  
-  passes
- };
+/ a freshly created log opens with count 0
+testopenfresh:{[]
+  dd:freshdir"fresh";
+  r:tp[`open][dd;d]; hclose r 0;
+  0=r 1
+  }
 
-/ @test tplog.repair creates .good file with correct name
-testrepaircreatesgoodfile: {
-  testfile:`:test_tplog.repair.log;
-  expectedgoodfile:`$string[testfile],".good";
-    
-  / setup
-  createcorruptlog[testfile;15;150];
-    
-  / test
-  result:tplog.repair[testfile];
-  
-  / assert
-  namecorrect:result~expectedgoodfile;
-  fileexists:not ()~key expectedgoodfile;
-  passes:namecorrect and fileexists;
-    
-  / cleanup  
-  cleanup (testfile;expectedgoodfile);
-  
-  passes
- };
+/ write two, reopen replays both through the root upd
+testwritereopen:{[]
+  resetstate[];
+  dd:freshdir"wr";
+  r:tp[`open][dd;d]; h:r 0;
+  tp[`write][h;trademsg[d+0D10:00;`AAPL]];
+  tp[`write][h;trademsg[d+0D10:01;`MSFT]];
+  hclose h;
+  r2:tp[`open][dd;d]; c:r2 1; hclose r2 0;
+  (2=c) and (2=count replayed) and (2=count trade)
+  }
 
-/ @test tplog.repair recovers valid messages from corrupt log
-testrepairrecoversmessages: {
-  testfile:`:test_recover.log;
-  goodfile:`$string[testfile],".good";
-  validmsgcount:20;
-    
-  / setup
-  createcorruptlog[testfile;validmsgcount;250];
-    
-  / test
-  tplog.repair[testfile];
-    
-  / Count messages in good file
-  recoveredcount:countlogmessages[goodfile];
-    
-  / assert - should recover at least some messages
-  passes:(recoveredcount>0) and (recoveredcount<=validmsgcount);
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  passes
- };
+/ roll closes the current handle and creates the next day's log
+testroll:{[]
+  dd:freshdir"roll";
+  r:tp[`open][dd;d]; h:r 0;
+  tp[`write][h;trademsg[d+0D10:00;`AAPL]];
+  r2:tp[`roll][h;dd;d]; hclose r2 0;
+  not ()~key tp[`logname][dd;d+1]
+  }
 
-/ @test tplog.check triggers tplog.repair when insufficient good messages
-testchecktriggersrepair: {
-  testfile:`:test_tplog.check_tplog.repair.log;
-  goodfile:`$string[testfile],".good";
-  validmsgcount:10;
-  lastmsgtoreplay:15j;  / Need more messages than available good ones
-    
-  / setup - corrupt early so not enough good messages
-  createcorruptlog[testfile;validmsgcount;100];
-    
-  / test
-  result:tplog.check[testfile;lastmsgtoreplay];
-    
-  / assert
-  triggerstplog.repair:result~goodfile;
-  filecreated:not ()~key goodfile;
-  passes:triggerstplog.repair and filecreated;
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  passes
- };
+/ open fails fast (signals) on a corrupt log - used by a `fail` row
+testopenfailsfast:{[]
+  writelog["off";5];
+  corrupt[tp[`logname][base,"/off";d];12];
+  tp[`open][base,"/off";d]
+  }
 
-/ =============================================================================
-/ EDGE CASE TESTS
-/ =============================================================================
+/ replay repairs a corrupt log and recovers a sensible number of messages
+testreplayrepairs:{[]
+  resetstate[];
+  fn:corrupt[writelog["rrp";10];12];
+  n:tp[`replay] fn;
+  (n>0) and n<=10
+  }
 
-/ @test tplog.repair handles garbage at end of file
-testrepairgarbageatend: {
-  testfile:`:test_garbage_end.log;
-  goodfile:`$string[testfile],".good";
-    
-  / setup - create log and append garbage at end
-  createvalidlog[testfile;10];
-  bytes:read1 testfile;
-  testfile set bytes,100#0x00;
-    
-  / test
-  result:tplog.repair[testfile];
-    
-  / assert
-  namecorrect:result~goodfile;
-  hasMessages:countlogmessages[goodfile]>0;
-  passes:namecorrect and hasMessages;
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  passes
- };
+/ replay processes each recovered message EXACTLY once (double-processing regression guard)
+testreplaynodouble:{[]
+  resetstate[];
+  fn:corrupt[writelog["nd";8];12];
+  n:tp[`replay] fn;
+  n=count replayed
+  }
 
-/ @test Handles multiple corruption points
-testmultiplecorruptsections: {
-  testfile:`:test_multi_corrupt.log;
-  goodfile:`$string[testfile],".good";
-    
-  / setup - create log with corruption in middle
-  createvalidlog[testfile;30];
-  bytes:read1 testfile;
-    
-  / insert corruption at position (should have valid messages before and after)
-  if[200 < count bytes;
-    corrupted:bytes[til 200],10#0xFF,bytes[210+til count[bytes]-210];
-    testfile set corrupted;
-  ];
-    
-  / test
-  result:tplog.repair[testfile];
-    
-  / assert - should create file and recover something
-  fileCorrect:result~goodfile;
-  fileExists:not ()~key goodfile;
-  passes:fileCorrect and fileExists;
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  passes
- };
+/ replayupto replays ONLY the first n messages
+testreplayupto:{[]
+  resetstate[];
+  fn:writelog["upto";4];
+  n:tp[`replayupto][fn;2];
+  (2=n) and (2=count replayed)
+  }
 
-/ @test Completely corrupt log creates empty .good file
-testcompletelycorruptlog: {
-  testfile:`:test_all_corrupt.log;
-  goodfile:`$string[testfile],".good";
-    
-  / setup - create completely corrupt file
-  testfile set 1000#0x00;
-    
-  / test
-  result:tplog.repair[testfile];
-    
-  / assert - should create .good file even if empty/minimal
-  namecorrect:result~goodfile;
-  fileExists:not ()~key goodfile;
-  passes:namecorrect and fileExists;
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  passes
- };
+/ check returns a clean log unchanged
+testcheckclean:{[]
+  fn:writelog["ckc";3];
+  fn~tp[`check] fn
+  }
 
-/ @test Empty log file handling
-testemptylog: {
-  testfile:`:test_empty.log;
-   
-  / setup - create empty log 
-  testfile set ();
-    
-  / test - should not crash
-  result:tplog.check[testfile;0j];
-  
-  / If we got here without error, test passes
-  passes:1b;  
-    
-  / cleanup
-  cleanup enlist testfile;
-    
-  passes
- };
+/ check repairs a corrupt log (returns <fn>.good) AND logs a warning under ctx `check
+testcheckcorruptwarns:{[]
+  `logcap set 0#logcap;
+  fn:corrupt[writelog["ckx";6];12];
+  res:tp[`check] fn;
+  (res~`$string[fn],".good") and `warn in exec level from logcap where ctx=`check
+  }
 
-/ =============================================================================
-/ CONFIGURATION TESTS
-/ =============================================================================
-
-/ @test Module metadata is present
-testmoduleinfo: {
-  hasname:`name in key info;
-  hasversion:`version in key info;
-  hasdesc:`description in key info;
-    
-  hasname and hasversion and hasdesc
- };
-
-/ =============================================================================
-/ INTEGRATION TESTS
-/ =============================================================================
-
-/ @test tplog.repair then replay workflow
-testrepairandreplay: {
-  testfile:`:test_replay.log;
-  goodfile:`$string[testfile],".good";
-    
-  / setup
-  createcorruptlog[testfile;20;200];
-    
-  / test - tplog.repair and try to replay
-  tplog.repair[testfile];
-    
-  / This should not throw an error if the .good file is valid
-  replayOk:@[{-11!(1;x);1b};goodfile;{0b}];
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  replayOk
- };
-
-/ @test Large file handling (performance test)
-testlargefilehandling: {
-  testfile:`:test_large.log;
-  goodfile:`$string[testfile],".good";
-  msgcount:500;  / Reasonable size for testing
-    
-  / setup
-  createcorruptlog[testfile;msgcount;5000];
-    
-  / test - measure time
-  start:.z.p;
-  result:tplog.repair[testfile];
-  elapsed:`second$.z.p-start;
-    
-  / assert - should complete and create file
-  completed:result~goodfile;
-  reasonable:elapsed<30;  / Should complete in under 30 seconds
-  passes:completed and reasonable;
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  passes
- };
-
-/ @test Sequential tplog.check and tplog.repair calls
-testsequentialoperations: {
-  testfile:`:test_sequential.log;
-  goodfile:`$string[testfile],".good";
-    
-  / setup
-  createcorruptlog[testfile;15;150];
-    
-  / test - tplog.check then tplog.repair
-  tplog.checkresult:tplog.check[testfile;20j];
-    
-  / if tplog.check triggered tplog.repair, goodfile should exist
-  / if not, manually tplog.repair
-  if[not tplog.checkresult~goodfile;
-     tplog.repair[testfile];
-    ];
-    
-  / assert - .good file should exist in either case
-  passes:not ()~key goodfile;
-    
-  / cleanup
-  cleanup (testfile;goodfile);
-    
-  passes
- };
-
+/ repair writes a <fn>.good file
+testrepaircreatesgood:{[]
+  fn:corrupt[writelog["rep";5];12];
+  g:tp[`repair] fn;
+  (g~`$string[fn],".good") and not ()~key g
+  }

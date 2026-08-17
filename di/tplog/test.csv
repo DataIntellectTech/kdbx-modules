@@ -1,21 +1,33 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,tplog:use`di.tplog,1,,Initialize module
-before,0,0,q,os:use`di.os,1,,Initialize module
-/ note location of the test.q file might be different, built under assumption using di module file system
-before,0,0,q,"system ""l "", os.abspath[""di/tplog/test.q""]",1,1,load additional testing functions / dependencies
-run,0,0,q,testrepairandreplay[],1,1,
-run,0,0,q,testrepairrecoversmessages[],1,1,
-run,0,0,q,testrepaircreatesgoodfile[],1,1,
-run,0,0,q,testcheckvalidlog[],1,1,
-run,0,0,q,testcheckcorruptsufficientmessages[],1,1,
-run,0,0,q,testrepaircreatesgoodfile[],1,1,
-run,0,0,q,testrepairrecoversmessages[],1,1,
-run,0,0,q,testchecktriggersrepair[],1,1,
-run,0,0,q,testrepairgarbageatend[],1,1,
-run,0,0,q,testmultiplecorruptsections[],1,1,
-run,0,0,q,testcompletelycorruptlog[],1,1,
-run,0,0,q,testemptylog[],1,1,
-run,0,0,q,testrepairandreplay[],1,1,
-run,0,0,q,testlargefilehandling[],1,1,
-run,0,0,q,testrepaircreatesgoodfile[],1,1,
-run,0,0,q,testsequentialoperations[],1,1,
+before,0,0,q,tp:use`di.tplog,1,,load the module under test
+before,0,0,q,os:use`di.os,1,,os module for portable path resolution
+before,0,0,q,"system ""l "",os.abspath[""di/tplog/test.q""]",1,,load fixture helpers (defines root upd + trade + helpers)
+before,0,0,q,tp.init[enlist[`log]!enlist capturelog[]],1,,init with a capturing logger (the required log dependency)
+before,0,0,q,setupfixture[],1,,create the temp fixture root
+comment,,,,,,,module metadata - version and getapimeta
+true,0,0,q,10h=type tp`version,1,1,version is a string
+true,0,0,q,0<count tp`version,1,1,version is non-empty
+true,0,0,q,`name`public`descrip`params`return~cols tp[`getapimeta][],1,1,getapimeta rows carry the registry columns
+true,0,0,q,(asc (key tp) except `init`getapimeta`version)~asc exec name from tp[`getapimeta][],1,1,getapimeta documents exactly the callable exports
+true,0,0,q,not any `init`getapimeta`version in exec name from tp[`getapimeta][],1,1,plumbing and version are not registered in the api
+comment,,,,,,,init dependency validation
+fail,0,0,q,tp.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,tp.init[(enlist`x)!enlist 1],1,1,init rejects deps without a log key
+fail,0,0,q,tp.init[enlist[`log]!enlist 1],1,1,init rejects a non-dict log value
+fail,0,0,q,tp.init[enlist[`log]!enlist (enlist`info)!enlist{[c;m]}],1,1,init rejects a log dict missing warn/error keys
+comment,,,,,,,logname
+true,0,0,q,testlogname[],1,1,logname builds the <dir>/tp<date> handle
+comment,,,,,,,open / write / roll lifecycle
+true,0,0,q,testopenfresh[],1,1,a freshly created log opens with count 0
+true,0,0,q,testwritereopen[],1,1,write two then reopen replays both through the root upd
+true,0,0,q,testroll[],1,1,roll closes the handle and creates the next day's log
+fail,0,0,q,testopenfailsfast[],1,1,open fails fast on a corrupt log
+comment,,,,,,,replay / replayupto (repair-aware)
+true,0,0,q,testreplayrepairs[],1,1,replay repairs a corrupt log and recovers messages
+true,0,0,q,testreplaynodouble[],1,1,replay processes each recovered message exactly once
+true,0,0,q,testreplayupto[],1,1,replayupto replays only the first n messages
+comment,,,,,,,check / repair corruption utilities
+true,0,0,q,testcheckclean[],1,1,check returns a clean log unchanged
+true,0,0,q,testcheckcorruptwarns[],1,1,check repairs a corrupt log and logs a warning
+true,0,0,q,testrepaircreatesgood[],1,1,repair writes a .good file
+after,0,0,q,teardownfixture[],1,,remove the temp fixture root

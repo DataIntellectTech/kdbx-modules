@@ -1,210 +1,110 @@
-# `tplog` – Tickerplant Log Check & Repair Utilities for kdb+/q
+# di.tplog
 
-A small utility module for **checking** and **best‑effort repairing** tickerplant-style log files by scanning raw bytes for update-message boundaries, attempting to deserialize candidate messages, and writing any recoverable messages into a new `*.good` logfile.
+Tickerplant **log lifecycle** — create/open, append, roll, and replay-on-startup — together with
+best-effort **corruption check/repair**. It is the modular replacement for TorQ's inline log handling
+in `TorQ/code/processes/tickerplant.q` (`.u.ld` / `.u.endofday`) plus the recovery utilities in
+`TorQ/code/common/tplogutils.q`, folded into a single import surface.
 
-> **Note:** As currently implemented, recovery is keyed off the signature of `(`upd;`trade;...)` (see **Configuration**). If your logs contain other tables or message shapes, you may need to adapt the signature constants.
+The module is **self-contained**: it has no hard `use` dependencies and is built on base q only. Its
+one runtime dependency, a logger, is **injected** via `init`.
 
----
-
-## :sparkles: Features
-
-- Check whether a logfile should be used as-is or repaired (based on the logic in `check`).
-- Repair a corrupt logfile by extracting messages that can be successfully deserialized.
-- Chunked scanning to avoid loading large files into memory.
-- Adaptive read sizing when no valid messages are found in a chunk.
-- Produces a new `<logfile>.good` output file (append-only write during recovery).
-- Includes a test suite (`test.q`, `test.csv`) that generates valid/corrupt logs and validates recovery outcomes.
-
----
-
-## :file_folder: Directory contents
-
-- `init.q` – module implementation (constants + `check`, `repair`)
-- `tplog.md` – documentation (you can replace/rename to `README.md` if desired)
-- `test.q` – tests + helpers for creating valid/corrupted logs
-- `test.csv` – test manifest for your project’s test harness
-
----
-
-## :inbox_tray: Loading
-
-### KDB-X (supports `use`)
-If you are using KDB-X (where `use` exists), load the module using the symbol that matches your `QPATH` layout.
-
-If your `QPATH` includes the `di` directory (e.g. `~/kdbx-modules/di`), a common pattern is:
+## Import and init
 
 ```q
-tplog:use`tplog
+tp:use`di.tplog
+
+/ using di.log (its logdict is pre-shaped as `log!(`info`warn`error!...))
+logging:use`di.log
+tp.init[logging`logdict]
+
+/ or a hand-rolled binary logger
+mylog:`info`warn`error!(
+  {[c;m] -1 string[c],": ",m;};
+  {[c;m] -1 string[c],": ",m;};
+  {[c;m] -2 string[c],": ",m;})
+tp.init[enlist[`log]!enlist mylog]
 ```
 
----
+`init` **must** be called before any other function — there is no default logger. It validates the
+`log` dependency strictly and errors immediately if it is missing or malformed (no silent fallback).
 
-## :gear: Configuration
+## The `upd` replay contract
 
-These constants are defined at the top of `init.q`:
+`open`, `replay`, and `replayupto` restore state by running `-11!` over the log, which executes the
+**root-level `upd`** for each stored `(`upd;t;x)` message. **A caller must define a root `upd` before
+calling any of them.** A tickerplant publishes its `upd` at root during init, ahead of opening the
+log; an RDB/subscriber does the same before replaying.
 
-| Name       | Type        | Description |
-|------------|-------------|-------------|
-| `HEADER`   | byte list   | Template bytes used to build a deserialisable message header. |
-| `UPDMSG`   | char list   | Prefix used to detect candidate update messages within raw bytes. |
-| `CHUNK`    | long        | Default chunk size (bytes) to read (10MB). |
-| `MAXCHUNK` | long        | Maximum chunk size for a single read attempt (`8 * CHUNK`). |
+## Exported functions
 
-### Current default signature
+| Function | Signature | Description |
+|---|---|---|
+| `logname` | `[dir;date]` → `` `:<dir>/tp<date> `` | Build the log-file handle for an absolute-path `dir` string and a `date` (one file per date). |
+| `open` | `[dir;date]` → `(handle;count)` | Open (creating if absent) the log. Absent → empty log, count `0`. Present → **fail fast** if corrupt, else replay through the root `upd` once and return the message count. |
+| `write` | `[handle;msg]` → `` (::) `` | Append one message (typically `` (`upd;t;x) ``) to an open handle. |
+| `roll` | `[handle;dir;olddate]` → `(handle;count)` | Close `handle` and open (create) the `olddate+1` log. |
+| `replay` | `[logfile]` → `count` | Replay through the root `upd`, **repairing first if corrupt** (recovers rather than failing). Returns the replayed count. |
+| `replayupto` | `[logfile;n]` → `count` | Replay only the **first `n`** messages (repair-aware). For a subscriber replaying exactly its pre-subscription rowcount so later live-and-logged messages are not double-processed. |
+| `check` | `[logfile;lastmsgtoreplay]` → `logfile` \| `` `<logfile>.good `` | Return `logfile` if usable as-is, else a repaired `` `<logfile>.good ``. |
+| `repair` | `[logfile]` → `` `<logfile>.good `` | Scan a corrupt log in chunks and write every recoverable message to `` `<logfile>.good ``. |
 
-The module sets `UPDMSG` based on the serialized form of:
+`getapimeta[]` and `version` are also exported, as module metadata for `di.torq` / `di.depcheck` — not
+callable API.
+
+## Injectable dependencies
+
+| Injectable | Required keys | Signature |
+|---|---|---|
+| `log` (required) | `` `info`warn`error `` | `{[ctx;msg]}` — context symbol, message string. Extra levels (e.g. di.log's six) are accepted and ignored. |
+
+No config keys beyond `log` are accepted. There are **no hard `use` dependencies** (`deps.q` is empty).
+
+## Design notes
+
+### Observer/decider classification
+
+`di.tplog` registers **no `.z.*` handlers** — it is a pure log-file utility invoked directly by the
+tickerplant (`open`/`write`/`roll`) and by subscribers on startup (`replay`/`replayupto`). It therefore
+sits outside the observer/decider handler model entirely and never touches `di.handlers`.
+
+### KDB-X `-11!` behaviour (verified on the installed build)
+
+This module's corruption handling was rebuilt against **measured** KDB-X behaviour, which diverges from
+classic kdb+ (and from assumptions in the TorqX POC):
+
+- **`-11!(-2;logfile)` is the non-executing primitive.** On a clean log it returns the message count
+  **without running `upd`**; on **any** corruption it **throws** (it does *not* return a
+  `(goodcount;bytes)` 2-list as classic kdb+ does). Corruption is therefore detected by trapping that
+  throw (`corruptp`), and `open` counts with `-11!(-2)` *before* replaying, so a corrupt log fails fast
+  before any partial replay mutates state.
+- **`-11!(-1;logfile)` also counts but *executes* `upd`** — so it is unsafe for detection and is not
+  used here (using it caused an early double-replay bug).
+- **No double-processing:** `replay`/`replayupto` detect corruption with the non-executing `corruptp`,
+  repair to a `.good` file (a byte-scan that never calls `upd`), then replay the good log exactly once.
+  A naive trap-and-retry would partially replay before throwing and then replay again.
+
+### Known gaps / limitations
+
+- **`repair`'s message signature is hardcoded to the `` (`upd;`trade;…) `` shape** (inherited from
+  TorQ `tplogutils`). Logs of other tables are recovered only if their messages share that prefix. The
+  corruption *detection* (`corruptp`, and `open`'s fail-fast) is schema-agnostic; only the *repair*
+  byte-scan is `trade`-specific. Generalising the signature is future work.
+- **`check`'s `lastmsgtoreplay` optimisation is not available on KDB-X.** In classic TorQ, `check` could
+  skip repair when a corrupt log still held enough good messages for the caller's needs. That relied on
+  `-11!(-2)` returning a partial good-count, which this build does not do (it throws). The parameter is
+  retained for signature compatibility, but `check` now conservatively repairs on any corruption.
+- **Filename convention is fixed** (`<dir>/tp<date>`, one log per date). Sharing a directory between
+  multiple logical logs would need a prefix parameter on `logname`.
+
+## Testing
+
+`test.csv` / `test.q` (k4unit) cover: version/`getapimeta` metadata, strict `init` dependency
+validation (a `fail` row per guard), `logname`, the open/write/roll lifecycle, fail-fast `open` on a
+corrupt log, `replay` repairing a corrupt log while processing each recovered message exactly once (the
+double-processing regression), `replayupto` replaying only the first `n`, and `check`/`repair` on clean
+and corrupt logs (asserting the warning is logged via a capturing logger). Run with:
 
 ```q
-(`upd;`trade;())
+q)k4unit:use`di.k4unit
+q)k4unit.moduletest`di.tplog
 ```
-
-This means:
-- it is geared toward logs containing `upd` messages for the `trade` table
-- logs containing other table names or different update call shapes may not be recovered unless you adjust the signature logic
-
----
-
-## :wrench: Functions
-
-### Summary
-
-| Function | Description |
-|----------|-------------|
-| `check[logfile;lastmsgtoreplay]` | Returns `logfile` if it should be used as-is per `check` logic, otherwise triggers `repair` and returns `<logfile>.good`. |
-| `repair[logfile]` | Creates `<logfile>.good` and writes any recoverable messages into it. Returns the new filename. |
----
-
-### `check`
-
-```q
-tplog.check[logfile; lastmsgtoreplay]
-```
-
-**Parameters**
-
-| Parameter | Type | Description |
-|----------:|------|-------------|
-| `logfile` | symbol | Path to logfile as a symbol (e.g. ```:tp.log```), as used by `-11!`, `hcount`, `read1`, etc. |
-| `lastmsgtoreplay` | long | Index position of the last message the caller intends to replay. |
-
-**Behavior (as implemented)**
-- inspects logfile info via `-11!(-2; logfile)`
-- returns either:
-  - the original `logfile`, or
-  - a repaired logfile produced by `repair[logfile]`
-
-**Returns**
-- `logfile` **or** `<logfile>.good`
-
----
-
-### `repair`
-
-```q
-tplog.repair[logfile]
-```
-
-**Purpose**
-Create a “good” logfile containing only recoverable messages.
-
-**Behavior (as implemented)**
-- writes output to `<logfile>.good`
-- processes the input logfile in chunks
-- for each chunk:
-  - searches for occurrences of the configured `UPDMSG` signature
-  - splits the chunk into candidate messages
-  - constructs a header for each candidate
-  - attempts to deserialize each candidate
-  - writes successfully decoded messages into the output logfile
-
-**Returns**
-- symbol path of the repaired logfile (e.g. ```:tp.log.good```)
-
----
-
-## :rocket: Typical usage
-
-### Repair-if-needed flow
-
-```q
-/ Load module
-tplog:use`tplog
-
-/ Decide whether to repair
-log:`:tp.log
-safe:tplog.check[log; 0j]
-
-/ safe is either `:tp.log or `:tp.log.good
-safe
-```
-
-### Always repair
-
-```q
-tplog:use`tplog
-
-log:`:tp.log
-good:tplog.repair log
-good
-```
-
----
-
-## :test_tube: Tests
-
-The module includes `test.q` and `test.csv`.
-
-### What the tests do (high level)
-
-`test.q` provides helpers to:
-- create a valid log by writing records shaped like `enlist (`upd;`trade; rowData)`
-- create a corrupt log by introducing byte-level corruption into one record
-- verify that `check` and `repair` behave as expected across scenarios:
-  - valid logs
-  - corruption with enough valid messages
-  - corruption requiring repair
-  - garbage at end-of-file
-  - multiple corrupt sections
-  - completely corrupt logs
-  - empty logs
-  - sequential operations
-
-### Running tests manually
-
-```q
-/ Load module
-tplog:use`tplog
-
-/ Load tests
-\l /path/to/kdbx-modules/di/tplog/test.q
-
-/ Run a few key tests
-test_check_valid_log[]
-test_repair_creates_good_file[]
-test_repair_recovers_messages[]
-test_repair_garbage_at_end[]
-```
-
-> **Note:** If the tests reference the module under a different name than the one used when loading it, either:
-> - load the module under the expected name as well, or
-> - update the test references to use the loaded module name.
-
----
-
-## :bulb: Notes & limitations
-
-- **Best-effort recovery only:** The repair process only keeps messages that can be successfully deserialized by the module’s decode attempt.
-- **Signature-specific:** The scan is currently tuned to the prefix of `(`upd;`trade;...)`.
-- **Chunk-boundary sensitivity:** Recovery depends on being able to locate the message signature within the bytes read for a given chunk.
-- **Validate output:** Always validate that `<logfile>.good` replays correctly in your environment before using it as a production recovery artifact.
-
----
-
-## :package: Exported symbols
-
-The module exports:
-
-```q
-export:([check;repair])
-```
-

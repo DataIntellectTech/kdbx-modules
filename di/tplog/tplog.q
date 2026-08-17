@@ -166,12 +166,12 @@ getapimeta:{[]
   / with di.api. names are bare; di.torq applies the process-wide qualification. one self-contained
   / (name;public;descrip;params;return) row per line - flip cols!flip rows.
   :flip `name`public`descrip`params`return!flip(
-    (`logname;1b;"build the log file handle for a dir and date (<dir>/tp<date>, one file per date)";"[string dir; date date]";"symbol: log file handle");
-    (`open;1b;"open a log (create if absent); replay a clean log through root upd, fail fast if corrupt";"[string dir; date date]";"(int handle; long count)");
+    (`logname;1b;"build the log file handle for a dir and date (<dir>/tp<date>)";"[string dir; date date]";"symbol: log file handle");
+    (`open;1b;"open/create a log; replay a clean one via root upd, fail fast if corrupt";"[string dir; date date]";"(int handle; long count)");
     (`write;1b;"append one message (typically (`upd;t;x)) to an open log handle";"[int handle; any msg]";"null");
     (`roll;1b;"close the current handle and open (create) the next day's log";"[int handle; string dir; date olddate]";"(int handle; long count)");
-    (`replay;1b;"replay a log through root upd, repairing first if corrupt (recover rather than fail)";"[symbol logfile]";"long: replayed message count");
-    (`replayupto;1b;"replay only the first n messages of a log (repair-aware), for subscriber startup";"[symbol logfile; long n]";"long: replayed count");
+    (`replay;1b;"replay via root upd, repairing first if corrupt (recover not fail)";"[symbol logfile]";"long: replayed message count");
+    (`replayupto;1b;"replay only the first n messages (repair-aware), for subscriber startup";"[symbol logfile; long n]";"long: replayed count");
     (`check;1b;"return the logfile if clean, else a repaired <logfile>.good";"[symbol logfile; long lastmsgtoreplay]";"symbol: usable log handle");
     (`repair;1b;"scan a corrupt log and write recoverable messages to <logfile>.good";"[symbol logfile]";"symbol: <logfile>.good handle"));
   };

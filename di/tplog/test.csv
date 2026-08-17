@@ -30,4 +30,10 @@ comment,,,,,,,check / repair corruption utilities
 true,0,0,q,testcheckclean[],1,1,check returns a clean log unchanged
 true,0,0,q,testcheckcorruptwarns[],1,1,check repairs a corrupt log and logs a warning
 true,0,0,q,testrepaircreatesgood[],1,1,repair writes a .good file
+comment,,,,,,,public-function input validation
+fail,0,0,q,tp[`logname][`notastring;2026.08.13],1,1,logname rejects a non-string dir
+fail,0,0,q,tp[`replay]["notasymbol"],1,1,replay rejects a non-symbol logfile
+fail,0,0,q,tp[`check]["notasymbol"],1,1,check rejects a non-symbol logfile
+fail,0,0,q,tp[`repair]["notasymbol"],1,1,repair rejects a non-symbol logfile
+fail,0,0,q,tp[`replayupto][tp[`logname]["/x";2026.08.13];`notanint],1,1,replayupto rejects a non-integral n
 after,0,0,q,teardownfixture[],1,,remove the temp fixture root

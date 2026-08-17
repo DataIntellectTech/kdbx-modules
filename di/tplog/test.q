@@ -118,14 +118,14 @@ testreplayupto:{[]
 / check returns a clean log unchanged
 testcheckclean:{[]
   fn:writelog["ckc";3];
-  fn~tp[`check][fn;100]
+  fn~tp[`check] fn
   }
 
 / check repairs a corrupt log (returns <fn>.good) AND logs a warning under ctx `check
 testcheckcorruptwarns:{[]
   `logcap set 0#logcap;
   fn:corrupt[writelog["ckx";6];12];
-  res:tp[`check][fn;100];
+  res:tp[`check] fn;
   (res~`$string[fn],".good") and `warn in exec level from logcap where ctx=`check
   }
 

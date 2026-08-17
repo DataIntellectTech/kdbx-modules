@@ -1,23 +1,23 @@
 # di.tplog
 
-Tickerplant **log lifecycle** — create/open, append, roll, and replay-on-startup — together with
-best-effort **corruption check/repair**. It is the modular replacement for TorQ's inline log handling
-in `TorQ/code/processes/tickerplant.q` (`.u.ld` / `.u.endofday`) plus the recovery utilities in
-`TorQ/code/common/tplogutils.q`, folded into a single import surface.
+Tickerplant log utilities: create/open a log, append to it, roll to the next day, replay it on
+startup, and repair a corrupt one. It is the modular replacement for the inline log handling in
+TorQ's `code/processes/tickerplant.q` (`.u.ld` / `.u.endofday`) and the recovery code in
+`code/common/tplogutils.q`, folded into one module.
 
-The module is **self-contained**: it has no hard `use` dependencies and is built on base q only. Its
-one runtime dependency, a logger, is **injected** via `init`.
+Self-contained: no hard `use` dependencies (built on base q). Its one runtime dependency, a logger,
+is injected via `init`.
 
 ## Import and init
 
 ```q
 tp:use`di.tplog
 
-/ using di.log (its logdict is pre-shaped as `log!(`info`warn`error!...))
+/ with di.log (its logdict is already shaped as `log!(`info`warn`error!...))
 logging:use`di.log
 tp.init[logging`logdict]
 
-/ or a hand-rolled binary logger
+/ or a hand-rolled logger
 mylog:`info`warn`error!(
   {[c;m] -1 string[c],": ",m;};
   {[c;m] -1 string[c],": ",m;};
@@ -25,84 +25,72 @@ mylog:`info`warn`error!(
 tp.init[enlist[`log]!enlist mylog]
 ```
 
-`init` **must** be called before any other function — there is no default logger. It validates the
-`log` dependency strictly and errors immediately if it is missing or malformed (no silent fallback).
+`init` must be called before anything else — there is no default logger. It validates the `log`
+dependency and signals immediately if it is missing or malformed.
 
-## The `upd` replay contract
+## The upd replay contract
 
-`open`, `replay`, and `replayupto` restore state by running `-11!` over the log, which executes the
-**root-level `upd`** for each stored `(`upd;t;x)` message. **A caller must define a root `upd` before
-calling any of them.** A tickerplant publishes its `upd` at root during init, ahead of opening the
-log; an RDB/subscriber does the same before replaying.
+`open`, `replay`, and `replayupto` restore state with `-11!`, which runs the root-level `upd` for
+each stored `(`upd;t;x)` message. A caller must define a root `upd` before calling them: a
+tickerplant publishes its `upd` at root during init, before opening the log; a subscriber does the
+same before replaying.
 
 ## Exported functions
 
 | Function | Signature | Description |
 |---|---|---|
-| `logname` | `[dir;date]` → `` `:<dir>/tp<date> `` | Build the log-file handle for an absolute-path `dir` string and a `date` (one file per date). |
-| `open` | `[dir;date]` → `(handle;count)` | Open (creating if absent) the log. Absent → empty log, count `0`. Present → **fail fast** if corrupt, else replay through the root `upd` once and return the message count. |
+| `logname` | `[dir;date]` → `` `:<dir>/tp<date> `` | Log-file handle for an absolute-path `dir` string and a `date`, one file per date. |
+| `open` | `[dir;date]` → `(handle;count)` | Open the log, creating it if absent (count `0`). If present, fail fast when corrupt, else replay through the root `upd` once and return the message count. |
 | `write` | `[handle;msg]` → `` (::) `` | Append one message (typically `` (`upd;t;x) ``) to an open handle. |
-| `roll` | `[handle;dir;olddate]` → `(handle;count)` | Close `handle` and open (create) the `olddate+1` log. |
-| `replay` | `[logfile]` → `count` | Replay through the root `upd`, **repairing first if corrupt** (recovers rather than failing). Returns the replayed count. |
-| `replayupto` | `[logfile;n]` → `count` | Replay only the **first `n`** messages (repair-aware). For a subscriber replaying exactly its pre-subscription rowcount so later live-and-logged messages are not double-processed. |
-| `check` | `[logfile;lastmsgtoreplay]` → `logfile` \| `` `<logfile>.good `` | Return `logfile` if usable as-is, else a repaired `` `<logfile>.good ``. |
-| `repair` | `[logfile]` → `` `<logfile>.good `` | Scan a corrupt log in chunks and write every recoverable message to `` `<logfile>.good ``. |
+| `roll` | `[handle;dir;olddate]` → `(handle;count)` | Close `handle` and open the `olddate+1` log. |
+| `replay` | `[logfile]` → `count` | Replay through the root `upd`, repairing first if corrupt. |
+| `replayupto` | `[logfile;n]` → `count` | Replay only the first `n` messages (repair-aware) — a subscriber replays up to the point it subscribed, so live messages logged after that are not processed twice. |
+| `check` | `[logfile]` → `logfile` \| `` `<logfile>.good `` | Return `logfile` if usable, else a repaired copy. |
+| `repair` | `[logfile]` → `` `<logfile>.good `` | Scan the log and write every message that still deserialises to `` `<logfile>.good ``. |
 
-`getapimeta[]` and `version` are also exported, as module metadata for `di.torq` / `di.depcheck` — not
-callable API.
+`getapimeta[]` and `version` are also exported, as metadata for `di.torq` / `di.depcheck`.
 
 ## Injectable dependencies
 
-| Injectable | Required keys | Signature |
+| Injectable | Keys | Signature |
 |---|---|---|
-| `log` (required) | `` `info`warn`error `` | `{[ctx;msg]}` — context symbol, message string. Extra levels (e.g. di.log's six) are accepted and ignored. |
+| `log` | `` `info`warn`error `` | `{[ctx;msg]}` — context symbol, message string. Extra levels (e.g. di.log's six) are accepted and ignored. |
 
-No config keys beyond `log` are accepted. There are **no hard `use` dependencies** (`deps.q` is empty).
+No config keys beyond `log`, and no hard `use` dependencies (`deps.q` is empty).
 
 ## Design notes
 
-### Observer/decider classification
+The module registers no `.z.*` handlers — it is called directly by the tickerplant
+(`open`/`write`/`roll`) and by subscribers on startup (`replay`/`replayupto`), so it sits outside the
+`di.handlers` observer/decider model.
 
-`di.tplog` registers **no `.z.*` handlers** — it is a pure log-file utility invoked directly by the
-tickerplant (`open`/`write`/`roll`) and by subscribers on startup (`replay`/`replayupto`). It therefore
-sits outside the observer/decider handler model entirely and never touches `di.handlers`.
+Corruption handling was written against measured KDB-X `-11!` behaviour, which differs from classic
+kdb+:
 
-### KDB-X `-11!` behaviour (verified on the installed build)
+- `-11!(-2;logfile)` counts a clean log without running `upd`, and throws on any corruption — it does
+  not return the classic `(goodcount;bytes)` pair. Corruption is detected by trapping that throw
+  (`corruptp`); `open` counts with it before replaying, so a corrupt log fails fast before any partial
+  replay.
+- `-11!(-1;logfile)` counts but runs `upd`, so it is not used for detection.
 
-This module's corruption handling was rebuilt against **measured** KDB-X behaviour, which diverges from
-classic kdb+ (and from assumptions in the TorqX POC):
+`replay`/`replayupto` check with the non-executing `corruptp`, repair to a `.good` file if needed (a
+byte-scan that never calls `upd`), then replay once, so no message is processed twice.
 
-- **`-11!(-2;logfile)` is the non-executing primitive.** On a clean log it returns the message count
-  **without running `upd`**; on **any** corruption it **throws** (it does *not* return a
-  `(goodcount;bytes)` 2-list as classic kdb+ does). Corruption is therefore detected by trapping that
-  throw (`corruptp`), and `open` counts with `-11!(-2)` *before* replaying, so a corrupt log fails fast
-  before any partial replay mutates state.
-- **`-11!(-1;logfile)` also counts but *executes* `upd`** — so it is unsafe for detection and is not
-  used here (using it caused an early double-replay bug).
-- **No double-processing:** `replay`/`replayupto` detect corruption with the non-executing `corruptp`,
-  repair to a `.good` file (a byte-scan that never calls `upd`), then replay the good log exactly once.
-  A naive trap-and-retry would partially replay before throwing and then replay again.
+## Known limitations
 
-### Known gaps / limitations
-
-- **`repair`'s message signature is hardcoded to the `` (`upd;`trade;…) `` shape** (inherited from
-  TorQ `tplogutils`). Logs of other tables are recovered only if their messages share that prefix. The
-  corruption *detection* (`corruptp`, and `open`'s fail-fast) is schema-agnostic; only the *repair*
-  byte-scan is `trade`-specific. Generalising the signature is future work.
-- **`check`'s `lastmsgtoreplay` optimisation is not available on KDB-X.** In classic TorQ, `check` could
-  skip repair when a corrupt log still held enough good messages for the caller's needs. That relied on
-  `-11!(-2)` returning a partial good-count, which this build does not do (it throws). The parameter is
-  retained for signature compatibility, but `check` now conservatively repairs on any corruption.
-- **Filename convention is fixed** (`<dir>/tp<date>`, one log per date). Sharing a directory between
-  multiple logical logs would need a prefix parameter on `logname`.
+- `repair` is tuned to the `(`upd;`trade;…)` message shape (inherited from `tplogutils`); other tables
+  are recovered only if their messages share that prefix. Detection (`corruptp`, `open`'s fail-fast) is
+  schema-agnostic — only the repair byte-scan is trade-specific.
+- `check` takes only the logfile. TorQ's `lastmsgtoreplay` argument is dropped: its skip-repair
+  optimisation needed `-11!(-2)`'s partial good-count, which this build does not provide.
+- The filename convention is fixed (`<dir>/tp<date>`, one log per date).
 
 ## Testing
 
-`test.csv` / `test.q` (k4unit) cover: version/`getapimeta` metadata, strict `init` dependency
-validation (a `fail` row per guard), `logname`, the open/write/roll lifecycle, fail-fast `open` on a
-corrupt log, `replay` repairing a corrupt log while processing each recovered message exactly once (the
-double-processing regression), `replayupto` replaying only the first `n`, and `check`/`repair` on clean
-and corrupt logs (asserting the warning is logged via a capturing logger). Run with:
+`test.csv` / `test.q` (k4unit, 25 checks) cover the metadata/version contract, strict `init`
+validation, public-input validation, the open/write/roll lifecycle, fail-fast `open` on a corrupt log,
+`replay` recovering a corrupt log while processing each message exactly once, `replayupto`, and
+`check`/`repair` on clean and corrupt logs (asserting the warning via a capturing logger).
 
 ```q
 q)k4unit:use`di.k4unit

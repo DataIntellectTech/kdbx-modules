@@ -90,3 +90,7 @@ run,0,0,q,.test.cap:([] fn:`symbol$();msg:()),1,1,initialise log capture table
 run,0,0,q,eodtime.init[enlist[`log]!enlist caplog],1,1,init with capturing logger
 true,0,0,q,1=count select from .test.cap where fn=`info,1,1,one info entry captured on init
 true,0,0,q,any (.test.cap`msg) like "initialised*",1,1,log message confirms initialisation
+comment,,,,,,,version - di.depcheck resolves this module's version from the export dict
+true,0,0,q,`version in key eodtime,1,1,version is exported - di.depcheck reads it there and FAILS the dependency check without it
+true,0,0,q,3=count "." vs eodtime.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any eodtime.version in ""\n\r""",1,1,no stray newline came through from the VERSION file

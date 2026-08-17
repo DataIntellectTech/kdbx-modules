@@ -1,0 +1,166 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,"fixtures - k4unit runs EVERY before row before ANY assert, so each scenario runs"
+comment,,,,,,,here and captures its outcome into a .t.S* dict; the asserts only read those dicts
+before,0,0,q,rdb:use`di.rdb,1,1,load the module under test
+before,0,0,q,dbw:use`di.dbwrite,1,1,"di.dbwrite - a hard dep the caller owns, so the harness inits it"
+before,0,0,q,eodt:use`di.eodtime,1,1,"di.eodtime - a hard dep the caller owns, needed by the timeout job"
+before,0,0,q,.t.caprows:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,fixture: capturing log sink. lives under .t so endofday never tries to save it
+before,0,0,q,.t.caplog:`info`warn`error!({[c;m] `.t.caprows insert (`info;c;m)};{[c;m] `.t.caprows insert (`warn;c;m)};{[c;m] `.t.caprows insert (`error;c;m)}),1,1,"fixture: caplog - the binary {[c;m]} log dep contract, capturing rather than discarding"
+before,0,0,q,.t.jobrows:([]id:`symbol$();period:();mode:();opts:()),1,1,fixture: sink for the jobs the mock timer is asked to schedule
+before,0,0,q,".t.mtimer:`addjob`deletejobs!((enlist[`custom]!enlist {[id;f;p;per;md;o] `.t.jobrows insert (id;per;md;enlist o)});{[ids] xs:(),ids; .t.jobrows::delete from .t.jobrows where id in xs})",1,1,"fixture: mock timer exposing addjob.custom and deletejobs, the two di.rdb calls"
+before,0,0,q,".t.tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i}",1,1,fixture: tmpdir - honours TMPDIR and appends the pid so two runs cannot collide
+before,0,0,q,".t.BASE:.t.tmpdir""dirdbtest""",1,1,fixture: BASE
+before,0,0,q,".t.HD:hsym`$.t.BASE,""/hdb""",1,1,fixture: HD - the hdb root written to
+before,0,0,q,".t.setupfixture:{[] system""rm -rf "",.t.BASE; system""mkdir -p "",.t.BASE; }",1,1,fixture: setupfixture - a clean hdb root per scenario
+before,0,0,q,.t.clearroot:{[] {![`.;();0b;enlist x]} each tables[`.]; },1,1,fixture: clearroot - drop every ROOT table so each scenario controls exactly what endofday sees
+before,0,0,q,.t.resetcap:{[] .t.caprows::0#.t.caprows; },1,1,fixture: resetcap
+before,0,0,q,".t.logged:{[lv;s] :any {[s;m] 0<count m ss s}[s] each (),exec msg from .t.caprows where lvl=lv}",1,1,"fixture: logged - substring search via ss, NOT like: a multi-wildcard like throws 'nyi"
+before,0,0,q,".t.mkdeps:{[extra] :(`log`timer`hdbdir`disabletimeout!(.t.caplog;.t.mtimer;.t.HD;0b)),extra}",1,1,"fixture: mkdeps - the ONE flat dict init takes, with per-scenario overrides joined on"
+before,0,0,q,.t.mktrade:{[] @[`.;`trade;:;([]time:`timestamp$();sym:`g#`symbol$();price:`float$())]; },1,1,"fixture: mktrade - a root table carrying a g# attribute, so attribute handling is exercised"
+before,0,0,q,.t.mkhb:{[] @[`.;`heartbeat;:;([]time:`timestamp$();proc:`symbol$())]; },1,1,fixture: mkhb - a table on the default ignorelist
+before,0,0,q,dbw.init[enlist[`log]!enlist .t.caplog],1,1,the caller inits di.dbwrite - di.rdb never does
+before,0,0,q,eodt.init[enlist[`log]!enlist .t.caplog],1,1,the caller inits di.eodtime - di.rdb never does
+comment,,,,,,,S1 - init wires config and publishes the root entry points
+before,0,0,q,.t.S1:{[] .t.setupfixture[]; .t.clearroot[]; rdb.init[.t.mkdeps[()!()]]; :`roots`uend`dflts`status!((`upd`endofday`reload`endofperiod) in key `.; `end in key `.u; all (key .m.di.0rdb.configdefaults[]) in key `.m.di.0rdb; rdb.status[])}[],1,1,scenario: default init
+comment,,,,,,,S2 - the root upd accepts both payload shapes and preserves column attributes
+before,0,0,q,.t.S2:{[] .t.clearroot[]; rdb.init[.t.mkdeps[()!()]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; upd[`trade;(enlist .z.p;enlist`c;enlist 3.0)]; :`rows`att`syms!(count trade; exec first a from meta trade where c=`sym; exec sym from trade)}[],1,1,scenario: a table payload (live feed) then a list-of-columns payload (log replay)
+comment,,,,,,,"S3 - standalone end of day: save every non-ignored table, clear it, restore attributes"
+before,0,0,q,".t.S3:{[] .t.setupfixture[]; .t.clearroot[]; rdb.init[.t.mkdeps[()!()]]; .t.mktrade[]; .t.mkhb[]; upd[`trade;([]time:3#.z.p;sym:`a`b`c;price:1 2 3.0)]; upd[`heartbeat;([]time:enlist .z.p;proc:enlist`x)]; endofday[2026.01.05]; :`traderows`hbrows`ondisk`diskrows`att`part!(count trade; count heartbeat; (),@[{key hsym`$x};.t.BASE,""/hdb/2026.01.05"";{[e] :`symbol$()}]; @[{count get hsym`$x};.t.BASE,""/hdb/2026.01.05/trade"";{[e] :-1}]; exec first a from meta trade where c=`sym; rdb.getpartition[])}[]",1,1,scenario: three trade rows and one heartbeat row through a standalone roll
+comment,,,,,,,S4 - savetables 0b wipes without writing anything to disk
+before,0,0,q,".t.S4:{[] .t.setupfixture[]; .t.clearroot[]; rdb.init[.t.mkdeps[enlist[`savetables]!enlist 0b]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.02.01]; :`rows`ondisk!(count trade; count @[{key hsym`$x};.t.BASE,""/hdb/2026.02.01"";{[e] :`symbol$()}])}[]",1,1,scenario: savetables 0b
+comment,,,,,,,"S5 - onlyclearsaved keeps a table whose save failed, so the day's data is recoverable."
+comment,,,,,,,"driven WITHOUT setting the key, so it also pins the DEFAULT: di.rdb defaults this to 1b"
+comment,,,,,,,where TorQ defaults it to 0b. S5B drives the explicit 0b and proves legacy behaviour is
+comment,,,,,,,still reachable - the pair is what makes the divergence deliberate rather than accidental
+before,0,0,q,".t.S5:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist hsym`$""/nonexistent/nope""]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.02.02]; :`rows`logged`warned!(count trade; .t.logged[`error;""failed to save table""]; .t.logged[`warn;""will not be wiped""])}[]",1,1,scenario: an unwritable hdb root forces the save to fail - on DEFAULT config
+before,0,0,q,".t.S5B:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[`onlyclearsaved`hdbdir!(0b;hsym`$""/nonexistent/nope"")]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.02.03]; :`rows`logged!(count trade; .t.logged[`error;""failed to save table""])}[]",1,1,scenario: the same failed save with the legacy onlyclearsaved 0b
+comment,,,,,,,"S6 - wdb-fronted mode: endofday only snapshots, and the wdb's reload drops exactly that much"
+before,0,0,q,".t.S6:{[] .t.setupfixture[]; .t.clearroot[]; rdb.init[.t.mkdeps[enlist[`reloadenabled]!enlist 1b]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.03.01]; r1:`rows`ondisk!(count trade; count @[{key hsym`$x};.t.BASE,""/hdb/2026.03.01"";{[e] :`symbol$()}]); upd[`trade;(enlist .z.p;enlist`newday;enlist 9.0)]; .m.di.0rdb.subtables:enlist`trade; .m.di.0rdb.started:1b; reload[2026.03.01]; r2:`rows`syms`att!(count trade; exec sym from trade; exec first a from meta trade where c=`sym); reload[2026.03.01]; :`snap`after`second!(r1;r2;count trade)}[]",1,1,"scenario: snapshot at the roll, a new-day tick, then the wdb's reload - twice"
+comment,,,,,,,"S7 - partition tracking, both parvaluesrc branches and the pardefault fallback"
+before,0,0,q,.t.S7:{[] .t.clearroot[]; rdb.init[.t.mkdeps[()!()]]; .m.di.0rdb.tplogdate:2026.04.01; .m.di.0rdb.setpartition[]; fromlog:rdb.getpartition[]; rdb.init[.t.mkdeps[`parvaluesrc`pardefault!(`tab;2026.12.25)]]; .t.mktrade[]; upd[`trade;([]time:2#2026.04.02D09:00;sym:`a`b;price:1 2.0)]; .m.di.0rdb.subtables:enlist`trade; .m.di.0rdb.started:1b; .m.di.0rdb.setpartition[]; fromtab:rdb.getpartition[]; rdb.init[.t.mkdeps[`parvaluesrc`pardefault!(`log;2026.12.25)]]; .m.di.0rdb.tplogdate:0Nd; .m.di.0rdb.setpartition[]; :`fromlog`fromtab`fromdefault!(fromlog;fromtab;rdb.getpartition[])}[],1,1,"scenario: log source, tab source, and a null source falling back to pardefault"
+comment,,,,,,,"S8 - moveandclear, endofperiod and the subscription-filter loader"
+before,0,0,q,".t.S8:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[()!()]]; @[`.;`logmsg;:;([]a:1 2 3)]; rdb.moveandclear[`.;`.t;`logmsg]; gone:not `logmsg in key `.; moved:`logmsg in key `.t; rows:count .t.logmsg; rdb.endofperiod[09:00;09:30;()!()]; :`gone`moved`rows`eoplogged!(gone;moved;rows;.t.logged[`info;""received endofperiod""])}[]",1,1,scenario: moveandclear then endofperiod
+before,0,0,q,".t.SUBCSV:.t.BASE,""/sub.csv""",1,1,fixture: path for the subscription-filter csv
+before,0,0,q,".t.S9:{[] .t.setupfixture[]; .t.clearroot[]; (hsym`$.t.SUBCSV) 0: (""tabname,filters,columns"";""trade,price>2,time"";""quote,,""); rdb.init[.t.mkdeps[`subfiltered`subcsv!(1b;.t.SUBCSV)]]; .m.di.0rdb.loadsubfilters[]; tabs:.m.di.0rdb.subscribeto; isdict:99h=type .m.di.0rdb.subscribesyms; .t.mktrade[]; upd[`trade;([]time:3#.z.p;sym:`a`b`c;price:1 2 3.0)]; .m.di.0rdb.applyfilters[`trade]; :`tabs`isdict`rows`cols!(tabs;isdict;count trade;cols trade)}[]",1,1,"scenario: load a filter csv, then narrow a replayed table with it"
+comment,,,,,,,S10 - the pre-roll timeout job is scheduled off di.eodtime's next roll
+before,0,0,q,.t.S10:{[] .t.clearroot[]; .t.jobrows::0#.t.jobrows; rdb.init[.t.mkdeps[enlist[`disabletimeout]!enlist 1b]]; .m.di.0rdb.scheduletimeoutreset[]; j:select from .t.jobrows where id=`rdbtimeoutreset; :`n`period`mode`start`roll!(count j; first j`period; first j`mode; first (first j`opts)`startattime; eodt.getnextroll[])}[],1,1,scenario: schedule the timeout job with disabletimeout on
+before,0,0,q,.t.S11:{[] .t.jobrows::0#.t.jobrows; rdb.init[.t.mkdeps[enlist[`disabletimeout]!enlist 0b]]; .m.di.0rdb.scheduletimeoutreset[]; :count .t.jobrows}[],1,1,scenario: disabletimeout 0b schedules nothing
+comment,,,,,,,S13 - a re-init must NOT wipe a live rdb's runtime state. regression: wiping eodtabcount
+comment,,,,,,,between the roll and the wdb's reload left the prior day in memory permanently
+before,0,0,q,.t.S13:{[] .t.setupfixture[]; .t.clearroot[]; rdb.init[.t.mkdeps[enlist[`reloadenabled]!enlist 1b]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.06.01]; .m.di.0rdb.subtables:enlist`trade; .m.di.0rdb.started:1b; was:`snap`part!(.m.di.0rdb.eodtabcount;rdb.getpartition[]); rdb.init[.t.mkdeps[enlist[`reloadenabled]!enlist 1b]]; kept:`snap`part`subtables`started!(.m.di.0rdb.eodtabcount;rdb.getpartition[];.m.di.0rdb.subtables;.m.di.0rdb.started); upd[`trade;(enlist .z.p;enlist`newday;enlist 9.0)]; ok:@[{reload[2026.06.01]; :1b};::;{[e] :0b}]; :`was`kept`reloadok`rows!(was;kept;ok;count trade)}[],1,1,"scenario: roll, snapshot, re-init, then the wdb's reload"
+comment,,,,,,,"S14 - the resubscribe recovery job: scheduling, and the switch that disables it"
+before,0,0,q,".t.S14:{[] .t.clearroot[]; .t.jobrows::0#.t.jobrows; rdb.init[.t.mkdeps[()!()]]; .m.di.0rdb.scheduleresubscribe[]; j:select from .t.jobrows where id=`rdbresubscribe; on:`n`period`mode`maxruns`dof!(count j; first j`period; first j`mode; first (first j`opts)`maxruns; first (first j`opts)`disableonfail); .t.jobrows::0#.t.jobrows; rdb.init[.t.mkdeps[enlist[`resubscribeenabled]!enlist 0b]]; .m.di.0rdb.scheduleresubscribe[]; :`on`off!(on; count .t.jobrows)}[]",1,1,"scenario: schedule the resubscribe job, then the same with resubscribeenabled 0b"
+comment,,,,,,,"S15 - resubscribecheck must NEVER throw: di.timer disables a job that fails, which would"
+comment,,,,,,,silently remove the one thing that recovers a dropped subscription
+before,0,0,q,".t.S15:{[] .t.clearroot[]; rdb.init[.t.mkdeps[()!()]]; .m.di.0rdb.started:0b; .t.resetcap[]; q1:@[{.m.di.0rdb.resubscribecheck[]; :1b};::;{[e] :0b}]; quiet:0=count .t.caprows; .m.di.0rdb.started:1b; .t.resetcap[]; q2:@[{.m.di.0rdb.resubscribecheck[]; :1b};::;{[e] :0b}]; :`notstarted`quiet`down`warned!(q1;quiet;q2;.t.logged[`warn;""no tickerplant handle is available""])}[]",1,1,"scenario: the check before start, then with di.servers and di.subscriptions uninitialised"
+comment,,,,,,,S12 - teardown gives back every process-global binding init and start installed
+comment,,,,,,,this scenario runs LAST of the before rows because it removes the root entry points
+before,0,0,q,.t.S12:{[] .t.clearroot[]; .t.jobrows::0#.t.jobrows; rdb.init[.t.mkdeps[enlist[`disabletimeout]!enlist 1b]]; .m.di.0rdb.scheduletimeoutreset[]; .m.di.0rdb.scheduleresubscribe[]; beforejobs:count .t.jobrows; rdb.teardown[]; again:@[{rdb.teardown[]; :1b};::;{[e] :0b}]; :`beforejobs`roots`uend`jobs`again!(beforejobs; (`upd`endofday`reload`endofperiod) inter key `.; `end in key `.u; count .t.jobrows; again)}[],1,1,"scenario: teardown after a full init, then a SECOND teardown"
+before,0,0,q,rdb.init[.t.mkdeps[()!()]],1,1,re-init after the teardown scenario so the asserts below run against a live module
+comment,,,,,,,"init - dependency validation. every one of these must SIGNAL, not return quietly"
+fail,0,0,q,rdb.init[(::)],1,1,init rejects a non-dictionary deps
+fail,0,0,q,rdb.init[()!()],1,1,init rejects an empty deps - log and timer are required
+fail,0,0,q,rdb.init[enlist[`log]!enlist .t.caplog],1,1,init rejects deps with log but no timer
+fail,0,0,q,rdb.init[`log`timer!(42;.t.mtimer)],1,1,init rejects a non-dict log value
+fail,0,0,q,rdb.init[`log`timer!((`info`warn!(.t.caplog`info;.t.caplog`warn));.t.mtimer)],1,1,init rejects a log dict missing the error key
+fail,0,0,q,rdb.init[`log`timer!(.t.caplog;42)],1,1,init rejects a non-dict timer value
+fail,0,0,q,rdb.init[`log`timer!(.t.caplog;enlist[`addjob]!enlist 42)],1,1,init rejects a timer whose addjob is not a variant dict
+fail,0,0,q,rdb.init[`log`timer!(.t.caplog;`addjob`deletejobs!((enlist[`simple]!enlist {[x] x});{[x] }))],1,1,init rejects a timer addjob exposing no custom variant
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`parvaluesrc]!enlist `nonsense]],1,1,init rejects a parvaluesrc that is neither log nor tab
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`upd]!enlist 42]],1,1,init rejects a non-function upd
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist 42]],1,1,init rejects a non-dict savedownmanipulation
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`resubscribeperiod]!enlist 0]],1,1,"init rejects a zero resubscribeperiod - it would run the check every timer cycle"
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`resubscribeperiod]!enlist -5]],1,1,init rejects a negative resubscribeperiod
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`resubscribeperiod]!enlist `nonsense]],1,1,"init rejects an uncastable resubscribeperiod, naming the config key rather than throwing from di.timer"
+comment,,,,,,,"init - observable effects. ""init did not throw"" proves nothing: it passes under a"
+comment,,,,,,,"projection-returning wrong arity too, which is how a two-arg init fails silently"
+true,0,0,q,.t.S1[`roots]~4#1b,1,1,"init published upd, endofday, reload and endofperiod at root"
+true,0,0,q,.t.S1`uend,1,1,init published TorQ's .u.end alias for endofday
+true,0,0,q,.t.S1`dflts,1,1,every key in configdefaults reached module state - catches a forgotten write in init
+true,0,0,q,101h=type rdb.init[.t.mkdeps[()!()]],1,1,"init is ONE-arg: a one-dict call returns a real result, not a 104h projection"
+true,0,0,q,`started`subscribed`resubscribeenabled`subtables`partition`hdbdir`reloadenabled`savetables`onlyclearsaved`ignorelist~key .t.S1`status,1,1,status reports the wiring and the holdings
+true,0,0,q,(.t.S1`status)`resubscribeenabled,1,1,"automatic resubscribe is on by default - a dropped tickerplant must recover without configuration"
+true,0,0,q,not (.t.S1`status)`started,1,1,status reports not started until start has run
+true,0,0,q,`heartbeat`logmsg~(.t.S1`status)`ignorelist,1,1,the default ignorelist is TorQ's heartbeat and logmsg
+comment,,,,,,,"upd - both payload shapes, and the column attributes that make an rdb queryable"
+true,0,0,q,3=.t.S2`rows,1,1,upd appended both a table payload and a list-of-columns payload
+true,0,0,q,`a`b`c~.t.S2`syms,1,1,upd preserved row order across both payload shapes
+true,0,0,q,`g=.t.S2`att,1,1,upd PRESERVED the g# attribute - a join-based upd silently drops it
+comment,,,,,,,endofday - standalone mode
+true,0,0,q,0=.t.S3`traderows,1,1,endofday cleared the saved table
+true,0,0,q,1=.t.S3`hbrows,1,1,endofday left the ignorelist table alone
+true,0,0,q,`trade in .t.S3`ondisk,1,1,endofday wrote the trade partition to the hdb
+true,0,0,q,not `heartbeat in .t.S3`ondisk,1,1,endofday did not write the ignorelist table
+true,0,0,q,3=.t.S3`diskrows,1,1,every row reached disk
+true,0,0,q,`g=.t.S3`att,1,1,endofday reapplied the attribute the 0# clear discarded
+true,0,0,q,(enlist 2026.01.06)~.t.S3`part,1,1,endofday advanced rdbpartition to the next day and dropped the rolled one
+true,0,0,q,0=.t.S4`rows,1,1,savetables 0b still wipes the table
+true,0,0,q,0=.t.S4`ondisk,1,1,savetables 0b writes nothing to disk
+true,0,0,q,2=.t.S5`rows,1,1,"a failed save keeps the table ON DEFAULT CONFIG - the day's data is recoverable, not dropped on the floor"
+true,0,0,q,.t.S5`logged,1,1,"the failed save was logged at error, not swallowed"
+true,0,0,q,.t.S5`warned,1,1,and the operator is warned that the table was deliberately left unwiped
+true,0,0,q,(.t.S1`status)`onlyclearsaved,1,1,"status confirms the default is 1b - the ONE default di.rdb changes from TorQ, so it is pinned here"
+true,0,0,q,0=.t.S5B`rows,1,1,onlyclearsaved 0b still wipes a table whose save failed - TorQ behaviour is reachable
+true,0,0,q,.t.S5B`logged,1,1,the 0b path still logs the failed save at error
+comment,,,,,,,"endofday - wdb-fronted mode, and the wdb's reload[date] handshake"
+true,0,0,q,2=(.t.S6`snap)`rows,1,1,reloadenabled 1b left the data live and queryable at the roll
+true,0,0,q,0=(.t.S6`snap)`ondisk,1,1,reloadenabled 1b wrote nothing - the wdb owns the writedown
+true,0,0,q,1=(.t.S6`after)`rows,1,1,reload dropped exactly the rows held at the roll
+true,0,0,q,(enlist`newday)~(.t.S6`after)`syms,1,1,reload kept the new day's tick that arrived after the roll
+true,0,0,q,`g=(.t.S6`after)`att,1,1,reload reapplied the attribute the n _ drop discarded
+true,0,0,q,1=.t.S6`second,1,1,"a second reload is a no-op - the snapshot was zeroed, not left to drop the day again"
+comment,,,,,,,partition tracking - the gateway's view of what this rdb holds
+true,0,0,q,(enlist 2026.04.01)~.t.S7`fromlog,1,1,parvaluesrc log takes the date from the tickerplant log file name
+true,0,0,q,(enlist 2026.04.02)~.t.S7`fromtab,1,1,parvaluesrc tab takes the date from the largest subscribed table
+true,0,0,q,(enlist 2026.12.25)~.t.S7`fromdefault,1,1,a null source falls back to pardefault
+comment,,,,,,,"moveandclear, endofperiod and subscription filters"
+true,0,0,q,.t.S8`gone,1,1,moveandclear deleted the table from the source namespace
+true,0,0,q,.t.S8`moved,1,1,moveandclear created it in the target namespace
+true,0,0,q,0=.t.S8`rows,1,1,"moveandclear moves the SCHEMA only - TorQ's shipped behaviour, preserved deliberately"
+true,0,0,q,.t.S8`eoplogged,1,1,endofperiod logged the period roll
+true,0,0,q,`trade`quote~.t.S9`tabs,1,1,loadsubfilters set subscribeto from the csv key column
+true,0,0,q,.t.S9`isdict,1,1,loadsubfilters set subscribesyms to the filter dict di.subscriptions forwards
+true,0,0,q,1=.t.S9`rows,1,1,applyfilters narrowed the replayed rows to those matching the filter
+true,0,0,q,(enlist`time)~.t.S9`cols,1,1,applyfilters narrowed the replayed columns to those configured
+comment,,,,,,,the pre-roll query-timeout job - what makes di.eodtime and the timer real dependencies
+true,0,0,q,1=.t.S10`n,1,1,scheduletimeoutreset registered exactly one job
+true,0,0,q,86400=.t.S10`period,1,1,the job repeats daily - 86400 seconds under di.timer mode 1
+true,0,0,q,1h=.t.S10`mode,1,1,"mode 1 schedules from the previously SCHEDULED start, not the previous end"
+true,0,0,q,(.t.S10`start)=(.t.S10`roll)-0D00:01,1,1,the job is scheduled one minute before di.eodtime's next roll
+true,0,0,q,0=.t.S11,1,1,disabletimeout 0b schedules nothing
+comment,,,,,,,re-init must preserve live runtime state
+true,0,0,q,((.t.S13`kept)`snap)~(.t.S13`was)`snap,1,1,a re-init kept the eod row-count snapshot the wdb's reload depends on
+true,0,0,q,((.t.S13`kept)`part)~(.t.S13`was)`part,1,1,a re-init kept the partition list a gateway routes on
+true,0,0,q,(enlist`trade)~(.t.S13`kept)`subtables,1,1,a re-init kept the subscribed table list
+true,0,0,q,(.t.S13`kept)`started,1,1,"a re-init did not reset the started flag, which reload's guard reads"
+true,0,0,q,.t.S13`reloadok,1,1,the wdb's reload still ran after the re-init
+true,0,0,q,1=.t.S13`rows,1,1,reload dropped exactly the prior day and kept the tick that arrived after it
+comment,,,,,,,teardown
+true,0,0,q,2=.t.S12`beforejobs,1,1,the teardown scenario really had both rdb jobs to remove
+true,0,0,q,0=count .t.S12`roots,1,1,teardown removed every root entry point it installed
+true,0,0,q,not .t.S12`uend,1,1,teardown removed the .u.end alias
+true,0,0,q,0=.t.S12`jobs,1,1,teardown deleted BOTH the timeout job and the resubscribe job
+comment,,,,,,,S14 / S15 - the resubscribe recovery job
+true,0,0,q,1=(.t.S14`on)`n,1,1,start schedules exactly one rdbresubscribe job
+true,0,0,q,30=(.t.S14`on)`period,1,1,the default resubscribe check runs every 30 seconds
+true,0,0,q,3=(.t.S14`on)`mode,1,1,"mode 3 - measured from the previous END, so a slow check cannot queue its own successor"
+true,0,0,q,0Wi=(.t.S14`on)`maxruns,1,1,the resubscribe job runs for the life of the process
+true,0,0,q,not (.t.S14`on)`dof,1,1,"disableonfail is 0b - di.timer must not switch the recovery job off on a bad cycle"
+true,0,0,q,0=.t.S14`off,1,1,resubscribeenabled 0b schedules nothing
+true,0,0,q,.t.S15`notstarted,1,1,resubscribecheck is a no-op before start and does not throw
+true,0,0,q,.t.S15`quiet,1,1,resubscribecheck logs nothing at all before start
+true,0,0,q,.t.S15`down,1,1,"resubscribecheck never throws, even with di.servers and di.subscriptions uninitialised"
+true,0,0,q,.t.S15`warned,1,1,resubscribecheck warns when there is no tickerplant handle to re-establish on
+true,0,0,q,.t.S12`again,1,1,teardown is idempotent - a second call must not die reading the .u.end it already removed
+comment,,,,,,,guards - every export refuses to run before the lifecycle stage it needs
+fail,0,0,q,rdb.reload[2026.01.01],1,1,reload refuses before start - subtables would be empty and it would silently drop nothing
+comment,,,,,,,api metadata and version - di.torq registers these with di.api
+true,0,0,q,(asc (key rdb) except `init`getapimeta)~asc exec name from rdb.getapimeta[],1,1,"getapimeta documents exactly the callable exports, with the plumbing omitted"
+true,0,0,q,not any `init`getapimeta in exec name from rdb.getapimeta[],1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols rdb.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,all 1b=exec public from rdb.getapimeta[],1,1,every documented function is public
+true,0,0,q,`version in key rdb,1,1,version is still an export - di.depcheck resolves a minimum version from there
+true,0,0,q,"3=count ""."" vs rdb.version",1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any rdb.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+comment,,,,,,,cleanup
+before,0,0,q,"system""rm -rf "",.t.BASE",1,1,remove the scenario hdb root

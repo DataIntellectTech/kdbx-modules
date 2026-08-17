@@ -1,0 +1,172 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration suite - stands up a real tickerplant and a real hdb as separate q processes
+comment,,,,,,,"and drives the whole di.rdb lifecycle over genuine IPC: startup, waitfortype, subscribe,"
+comment,,,,,,,"log replay, live capture, the tickerplant's endofday broadcast, savedown and hdb reload."
+comment,,,,,,,"kept separate because moduletest only ever loads test.csv, so leaving these rows there"
+comment,,,,,,,would make every unit run spawn two processes and bind two ports.
+comment,,,,,,,RUN IT IN A FRESH q SESSION: after moduletest the unit rows are still loaded and KUrt
+comment,,,,,,,"would re-run them against dirty module state, reporting phantom failures."
+comment,,,,,,,needs a q binary reachable via QHOME - both peers are launched with $QHOME/bin/q
+comment,,,,,,,fixtures
+before,0,0,q,rdb:use`di.rdb,1,1,the module under test
+before,0,0,q,srv:use`di.servers,1,1,"hard dep - the CALLER inits it, di.rdb never does"
+before,0,0,q,sub:use`di.subscriptions,1,1,hard dep - the CALLER inits it
+before,0,0,q,dbw:use`di.dbwrite,1,1,hard dep - the CALLER inits it
+before,0,0,q,eodt:use`di.eodtime,1,1,hard dep - the CALLER inits it
+before,0,0,q,hnd:use`di.handlers,1,1,di.servers and di.subscriptions each need a handlers dep
+before,0,0,q,tmr:use`di.timer,1,1,"the real timer, not a mock - this suite exercises the genuine wiring"
+before,0,0,q,.t.caprows:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,"capturing log sink, under .t so endofday never tries to save it"
+before,0,0,q,.t.caplog:`info`warn`error!({[c;m] `.t.caprows insert (`info;c;m)};{[c;m] `.t.caprows insert (`warn;c;m)};{[c;m] `.t.caprows insert (`error;c;m)}),1,1,the binary {[c;m]} log dep contract
+before,0,0,q,".t.tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i}",1,1,honours TMPDIR and appends the pid so two runs cannot collide
+before,0,0,q,".t.BASE:.t.tmpdir""dirdbintegration""",1,1,fixture: BASE
+before,0,0,q,".t.HD:hsym`$.t.BASE,""/hdb""",1,1,fixture: the hdb root di.rdb writes to
+before,0,0,q,.t.D:2026.08.06,1,1,fixture: the partition date the peer tickerplant reports and logs under
+before,0,0,q,"system""rm -rf "",.t.BASE",1,1,clean slate
+before,0,0,q,"system""mkdir -p "",.t.BASE",1,1,create the working directory
+comment,,,,,,,NO PORT NUMBER APPEARS IN THIS SUITE. each child is started with -p 0W so the OS assigns
+comment,,,,,,,a free port and the child writes it to a file we read back. scanning from a hardcoded base
+comment,,,,,,,is not portable and still races - a port held by a blocked non-q process reads as free
+before,0,0,q,".t.readport:{[f;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; p:0N; while[(.z.p<deadline) and null p; if[count key hsym`$f;p:""J""$first read0 hsym`$f]; if[null p;system""sleep 0.05""]]; :p}",1,1,wait for a child to report the port the OS gave it
+comment,,,,,,,"the tickerplant peer - it publishes through the REAL di.pubsub, so subscription, live"
+comment,,,,,,,fan-out and the endofday broadcast are all di.pubsub's code paths rather than a stand-in
+before,0,0,q,.t.TPBODY:(),1,1,"the peer source, one complete line per row - a split literal would become several expressions"
+before,0,0,q,".t.TPBODY,:enlist ""ps:use`di.pubsub;""",1,1,load the real publisher
+before,0,0,q,".t.TPBODY,:enlist ""peertrade:([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$());""",1,1,"a g# attribute, so the whole attribute capture/restore path is exercised end to end"
+before,0,0,q,".t.TPBODY,:enlist ""ps.setsubtables enlist`peertrade;""",1,1,tickerplant peer source line
+before,0,0,q,".t.TPBODY,:enlist ""ps.init[];""",1,1,tickerplant peer source line
+before,0,0,q,".t.TPBODY,:enlist ""N:4;""",1,1,"four messages pre-logged, so the rdb has something to replay at subscribe time"
+before,0,0,q,".t.TPBODY,:enlist ""mkrow:{[i] (enlist (`timestamp$D)+10:00+`minute$i;enlist `$\""S\"",string i mod 2;enlist 1.0*i;enlist `int$10*i)};""",1,1,tickerplant peer source line
+before,0,0,q,".t.TPBODY,:enlist ""lh:hopen LF set ();""",1,1,open the tickerplant log and pre-seed it
+before,0,0,q,".t.TPBODY,:enlist ""{[h;i] h enlist (`upd;`peertrade;mkrow i)}[lh] each til N;""",1,1,tickerplant peer source line
+before,0,0,q,".t.TPBODY,:enlist ""subdetails:{[tabs;instruments] r:ps.subscribe[tabs;instruments]; if[-11h=type r;:r]; sl:$[-11h=type first r;flip last r;flip r]; `schemalist`logfilelist`rowcounts`date!(sl;enlist(N;LF);(enlist`peertrade)!enlist N;D)};""",1,1,the subdetails adapter a modular tickerplant owns: di.pubsub.subscribe registers the handle and returns (tabs;schemas)
+before,0,0,q,".t.TPBODY,:enlist ""tablelist:{enlist`peertrade};""",1,1,how di.subscriptions resolves a ` (all tables) request
+before,0,0,q,".t.TPBODY,:enlist ""pub:{[i;s] c:(enlist (`timestamp$D)+11:00+`minute$i;enlist s;enlist 1.0*i;enlist `int$i); lh enlist (`upd;`peertrade;c); N+:1; ps.publish[`peertrade;flip (cols peertrade)!c]; N};""",1,1,live publish - di.pubsub.publish does the fan-out
+before,0,0,q,".t.TPBODY,:enlist ""eod:{[d] ps.callendofday[d]};""",1,1,"the roll: di.pubsub broadcasts (`endofday;d), which the rdb's default .z.ps applies as endofday[d]"
+before,0,0,q,".t.tplines:{[] :(""D:"",(string .t.D),"";"";""LF:hsym`$\"""",.t.BASE,""/tp"",(string .t.D),""\"";"";""(hsym`$\"""",.t.BASE,""/tpport\"") 0: enlist string system\""p\"";""),.t.TPBODY}",1,1,"prepend the date, the log path and the port report, then the body"
+comment,,,,,,,the hdb peer - it only has to record what reload[date] it was sent
+before,0,0,q,.t.HBODY:(),1,1,the hdb peer source
+before,0,0,q,".t.HBODY,:enlist ""reloads:();""",1,1,hdb peer source line
+before,0,0,q,".t.HBODY,:enlist ""reload:{[d] reloads,:d; :`acknowledged};""",1,1,the entry point di.rdb's hdbmessage targets
+before,0,0,q,".t.hdblines:{[] :(enlist""(hsym`$\"""",.t.BASE,""/hdbport\"") 0: enlist string system\""p\"";""),.t.HBODY}",1,1,prepend the port report
+comment,,,,,,,"spawn both peers, read back their OS-assigned ports, and write the process.csv phone book"
+before,0,0,q,".t.spawn:{[nm;lines] f:.t.BASE,""/"",nm,"".q""; (hsym`$f) 0: lines; system (getenv[`QHOME]),""/bin/q "",f,"" -p 0W -q </dev/null >/dev/null 2>&1 &""; :.t.readport[.t.BASE,""/"",nm,""port"";8000]}",1,1,spawn one peer and wait for it to report its port. NB the script path comes BEFORE the flags - q silently ignores a script that follows them
+before,0,0,q,".t.TPPORT:.t.spawn[""tp"";.t.tplines[]]",1,1,spawn the tickerplant
+before,0,0,q,".t.HDBPORT:.t.spawn[""hdb"";.t.hdblines[]]",1,1,spawn the hdb
+before,0,0,q,"if[any null (.t.TPPORT;.t.HDBPORT);'""integration: a peer never reported a port""]",1,1,fail loudly rather than letting every assert below fail for an unrelated reason
+before,0,0,q,".t.CSV:.t.BASE,""/process.csv""",1,1,the process.csv path di.servers is configured with
+before,0,0,q,"(hsym`$.t.CSV) 0: (""host,port,proctype,procname"";""localhost,"",(string .t.TPPORT),"",tickerplant,tp1"";""localhost,"",(string .t.HDBPORT),"",hdb,hdb1"")",1,1,di.servers v1 requires exactly this 4-column header and fails loud on anything else
+comment,,,,,,,"guaranteed child cleanup: once connected, tell each peer to exit when its connection to us"
+comment,,,,,,,"drops. that covers ANY parent death including an uncaught throw, which an after row does not"
+before,0,0,q,".t.backstop:{[p] h:hopen (`$"":localhost:"",string p;2000); pid:h"".z.i""; h"".z.pc:{exit 0}""; :(pid;h)}",1,1,"arm the child and return (pid;handle). the handle is KEPT OPEN - closing it here would fire the .z.pc we just armed and kill the child immediately, which is exactly the mistake this comment exists to prevent"
+before,0,0,q,.t.TPARM:.t.backstop .t.TPPORT,1,1,tickerplant self-exit backstop
+before,0,0,q,.t.HDBARM:.t.backstop .t.HDBPORT,1,1,hdb self-exit backstop
+before,0,0,q,.t.TPPID:first .t.TPARM,1,1,"tickerplant pid, for the kill belt"
+before,0,0,q,.t.HDBPID:first .t.HDBARM,1,1,"hdb pid, for the kill belt"
+comment,,,,,,,wire the modules THE CALLER owns. di.rdb initialises none of these - that split is the
+comment,,,,,,,"whole point of the init/start shape, and this is the code di.torq will eventually contain"
+before,0,0,q,hnd.init[enlist[`log]!enlist .t.caplog],1,1,di.handlers
+before,0,0,q,tmr.init[(::)],1,1,di.timer with its defaults
+before,0,0,q,.t.timerdep:`addjob`deletejobs!(tmr`addjob;tmr`deletejobs),1,1,the timer dep contract
+before,0,0,q,.t.handlerdep:`register`remove!(hnd`register;hnd`remove),1,1,the handlers dep contract
+before,0,0,q,eodt.init[enlist[`log]!enlist .t.caplog],1,1,di.eodtime - di.rdb reads getnextroll off it
+before,0,0,q,dbw.init[enlist[`log]!enlist .t.caplog],1,1,"di.dbwrite - the binary log contract, no adapter needed"
+before,0,0,q,"srv.init[(enlist[`log]!enlist .t.caplog),`timer`handlers`proctype`procname`connections`processcsv!(.t.timerdep;.t.handlerdep;`rdb;`rdb1;`tickerplant`hdb;.t.CSV)]",1,1,"di.servers. the CONNECTIONS list is the caller's job - di.servers.startup takes no argument, so an rdb cannot hand it a role-specific list"
+before,0,0,q,sub.init[`log`handlers!(.t.caplog;.t.handlerdep)],1,1,di.subscriptions
+comment,,,,,,,"the run itself, captured into .t.R so the asserts read values rather than re-driving IPC"
+before,0,0,q,"rdb.init[(enlist[`log]!enlist .t.caplog),`timer`hdbdir`tickerplanttypes`hdbtypes!(.t.timerdep;.t.HD;`tickerplant;`hdb)]",1,1,"di.rdb - config and root entry points only, no sockets"
+before,0,0,q,.t.R:()!(),1,1,the capture dict
+before,0,0,q,.t.R[`preroot]:(`upd`endofday`reload`endofperiod) in key `.,1,1,root entry points exist BEFORE start - the replay drives upd
+before,0,0,q,rdb.start[],1,1,"connect, wait for the tickerplant, subscribe and replay"
+before,0,0,q,.t.R[`status]:rdb.status[],1,1,capture: post-start status
+before,0,0,q,.t.R[`defined]:`peertrade in tables[`.],1,1,capture: di.subscriptions defined the tickerplant's schema at root
+before,0,0,q,.t.R[`replayed]:count peertrade,1,1,capture: rows recovered from the tickerplant log
+before,0,0,q,.t.R[`att]:exec first a from meta peertrade where c=`sym,1,1,capture: the g# attribute came through the replay
+before,0,0,q,.t.R[`part]:rdb.getpartition[],1,1,capture: setpartition derived the partition from the tp log date
+before,0,0,q,.t.TPH:srv.gethandlebytype[`tickerplant;`any],1,1,a handle to drive the peer with
+before,0,0,q,.t.TPH(`pub;99;`S1),1,1,publish one live row
+before,0,0,q,".t.TPH""1+1""",1,1,flush - a sync round trip guarantees the async publish has been processed
+before,0,0,q,"system""sleep 0.3""",1,1,let the published message arrive on our side
+before,0,0,q,".t.TPH""1+1""",1,1,second flush - now our own inbound queue has been drained
+before,0,0,q,.t.R[`live]:count peertrade,1,1,capture: rows after the live publish
+before,0,0,q,.t.TPH(`eod;.t.D),1,1,the tickerplant broadcasts (`endofday;date) - the real roll trigger
+before,0,0,q,".t.TPH""1+1""",1,1,flush
+before,0,0,q,"system""sleep 0.5""",1,1,let the broadcast arrive and the writedown complete
+before,0,0,q,".t.TPH""1+1""",1,1,second flush
+before,0,0,q,.t.R[`after]:count peertrade,1,1,capture: rows after the roll
+before,0,0,q,".t.R[`ondisk]:(),@[{key hsym`$x};.t.BASE,""/hdb/"",string .t.D;{[e] :`symbol$()}]",1,1,capture: what landed in the hdb partition
+before,0,0,q,".t.R[`diskrows]:@[{count get hsym`$x};.t.BASE,""/hdb/"",(string .t.D),""/peertrade"";{[e] :-1}]",1,1,capture: how many rows landed
+before,0,0,q,.t.R[`newpart]:rdb.getpartition[],1,1,capture: the partition list after the roll
+before,0,0,q,.t.HDBH:srv.gethandlebytype[`hdb;`any],1,1,a handle to ask the hdb what it was told
+before,0,0,q,".t.R[`hdbreloads]:(),.t.HDBH""reloads""",1,1,capture: the reload[date] di.rdb sent the hdb
+before,0,0,q,.t.R[`errors]:exec ctx from .t.caprows where lvl=`error,1,1,capture: anything logged at error during the whole run
+comment,,,,,,,"a REAL tickerplant bounce, driven last so its own connection noise cannot contaminate"
+comment,,,,,,,"the error capture above. kill the peer, respawn it on the same port, let di.servers"
+comment,,,,,,,reconnect - and prove the socket comes back WITHOUT the subscription until the
+comment,,,,,,,rdbresubscribe job runs. that intermediate state is the bug the job exists to fix
+before,0,0,q,".t.spawnat:{[nm;lines;port] f:.t.BASE,""/"",nm,"".q""; (hsym`$f) 0: lines; system""rm -f "",.t.BASE,""/"",nm,""port""; system (getenv[`QHOME]),""/bin/q "",f,"" -p "",(string port),"" -q </dev/null >/dev/null 2>&1 &""; :.t.readport[.t.BASE,""/"",nm,""port"";8000]}",1,1,"spawn a peer on an EXPLICIT port, so a respawn lands where the phone book already points"
+comment,,,,,,,"NB these captures are separate variables, NOT keys of one dict like .t.R above. the first"
+comment,,,,,,,"value written into a ()!() dict TYPES its value side, so a long count followed by a boolean"
+comment,,,,,,,"throws 'type (measured). .t.R only escapes it because its first value is a boolean VECTOR,"
+comment,,,,,,,which leaves the value side a general list - too subtle to rely on for a new capture set
+before,0,0,q,.t.RSBEFORE:count peertrade,1,1,capture: the row count going into the bounce
+before,0,0,q,"@[system;""kill -9 "",(string .t.TPPID),"" 2>/dev/null"";{[e] :(::)}]",1,1,kill the tickerplant outright - an unclean drop is what a real bounce looks like
+before,0,0,q,"system""sleep 0.5""",1,1,let the socket actually close
+before,0,0,q,"@[{x""1""};.t.TPH;{[e] :(::)}]",1,1,"touch the dead handle to pump the event loop, so the .z.pc observers fire (a bare sleep does not)"
+before,0,0,q,"system""sleep 0.2""",1,1,let the .z.pc observers run
+before,0,0,q,".t.RSDOWN:not @[sub.subscribed;::;{[e] :0b}]",1,1,capture: the subscription really did drop
+before,0,0,q,.t.TPPORT2:.t.spawnat["tp";.t.tplines[];.t.TPPORT],1,1,respawn the tickerplant on the SAME port it had before
+before,0,0,q,"if[null .t.TPPORT2;'""integration: the respawned tickerplant never reported a port""]",1,1,fail loudly rather than letting the recovery asserts fail for an unrelated reason
+before,0,0,q,.t.TPARM:.t.backstop .t.TPPORT,1,1,"re-arm the self-exit backstop on the NEW child, and rebind TPPID so the teardown kill belt targets it"
+before,0,0,q,.t.TPPID:first .t.TPARM,1,1,the new tickerplant pid
+before,0,0,q,.m.di.0servers.retry[],1,1,"drive di.servers' own retry cycle - in production its 10s serversretry job does this"
+before,0,0,q,".t.RSRECONN:not null @[{srv.gethandlebytype[`tickerplant;`any]};::;{[e] :0Ni}]",1,1,capture: di.servers reopened the socket
+before,0,0,q,".t.RSDEAF:not @[sub.subscribed;::;{[e] :0b}]",1,1,"capture: THE BUG - the socket is back but the tickerplant holds no subscription on the new handle"
+before,0,0,q,.m.di.0rdb.resubscribecheck[],1,1,the job under test
+before,0,0,q,".t.RSRESUB:@[sub.subscribed;::;{[e] :0b}]",1,1,capture: the subscription is live again
+before,0,0,q,.t.TPH:srv.gethandlebytype[`tickerplant;`any],1,1,a handle to the NEW tickerplant to publish through
+before,0,0,q,.t.TPH(`pub;77;`AFTERBOUNCE),1,1,publish one live row on the respawned tickerplant
+before,0,0,q,".t.TPH""1+1""",1,1,flush
+before,0,0,q,"system""sleep 0.3""",1,1,let the published message arrive
+before,0,0,q,".t.TPH""1+1""",1,1,second flush - drain our own inbound queue
+before,0,0,q,.t.RSAFTER:count peertrade,1,1,capture: does live data flow again?
+comment,,,,,,,teardown - close the handles and stop the peers. the .z.pc backstop already covers an
+comment,,,,,,,uncaught throw above; this is the clean path plus a kill belt
+before,0,0,q,@[hclose;.t.TPH;{[e] :(::)}],1,1,close the tickerplant handle
+before,0,0,q,@[hclose;.t.HDBH;{[e] :(::)}],1,1,close the hdb handle
+before,0,0,q,@[hclose;last .t.TPARM;{[e] :(::)}],1,1,drop the backstop handle - the armed .z.pc makes the tickerplant exit
+before,0,0,q,@[hclose;last .t.HDBARM;{[e] :(::)}],1,1,drop the backstop handle - the armed .z.pc makes the hdb exit
+before,0,0,q,rdb.teardown[],1,1,give back di.rdb's root entry points and timeout job
+before,0,0,q,"@[system;""kill -9 "",(string .t.TPPID),"" 2>/dev/null"";{[e] :(::)}]",1,1,"kill belt for the tickerplant. usually a no-op - the .z.pc backstop has already stopped it - so stderr is redirected, otherwise sh prints ""No such process"" into the test output"
+before,0,0,q,"@[system;""kill -9 "",(string .t.HDBPID),"" 2>/dev/null"";{[e] :(::)}]",1,1,kill belt for the hdb
+before,0,0,q,"system""sleep 0.2""",1,1,let the kills land before the gone check
+before,0,0,q,".t.gone:{[pid] :0=count @[{system"""" sv (""ps -p "";string x;"" -o pid="")};pid;{[e] :()}]}",1,1,"ps throws 'os when the pid is absent, so the probe has to be wrapped"
+before,0,0,q,.t.R[`tpgone]:.t.gone .t.TPPID,1,1,capture: no leaked tickerplant
+before,0,0,q,.t.R[`hdbgone]:.t.gone .t.HDBPID,1,1,capture: no leaked hdb
+before,0,0,q,"system""rm -rf "",.t.BASE",1,1,remove the working directory
+comment,,,,,,,"startup, subscribe and replay"
+true,0,0,q,.t.R[`preroot]~4#1b,1,1,init published the root entry points before start - the replay needs upd to exist
+true,0,0,q,.t.R`defined,1,1,di.subscriptions defined the tickerplant's table at root from the schema it returned
+true,0,0,q,4=.t.R`replayed,1,1,all four pre-subscription log messages were replayed into the root table
+true,0,0,q,`g=.t.R`att,1,1,the g# attribute survived the replay - the tickerplant's schema carried it
+true,0,0,q,(.t.R[`status])`started,1,1,status reports started once start has returned
+true,0,0,q,(.t.R[`status])`subscribed,1,1,"di.subscriptions reports a live subscription - legacy's notpconnected, inverted"
+true,0,0,q,(enlist`peertrade)~(.t.R[`status])`subtables,1,1,status reports the table actually subscribed
+true,0,0,q,(enlist .t.D)~.t.R`part,1,1,setpartition derived the partition from the tickerplant log file date
+comment,,,,,,,live capture
+true,0,0,q,5=.t.R`live,1,1,the live publish arrived through di.pubsub and landed in the root table
+comment,,,,,,,the tickerplant-driven roll - the whole point of the module
+true,0,0,q,0=.t.R`after,1,1,the roll cleared the saved table
+true,0,0,q,`peertrade in .t.R`ondisk,1,1,the partition was written to the hdb
+true,0,0,q,5=.t.R`diskrows,1,1,every replayed and live row reached disk
+true,0,0,q,(enlist 1+.t.D)~.t.R`newpart,1,1,the partition list advanced to the next day and dropped the rolled one
+true,0,0,q,(enlist .t.D)~.t.R`hdbreloads,1,1,the hdb was told to reload exactly the partition just written
+comment,,,,,,,"no errors, and no leaked children"
+true,0,0,q,0=count .t.R`errors,1,1,nothing was logged at error during the entire run
+true,0,0,q,.t.R`tpgone,1,1,the tickerplant peer was stopped
+true,0,0,q,.t.R`hdbgone,1,1,the hdb peer was stopped
+comment,,,,,,,recovery from a real tickerplant bounce
+true,0,0,q,.t.RSDOWN,1,1,killing the tickerplant really did drop the subscription
+true,0,0,q,.t.RSRECONN,1,1,di.servers reopened the socket to the respawned tickerplant on its own
+true,0,0,q,.t.RSDEAF,1,1,"the reconnected socket carries NO subscription - connected but deaf, which is the failure the resubscribe job exists to fix"
+true,0,0,q,.t.RSRESUB,1,1,resubscribecheck re-established the subscription over the new handle
+true,0,0,q,.t.RSAFTER>.t.RSBEFORE,1,1,"live data flows again after the bounce - the end-to-end proof, not just a status flag"

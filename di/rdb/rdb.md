@@ -1,0 +1,372 @@
+# di.rdb
+
+The real-time database. Subscribes to a tickerplant, replays the day's tickerplant log to recover
+intraday state, accumulates live updates in memory, and at end of day writes each table down to the
+hdb, clears it and tells the hdb(s) to reload.
+
+Ported from TorQ's `code/processes/rdb.q`, together with the process-code files
+`code/rdb/rdbstandard.q` and `code/rdb/endofperiod.q`, and the defaults in
+`config/settings/rdb.q`.
+
+## Usage
+
+```q
+rdb:use`di.rdb
+
+/ the CALLER wires di.rdb's hard dependencies first - see "who initialises what" below
+rdb.init[logging.logdict,`timer`hdbdir`reloadenabled!(timerdep;`:/data/hdb;0b)]
+rdb.start[]
+```
+
+`init` configures the process and publishes its root entry points; it opens no sockets and touches
+no other module. `start` does all the i/o: connect, wait for a tickerplant, subscribe and replay.
+
+Both are safe to call again. `init` refreshes the dependencies and config on every call but seeds
+the **runtime** state - the subscribed table list, the partition list, the end-of-day row-count
+snapshot and the started flag - only on the *first* call, so re-applying config to a running rdb
+cannot discard what it is holding. `teardown` is idempotent.
+
+## Exports
+
+| Function | Signature | Description |
+|---|---|---|
+| `init` | `[deps]` | wire the injected dependencies and config, publish the root entry points |
+| `start` | `[]` | connect to the tickerplant, subscribe, replay the log, set the partition |
+| `teardown` | `[]` | remove the root entry points and the timeout job that `init`/`start` installed |
+| `endofday` | `[date]` | the end-of-day roll. also published at root and as `.u.end` |
+| `reload` | `[date]` | the wdb's ipc entry point once it has persisted the prior day. also at root |
+| `endofperiod` | `[currp;nextp;data]` | the tickerplant's intraday period roll. also at root |
+| `getpartition` | `[]` | the partition date(s) this rdb currently holds, for gateway routing |
+| `moveandclear` | `[fromns;tons;tab]` | move a table's schema to another namespace and delete the original |
+| `status` | `[]` | how this rdb is wired and what it currently holds |
+| `getapimeta` | `[]` | api metadata for `di.torq` to register with `di.api` |
+| `version` | | module version, read from the `VERSION` file |
+
+## Dependencies
+
+**Injected** via `init`, both **required** - there is no fallback and no default logger:
+
+| Key | Contract |
+|---|---|
+| `log` | `` `info`warn`error `` of binary `{[c;m]}` - context symbol, message string. `di.log`'s `logdict` is a ready-made dep |
+| `timer` | a dict with `addjob` (a variant dict exposing `custom`) and `deletejobs`. See `di.timer` |
+
+**Hard** (`use`-imported in `init.q`, declared in `deps.q`): `di.servers`, `di.subscriptions`,
+`di.dbwrite`, `di.eodtime`, `di.asyncutil`. What each is actually used for is listed per-edge in
+`deps.q`.
+
+`di.handlers` is **not** a dependency. The TorQ source assigns no `.z.*` handler, and the
+tickerplant's `` (`endofday;date) `` broadcast arrives through the default `.z.ps`. `di.servers` and
+`di.subscriptions` do each need a handlers dep, but the caller wires those.
+
+`di.dbwrite` takes the same **binary** `{[c;m]}` log contract as everything else, so no adapter is
+needed. (Earlier notes describing it as monadic `kx.log` style are out of date: `main`'s
+`dbwrite.q` wires `.z.m.loginfo`/`logwarn`/`logerr`, and TorqX deleted its own adapter for the same
+reason.)
+
+### Who initialises what
+
+**di.rdb initialises none of its hard dependencies.** `di.servers`, `di.subscriptions`,
+`di.dbwrite` and `di.eodtime` are shared framework state whose lifecycle belongs to the caller -
+`di.torq`, or a test harness. `di.rdb` only *uses* them, and only from `start[]` onwards.
+
+That split is deliberate:
+
+- `init` stays pure configuration, so it can be unit-tested with no sockets and no other module
+  initialised;
+- a process that also runs a gateway or a wdb does not get its shared `di.servers` re-initialised
+  behind its back;
+- and it avoids one module owning another's lifecycle.
+
+The cost is one real constraint on the caller: **`di.servers` must be configured with a
+`connections` list that covers the tickerplant and hdb proctypes before `start[]` runs.**
+`di.servers.startup[]` takes no argument - it opens whatever `di.servers` was configured with at
+its own `init` - so an rdb cannot hand it a role-specific list. `test_integration.csv` shows the
+full wiring. (TorqX hit the same wall from the other side and changed `startup` to take the config;
+that change is not on `feature-server`, so it is flagged as a follow-up rather than assumed here.)
+
+`di.eodtime` must be initialised before `start[]` too, since the timeout job is scheduled off its
+`getnextroll`. If it has not been, `start` fails loudly with a message naming it rather than
+booking a job for `0Wp` that would never fire.
+
+## Config
+
+Every key is optional and carries TorQ's default. Config and dependency keys share the **one flat
+dict** `init` takes.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `tickerplanttypes` | `` `tickerplant `` | proctype(s) to subscribe to |
+| `hdbtypes` / `hdbnames` | `` `hdb `` / `` () `` | hdbs to notify at eod, resolved by type **or** by name |
+| `gatewaytypes` | `` () `` | gateways to push eod attributes to. empty means no push |
+| `ignorelist` | `` `heartbeat`logmsg `` | tables never saved or cleared at eod |
+| `subscribeto` / `subscribesyms` | `` ` `` / `` ` `` | tables and syms to subscribe for; `` ` `` means all |
+| `schema` | `1b` | take the table schemas from the tickerplant |
+| `replaylog` | `1b` | replay the tickerplant log at subscribe |
+| `hdbdir` | `` `:hdb `` | hdb root written to |
+| `sortcsv` | `` ` `` | sort/attribute config handed to `di.dbwrite.readcsv`; unset uses its default |
+| `savetables` | `1b` | if false, tables are wiped at eod but not written |
+| `onlyclearsaved` | `1b` | if true, a table whose save failed is kept rather than wiped (**TorQ defaults this to `0b`** - see divergences) |
+| `gc` | `1b` | garbage collect in `reload` (see the caveat below) |
+| `reloadenabled` | `0b` | `0b` standalone, `1b` wdb-fronted. **Explicit config, never auto-detected** |
+| `parvaluesrc` | `` `log `` | where the partition value comes from: `` `log `` or `` `tab `` |
+| `pardefault` | `.z.D` | partition used when the source yields a null date |
+| `subfiltered` / `subcsv` | `0b` / `` ` `` | load subscription filters from a csv |
+| `upd` | root-safe default | override the root `upd` with your own binary function |
+| `savedownmanipulation` | `()!()` | `table!function`, applied to a table just before it is saved |
+| `postreplay` | `{[d;p]}` | hook invoked after every table has been written down |
+| `tpwaittimeout` / `tppollms` | `30000` / `500` | how long `start` blocks waiting for a tickerplant |
+| `tpselection` | `` `any `` | selection algorithm for `di.servers.gethandlebytype` |
+| `resubscribeenabled` | `1b` | automatically re-establish the subscription after a tickerplant bounce |
+| `resubscribeperiod` | `30` | seconds between resubscribe checks (must be positive) |
+| `disabletimeout` | `1b` | schedule the pre-roll query-timeout suspension |
+| `timeoutlead` | `0D00:01` | how far before the roll to suspend the query timeout |
+| `procname` / `proctype` | `` ` `` / `` ` `` | this process's identity, used only in the gateway attribute push |
+
+## Behaviour
+
+### Startup
+
+`start[]` opens the configured connections (`di.servers.startup`), blocks until a tickerplant is up
+(`waitfortype`, which replaces TorQ's `.servers.startupdepcycles`, collapsing `tpconnsleepintv` and
+`tpcheckcycles` into `tppollms`/`tpwaittimeout`), takes a handle, and subscribes through
+`di.subscriptions.subscribe`. That call defines the subscribed tables at root from the
+tickerplant's schemas - **the schema comes from the tickerplant, not a local `database.q`** - and
+replays the log up to the message count the tickerplant reported at subscription time.
+
+### Accumulation
+
+The root `upd` is published by `init`, **before** `start[]`, because the replay drives it too
+(`di.subscriptions` refuses to replay without a root `upd`). The default reproduces TorQ's `insert`
+semantics - append, not upsert-by-key - and handles both payload shapes: a table from the live
+feed, a list of columns from the `-11!` replay.
+
+### Surviving a tickerplant bounce
+
+`start[]` also schedules an `rdbresubscribe` timer job, every `resubscribeperiod` seconds. Each
+cycle it asks `di.subscriptions.subscribed[]` whether anything is still live and, when nothing is,
+resolves a fresh tickerplant handle off `di.servers` and calls `di.subscriptions.resubscribe`.
+
+This exists because reconnection alone is not recovery. When a tickerplant restarts, `di.servers`
+reopens the socket on its own 10s retry cycle - but the handle is a **new** one and the tickerplant
+holds no subscription against it. Without this job the rdb sits connected and silently receives
+nothing for the rest of the day, and `start[]` cannot be re-run to fix it: `di.subscriptions`
+rejects a second subscribe on a handle it already holds, so the only recovery would be a process
+restart. `di.subscriptions` deliberately keeps the knowledge of *what* was subscribed and leaves
+*when* to re-establish it to this module; this job is that decision.
+
+Notes on the shape of it:
+
+- **The check never throws.** `di.timer` defaults `disableonfail` to `1b`, so one escaping error
+  would disable the job for the life of the process - silently removing the recovery path exactly
+  when the tickerplant is already misbehaving. The body swallows its own errors *and* the job is
+  registered with `disableonfail 0b`; both, deliberately.
+- **Mode 3**, so the period is measured from the previous *end*. The check makes an IPC round trip,
+  and under mode 1 a run slower than the period would have its successor already due on return.
+- **No replay and no filter re-application.** `resubscribe` passes `replay 0b`, so nothing is
+  re-read from the tickerplant log and the tables are not double-fed; live data arrives already
+  filtered by the tickerplant, which is why `applyfilters` is a `start`-only concern.
+- **Worst-case recovery latency is `di.servers`' retry period plus `resubscribeperiod`** (~40s on
+  the defaults), because the socket has to come back before there is a handle to resubscribe over.
+- `subtables` is deliberately not rewritten from the result - it records what `start[]` established,
+  and `reload` walks it to decide what the wdb has persisted.
+
+Set `resubscribeenabled` to `0b` only if something else owns reconnection; `status[]` reports the
+flag alongside `subscribed` so an operator can tell "the feed is down and something is retrying it"
+from "the feed is down and nothing is".
+
+### End of day
+
+`endofday[date]` is what the tickerplant's `` (`endofday;date) `` broadcast lands on. Two modes:
+
+- **standalone** (`reloadenabled` `0b`): capture the column attributes, write every non-ignored root
+  table to `hdbdir` for `date` smallest-table-first, clear each, restore the timeout, reapply the
+  attributes, drop the rolled date from the partition list, run `postreplay`, and tell every
+  connected hdb to reload. A table whose save **fails** is logged at `error` and, on the default
+  `onlyclearsaved` `1b`, deliberately left unwiped so the day's rows survive in memory - see
+  divergences.
+- **wdb-fronted** (`1b`): a wdb owns the writedown, so this rdb saves and clears nothing. It only
+  **snapshots** the per-table row counts, pushes eod attributes to any gateways, and returns - the
+  data stays live and queryable until the wdb calls `reload[date]`.
+
+`reload[date]` then drops exactly the snapshotted number of rows from each subscribed table,
+keeping the new day's ticks that arrived since the roll, reapplies attributes, garbage collects,
+and zeroes the snapshot so a second call is a no-op.
+
+Set `reloadenabled` to `1b` **only** when a wdb is actually present - otherwise the writedown is
+deferred to a process that never calls back and the day is never persisted. Following TorQ's
+fail-fast convention, this is explicit config and is never auto-detected.
+
+### The rdb/wdb handshake
+
+1. the tickerplant broadcasts `` (`endofday;date) `` to both. The rdb (`reloadenabled` `1b`)
+   snapshots its row counts and returns. New-day ticks keep landing.
+2. the wdb flushes to disk, sorts, moves the partition into the hdb, then calls `` (`reload;date) ``
+   on each rdb and reloads each hdb.
+3. the rdb's `reload` drops the first `eodtabcount[t]` rows of each table - exactly the prior day
+   the wdb just persisted - leaving the new day intact.
+
+### Query-timeout suspension
+
+A `\T` that expires mid-writedown aborts the roll. TorQ disables the timeout **before** the roll
+rather than at the top of `endofday`, where changing it mid-execution would be racing the timer it
+sets. `start[]` therefore schedules a daily `rdbtimeoutreset` job through the injected timer at
+`di.eodtime.getnextroll[] - timeoutlead`; `endofday` and `reload` restore the timeout when they
+finish.
+
+This is the only use `TorQ`'s `rdb.q` makes of `.eodtime`, and it is what makes `di.eodtime` and the
+injected timer real dependencies rather than declared ones.
+
+## Design decisions and divergences from TorQ
+
+Recorded so a reviewer can check each one rather than take it on trust.
+
+- **`onlyclearsaved` defaults to `1b`, where TorQ defaults it to `0b`.** This is the only *default*
+  deliberately changed from legacy, and it is a data-safety choice. Under `0b`, a `savedown` that
+  throws still clears the table: the day's data is gone, unrecoverable, and the only trace is one
+  `error` line in the log - the failure mode is silent loss at exactly the moment the operator most
+  needs the rows. Under `1b` the table stays in memory, so it is still queryable and can be written
+  down by hand once the cause (a full disk, a bad permission, an unmounted hdb root) is fixed. The
+  cost is a table that keeps growing while the save keeps failing - loud, visible in `status[]`, and
+  bounded by the process - which is the better failure to have. Set it back to `0b` for
+  TorQ-identical behaviour; `test.csv` drives both paths so neither can regress unnoticed.
+- **`endofday` is unary.** TorQ's is `endofday[date;processdata]`, but the function body never
+  references `processdata` and the shipped `.u.end` alias passes `()!()` for it. `di.pubsub`
+  broadcasts one argument, and a binary function would silently become a **projection** rather than
+  running - so the roll would never happen and nothing would throw.
+- **No pre-sort before savedown.** TorQ sorts the in-memory table (`.sort.sorttab`) and then writes
+  it; `di.dbwrite.savedown` writes and then sorts and attributes the partition on disk from the same
+  config. Same end state, one pass instead of two.
+- **`gc` gates only `reload`'s collection.** `di.dbwrite.savedown` calls `gc[]` unconditionally, so
+  `gc:0b` cannot suppress the post-save collect. The flag still gates the collection this module
+  owns. Changing that needs a `di.dbwrite` change, which is out of scope here.
+- **`upd` appends through `@[`.;t;,;data]`, not a join lambda.** A lambda doing `tab,data` returns a
+  new table and silently **drops every column attribute** - measured: a `` `g#sym `` column comes
+  back unattributed after one update and stays that way for the rest of the day. The amend form
+  modifies in place and maintains the index, which is why TorQ's default `upd` is `insert`.
+- **Attributes are captured and reapplied around every wipe.** Measured: both the `0#` clear in
+  `endofday` and the `n _` drop in `reload` discard attributes. TorQ's capture/reapply is therefore
+  load-bearing, not defensive padding.
+- **`endofday` walks `tables[`.]`, `reload` walks `subtables`.** That asymmetry is TorQ's and is
+  preserved: a table this process never subscribed to was not fed by the tickerplant, so the wdb has
+  not persisted it and dropping rows from it would destroy data nothing else holds.
+- **`moveandclear` moves the schema only.** TorQ's shipped version stores `0#` of the table and then
+  deletes the original, so the rows do not survive the move. That reads like a bug, but it is a
+  publicly-registered api in `code/rdb/apidetails.q` and changing it would change what a shipped
+  function does. Preserved deliberately; flagged here rather than silently "fixed".
+- **`notifyhdbs` broadcasts through `di.asyncutil.postback`.** TorQ sends a separate sync message per
+  handle; this serialises the message **once** for the whole set and error-traps each send into a
+  success vector. It is **not** fire-and-forget: `postback` flushes with `h(::)`, which a peer
+  answers only after processing the queued reload, so this still waits on the hdbs - one round trip
+  for the set instead of one per handle. `postback` also requires **positive** handles; passing
+  TorQ's `neg abs handles` returns a caught `"-4 is not an ipc handle"` failure rather than
+  throwing, i.e. a silent no-notify.
+- **TorQ's gmt-rounding term is dropped** from the timeout job's start time. It is
+  `{00:01*15*"j"$(`minute$x)%15}(.proc.cp[]-.z.p)`, which is zero outside backtesting, where
+  `.proc.cp[]` is overridden to simulate a clock. Porting it without that machinery would be
+  copying a no-op.
+- **`eval` is kept in `applyfilters`.** It is not decoration around an applied functional select:
+  applying the same arguments directly, `?[value t;filters;0b;columns]`, throws `'type`, with and
+  without an extra enlist on the constraint (both measured). `moveandclear`'s `eval` *was* removable
+  and has been removed - it was building a parse tree only to evaluate it immediately.
+- **A re-init preserves runtime state.** Dependencies and config are refreshed on every `init`, but
+  the subscribed table list, partition list, eod snapshot and started flag are seeded only on the
+  first. Measured before this was guarded: re-applying config between the roll and the wdb's
+  `reload[date]` wiped `eodtabcount` and `started`, so `reload` threw its start guard, dropped
+  nothing, and left the prior day in memory permanently - silently doubling what the rdb held.
+  Same precedent as `di.subscriptions`, which seeds its registry only when fresh.
+- **`teardown` reads `.u.end` through a protected `value`.** A shutdown path that calls it twice
+  would otherwise die on an unlogged `'.u.end` reading the name the first call deleted.
+- **`upd` normalises the same three payload shapes as `di.subscriptions.payloadtable`** - a table, a
+  column dict, or a list of columns - deliberately kept in step with the module that drives it during
+  replay. A tickerplant that logs a dict is as valid as one that logs a list.
+- **`notifyhdbs` dispatches on `postback`'s return type.** It returns a plain boolean vector when the
+  broadcast went out and `(booleanvector;errorstring)` when it did not, so taking `first` of it only
+  happens to suit both shapes.
+- **Removed entirely:** all `.finspace.*` / `.aws.*` code, including `newrdbready` and the
+  changeset/sym-file branches. FinSpace is end-of-life.
+
+## Known gaps
+
+- **`di.pubsub.callendofperiod` discards two of its three arguments.** TorQ's producer broadcasts
+  `` (`endofperiod;currentperiod;nextperiod;data) `` (`code/common/pubsub.q:19`), but `di.pubsub`'s
+  `callendofperiod` is `{(neg getallhandles[])@\:(`endofperiod;x)}` - a rank-1 lambda that accepts
+  three arguments and throws two away. `endofperiod` here is **ternary**, matching TorQ's producer,
+  so under `di.pubsub` today it receives one argument and q returns a **projection** (measured: type
+  `104h`) instead of running: nothing is logged and nothing throws. This is the same defect class
+  that PR #118 fixed for `callendofday`, and it needs the same fix in `di.pubsub` rather than a
+  narrower signature here.
+- **`di.dbwrite`, `di.eodtime` and `di.asyncutil` had no `version` export — now fixed, separately.**
+  This was a real blocker rather than an advisory: `di.depcheck` classes a missing version as a
+  `failure`, not a `warning`, and `di.depcheck.init` signals on any failure, so a process that
+  loaded `di.rdb` and then called `di.depcheck.init` **aborted at startup**. No pin avoided it —
+  `checkdepversion` returns the "exports no version" failure before comparing numbers, so `"0.0.0"`
+  and `""` failed identically. The three modules were versioned at `0.1.0` as their own change
+  (a `VERSION` file plus `version` in the export dict, matching every other module). Verified:
+
+  ```q
+  rdb:use`di.rdb; dc:use`di.depcheck
+  dc.init[enlist[`log]!enlist mylog]     / "dependency check complete: 0 failure(s), 0 warning(s)"
+  ```
+- **`di.servers.startup[]` takes no argument** - see "who initialises what".
+- **There is no `di.tickerplant` in kdbx-modules**, so the end-to-end roll is proven against the
+  test harness tickerplant in `test_integration.csv` (which publishes through the real `di.pubsub`),
+  not against a production one.
+- **Module naming.** RFC-0001's decision D1 (a `di.proc.*` / `di.torq.*` / `di.util.*` hierarchy) is
+  unresolved and gates all merge work. This module is flat `di.rdb`, matching every module merged or
+  up for review. If the hierarchy is adopted it is renamed by the coordinated repo-wide change the
+  RFC describes in its phase 5.
+
+## Module-namespace notes
+
+A source-level bare identifier inside a `use`-loaded module is rewritten at load to the module's
+private namespace, so it can never reach root. This module therefore:
+
+- **reads** root tables with a bare `value t` / `tables[`.]`, which fall through to root;
+- **writes, clears and drops** through an explicit `@[`.;t;…]`;
+- publishes its root entry points with an explicit `@[`.;…]`, or `set[`.u.end;…]` for the dotted
+  alias, never a bare assignment.
+
+A q-sql `select`/`where`/`by` **clause** additionally cannot resolve a module-level name at all, so
+any config value used in one is hoisted into a function-local first (see `handlesbytypeandname`).
+The `from` target is unaffected - only the clauses are.
+
+## Testing
+
+```q
+k4unit:use`di.k4unit
+k4unit.moduletest`di.rdb
+```
+
+`test.csv` is a behavioural suite (**91 asserts**), not just a load-and-export check: it drives real
+root tables through `upd`, both end-of-day modes, the wdb `reload` handshake, both partition
+sources, both `onlyclearsaved` paths, the subscription-filter loader, the timeout and resubscribe jobs,
+re-init safety and `teardown`, using a capturing logger and a mock timer. It asserts **observable
+effects** of `init` rather than "init did not throw" - the latter passes even under a wrong `init`
+arity, which returns a projection instead of running.
+
+`test_integration.csv` (**22 asserts**) stands up a real tickerplant and a real hdb as separate q
+processes on OS-assigned ports and drives the whole lifecycle over genuine IPC: `startup`,
+`waitfortype`, `subscribe`, log replay, live capture, the tickerplant's `endofday` broadcast,
+savedown to disk, and the hdb's `reload[date]`.
+
+It then performs a **real tickerplant bounce**: kill the peer, respawn it on the same port, let
+`di.servers` reconnect, and assert the socket comes back carrying *no* subscription before
+`resubscribecheck` runs - then that the subscription is re-established and a freshly published row
+actually arrives. Removing the `resubscribecheck` call fails exactly two of those asserts
+(`RSRESUB` and `RSAFTER>RSBEFORE`) and leaves the other three passing, which is the check that the
+scenario is testing the fix rather than restating the setup.
+
+Run it in a **fresh** q session - after `moduletest` the unit rows are still loaded and would be
+re-run against dirty module state:
+
+```q
+k4unit:use`di.k4unit
+.m.di.0k4unit.KUltf .Q.dd[hsym`$"<path>/di/rdb";`test_integration.csv]
+.m.di.0k4unit.KUrt[]
+select from .m.di.0k4unit.KUTR where not ok
+```
+
+Both peers are launched with `$QHOME/bin/q`, so **`QHOME` must point at a real q install** - not
+just at whatever `q` happens to be on `PATH`. A stale `QHOME` fails the whole suite up front with
+`'integration: a peer never reported a port`, which looks like a module fault and is not one.

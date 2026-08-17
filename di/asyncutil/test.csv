@@ -25,3 +25,7 @@ run,0,0,q,@[;"";()] each h,1,,wait for server response
 true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.bpbrestab,1,,asyncutil.postback call failed on one server with expected result
 
 run,0,0,q,@[;"exit 0";()] each neg h,,1,,closing remaining server process
+comment,,,,,,,version - di.depcheck resolves this module's version from the export dict
+true,0,0,q,`version in key asyncutil,1,1,version is exported - di.depcheck reads it there and FAILS the dependency check without it
+true,0,0,q,3=count "." vs asyncutil.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any asyncutil.version in ""\n\r""",1,1,no stray newline came through from the VERSION file

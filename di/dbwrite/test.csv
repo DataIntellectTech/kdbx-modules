@@ -244,3 +244,7 @@ after,0,0,q,rmrf`:dbw_good,1,1,cleanup good partition
 after,0,0,q,rmrf`:dbw_attr_tp,1,1,cleanup attr partition
 after,0,0,q,rmrf`:dbw_hdb,1,1,cleanup savedown hdb tree
 after,0,0,q,rmrf`:dbw_ihdb,1,1,cleanup integration hdb tree
+comment,,,,,,,version - di.depcheck resolves this module's version from the export dict
+true,0,0,q,`version in key dbwrite,1,1,version is exported - di.depcheck reads it there and FAILS the dependency check without it
+true,0,0,q,3=count "." vs dbwrite.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any dbwrite.version in ""\n\r""",1,1,no stray newline came through from the VERSION file

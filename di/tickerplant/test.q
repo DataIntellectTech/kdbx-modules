@@ -61,12 +61,30 @@ testupdbatch:{[]
   (2=count trade) and (`AAPL`MSFT~exec sym from trade) and (not any null exec time from trade)
     and (2=c`j) and 0=c`i};
 
+/ an empty update is a no-op: no throw, nothing buffered, nothing logged
+testemptyupd:{[]
+  freshinit["empty";1b];
+  tp[`upd][`trade;()];
+  c:tp[`getcounts][];
+  (0=count trade) and 0=c`j};
+
 / zero-latency mode: upd publishes immediately, does NOT buffer into the root table, still logs
 testzerolatency:{[]
   freshinit["zl";0b];
   tp[`upd][`trade;row`AAPL];
   c:tp[`getcounts][];
   (0=count trade) and 1=c`j};
+
+/ re-init is safe: it closes the previous log handle instead of leaking the descriptor, and logging
+/ keeps working. fd count (linux /proc, as the suite is already unix-coupled) must not grow.
+testreinitnoleak:{[]
+  fddir:"/proc/",(string .z.i),"/fd";
+  freshinit["reinit";1b];
+  b:"J"$first system"ls ",fddir," | wc -l";
+  freshinit["reinit";1b]; freshinit["reinit";1b]; freshinit["reinit";1b];
+  a:"J"$first system"ls ",fddir," | wc -l";
+  tp[`upd][`trade;row`AAPL];
+  (a=b) and 1=tp[`getcounts][]`j};
 
 / the tp log tickerplant writes replays through di.tplog - the two modules agree on the log format
 testlogroundtrip:{[]

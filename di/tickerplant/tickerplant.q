@@ -137,9 +137,11 @@ init:{[deps]
   tplog.init[enlist[`log]!enlist deps`log];
   pubsub.setsubtables[$[`subtables in key deps;deps`subtables;.z.m.tabs]];
   pubsub.init[];
-  / date, counts, and the tp log for today
+  / date, counts, and the tp log for today. close a handle held from a previous init before
+  / reopening, so a re-init does not leak the old file descriptor (rolllog closes on its own path)
   .z.m.d:eodtime.getd[];
   .z.m.i:.z.m.j:0;
+  if[`logfile in key .z.m;if[.z.m.logfile>0i;hclose .z.m.logfile]];
   .z.m.logfile:openlog .z.m.d;
   / schedule the timer job that flushes the buffer (batch) and checks the roll; mode 1 = fixed period.
   / guarded so a re-init does not re-add (di.timer.addjob throws on a duplicate id); tick reads
@@ -155,6 +157,7 @@ upd:{[t;x]
   / t is the table name, x the column data. wired to root `upd` by di.torq so feeds can call it.
   if[not -11h=type t;raiseerror[`upd;"table must be a symbol"]];
   if[not t in .z.m.tabs;raiseerror[`upd;"unknown table ",string t]];
+  if[not count x;:()];
   rollcheck .z.p;
   x:stamp x;
   if[.z.m.batch;t insert x;writelog[t;x]];

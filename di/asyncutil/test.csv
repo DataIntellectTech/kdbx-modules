@@ -1,6 +1,30 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,asyncutil:use`di.asyncutil,1,1,load module into session
 
+comment,,,,,,,peer harness - two REAL q peers over genuine IPC. they must DIFFER: peer1 defines
+comment,,,,,,,"f:{x+1} and peer2 does not, because the suite asserts a deferred call returning 10b"
+comment,,,,,,,"(succeeds on one server, fails on the other) and a postback returning f[1]=2 alongside"
+comment,,,,,,,"""error: server fail: f"". a single uniform peer cannot produce either result."
+comment,,,,,,,needs a q binary reachable via QHOME - both peers are launched with $QHOME/bin/q
+before,0,0,q,".t.tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i}",1,1,honours TMPDIR and appends the pid so two runs cannot collide
+before,0,0,q,".t.BASE:.t.tmpdir""asyncutiltest""",1,1,fixture: working directory
+before,0,0,q,"system""rm -rf "",.t.BASE",1,1,clean slate
+before,0,0,q,"system""mkdir -p "",.t.BASE",1,1,create the working directory
+comment,,,,,,,each child starts with -p 0W so the OS assigns a free port and reports it to a file
+before,0,0,q,".t.readport:{[fn;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; p:0N; while[(.z.p<deadline) and null p; if[count key hsym`$fn;p:""J""$first read0 hsym`$fn]; if[null p;system""sleep 0.05""]]; :p}",1,1,wait for a child to report the port the OS gave it
+before,0,0,q,".t.spawn:{[nm;lines] fp:.t.BASE,""/"",nm,"".q""; (hsym`$fp) 0: lines; system (getenv[`QHOME]),""/bin/q "",fp,"" -p 0W -q </dev/null >/dev/null 2>&1 &""; :.t.readport[.t.BASE,""/"",nm,""port"";8000]}",1,1,spawn one peer and wait for its port. NB the script path comes BEFORE the flags - q silently ignores a script that follows them
+before,0,0,q,".t.peerlines:{[nm;extra] :(enlist""(hsym`$\"""",.t.BASE,""/"",nm,""port\"") 0: enlist string system\""p\"";""),extra}",1,1,prepend the port report to a peer body
+before,0,0,q,".t.PORT1:.t.spawn[""peer1"";.t.peerlines[""peer1"";enlist ""f:{x+1};""]]",1,1,"peer1 DEFINES f - f[1] is 2, which the postback assert expects"
+before,0,0,q,".t.PORT2:.t.spawn[""peer2"";.t.peerlines[""peer2"";()]]",1,1,peer2 does NOT define f - it must fail the same call
+before,0,0,q,"if[any null (.t.PORT1;.t.PORT2);'""asyncutil: a peer never reported a port""]",1,1,fail loudly rather than letting every assert below fail for an unrelated reason
+comment,,,,,,,"guaranteed child cleanup: arm each peer to exit when its connection to us drops, which"
+comment,,,,,,,covers ANY parent death including an uncaught throw. the handle is KEPT OPEN - closing
+comment,,,,,,,it here would fire the .z.pc we just armed and kill the child on the spot
+before,0,0,q,".t.backstop:{[p] bh:hopen (`$"":localhost:"",string p;2000); pid:bh"".z.i""; bh"".z.pc:{exit 0}""; :(pid;bh)}",1,1,arm the child and return (pid;handle)
+before,0,0,q,.t.ARM1:.t.backstop .t.PORT1,1,1,peer1 self-exit backstop
+before,0,0,q,.t.ARM2:.t.backstop .t.PORT2,1,1,peer2 self-exit backstop
+before,0,0,q,"h:hopen each `$("":localhost:"",string .t.PORT1;"":localhost:"",string .t.PORT2)",1,1,h - the two handles every assert below broadcasts over
+
 comment,,,,,,,Testing asyncutil.deferred
 run,0,0,q,.test.bdefres1:asyncutil.deferred[h;({x+1};1)],1,,testing asyncutil.deferred call that should execute on both servers
 true,0,0,q,.test.bdefres1~((1b;1b);(2;2)),1,,successful asyncutil.deferred call with expected result
@@ -12,20 +36,55 @@ run,0,0,q,.test.bdefres3:asyncutil.deferred[h;(`f;1)],1,,testing asyncutil.defer
 true,0,0,q,10b ~ .test.bdefres3[0;],1,,asyncutil.deferred call failed on one server with expected result
 
 comment,,,,,,,Testing asyncutil.postback
-run,0,0,q,".test.bpbrestab:([]handle:();time:();result:())",1,,define table .test.bpbrestab to store results from asyncutil.postback
-run,0,0,q,".test.storeresult:{`.test.bpbrestab upsert (.z.w;.z.t;enlist x)}",1,,define a function .test.storeresult to store the posted back results in .test.bpbrestab
+run,0,0,q,.test.bpbrestab:([]handle:();time:();result:()),1,,define table .test.bpbrestab to store results from asyncutil.postback
+run,0,0,q,.test.storeresult:{`.test.bpbrestab upsert (.z.w;.z.t;enlist x)},1,,define a function .test.storeresult to store the posted back results in .test.bpbrestab
 run,0,0,q,asyncutil.postback[h;({x+1};2);`.test.storeresult],1,,testing asyncutil.postback that should execute on both servers
-run,0,0,q,@[;"";()] each h,1,,wait for server response
+run,0,0,q,"@[;"""";()] each h",1,,wait for server response
 true,0,0,q,(enlist 3;enlist 3) ~ -2#exec result from .test.bpbrestab,1,,successful asyncutil.postback with expected result
 run,0,0,q,asyncutil.postback[h;({x+`a};2);`.test.storeresult],1,,testing asyncutil.postback call that should fail on both servers
-run,0,0,q,@[;"";()] each h,1,,wait for server response
-true,0,0,q,all all (exec result from -2#.test.bpbrestab) like\: "error*",1,,asyncutil.postback call failed on both servers with expected result
+run,0,0,q,"@[;"""";()] each h",1,,wait for server response
+true,0,0,q,"all all (exec result from -2#.test.bpbrestab) like\: ""error*""",1,,asyncutil.postback call failed on both servers with expected result
 run,0,0,q,asyncutil.postback[h;(`f;1);`.test.storeresult],1,,testing asyncutil.postback call that should fail on one server
-run,0,0,q,@[;"";()] each h,1,,wait for server response
-true,0,0,q,(enlist 2;enlist "error: server fail: f") ~ exec result from -2#.test.bpbrestab,1,,asyncutil.postback call failed on one server with expected result
+run,0,0,q,"@[;"""";()] each h",1,,wait for server response
+true,0,0,q,"(enlist 2;enlist ""error: server fail: f"") ~ exec result from -2#.test.bpbrestab",1,,asyncutil.postback call failed on one server with expected result
 
-run,0,0,q,@[;"exit 0";()] each neg h,,1,,closing remaining server process
+comment,,,,,,,the flush. -25! only QUEUES a broadcast - q sends it when the process next returns to its
+comment,,,,,,,main loop. without an explicit flush postback reports success while nothing has left the
+comment,,,,,,,"process, and a caller that keeps working (an rdb rolling the day) or exits sends it late or"
+comment,,,,,,,never. the peer signals receipt by touching a FILE: any ipc check would itself flush and so
+comment,,,,,,,could never detect the bug. measured on the unflushed version: not received after 2s
+run,0,0,q,".t.hitfile:.t.BASE,""/hit""",1,1,marker file the peers touch the moment they evaluate our query
+run,0,0,q,"system""rm -f "",.t.hitfile",1,1,clear the marker
+comment,,,,,,,"the query is a lambda plus a symbol argument, sent as objects - no peer-side definition and"
+comment,,,,,,,no nested quoting to escape
+run,0,0,q,"asyncutil.postback[h;({[f] f 0: enlist ""hit""; :1b};hsym`$.t.hitfile);`.test.storeresult]",1,1,broadcast it - nothing in postback waits for a reply
+run,0,0,q,"system""sleep 1""",1,1,"block INSIDE the script: q never reaches its event loop, so only a real flush can have sent it"
+true,0,0,q,0<count key hsym`$.t.hitfile,1,1,postback reached a peer with no main loop and no ipc - this fails on the unflushed version
+run,0,0,q,"@[;"""";()] each h",1,1,drain the postbacks so the next test starts on a clean stream
+comment,,,,,,,"the same flush makes deferred a real broadcast: unflushed, only the handle it blocks on first"
+comment,,,,,,,"is pushed out, so the second peer does not start until the first replies. measured 6008ms"
+comment,,,,,,,unflushed vs 3004ms flushed for two peers each sleeping 3s
+run,0,0,q,.t.T0:.z.p,1,1,start the clock
+run,0,0,q,".t.DEFPAR:asyncutil.deferred[h;({[d] system""sleep 2""; d};42)]",1,1,both peers sleep 2s
+run,0,0,q,.t.DEFMS:`long$(.z.p-.t.T0)%1000000,1,1,elapsed milliseconds
+true,0,0,q,.t.DEFPAR~(11b;42 42),1,1,both peers answered correctly
+true,0,0,q,.t.DEFMS<3000,1,1,"ran in parallel (~2s). serialised, as the unflushed version is, this takes ~4s"
+comment,,,,,,,flushhandles is an internal helper - keep it out of the export
+true,0,0,q,not `flushhandles in key asyncutil,1,1,flushhandles must not be exported
+run,0,0,q,"@[;""exit 0"";()] each neg h",1,1,ask both peers to exit
+comment,,,,,,,"release the backstops and a kill belt, so no peer can outlive the suite"
+run,0,0,q,@[hclose;last .t.ARM1;{[e] :(::)}],1,1,drop peer1 backstop handle
+run,0,0,q,@[hclose;last .t.ARM2;{[e] :(::)}],1,1,drop peer2 backstop handle
+run,0,0,q,"system""sleep 0.2""",1,1,let the exits land before the kill belt
+run,0,0,q,"@[system;""kill -9 "",(string first .t.ARM1),"" 2>/dev/null"";{[e] :(::)}]",1,1,kill belt for peer1 - usually a no-op
+run,0,0,q,"@[system;""kill -9 "",(string first .t.ARM2),"" 2>/dev/null"";{[e] :(::)}]",1,1,kill belt for peer2 - usually a no-op
+run,0,0,q,"system""rm -rf "",.t.BASE",1,1,remove the working directory
 comment,,,,,,,version - di.depcheck resolves this module's version from the export dict
 true,0,0,q,`version in key asyncutil,1,1,version is exported - di.depcheck reads it there and FAILS the dependency check without it
-true,0,0,q,3=count "." vs asyncutil.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"3=count ""."" vs asyncutil.version",1,1,the VERSION file holds a parseable major.minor.patch string
 true,0,0,q,"not any asyncutil.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+comment,,,,,,,"read0 strips the line terminator but NOT trailing spaces, so the \n\r assert above passed"
+comment,,,,,,,"while a padded VERSION still yielded ""0.1.0  "" - which di.depcheck compares as a STRING, so"
+comment,,,,,,,the padding silently fails every dependent module's check. these two catch that
+true,0,0,q,asyncutil.version~trim asyncutil.version,1,1,version carries no leading or trailing whitespace of any kind
+true,0,0,q,"asyncutil.version~trim first read0 hsym`$(.Q.m.mp`di.asyncutil),""/VERSION""",1,1,and it matches the VERSION file - the single source of truth - read module-relative rather than from the cwd

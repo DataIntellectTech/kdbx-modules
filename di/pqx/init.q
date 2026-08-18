@@ -1,6 +1,7 @@
-qmamba:use`kx.qmamba
+/ KDB-X Parquet extract module to save kdb+ data to parquet storage convention
+
 arrow:use`kx.arrow
 
 \l ::pqx.q
 
-export:([init;extract;default;manifest;checkandconvertcols;estimate;calibrateratio;calcsize;plan;datalookup;datalookuponesym;writefile;tryfn])
+export:([init;extract;getdefault;getmanifest;checkandconvertcols;estimate;plan;writefile;tryfn])

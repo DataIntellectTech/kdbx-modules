@@ -11,50 +11,50 @@ before,0,0,q,pqxnotime:([]sym:5#`AAPL;price:1.0 2.0 3.0 4.0 5.0),1,,Table missin
 before,0,0,q,pqxaltsym:([]sym:`B`A`B`A`A;alt:`X`Y`X`Y`Y;time:2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000004 2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000001;price:1.0 2.0 3.0 4.0 5.0),1,,Table with a second candidate instrument column to probe the symcol option
 before,0,0,q,pqxsingle:([]sym:enlist`AAPL;time:enlist 2025.07.15D09:30:00.000000000;price:enlist 123.45),1,,Single-row table edge case
 
-true,0,0,q,98h~type .m.di.0pqx.manifest,1,,Manifest is a table before anything is written
+true,0,0,q,98h~type pqx.getmanifest[],1,,Manifest is a table before anything is written
 
 run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.15;enlist[`outdir]!enlist `:pqxout1/],1,,Extract a multi-sym table with default options
-true,0,0,q,9~exec sum rows from .m.di.0pqx.manifest where file like "*pqxout1*",1,,All input rows are accounted for across written files
-true,0,0,q,3~exec sum nsyms from .m.di.0pqx.manifest where file like "*pqxout1*",1,,All three instruments are accounted for
-true,0,0,q,all `ok=exec status from .m.di.0pqx.manifest where file like "*pqxout1*",1,,Every written file reports ok status
-true,0,0,q,all 0<exec bytes from .m.di.0pqx.manifest where file like "*pqxout1*",1,,Every written file has a positive on-disk size
-true,0,0,q,all (exec mintime from .m.di.0pqx.manifest where file like "*pqxout1*")=min pqxbasic`time,1,,mintime matches the earliest business timestamp in the input data
-true,0,0,q,all (exec maxtime from .m.di.0pqx.manifest where file like "*pqxout1*")=max pqxbasic`time,1,,maxtime matches the latest business timestamp in the input data
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout1*",1,,All input rows are accounted for across written files
+true,0,0,q,3~exec sum nsyms from pqx.getmanifest[] where file like "*pqxout1*",1,,All three instruments are accounted for
+true,0,0,q,all `ok=exec status from pqx.getmanifest[] where file like "*pqxout1*",1,,Every written file reports ok status
+true,0,0,q,all 0<exec bytes from pqx.getmanifest[] where file like "*pqxout1*",1,,Every written file has a positive on-disk size
+true,0,0,q,all (exec mintime from pqx.getmanifest[] where file like "*pqxout1*")=min pqxbasic`time,1,,mintime matches the earliest business timestamp in the input data
+true,0,0,q,all (exec maxtime from pqx.getmanifest[] where file like "*pqxout1*")=max pqxbasic`time,1,,maxtime matches the latest business timestamp in the input data
 
 run,0,0,q,pqx.extract[pqxunsorted;`pqxtrade;2025.07.15;enlist[`outdir]!enlist `:pqxout2/],1,,Extract with default presort on
-run,0,0,q,pqxfile2:1_string first exec file from .m.di.0pqx.manifest where file like "*pqxout2*",1,,Resolve the path written for the presorted extract
+run,0,0,q,pqxfile2:1_string first exec file from pqx.getmanifest[] where file like "*pqxout2*",1,,Resolve the path written for the presorted extract
 run,0,0,q,pqxread2:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile2;(0#`)!()],1,,Read the written file back for verification
 true,0,0,q,`B`B`A`A`A~`$pqxread2`sym,1,,Rows are still packed one instrument at a time regardless of presort
 true,0,0,q,2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000001 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000004~pqxread2`time,1,,Rows are ordered by time within each instrument when presort is on
 
 run,0,0,q,pqx.extract[pqxunsorted;`pqxtrade;2025.07.15;`outdir`presort!(`:pqxout3/;0b)],1,,Extract the same table with presort off
-run,0,0,q,pqxfile3:1_string first exec file from .m.di.0pqx.manifest where file like "*pqxout3*",1,,Resolve the path written for the unsorted extract
+run,0,0,q,pqxfile3:1_string first exec file from pqx.getmanifest[] where file like "*pqxout3*",1,,Resolve the path written for the unsorted extract
 run,0,0,q,pqxread3:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile3;(0#`)!()],1,,Read the written file back for verification
 true,0,0,q,`B`B`A`A`A~`$pqxread3`sym,1,,Rows are still packed one instrument at a time when presort is off
 true,0,0,q,2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000004 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000001~pqxread3`time,1,,Rows keep their original per-instrument order (not time-sorted) when presort is off
 
 run,0,0,q,pqx.extract[pqxoversized;`pqxtrade;2025.07.15;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized!(1000;1.1;0b;0.30;`:pqxout4/;1b)],1,,Extract an oversized single instrument with splitoversized on
-true,0,0,q,1<count select from .m.di.0pqx.manifest where file like "*pqxout4*",1,,Oversized instrument is split across more than one file
-true,0,0,q,20000~exec sum rows from .m.di.0pqx.manifest where file like "*pqxout4*",1,,No rows are lost or duplicated across the split files
-true,0,0,q,all exec split from .m.di.0pqx.manifest where file like "*pqxout4*",1,,Every chunk of the split instrument is flagged as split
+true,0,0,q,1<count select from pqx.getmanifest[] where file like "*pqxout4*",1,,Oversized instrument is split across more than one file
+true,0,0,q,20000~exec sum rows from pqx.getmanifest[] where file like "*pqxout4*",1,,No rows are lost or duplicated across the split files
+true,0,0,q,all exec split from pqx.getmanifest[] where file like "*pqxout4*",1,,Every chunk of the split instrument is flagged as split
 
 run,0,0,q,pqx.extract[pqxoversized;`pqxtrade2;2025.07.16;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized!(1000;1.1;0b;0.30;`:pqxout5/;0b)],1,,Extract the same oversized instrument with splitoversized off
-true,0,0,q,1~count select from .m.di.0pqx.manifest where file like "*pqxout5*",1,,A single oversized instrument still produces exactly one file when splitting is disabled
-true,0,0,q,20000~first exec rows from .m.di.0pqx.manifest where file like "*pqxout5*",1,,The single file contains every row despite exceeding the target size
-true,0,0,q,not first exec split from .m.di.0pqx.manifest where file like "*pqxout5*",1,,The single oversized file is not flagged as split
+true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout5*",1,,A single oversized instrument still produces exactly one file when splitting is disabled
+true,0,0,q,20000~first exec rows from pqx.getmanifest[] where file like "*pqxout5*",1,,The single file contains every row despite exceeding the target size
+true,0,0,q,not first exec split from pqx.getmanifest[] where file like "*pqxout5*",1,,The single oversized file is not flagged as split
 
 run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.17;`outdir`filestub`codec!(`:pqxout6/;"foo";`gzip)],1,,Extract with a custom filestub and a non-default (but valid) codec
-true,0,0,q,"1~count select from .m.di.0pqx.manifest where (file like ""*pqxout6*""),(file like ""*foo-00001.parquet*"")",1,,Custom filestub is used to name the written file and the write succeeds with a valid non-default codec
+true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout6*""),(file like ""*foo-00001.parquet*"")",1,,Custom filestub is used to name the written file and the write succeeds with a valid non-default codec
 
 run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.18;`outdir`parallel!(`:pqxout7/;1b)],1,,Extract with files written via peach instead of each
-true,0,0,q,9~exec sum rows from .m.di.0pqx.manifest where file like "*pqxout7*",1,,Parallel write produces the same row coverage as the sequential path
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout7*",1,,Parallel write produces the same row coverage as the sequential path
 
 run,0,0,q,pqx.extract[pqxaltsym;`pqxtrade;2025.07.19;`outdir`presort`symcol!(`:pqxout8/;0b;`alt)],1,,Extract with symcol pointed at a column other than sym
-true,0,0,q,`X`Y~first exec syms from .m.di.0pqx.manifest where file like "*pqxout8*",1,,Manifest syms reflects the overridden symcol column, not the sym column
+true,0,0,q,`X`Y~first exec syms from pqx.getmanifest[] where file like "*pqxout8*",1,,Manifest syms reflects the overridden symcol column, not the sym column
 
 run,0,0,q,pqx.extract[pqxsingle;`pqxtrade;2025.07.24;enlist[`outdir]!enlist `:pqxout9/],1,,Extract a single-row table
-true,0,0,q,1~exec first rows from .m.di.0pqx.manifest where file like "*pqxout9*",1,,Single-row table produces a single-row file
-true,0,0,q,1~count select from .m.di.0pqx.manifest where file like "*pqxout9*",1,,Single-row table produces exactly one file
+true,0,0,q,1~exec first rows from pqx.getmanifest[] where file like "*pqxout9*",1,,Single-row table produces a single-row file
+true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout9*",1,,Single-row table produces exactly one file
 
 fail,0,0,q,pqx.extract[pqxempty;`pqxtrade;2025.07.21;enlist[`outdir]!enlist `:pqxoutf1/],1,,Extract fails on a zero-row table - calibration cannot infer a schema from no rows
 fail,0,0,q,pqx.extract[pqxnotime;`pqxtrade;2025.07.22;enlist[`outdir]!enlist `:pqxoutf2/],1,,Extract fails on a missing time column with presort on (the default)

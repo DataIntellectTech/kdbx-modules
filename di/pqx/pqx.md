@@ -26,10 +26,15 @@ oversized instrument across multiple files where required. A manifest recording 
 |---|---|---|---|
 | logger | `` `log `` | yes | dict with `info`, `warn`, and `error`, each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
-**Hard dependencies:** `kx.arrow` and `kx.qmamba` — both are loaded automatically (via `use`) when
-`di.pqx` is imported, before `pqx.q` itself is loaded. `extract` calls
-`` .m.di.0pqx.arrow.pq.writeParquetFromTable `` to perform every write; `kx.qmamba` is loaded but not
-currently called anywhere in `pqx.q`.
+**Hard dependency:** `kx.arrow` — loaded automatically (via `use`) when `di.pqx` is imported, before
+`pqx.q` itself is loaded. `extract` calls `` .m.di.0pqx.arrow.pq.writeParquetFromTable `` to perform
+every write.
+
+`kx.arrow` must be resolvable on the process's module search path at that point. Where it's
+installed as a conda package (e.g. under a `kx.qmamba`-managed root such as
+`~/.kx/root/lib/q/mod`), that location needs to already be on `QPATH` — `di.pqx` does not load
+`kx.qmamba` itself to arrange this. Confirm `kx.arrow` loads standalone (`` use`kx.arrow ``) in the
+target environment before relying on `di.pqx` there.
 
 The `log` dependency must be passed to `init` inside a dict keyed on `` `log ``. `init` throws
 immediately if `log` is absent, is not a dict, or is missing any of `info`/`warn`/`error`. The value
@@ -51,8 +56,8 @@ pqx.init[enlist[`log]!enlist logdep]
 
 ## Options
 
-Passed as the `o` dictionary to `extract`, merged over the module's own `default` dict. Any keys
-omitted from `o` fall back to the default shown below.
+Passed as the `o` dictionary to `extract`, merged over the module's own `default` dict (inspectable
+via `getdefault[]`). Any keys omitted from `o` fall back to the default shown below.
 
 | Key | Default | Type | Description |
 |---|---|---|---|
@@ -81,11 +86,7 @@ is not a column of the input table — this check runs unconditionally, regardle
 ## Manifest Schema
 
 The module's `manifest` table accumulates one row per file written across all `extract` calls.
-`extract` does not return this table (or anything else). `` pqx:use`di.pqx `` only captures a
-one-time snapshot of `manifest`/`default` at load time — `pqx.manifest` and `pqx.default` do **not**
-track later writes or updates. Query the live state via `` .m.di.0pqx.manifest `` instead (the
-private namespace every kdb-x module loads into; see `di.depcheck`'s docs for the `` `.m.di.0<name> ``
-convention).
+`extract` does not return this table (or anything else) — call `getmanifest[]` to read it.
 
 | Column | Type | Description |
 |---|---|---|
@@ -124,10 +125,12 @@ pqx.init[enlist[`log]!enlist logdep]
 |---|---|
 | `init[deps]` | Wire the injected `log` dependency. Call once before the first `extract`. |
 | `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns nothing. |
+| `getdefault[]` | Return the current `default` options dict. |
+| `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
 
-The remaining exports — `checkandconvertcols`, `estimate`, `calibrateratio`, `calcsize`, `plan`,
-`datalookup`, `datalookuponesym`, `writefile`, `tryfn` — are internal pipeline steps of `extract`,
-exposed only so `k4unit` can exercise them directly. Call `extract` for normal use.
+The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn` — are
+internal pipeline steps of `extract`, exposed only so `k4unit` can exercise them directly. Call
+`extract` for normal use.
 
 ### `init[deps]`
 Validate the required `log` dependency and store it for use by every other function.
@@ -171,9 +174,8 @@ pqx.init[logger.logdict]
 // Write `trade` for 2025.07.15, overriding the target file size and codec
 pqx.extract[trade;`trade;2025.07.15;`targetsize`codec!(256*1024*1024;`gzip)]
 
-// extract has no return value - inspect the accumulated manifest directly.
-// pqx.manifest is a frozen snapshot from load time - query the live namespace instead:
-.m.di.0pqx.manifest
+// extract has no return value - inspect the accumulated manifest via the getter
+pqx.getmanifest[]
 
 file                                      seq syms       nsyms rows  mintime                       maxtime                       estbytes bytes   split status
 --------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -191,18 +193,15 @@ k4unit.moduletest`di.pqx
 
 `test.csv` drives `extract` across default and overridden options — presort on/off, an oversized
 instrument with `splitoversized` on and off, a `symcol` override, parallel (`peach`) writes, and a
-custom `filestub`/non-default codec — then asserts on the resulting `` .m.di.0pqx.manifest `` rows
-and (via `` .m.di.0pqx.arrow.pq.readParquetToTable ``) the files written back to disk. It also
-covers the failure paths: a zero-row table, a table missing `symcol`/`timecol`, and an invalid
-codec (see Notes).
+custom `filestub`/non-default codec — then asserts on the resulting `getmanifest[]` rows and (via
+`` .m.di.0pqx.arrow.pq.readParquetToTable ``) the files written back to disk. It also covers the
+failure paths: a zero-row table, a table missing `symcol`/`timecol`, and an invalid codec (see
+Notes).
 
 ---
 
 ## Notes
 
-- `pqx.manifest` and `pqx.default` (the values returned by `` pqx:use`di.pqx ``) are snapshots taken
-  once at load time — they never reflect later writes or changes. Always read `` .m.di.0pqx.manifest ``
-  for the live manifest.
 - `rowgroupbytes`, `complevel`, and `dictcols` are accepted in `default` and any `o` override, but
   nothing in the current write path reads them — only `` `PARQUET_VERSION `` (fixed at
   `` `V2.LATEST ``) and `` `COMPRESSION `` (from `codec`) are passed to the writer.

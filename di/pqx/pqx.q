@@ -36,20 +36,20 @@ manifest:([]
   status   :`symbol$()     / `ok | `error
   );
 
-/ takes a table and checks whether any symbol or char columns exist in it
-/ if so, converts these to strings, as no Parquet datatype equivalent
 checkandconvertcols:{[t]
+  / takes a table and checks whether any symbol or char columns exist in it
+  / if so, converts these to strings, as no Parquet datatype equivalent
   :$[count c:exec c from meta[t] where t in "Ssc";
     ![t;();0b;c!{(string;x)} each c];
     t
   ]
  };
 
-/ for a partition of data, estimates the size of the tables to be saved to disk
-/ if calibrate flag is true in o, a test write is carried out
-/ returns a table of storage stats for all isntruments and the compression ratio, which may have changed depending on calibration
 estimate:{[t;o;writeopt]
-  cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;`time)]; //select rowcnt:count time by sym from t;
+  / for a partition of data, estimates the size of the tables to be saved to disk
+  / if calibrate flag is true in o, a test write is carried out
+  / returns a table of storage stats for all isntruments and the compression ratio, which may have changed depending on calibration
+  cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;o[`timecol])]; /select rowcnt:count time by sym from t
   medsym:cnts @ first where abs[cnt-med[cnt]]=min[abs[cnt-med[cnt:cnts`rowcnt]]];
   bytesperrow:%[-22!t:.z.m.checkandconvertcols t[where t[o[`symcol]]=medsym[o[`symcol]]];medsym`rowcnt];
 
@@ -63,9 +63,10 @@ estimate:{[t;o;writeopt]
   :(update estbyt:rowcnt*bytesperrow*o[`compressionratio] from cnts;o[`compressionratio])
  };
 
-/ writes a sample of data to disk and reads its size on disk
-/ calcaultes the compression ratio and returns if a new ratio was successfully calculated, otherwise old ratio is maintained
 calibrateratio:{[t;o;writeopt]
+  / writes a sample of data to disk and reads its size on disk
+  / calcaultes the compression ratio and returns if a new ratio was successfully calculated, otherwise old ratio is maintained
+
   / remove leading : from outdir
   testloc:$[":" ~ first string[o`outdir];
     1_string[o`outdir],"/testWrite.parquet";
@@ -96,17 +97,18 @@ calibrateratio:{[t;o;writeopt]
   :newratio
  };
 
-/ find the estimated size in bytes for each instrument per file to be saved down
-/ in the case of a larger instrument being split, return count[seqno] number of instances of estbytes
 calcsize:{[tbl;symcol;syms;seqno]
+  / find the estimated size in bytes for each instrument per file to be saved down
+  / in the case of a larger instrument being split, return count[seqno] number of instances of estbytes
   .z.m.loginfo[`pqx;"Getting estimated bytes for planned files"];
   :"j"$count[seqno]#%[sum[?[tbl;enlist(in;symcol;`syms);0b;()]`estbyt];count seqno]
  };
 
-/ planning function to bucket instruments based on next-fit packing
-/ if an instrument can be added to a bucket without that bucket exceeding the target size, it will be added to that bucket, else a new bucket is started
-/ large instruments are also split into multiple files if splitoversized flag is true
 plan:{[t;o;maxsize]
+  / planning function to bucket instruments based on next-fit packing
+  / if an instrument can be added to a bucket without that bucket exceeding the target size, it will be added to that bucket
+  / else a new bucket is created
+  / large instruments are also split into multiple files if splitoversized flag is true
   symstats:t;
   plans:();
 
@@ -142,23 +144,23 @@ plan:{[t;o;maxsize]
   :update estbytes:.z.m.calcsize[symstats;o`symcol;;]'[syms;seqno] from {`syms`seqno!/: flip (key[x];value[x])} group plans
  };
 
-/ get lists of indices by file
-/ a pass with multiple instruments is assumed to be one file only, hence the return is flattened into one list
 datalookup:{[t;symcol;syms;cnt]
+  / get lists of indices by file
+  / a pass with multiple instruments is assumed to be one file only, hence the return is flattened into one list
   $[1<count syms;
     :enlist[raze/[.z.m.datalookuponesym[t;symcol;;cnt] each syms]];
     :.z.m.datalookuponesym[t;symcol;first[syms];cnt]
   ]
  };
 
-/ finds indices where instrument occurs in table partition, and cuts into lists if the result set is to be split
 datalookuponesym:{[t;symcol;sym;cnt]
+  / finds indices where instrument occurs in table partition, and cuts into lists if the result set is to be split
   :ceiling [%[count[where t[symcol] in sym];cnt]] cut where t[symcol] in sym
  };
 
-/ writes data to disk in Parquet format
-/ returns stats to be inserted into the manifest
 writefile:{[t;o;writeopt;writedir;map]
+  / writes data to disk in Parquet format
+  / returns stats to be inserted into the manifest
   syms:map[`syms];
   seqno:map[`seqno];
   estbytes:map[`estbytes];
@@ -169,8 +171,7 @@ writefile:{[t;o;writeopt;writedir;map]
 
   / data to write, iterated by file
   res:raze {[t;symcol;writeopt;split;path;seqno;estbytes;i]
-    //res:.z.m.tryfn[`.arrowkdb.pq.writeParquetFromTable;(path;.z.m.checkandconvertcols t[i];writeopt)];
-    .z.m.loginfo[`pqx;raze "Writing seqNo ",string[seqno],", path - ",string[path]];
+    .z.m.loginfo[`pqx;"Writing seqNo ",string[seqno],", path - ",path];
     res:.z.m.tryfn[`.m.di.0pqx.arrow.pq.writeParquetFromTable;(path;.z.m.checkandconvertcols t[i];writeopt)];
     $[first res;
       .z.m.loginfo[`pqx;"seqNo ",string[seqno]," write successful"];
@@ -194,14 +195,14 @@ writefile:{[t;o;writeopt;writedir;map]
   :res
  };
 
-/ protected execution function, returns success flag and any associated error message if the execution failed
 tryfn:{[f;x]
+  / protected execution function, returns success flag and any associated error message if the execution failed
   .[{[f;x](1b;f . x)}[f];enlist x;{(0b;x)}]
  };
 
-/ main data extract function
-/ takes a kdb+ table of data, its name, the date and any option overrides and saves down to parquet format
 extract:{[t;tname;dt;o]
+  / main data extract function
+  / takes a kdb+ table of data, its name, the date and any option overrides and saves down to parquet format
   .z.m.loginfo[`pqx;"Extracting ",string[tname]," data for ",string dt];
   / override default opts with o where applicable
   opts:default,o;
@@ -254,12 +255,29 @@ extract:{[t;tname;dt;o]
   manifest,:res
  };
 
+getdefault:{[]
+  / return the current default options dict
+  :default;
+ };
+
+getmanifest:{[]
+  / return the manifest accumulated so far across all extract calls
+  :manifest;
+ };
+
 init:{[deps]
-  logdict:$[99h=type deps;$[(`log in key deps) and not (::)~deps`log;deps`log;()!()];()!()];
-  if[not count logdict;
-    '"di.pqx: log dependency is required; pass `info`warn`error functions - see di.log or refer to confluence documentation";
-  ];
-  .z.m.loginfo:logdict`info;
-  .z.m.logwarn:logdict`warn;
-  .z.m.logerr:logdict`error;
+  / wire the injected logger (required, no fallback). deps: a `log
+  / key holding a binary `info`warn`error dict of {[c;m]} loggers (di.log or hand-rolled; a monadic
+  / kx.log instance must be wrapped first). e.g. di.pqx.init[enlist[`log]!enlist logdep]
+  if[99h<>type deps;
+    '"di.pqx: deps must be a dict with a `log key"];
+  if[not `log in key deps;
+    '"di.pqx: log dependency is required; pass `info`warn`error functions keyed on `log"];
+  if[99h<>type deps`log;
+    '"di.pqx: log value must be a dict of `info`warn`error functions"];
+  if[not all (`info`warn`error) in key deps`log;
+    '"di.pqx: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
+  .z.m.loginfo:deps[`log]`info;
+  .z.m.logwarn:deps[`log]`warn;
+  .z.m.logerr:deps[`log]`error;
  };

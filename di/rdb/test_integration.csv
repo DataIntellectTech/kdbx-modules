@@ -170,3 +170,18 @@ true,0,0,q,.t.RSRECONN,1,1,di.servers reopened the socket to the respawned ticke
 true,0,0,q,.t.RSDEAF,1,1,"the reconnected socket carries NO subscription - connected but deaf, which is the failure the resubscribe job exists to fix"
 true,0,0,q,.t.RSRESUB,1,1,resubscribecheck re-established the subscription over the new handle
 true,0,0,q,.t.RSAFTER>.t.RSBEFORE,1,1,"live data flows again after the bounce - the end-to-end proof, not just a status flag"
+
+comment,,,,,,,"VERSION guards. these are LOAD-time, so they can only be observed in a CHILD process - the"
+comment,,,,,,,"module is already loaded here and cannot be reloaded with a different VERSION file. a temp"
+comment,,,,,,,"QPATH tree symlinks every other module and copies di/rdb so only its VERSION is altered"
+before,0,0,q,".t.VBASE:.t.BASE,""/vtree""",1,1,root for the VERSION-guard trees
+before,0,0,q,".t.mkvtree:{[nm;mut] d:.t.VBASE,""/"",nm; realdi:""/"" sv -1_ ""/"" vs .Q.m.mp`di.rdb; system""rm -rf "",d; system""mkdir -p "",d,""/di""; system""ln -s "",realdi,""/* "",d,""/di/ 2>/dev/null""; system""rm -f "",d,""/di/rdb""; system""cp -r "",realdi,""/rdb "",d,""/di/rdb""; mut d; :d}",1,1,"build a temp module tree whose di/rdb VERSION can be mutated. links EVERY module and overwrites only rdb - hand-listing deps missed di.tz, a transitive one, and would rot as the graph changes"
+before,0,0,q,".t.loadin:{[d] f:d,""/probe.q""; (hsym`$f) 0: (""r:@[{use`di.rdb; :`OK};::;{[e] `$\""THREW: \"",e}];"";""if[r~`OK; rdb:use`di.rdb; r:`$\""OK [\"",rdb.version,\""]\""];"";""(hsym`$\"""",d,""/out\"") 0: enlist string r;"";""exit 0;""); system ""QPATH="",d,"" "",(getenv[`QHOME]),""/bin/q "",f,"" -q </dev/null >/dev/null 2>&1""; :$[count key hsym`$d,""/out"";first read0 hsym`$d,""/out"";""NO OUTPUT""]}",1,1,"load di.rdb in a child q against that tree. QPATH MUST be set for the child - inheriting the parent QPATH makes it load the REAL module and every case passes vacuously"
+before,0,0,q,".t.VGOOD:.t.loadin .t.mkvtree[""good"";{[d] }]",1,1,control: an untouched VERSION must load cleanly
+before,0,0,q,".t.VMISSING:.t.loadin .t.mkvtree[""missing"";{[d] system""rm -f "",d,""/di/rdb/VERSION""}]",1,1,a missing VERSION must fail loudly and name the module
+before,0,0,q,".t.VEMPTY:.t.loadin .t.mkvtree[""empty"";{[d] system""printf '' > "",d,""/di/rdb/VERSION""}]",1,1,an empty VERSION must fail loudly and name the module
+before,0,0,q,".t.VPAD:.t.loadin .t.mkvtree[""pad"";{[d] (hsym`$d,""/di/rdb/VERSION"") 0: enlist ""0.1.0  ""}]",1,1,"a padded VERSION must load and be trimmed. written from q, not shell printf - the quoting did not survive system[] and silently produced an EMPTY file, which tested the wrong guard"
+true,0,0,q,"""OK [0.1.0]""~.t.VGOOD",1,1,"control - a clean VERSION loads and reports the exact version. BRACKETED because writing a bare string through 0:/read0 strips trailing spaces, which would silently destroy the very padding the next assert looks for"
+true,0,0,q,"0<count .t.VMISSING ss ""di.rdb: VERSION file missing or unreadable""",1,1,"a missing VERSION names di.rdb, rather than surfacing a raw OS error that points nowhere"
+true,0,0,q,"0<count .t.VEMPTY ss ""di.rdb: VERSION file is empty""",1,1,"an empty VERSION is rejected, not accepted as an empty version that reads to depcheck as 'exports no version'"
+true,0,0,q,"""OK [0.1.0]""~.t.VPAD",1,1,"a padded VERSION is TRIMMED to the bare semver. asserts the VALUE not just that it loaded - the naive read loads happily and hands depcheck a padded string"

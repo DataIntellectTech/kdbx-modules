@@ -23,8 +23,14 @@ asyncutil:use`di.asyncutil
 / since export:([...]) evaluates each name.
 / NB `version` must STAY in the export: di.depcheck resolves a dependency's minimum version from the
 / export dict (checkdepversion) and reports "exports no version" - failing the check - for any module
-/ that omits it
-version:first read0`:::VERSION
+/ that omits it.
+/ trim, and fail LOUD on a missing/unreadable/empty VERSION, rather than a bare `first read0`:
+/ a raw OS error names no module, and an empty or whitespace-padded value is worse than an error -
+/ di.depcheck compares versions as strings, so padding silently breaks the comparison and an empty
+/ value reads as "exports no version", failing every dependent module's check for a reason that
+/ points nowhere near the real cause. this is the shape di.servers already uses
+version:@[{trim first read0 x};`:::VERSION;{'"di.rdb: VERSION file missing or unreadable"}];
+if[0=count version;'"di.rdb: VERSION file is empty"];
 
 / NB export:([...]) EVALUATES each name, so it can only list names that already exist - the export list
 / and the implementation cannot drift apart in this direction.

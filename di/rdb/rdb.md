@@ -119,7 +119,7 @@ dict** `init` takes.
 | `tpselection` | `` `any `` | selection algorithm for `di.servers.gethandlebytype` |
 | `resubscribeenabled` | `1b` | automatically re-establish the subscription after a tickerplant bounce |
 | `resubscribeperiod` | `30` | seconds between resubscribe checks (must be positive) |
-| `disabletimeout` | `1b` | schedule the pre-roll query-timeout suspension |
+| `suspendtimeoutonroll` | `1b` | `1b` **suspends** the query timeout around the roll. Renamed from `disabletimeout` |
 | `timeoutlead` | `0D00:01` | how far before the roll to suspend the query timeout |
 | `procname` / `proctype` | `` ` `` / `` ` `` | this process's identity, used only in the gateway attribute push |
 
@@ -221,6 +221,29 @@ injected timer real dependencies rather than declared ones.
 
 Recorded so a reviewer can check each one rather than take it on trust.
 
+### Two features nearly cut as "dead", and the evidence they are not
+
+Both were scoped **out** during design and put back after re-reading the source. They are recorded
+here rather than in a review comment because the failure mode is recurrence: the reasoning that cut
+them was plausible, and a future maintainer will reach the same wrong conclusion from the same
+partial evidence.
+
+- **Partition tracking** (`getpartition`, `rdbpartition`, `setpartition`, `rmdtfromgetpar`) was cut
+  on the grounds that it serves only gateway routing and has no callers. It has two:
+  `code/rdb/rdbstandard.q:2` uses it in `.proc.getattributes`, and `code/dataaccess/getdata.q:31-33`
+  reads **both** `.rdb.getpartition[]` and `.rdb.rdbpartition`, gated by `if[(.proc.proctype=`rdb);`
+  at line 24 — i.e. the data-access layer runs **in-process on the rdb** and depends on this.
+  The original search looked at `code/common/dataaccess.q`, which exists and is a different file in
+  a different directory. The lesson worth keeping: *not reachable over IPC* is not *dead*.
+- **Subscription filters** (`loadsubfilters`, `applyfilters`) were cut because `.rdb.subcsv` is read
+  at `rdb.q:189` and never defined. It is never defined *in that file* — it arrives externally.
+  TorQ's own tests exercise the feature in six configurations: five pass
+  `-.rdb.subfiltered 1 -.rdb.subcsv <path>` as command-line overrides in `process.csv`
+  (`tests/stp/subfile`, `recovery`, `subscription`, `chainedrecovery`, `chainedstp`), and
+  `tests/rdb/rdbfilt.csv:4` assigns it directly in a k4unit `before` row. `subfiltered` itself is a
+  documented config global at `config/settings/rdb.q:30`. The real defect is only that `subcsv` has
+  no default, which this module converts into a named error.
+
 - **`onlyclearsaved` defaults to `1b`, where TorQ defaults it to `0b`.** This is the only *default*
   deliberately changed from legacy, and it is a data-safety choice. Under `0b`, a `savedown` that
   throws still clears the table: the day's data is gone, unrecoverable, and the only trace is one
@@ -254,13 +277,13 @@ Recorded so a reviewer can check each one rather than take it on trust.
   deletes the original, so the rows do not survive the move. That reads like a bug, but it is a
   publicly-registered api in `code/rdb/apidetails.q` and changing it would change what a shipped
   function does. Preserved deliberately; flagged here rather than silently "fixed".
-- **`notifyhdbs` broadcasts through `di.asyncutil.postback`.** TorQ sends a separate sync message per
-  handle; this serialises the message **once** for the whole set and error-traps each send into a
-  success vector. It is **not** fire-and-forget: `postback` flushes with `h(::)`, which a peer
-  answers only after processing the queued reload, so this still waits on the hdbs - one round trip
-  for the set instead of one per handle. `postback` also requires **positive** handles; passing
-  TorQ's `neg abs handles` returns a caught `"-4 is not an ipc handle"` failure rather than
-  throwing, i.e. a silent no-notify.
+- **`notifyhdbs` broadcasts through `di.asyncutil.postback`.** TorQ sends a separate **sync** message
+  per handle, so the roll waits for every hdb in turn; this serialises the message **once** for the
+  whole set and error-traps each send into a success vector. It is genuinely fire-and-forget -
+  `postback` flushes the outgoing queue and returns without waiting for a reply - so a slow or hung
+  hdb cannot stall the roll. The success vector means "on the wire", not "reloaded". `postback` also
+  requires **positive** handles; passing TorQ's `neg abs handles` returns a caught
+  `"-4 is not an ipc handle"` failure rather than throwing, i.e. a silent no-notify.
 - **TorQ's gmt-rounding term is dropped** from the timeout job's start time. It is
   `{00:01*15*"j"$(`minute$x)%15}(.proc.cp[]-.z.p)`, which is zero outside backtesting, where
   `.proc.cp[]` is overridden to simulate a clock. Porting it without that machinery would be
@@ -286,16 +309,68 @@ Recorded so a reviewer can check each one rather than take it on trust.
 - **Removed entirely:** all `.finspace.*` / `.aws.*` code, including `newrdbready` and the
   changeset/sym-file branches. FinSpace is end-of-life.
 
+## TorQ-inherited defects fixed here
+
+Three faults carried over from `code/processes/rdb.q` were found in review and fixed. Recorded
+because each is still present in legacy, and because the first is worse than it looks.
+
+- **The query timeout was clobbered by any roll this module did not suspend.** `timeoutreset` and
+  `restoretimeout` were both unconditional, and `.z.m.timeout` seeds to `0i`. So `savecycle` —
+  which calls `restoretimeout` on *every* standalone roll — wrote that seeded zero over whatever
+  `\T` the operator had set, whenever no suspend had preceded it. With `suspendtimeoutonroll` `0b` (no
+  suspension job scheduled at all) that is the **first** end of day: measured `\T 30` → one
+  `endofday` → `\T 0`, query timeout disabled for the life of the process. The separate
+  double-suspend case (a wdb that missed its `reload`, so the next day's `timeoutreset` recaptured
+  our own zero as "the original") had the same end state. Both are fixed by a `timeoutsuspended`
+  flag: `timeoutreset` refuses to recapture while already suspended, and `restoretimeout` is a
+  no-op unless this module actually suspended.
+- **`reload` discarded the eod snapshot for tables whose drop failed.** `dropfirstnrows` is
+  protected per table, but the snapshot was then zeroed for *every* table regardless, so a failed
+  drop left the prior day resident with no record of how much to remove — a retry was a guaranteed
+  no-op. `dropfirstnrows` now returns a success flag and only the tables that actually dropped are
+  cleared; the rest keep their count and are named in a `warn`.
+- **`start[]` set `started` immediately after subscribing**, before `applyfilters`,
+  `dbwrite.readcsv`, `setpartition` and the two timer jobs. A throw in any of those left the module
+  reporting `started` `1b` with an empty partition list and no scheduled jobs — a half-started rdb
+  that `status[]` called healthy. `started` is now set last and means "`start[]` completed".
+
+Two further changes made in the second review pass:
+
+- **A partial `start[]` is now recoverable in place.** Setting `started` last made a half-started rdb
+  *honest*, but not *fixable*: the subscription was live, so re-running `start[]` hit
+  `di.subscriptions`' rejection of a duplicate subscribe, and recovery meant a process restart.
+  `start[]` now reads `di.subscriptions.subscribed[]` **before** subscribing and, when one is already
+  live, skips the connect-and-subscribe and resumes from the post-subscribe steps. This works because
+  `init` seeds runtime state only on the first call, so `subtables` and `tplogdate` from the failed
+  attempt are still there to resume from. A *persistent* fault — an unparseable filter csv, an
+  unreadable sortcsv — throws again on the retry, which is correct rather than a loop: the operator
+  fixes the file and calls `start[]` once more. `subscribed[]` is read through the same
+  `@[…;::;{0b}]` guard `resubscribecheck` and `status[]` use, so a throw is read as "not subscribed"
+  and retries the subscribe — the safe way to be wrong.
+- **`init` now rejects a `timer` dep with no `deletejobs`.** `teardown` cannot detect this itself, and
+  the reason is worth recording because the idiom looks protective and is not. The timer dep's value
+  side is dict-typed, so a *missing* key returns a null-shaped **dict** rather than erroring — and
+  `@[x;y;z]` is "try `x[y]`, catch with `z`" only when `x` is a **function**. With a dict, q reads
+  `@[.z.m.timer[`deletejobs];ids;handler]` as three-argument **amend**: it upserts the job ids into
+  that throwaway dict using the error handler as the value, discards the result, and continues.
+  Nothing throws, nothing warns, the timer jobs are never deleted, and `teardown` still logs
+  *"timeout job removed"* — a false positive. Measured both ways a caller can shape the dep. The
+  `init` check is what keeps that line honest.
+
 ## Known gaps
 
-- **`di.pubsub.callendofperiod` discards two of its three arguments.** TorQ's producer broadcasts
-  `` (`endofperiod;currentperiod;nextperiod;data) `` (`code/common/pubsub.q:19`), but `di.pubsub`'s
-  `callendofperiod` is `{(neg getallhandles[])@\:(`endofperiod;x)}` - a rank-1 lambda that accepts
-  three arguments and throws two away. `endofperiod` here is **ternary**, matching TorQ's producer,
-  so under `di.pubsub` today it receives one argument and q returns a **projection** (measured: type
-  `104h`) instead of running: nothing is logged and nothing throws. This is the same defect class
-  that PR #118 fixed for `callendofday`, and it needs the same fix in `di.pubsub` rather than a
-  narrower signature here.
+- **`di.pubsub.callendofperiod` was unary — now fixed, separately.** TorQ's producer broadcasts
+  `` (`endofperiod;currentperiod;nextperiod;data) `` (`code/common/pubsub.q:19`) and both its
+  subscribers are `{[currp;nextp;data]}`, but `di.pubsub`'s was
+  `{(neg getallhandles[])@\:(`endofperiod;x)}`. That failed two ways at once (both measured):
+  `callendofperiod[c;n;d]` threw `'rank`, so a caller following TorQ's contract could not call it at
+  all, and the one-argument form left this module's **ternary** `endofperiod` as a **projection**
+  (type `104h`) — the body never ran and nothing threw or logged. Same defect class as the
+  `callendofday` bug PR #118 fixed. Keeping `endofperiod` ternary here rather than narrowing it to
+  fit the broken broadcaster was the right call: `di.pubsub` is now ternary too and the two agree.
+  **That fix lands on the `di.pubsub` line, not on this branch.** `origin/main`'s `di.pubsub` still
+  has the unary version, so an rdb running against a `di.pubsub` from `main` still sees a silently
+  no-opped `endofperiod` until that fix merges.
 - **`di.dbwrite`, `di.eodtime` and `di.asyncutil` had no `version` export — now fixed, separately.**
   This was a real blocker rather than an advisory: `di.depcheck` classes a missing version as a
   `failure`, not a `warning`, and `di.depcheck.init` signals on any failure, so a process that
@@ -308,6 +383,20 @@ Recorded so a reviewer can check each one rather than take it on trust.
   rdb:use`di.rdb; dc:use`di.depcheck
   dc.init[enlist[`log]!enlist mylog]     / "dependency check complete: 0 failure(s), 0 warning(s)"
   ```
+- **`notifyhdbs` does not wait for the hdbs, and that is deliberate.** An earlier draft of this
+  document claimed the opposite - that `postback`'s trailing `x(::)` was a sync flush the peer
+  answered only after processing the reload, leaving the roll blocked without bound. That was
+  **wrong**, and measurement showed the defect was the reverse: `x(::)` on a handle **list** is list
+  indexing, so it flushed nothing at all, and `postback` returned a success vector while the
+  broadcast was still sitting in q's outgoing queue. Fixed in `di.asyncutil` (`flushhandles`, a
+  per-handle `neg[h][]`); `notifyhdbs` now sends promptly and still never waits. See
+  `di/asyncutil/asyncutil.md`.
+
+  One measurement from that investigation is worth keeping on its own account: **`hopen`'s timeout
+  does not apply to subsequent blocking calls.** A handle opened with `hopen (h;2000)` still blocked
+  the full 5s on a peer doing `system"sleep 5"`, so `di.servers`' `HOPENTIMEOUT` covers the connect
+  only. Nothing in di.rdb relies on it bounding anything else, but code that assumes otherwise will
+  hang.
 - **`di.servers.startup[]` takes no argument** - see "who initialises what".
 - **There is no `di.tickerplant` in kdbx-modules**, so the end-to-end roll is proven against the
   test harness tickerplant in `test_integration.csv` (which publishes through the real `di.pubsub`),

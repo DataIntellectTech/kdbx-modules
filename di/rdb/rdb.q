@@ -83,7 +83,7 @@ configdefaults:{[]
     `reloadenabled`parvaluesrc`pardefault,
     `upd`savedownmanipulation`postreplay,
     `tpwaittimeout`tppollms`tpselection`resubscribeenabled`resubscribeperiod,
-    `disabletimeout`timeoutlead`procname`proctype;
+    `suspendtimeoutonroll`timeoutlead`procname`proctype;
   v:(enlist`tickerplant;enlist`hdb;`$();`$();`heartbeat`logmsg;
      `;`;1b;1b;0b;`;
      `:hdb;`;1b;1b;1b;
@@ -219,6 +219,33 @@ init:{[deps]
     '"di.rdb: timer`addjob must be a variant dict - see di.timer addjob.custom/default/simple"];
   if[not `custom in key deps[`timer]`addjob;
     '"di.rdb: timer`addjob must expose the `custom variant [id;func;params;period;mode;opts]"];
+  / deletejobs is checked here for the same reason addjob is, and the consequence of NOT checking it
+  / is worse than a late error - it is a SILENT one, measured both ways a caller can shape the dep:
+  / the timer dep's value side is dict-typed, so a missing key returns a null-shaped DICT
+  / ((,`custom)!,::) rather than erroring. teardown's @[.z.m.timer[`deletejobs];ids;handler] then
+  / stops being protected-apply at all: @[x;y;z] is "try x[y], catch with z" only when x is a
+  / FUNCTION, and here x is a dict, so q reads the whole expression as three-argument AMEND. it
+  / upserts the job ids into that throwaway dict using the error handler as the new value, discards
+  / the result (nothing in teardown captures it) and carries on. nothing throws, nothing warns, the
+  / timer jobs are never deleted, and teardown still logs "timeout job removed" - which is false
+  if[not `deletejobs in key deps`timer;
+    '"di.rdb: timer dict must expose `deletejobs - teardown needs it, and a timer dep without it ",
+      "fails SILENTLY at teardown rather than loudly here; see di.timer"];
+  / presence is NOT enough: a non-callable deletejobs reaches teardown's @[...] and lands in the same
+  / amend interpretation as a missing key, so it also returns quietly having deleted nothing.
+  / 100 112h spans every callable form - lambda, primitive, operator, iterator, projection,
+  / composition - so a legitimate projection like deletejobs:somefn[;x] is not rejected
+  if[not (type deps[`timer]`deletejobs) within 100 112h;
+    '"di.rdb: timer`deletejobs must be a function [ids]; a non-callable value fails silently at ",
+      "teardown - see di.timer"];
+  / disabletimeout was renamed to suspendtimeoutonroll (same meaning, 1b = suspend around the roll).
+  / rejected rather than silently ignored: the only callers who ever set it explicitly are the ones
+  / who set it to 0b to turn the suspend OFF, and silently dropping that override would flip them
+  / back to suspend-enabled - a behaviour change for exactly the config that was deliberately
+  / non-default. a caller who never set it is unaffected either way and never sees this
+  if[`disabletimeout in key deps;
+    '"di.rdb: disabletimeout has been renamed to suspendtimeoutonroll (same meaning: 1b suspends ",
+      "the query timeout around the roll); update your config"];
   / resolve and VALIDATE config before any state is mutated, so a rejected re-init cannot leave the
   / module half-configured with a wired logger and a nonsense partition source
   d:configdefaults[];
@@ -226,7 +253,12 @@ init:{[deps]
   pvs:assym c`parvaluesrc;
   if[not pvs in validparvaluesrc;
     '"di.rdb: parvaluesrc must be one of ",(", " sv string validparvaluesrc),"; got: ",string pvs];
-  if[not 100h=type c`upd;
+  / 100 112h, not 100h=type. a bare `100h=type` accepts only a lambda and rejects every other binary
+  / function a caller might reasonably pass: TorQ's own default upd is `insert` (102h), rdb.md tells
+  / callers to supply `upsert` if they want upsert semantics (104h), and a projection is 104h too.
+  / all three are binary and root-safe - insert/upsert take the table by SYMBOL, so they write to root
+  / exactly as updfn does - and all three were rejected before this widened
+  if[not (type c`upd) within 100 112h;
     '"di.rdb: upd must be a binary function taking (tablename;data)"];
   if[99h<>type c`savedownmanipulation;
     '"di.rdb: savedownmanipulation must be a dict of tablename!function"];
@@ -271,7 +303,7 @@ init:{[deps]
   .z.m.tpselection:assym c`tpselection;
   .z.m.resubscribeenabled:`boolean$c`resubscribeenabled;
   .z.m.resubscribeperiod:rsp;
-  .z.m.disabletimeout:`boolean$c`disabletimeout;
+  .z.m.suspendtimeoutonroll:`boolean$c`suspendtimeoutonroll;
   .z.m.timeoutlead:c`timeoutlead;
   .z.m.procname:assym c`procname;
   .z.m.proctype:assym c`proctype;
@@ -294,6 +326,10 @@ init:{[deps]
     .z.m.eodtabcount:(`$())!`long$();
     .z.m.filterparams:()!();
     .z.m.timeout:0i;
+    / timeoutsuspended tracks whether THIS module is the one currently holding the query timeout at
+    / zero. without it both halves of the suspension are unconditional and clobber an operator's \T -
+    / see timeoutreset/restoretimeout
+    .z.m.timeoutsuspended:0b;
     .z.m.started:0b];
   installroot[];
   .z.m.loginfo[`init;"di.rdb initialised - hdbdir ",(string .z.m.hdbdir),", reloadenabled ",
@@ -307,10 +343,14 @@ teardown:{[]
   / the partition list and the eod snapshot; only the process-global bindings are withdrawn
   requireinit[`teardown];
   uninstallroot[];
-  / protected but NOT silent: deleting a job that was never scheduled is a no-op in di.timer (it is a
-  / delete-where over the jobs table), so the only way this fails is a timer dep that cannot service
-  / it - which a shutdown path needs to see. both ids go in ONE call for that reason: deletejobs takes
-  / a list, and neither id has to exist for the call to succeed
+  / deleting a job that was never scheduled is a no-op in di.timer (it is a delete-where over the jobs
+  / table), so neither id has to exist; both go in ONE call for that reason.
+  / NB this @[...] is protected-apply ONLY because init guarantees `deletejobs is present and is a
+  / function. @[x;y;z] is "try x[y], catch with z" solely when x is a function - if the key were
+  / missing, x would be the null-shaped DICT a dict-valued dep returns for an absent key, and q would
+  / read this as three-argument AMEND instead: it would upsert the ids into that throwaway dict using
+  / the handler as the value, discard the result, and carry on having deleted nothing and logged
+  / nothing (measured). the init check is what keeps this line honest - do not drop it
   @[.z.m.timer[`deletejobs];`rdbtimeoutreset`rdbresubscribe;
     {[e] .z.m.logwarn[`teardown;"could not delete the rdb timer jobs: ",e]}];
   .z.m.started:0b;
@@ -324,16 +364,34 @@ teardown:{[]
 timeoutreset:{[]
   / suspend the query timeout ahead of the eod writedown, remembering what it was. TorQ rdb.q:206 -
   / a \T that expires mid-writedown aborts the roll, so it is disabled BEFORE the roll rather than at
-  / the top of endofday, where changing it mid-execution would be racing the very timer it sets
+  / the top of endofday, where changing it mid-execution would be racing the very timer it sets.
+  / GUARDED against a second suspend while already suspended. legacy recaptures unconditionally, so a
+  / day whose restore never ran (a wdb that missed its reload[date]) captures the ZERO this function
+  / itself set, and every later restore then puts back 0 - the query timeout is disabled for the life
+  / of the process. measured on the unguarded form: suspend, suspend, restore -> \T 0, not the
+  / original 30. recapturing is never useful anyway, since the only value it could find is our own 0
+  if[.z.m.timeoutsuspended;
+    .z.m.logwarn[`timeoutreset;"query timeout is already suspended (",(string .z.m.timeout),
+      "s held) - not recapturing, the previous roll never restored it"];
+    :()];
   .z.m.timeout:system"T";
+  .z.m.timeoutsuspended:1b;
   system"T 0";
   .z.m.loginfo[`timeoutreset;"query timeout suspended for the eod writedown (was ",
     (string .z.m.timeout),"s)"];
   };
 
 restoretimeout:{[]
-  / put the timeout back once the writedown is done - TorQ rdb.q:207
+  / put the timeout back once the writedown is done - TorQ rdb.q:207.
+  / a NO-OP unless this module actually suspended it. legacy restores unconditionally, which writes
+  / the seeded 0 over whatever the operator had set whenever a roll happens without a preceding
+  / suspend - and that is not an edge case: savecycle calls this on EVERY standalone roll, so with
+  / suspendtimeoutonroll 0b (no suspension job scheduled at all) the very first end of day silently does
+  / `system"T 0"` and disables the query timeout permanently. measured: \T 30, one endofday, \T 0
+  if[not .z.m.timeoutsuspended;
+    :()];
   system"T ",string .z.m.timeout;
+  .z.m.timeoutsuspended:0b;
   .z.m.loginfo[`restoretimeout;"query timeout restored to ",(string .z.m.timeout),"s"];
   };
 
@@ -346,7 +404,7 @@ requirenextroll:{[ctx]
   / same way and for the same reason
   if[0Wp=eodtime.getnextroll[];
     raiseerror[ctx;"di.eodtime reports no next roll (0Wp) - call di.eodtime.init before ",
-      "di.rdb.start, or set disabletimeout to 0b"]];
+      "di.rdb.start, or set suspendtimeoutonroll to 0b"]];
   };
 
 scheduletimeoutreset:{[]
@@ -357,9 +415,9 @@ scheduletimeoutreset:{[]
   / TorQ additionally subtracts a 15-minute-rounded (.proc.cp[]-.z.p) term. that difference is zero
   / outside backtesting, where .proc.cp[] is overridden to simulate a clock, so it is dropped rather
   / than ported without the simulated-clock machinery that gives it meaning
-  if[not .z.m.disabletimeout;
-    .z.m.loginfo[`scheduletimeoutreset;"disabletimeout is off - the query timeout will not be ",
-      "suspended for the writedown"];
+  if[not .z.m.suspendtimeoutonroll;
+    .z.m.loginfo[`scheduletimeoutreset;"suspendtimeoutonroll is off - the query timeout will not ",
+      "be suspended for the writedown"];
     :()];
   requirenextroll[`scheduletimeoutreset];
   startp:eodtime.getnextroll[]-.z.m.timeoutlead;
@@ -489,16 +547,40 @@ start:{[]
   / everything that can be checked WITHOUT talking to the tickerplant is checked first. subscribing
   / registers this handle for live delivery and there is no way to undo it, so a missing di.eodtime
   / must fail before that, not after - otherwise start[] throws with a live subscription behind it
-  if[.z.m.disabletimeout;requirenextroll[`start]];
-  tph:connecttp[];
-  if[.z.m.subfiltered;loadsubfilters[]];
-  .z.m.loginfo[`start;"found available tickerplant, attempting to subscribe"];
-  r:subscriptions.subscribe[tph;.z.m.subscribeto;.z.m.subscribesyms;.z.m.schema;.z.m.replaylog];
-  .z.m.subtables:(),r`subtables;
-  .z.m.tplogdate:r`tplogdate;
-  .z.m.started:1b;
-  .z.m.loginfo[`start;"subscribed to ",(", " sv string .z.m.subtables),"; tickerplant log date ",
-    string .z.m.tplogdate];
+  if[.z.m.suspendtimeoutonroll;requirenextroll[`start]];
+  / RESUME PATH. everything after the subscribe can throw, and a subscription cannot be undone, so a
+  / start[] that failed part way used to be unrecoverable: the subscription was live, started was 0b,
+  / and re-running start[] hit di.subscriptions' rejection of a duplicate subscribe on a handle it
+  / already holds. skipping the connect-and-subscribe when one is already live makes the retry work.
+  / this is viable because init seeds RUNTIME state (subtables, tplogdate) only on the first call, so
+  / what the failed attempt learned from the tickerplant is still in module state to resume from.
+  / subscribed[] is read through the same guard resubscribecheck and status use - a throw is read as
+  / "not subscribed", which retries the subscribe rather than skipping it, the safe way to be wrong
+  / an ALREADY-COMPLETED start is a no-op, not a resume. without this the resume path below turns a
+  / second start[] on a healthy rdb into a silent re-run: setpartition is idempotent, but the two
+  / addjob calls are not, so it booked a SECOND rdbtimeoutreset and rdbresubscribe against the same
+  / ids (measured: 2 jobs became 4). before the resume path existed this case threw, because the
+  / subscribe was reached and di.subscriptions rejected the duplicate - the guard restores that
+  / protection without giving up the resume. teardown sets started 0b, so start[] after a teardown
+  / still works. idempotent like teardown, which rdb.md already documents as safe to call twice
+  if[.z.m.started;
+    .z.m.loginfo[`start;"start has already completed - nothing to do"];
+    :()];
+  / read this BEFORE subscribing - after the subscribe it is true on every path, resume or not.
+  / two if[]s rather than $[resuming;…;[…]]: a bracket statement block is the shape setpartition
+  / deliberately avoids, and this module keeps one convention for it
+  resuming:@[subscriptions.subscribed;::;{[e] :0b}];
+  if[resuming;
+    .z.m.loginfo[`start;"a subscription is already live - resuming start without re-subscribing"]];
+  if[not resuming;
+    tph:connecttp[];
+    if[.z.m.subfiltered;loadsubfilters[]];
+    .z.m.loginfo[`start;"found available tickerplant, attempting to subscribe"];
+    r:subscriptions.subscribe[tph;.z.m.subscribeto;.z.m.subscribesyms;.z.m.schema;.z.m.replaylog];
+    .z.m.subtables:(),r`subtables;
+    .z.m.tplogdate:r`tplogdate;
+    .z.m.loginfo[`start;"subscribed to ",(", " sv string .z.m.subtables),"; tickerplant log date ",
+      string .z.m.tplogdate]];
   / the replay drove the ROOT upd, which is unfiltered - so a filtered subscription has to narrow what
   / the replay put in the tables afterwards. TorQ rdb.q:175-176 does exactly this, and only when both
   / flags are set
@@ -508,6 +590,17 @@ start:{[]
   setpartition[];
   scheduletimeoutreset[];
   scheduleresubscribe[];
+  / started is set LAST, not straight after subscribe. everything between the subscribe and here can
+  / throw - an unparseable subscription filter, an unreadable sortcsv, a di.eodtime that reports no
+  / roll - and setting it early meant such a failure left the module claiming started 1b with an empty
+  / partition list and no timeout or resubscribe job: a half-started rdb that status[] reported as
+  / healthy. started now means "start[] completed", which is what every requirestart caller assumes.
+  / a partial start leaves a LIVE subscription behind and started 0b, which status[] reports honestly
+  / - and start[] is now re-runnable from there via the resume path above, so recovery no longer
+  / needs a process restart. NB a fault that is itself persistent (an unparseable subscription filter,
+  / an unreadable sortcsv) will throw again on the retry: that is correct, not a loop - the operator
+  / fixes the file and calls start[] once more. see rdb.md
+  .z.m.started:1b;
   };
 
 / ============================================================
@@ -518,9 +611,10 @@ resubscribecheck:{[]
   / internal - the body of the scheduled `rdbresubscribe job.
   / when the tickerplant bounces, di.servers reopens the socket on its own retry cycle, but the
   / reopened handle is a NEW one and the tickerplant holds no subscription against it. without this
-  / the rdb sits connected and silently receives nothing for the rest of the day, and start[] cannot
-  / be re-run to fix it - di.subscriptions rejects a second subscribe on a handle it already holds,
-  / so the only recovery would be a process restart.
+  / the rdb sits connected and silently receives nothing for the rest of the day. nothing else in the
+  / process notices: the socket is up, so di.servers is satisfied, and no error is ever raised. this
+  / job is the only thing that closes that window - recovery is not something an operator can be
+  / expected to spot and trigger by hand, because there is no symptom to spot until data is missing.
   / di.subscriptions deliberately keeps the knowledge of WHAT was subscribed and leaves WHEN to
   / re-establish it to this module (see the comment on its resubscribe) - this is that decision.
   / NEVER THROWS. di.timer defaults disableonfail to 1b, so one escaping error would disable the job
@@ -709,11 +803,11 @@ hdbmessage:{[date]
 
 notifyhdbs:{[date]
   / tell every connected hdb to reload - TorQ rdb.q:80-83,120.
-  / legacy sends a separate SYNC message per handle. di.asyncutil.postback broadcasts through -25!,
-  / so the message is serialised ONCE for all of them and each handle's send is error-trapped into a
-  / success vector rather than throwing. it is not fire-and-forget: postback flushes with h(::), which
-  / the peer answers only after processing the queued reload (measured), so this still waits on the
-  / hdbs - one round trip for the set instead of one per handle.
+  / legacy sends a separate SYNC message per handle, so the roll waits for every hdb in turn.
+  / di.asyncutil.postback broadcasts through -25!, so the message is serialised ONCE for all of them
+  / and each handle's send is error-trapped into a success vector rather than throwing. it is genuinely
+  / fire-and-forget: postback flushes the outgoing queue and returns without waiting for any reply, so
+  / a slow or hung hdb cannot stall the roll. the success vector means "on the wire", not "reloaded"
   / NB postback requires POSITIVE handles. legacy's .async.send negates (neg abs handles); di.asyncutil
   / does not, and a negative handle there returns a caught "-4 is not an ipc handle" failure rather
   / than throwing - a silent no-notify if it were passed through unchecked (measured)
@@ -807,13 +901,17 @@ endofday:{[date]
 
 dropfirstnrows:{[t;n]
   / drop the prior day from a root table, leaving the ticks that have arrived since the roll -
-  / TorQ rdb.q:154-160. protected per table so one failure does not abandon the rest
+  / TorQ rdb.q:154-160. protected per table so one failure does not abandon the rest.
+  / RETURNS a success flag, which legacy does not: reload has to know WHICH tables were actually
+  / dropped so it only clears those from the snapshot. without it a failed drop still gets its count
+  / zeroed and the prior day is stranded in memory with nothing left to retry against
   .z.m.loginfo[`dropfirstnrows;"dropping first ",(string n)," rows from ",(string t),
     ". current table count is : ",string count value t];
-  .[{@[`.;x;y _]};(t;n);
+  ok:.[{@[`.;x;y _];1b};(t;n);
     {[t;n;e] .z.m.logerr[`dropfirstnrows;"failed to drop first ",(string n)," rows from ",
-      (string t),". the error was : ",e]}[t;n]];
+      (string t),". the error was : ",e]; :0b}[t;n]];
   .z.m.loginfo[`dropfirstnrows;(string t)," now has ",(string count value t)," rows."];
+  :ok;
   };
 
 rungc:{[]
@@ -836,12 +934,18 @@ reload:{[date]
   .z.m.loginfo[`reload;"reload command has been called remotely"];
   t:.z.m.subtables except .z.m.ignorelist;
   atts:t!grabattrs each t;
-  dropfirstnrows'[t;0^.z.m.eodtabcount t];
+  dropped:(),dropfirstnrows'[t;0^.z.m.eodtabcount t];
   rmdtfromgetpar[date];
   reapplyattrs'[key atts;value atts];
   if[.z.m.gc;rungc[]];
-  / zero rather than delete, so a second reload drops nothing instead of dropping the day again
-  .z.m.eodtabcount:@[.z.m.eodtabcount;t;:;0];
+  / zero rather than delete, so a second reload drops nothing instead of dropping the day again.
+  / only the tables that ACTUALLY dropped are cleared - a table whose drop threw keeps its count, so
+  / a second reload[date] retries it rather than stranding the prior day in memory permanently with
+  / no record of how much of it to remove
+  .z.m.eodtabcount:@[.z.m.eodtabcount;t where dropped;:;0];
+  if[not all dropped;
+    .z.m.logwarn[`reload;"kept the eod snapshot for ",(", " sv string t where not dropped),
+      " - the drop failed, call reload again once the cause is fixed"]];
   restoretimeout[];
   .z.m.loginfo[`reload;"finished reloading rdb"];
   };
@@ -856,11 +960,10 @@ endofperiod:{[currp;nextp;data]
   / the message has to land somewhere or it surfaces as an unhandled async message.
   / TERNARY, matching legacy's producer: TorQ's code/common/pubsub.q:19 broadcasts
   / (`endofperiod;currentperiod;nextperiod;data).
-  / KNOWN GAP: di.pubsub's callendofperiod broadcasts only (`endofperiod;x) - a rank-1 lambda that
-  / discards its second and third arguments. Under it this function receives ONE argument and q returns
-  / a PROJECTION (measured: type 104h) instead of running, so nothing is logged and nothing throws.
-  / that is the same defect class PR #118 fixed for callendofday, and it needs the same fix in
-  / di.pubsub rather than a narrower signature here. see rdb.md
+  / di.pubsub's callendofperiod used to broadcast only (`endofperiod;x), which left this function
+  / partially applied: q returned a PROJECTION (measured: type 104h) instead of running it, so nothing
+  / logged and nothing threw. Keeping this ternary rather than narrowing it to fit the broken
+  / broadcaster was the right call - di.pubsub is now ternary too and the two match. see rdb.md
   requireinit[`endofperiod];
   .z.m.loginfo[`endofperiod;"received endofperiod. currentperiod, nextperiod and data are ",
     (string currp),", ",(string nextp),", ",.Q.s1 data];

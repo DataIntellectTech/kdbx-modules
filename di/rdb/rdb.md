@@ -284,6 +284,20 @@ partial evidence.
   hdb cannot stall the roll. The success vector means "on the wire", not "reloaded". `postback` also
   requires **positive** handles; passing TorQ's `neg abs handles` returns a caught
   `"-4 is not an ipc handle"` failure rather than throwing, i.e. a silent no-notify.
+
+  That "fire-and-forget" depended on a fix in `di.asyncutil`, and the story is worth recording
+  because an earlier draft of this document had it backwards. It claimed `postback`'s trailing
+  `x(::)` was a **sync** flush the peer answered only after processing the reload, leaving the roll
+  blocked without bound. Measurement showed the reverse: `x(::)` on a handle **list** is list
+  indexing, so it flushed nothing, and `postback` returned a success vector while the broadcast was
+  still sitting in q's outgoing queue — a silent delivery failure reported as success, which is a
+  worse failure mode than the hang that was assumed. Fixed with `flushhandles` (a per-handle
+  `neg[h][]`); see `di/asyncutil/asyncutil.md`.
+
+  One measurement from that investigation stands on its own account: **`hopen`'s timeout does not
+  bound subsequent blocking calls.** A handle opened with `hopen (h;2000)` still blocked the full 5s
+  on a peer doing `system"sleep 5"`, so `di.servers`' `HOPENTIMEOUT` covers the connect only.
+  Nothing here relies on it bounding anything else, but code that assumes otherwise will hang.
 - **TorQ's gmt-rounding term is dropped** from the timeout job's start time. It is
   `{00:01*15*"j"$(`minute$x)%15}(.proc.cp[]-.z.p)`, which is zero outside backtesting, where
   `.proc.cp[]` is overridden to simulate a clock. Porting it without that machinery would be
@@ -359,45 +373,11 @@ Two further changes made in the second review pass:
 
 ## Known gaps
 
-- **`di.pubsub.callendofperiod` was unary — now fixed, separately.** TorQ's producer broadcasts
-  `` (`endofperiod;currentperiod;nextperiod;data) `` (`code/common/pubsub.q:19`) and both its
-  subscribers are `{[currp;nextp;data]}`, but `di.pubsub`'s was
-  `{(neg getallhandles[])@\:(`endofperiod;x)}`. That failed two ways at once (both measured):
-  `callendofperiod[c;n;d]` threw `'rank`, so a caller following TorQ's contract could not call it at
-  all, and the one-argument form left this module's **ternary** `endofperiod` as a **projection**
-  (type `104h`) — the body never ran and nothing threw or logged. Same defect class as the
-  `callendofday` bug PR #118 fixed. Keeping `endofperiod` ternary here rather than narrowing it to
-  fit the broken broadcaster was the right call: `di.pubsub` is now ternary too and the two agree.
-  **That fix lands on the `di.pubsub` line, not on this branch.** `origin/main`'s `di.pubsub` still
-  has the unary version, so an rdb running against a `di.pubsub` from `main` still sees a silently
-  no-opped `endofperiod` until that fix merges.
-- **`di.dbwrite`, `di.eodtime` and `di.asyncutil` had no `version` export — now fixed, separately.**
-  This was a real blocker rather than an advisory: `di.depcheck` classes a missing version as a
-  `failure`, not a `warning`, and `di.depcheck.init` signals on any failure, so a process that
-  loaded `di.rdb` and then called `di.depcheck.init` **aborted at startup**. No pin avoided it —
-  `checkdepversion` returns the "exports no version" failure before comparing numbers, so `"0.0.0"`
-  and `""` failed identically. The three modules were versioned at `0.1.0` as their own change
-  (a `VERSION` file plus `version` in the export dict, matching every other module). Verified:
+Three, all of them external to this module.
 
-  ```q
-  rdb:use`di.rdb; dc:use`di.depcheck
-  dc.init[enlist[`log]!enlist mylog]     / "dependency check complete: 0 failure(s), 0 warning(s)"
-  ```
-- **`notifyhdbs` does not wait for the hdbs, and that is deliberate.** An earlier draft of this
-  document claimed the opposite - that `postback`'s trailing `x(::)` was a sync flush the peer
-  answered only after processing the reload, leaving the roll blocked without bound. That was
-  **wrong**, and measurement showed the defect was the reverse: `x(::)` on a handle **list** is list
-  indexing, so it flushed nothing at all, and `postback` returned a success vector while the
-  broadcast was still sitting in q's outgoing queue. Fixed in `di.asyncutil` (`flushhandles`, a
-  per-handle `neg[h][]`); `notifyhdbs` now sends promptly and still never waits. See
-  `di/asyncutil/asyncutil.md`.
-
-  One measurement from that investigation is worth keeping on its own account: **`hopen`'s timeout
-  does not apply to subsequent blocking calls.** A handle opened with `hopen (h;2000)` still blocked
-  the full 5s on a peer doing `system"sleep 5"`, so `di.servers`' `HOPENTIMEOUT` covers the connect
-  only. Nothing in di.rdb relies on it bounding anything else, but code that assumes otherwise will
-  hang.
-- **`di.servers.startup[]` takes no argument** - see "who initialises what".
+- **`di.servers.startup[]` takes no argument** - see "who initialises what". The caller must
+  configure `di.servers` with a `connections` list covering the tickerplant and hdb proctypes before
+  `start[]` runs, because an rdb cannot hand it a role-specific list.
 - **There is no `di.tickerplant` in kdbx-modules**, so the end-to-end roll is proven against the
   test harness tickerplant in `test_integration.csv` (which publishes through the real `di.pubsub`),
   not against a production one.
@@ -405,6 +385,35 @@ Two further changes made in the second review pass:
   unresolved and gates all merge work. This module is flat `di.rdb`, matching every module merged or
   up for review. If the hierarchy is adopted it is renamed by the coordinated repo-wide change the
   RFC describes in its phase 5.
+
+### Dependency fixes this module required
+
+Two defects in dependencies had to be fixed before di.rdb worked. Both are done and pushed; they are
+recorded here because they are the reason those modules changed, and because di.rdb's behaviour
+depends on them.
+
+- **`di.pubsub.callendofperiod` was unary** (`{(neg getallhandles[])@\:(`endofperiod;x)}`) where
+  TorQ's producer broadcasts `` (`endofperiod;currentperiod;nextperiod;data) ``
+  (`code/common/pubsub.q:19`) and both its subscribers are `{[currp;nextp;data]}`. That failed two
+  ways at once, both measured: `callendofperiod[c;n;d]` threw `'rank`, so a caller following TorQ's
+  contract could not call it at all; and the one-argument form left this module's **ternary**
+  `endofperiod` as a **projection** (type `104h`) - the body never ran and nothing threw or logged.
+  Same defect class as the `callendofday` bug PR #118 fixed. Keeping `endofperiod` ternary here
+  rather than narrowing it to fit the broken broadcaster was the right call. **Fixed on
+  `feature-subscriptions`**; until that merges, an rdb running against `main`'s `di.pubsub` still
+  sees a silently no-opped `endofperiod`.
+- **`di.dbwrite`, `di.eodtime` and `di.asyncutil` exported no `version`**, which was a blocker
+  rather than an advisory: `di.depcheck` classes a missing version as a `failure`, not a `warning`,
+  and `di.depcheck.init` signals on any failure - so a process that loaded `di.rdb` and then called
+  `di.depcheck.init` **aborted at startup**. No pin avoided it: `checkdepversion` returns the
+  "exports no version" failure before comparing numbers, so `"0.0.0"` and `""` failed identically.
+  All three were versioned at `0.1.0` (a `VERSION` file plus `version` in the export dict) on this
+  branch. Verified:
+
+  ```q
+  rdb:use`di.rdb; dc:use`di.depcheck
+  dc.init[enlist[`log]!enlist mylog]     / "dependency check complete: 0 failure(s), 0 warning(s)"
+  ```
 
 ## Module-namespace notes
 

@@ -208,5 +208,5 @@ zero-row table and a table missing `symcol`/`timecol` (both fail outright), and 
 - `symcol`/`timecol` presence is validated unconditionally on every `extract` call, even when
   `presort` is `0b`.
 - A per-file write failure (e.g. an invalid `codec`) is caught and logged at `warn`, and that file
-  is recorded with `` status=`err `` (and `bytes:0`) in the manifest — it does not abort the rest of
+  is recorded with `` status=`error `` (and `bytes:0`) in the manifest — it does not abort the rest of
   `extract`.

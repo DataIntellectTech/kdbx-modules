@@ -1,0 +1,31 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tp:use`di.tickerplant,1,,load the module under test
+before,0,0,q,timer:use`di.timer,1,,real di.timer (addjob works without timer.init - no live .z.ts)
+before,0,0,q,ntp:use`di.tplog,1,,di.tplog, to replay a tickerplant-written log
+before,0,0,q,os:use`di.os,1,,os module for portable path resolution
+before,0,0,q,"system ""l "",os.abspath[""di/tickerplant/test.q""]",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,create the temp fixture root
+comment,,,,,,,module metadata - version and getapimeta
+true,0,0,q,10h=type tp`version,1,1,version is a string
+true,0,0,q,0<count tp`version,1,1,version is non-empty
+true,0,0,q,`name`public`descrip`params`return~cols tp[`getapimeta][],1,1,getapimeta rows carry the registry columns
+true,0,0,q,(asc (key tp) except `init`getapimeta`version)~asc exec name from tp[`getapimeta][],1,1,getapimeta documents exactly the callable exports
+true,0,0,q,not any `init`getapimeta`version in exec name from tp[`getapimeta][],1,1,plumbing and version are not registered in the api
+comment,,,,,,,init dependency validation
+fail,0,0,q,tp.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,tp.init depsnolog[],1,1,init rejects deps without a log key
+fail,0,0,q,tp.init depsonlylog[],1,1,init rejects deps without a timer
+fail,0,0,q,tp.init depsbadtimer[],1,1,init rejects a timer that does not expose addjob
+fail,0,0,q,tp.init depsnoschemas[],1,1,init rejects deps without schemas
+comment,,,,,,,init / lifecycle
+true,0,0,q,testinit[],1,1,init materialises root tables (g# sym) and schedules the timer job
+true,0,0,q,testupdbatch[],1,1,batch upd stamps, buffers and logs
+true,0,0,q,testzerolatency[],1,1,zero-latency upd publishes without buffering
+true,0,0,q,testendofday[],1,1,endofday flushes, rolls the log and resets counts
+comment,,,,,,,di.tplog integration
+true,0,0,q,testlogroundtrip[],1,1,a tickerplant-written log replays through di.tplog
+true,0,0,q,testcheckrepaironroll[],1,1,rolling into a corrupt log repairs it via di.tplog.check
+comment,,,,,,,upd input validation
+fail,0,0,q,tp[`upd][1;()],1,1,upd rejects a non-symbol table
+fail,0,0,q,tp[`upd][`nope;()],1,1,upd rejects an unknown table
+after,0,0,q,teardownfixture[],1,,remove the temp fixture root

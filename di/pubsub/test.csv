@@ -147,6 +147,22 @@ run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters
 
+comment,,,,,,,"callendofperiod is TERNARY, matching TorQ's producer: code/common/pubsub.q:19 sends"
+comment,,,,,,,"(`endofperiod;x;y;z) and both subscribers (code/rdb/endofperiod.q, code/wdb/writedown.q:52)"
+comment,,,,,,,"are {[currp;nextp;data]}. it was unary - a 3-arg call threw 'rank, and the 1-arg form left a"
+comment,,,,,,,ternary subscriber as a PROJECTION: the body never ran and nothing threw or logged
+run,0,0,q,.test.EOPRAN:0b,1,1,did the subscriber body actually run
+run,0,0,q,.test.EOPGOT:`seeded,1,1,and what did it receive
+run,0,0,q,endofperiod:{[c;n;dat] .test.EOPRAN:1b; .test.EOPGOT:(c;n;dat); },1,1,a TERNARY subscriber - the shape TorQ's rdb and wdb both use
+run,0,0,q,h(`.m.di.0pubsub.callendofperiod;09:30:00;10:00:00;`a`b!1 2),1,1,broadcast a period roll from the server
+run,0,0,q,h"1+1",1,1,round trip so the async broadcast is processed before we assert
+true,0,0,q,.test.EOPRAN,1,1,the subscriber BODY ran - this is the assertion that fails on the unary version
+true,0,0,q,.test.EOPGOT~(09:30:00;10:00:00;`a`b!1 2),1,1,all three arguments arrived intact
+run,0,0,q,.test.EOPRAN:0b,1,1,reset before the one-argument case
+run,0,0,q,h(`.m.di.0pubsub.callendofperiod;09:30:00),1,1,the old one-argument calling shape
+run,0,0,q,h"1+1",1,1,round trip
+true,0,0,q,not .test.EOPRAN,1,1,a one-argument call is a projection server side and broadcasts nothing so no malformed endofperiod reaches subscribers
+
 run,0,0,q,neg[h](exit;0);neg[h](::),1,,close background process and flush
 run,0,0,q,hclose h,1,,close handle
 run,0,0,q,"system""rm -rf "",PSDIR",1,1,remove the server directory

@@ -88,8 +88,17 @@ priorpc:@[value;`.z.pc;{[e] (::)}];
 / broadcast to all subscribers upon end of day, client needs to define endofday function
 callendofday:{[d](neg getallhandles[])@\:(`endofday;d)};
 
-/ broadcast to all subscribers upon end of period, client needs to define endofperiod function
-callendofperiod:{(neg getallhandles[])@\:(`endofperiod;x)};
+/ broadcast to all subscribers upon end of period, client needs to define endofperiod function.
+/ TERNARY, matching legacy: TorQ's code/common/pubsub.q:19 broadcasts (`endofperiod;x;y;z) and both
+/ of its subscribers (code/rdb/endofperiod.q, code/wdb/writedown.q:52) are {[currp;nextp;data]}.
+/ it was unary, which failed two ways at once (both measured): callendofperiod[c;n;d] threw 'rank, so
+/ a caller following that contract could not call it at all, and the one-argument form left a ternary
+/ subscriber as a PROJECTION - the body never ran, and nothing threw, logged or was returned to say so.
+/ same defect class as the callendofday bug PR #118 fixed.
+/ NB callendofday stays UNARY on purpose. TorQ's producer sends (`endofday;x;y), but its second
+/ argument is processdata, which legacy's own rdb never reads and the shipped .u.end alias passes
+/ ()!() for - di.rdb's endofday is unary to match. Do not "fix" that one for symmetry with this
+callendofperiod:{[currentperiod;nextperiod;data](neg getallhandles[])@\:(`endofperiod;currentperiod;nextperiod;data)};
 
 / get table schema
 extractschema:{[table]0#value table};

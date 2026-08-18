@@ -50,8 +50,8 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 |---------------------------|------------------------------------------------------------------------------|
 | `pubsub.setsubtables`     | Set a specified list of tables that are available for subscription.          | 
 | `pubsub.getsubtables`     | Read the list of tables currently available for subscription - the counterpart to `setsubtables`, which replaces it. Empty until `init` has run. |
-| `pubsub.callendofday`     | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
-| `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
+| `pubsub.callendofday`     | Broadcast an end-of-day event to all subscribers (requires `endofday`). **Unary**: `callendofday[date]`. |
+| `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`). **Ternary**: `callendofperiod[currentperiod;nextperiod;data]`. |
 | `pubsub.closesub`         | Remove handle upon connection close.                                         | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
 | `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas).  |
@@ -103,3 +103,31 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 - By default, all tables on top level of the process are available for subscription.
 - The user should define the `.u.sub` and the `.u.pub` functions within the process.
 - The module initializes with defined list of tables to subscribe to and fetches their schemas and columns for use. This is done via calling `init` function.
+
+---
+
+### End-of-day and end-of-period arity
+
+These two broadcasts deliberately have **different arities**, which looks like an inconsistency and
+is not:
+
+| function | arity | broadcast |
+|---|---|---|
+| `callendofday` | unary | `` (`endofday;date) `` |
+| `callendofperiod` | ternary | `` (`endofperiod;currentperiod;nextperiod;data) `` |
+
+`callendofperiod` matches TorQ exactly - `code/common/pubsub.q:19` sends all three, and both shipped
+subscribers (`code/rdb/endofperiod.q`, `code/wdb/writedown.q:52`) are `{[currp;nextp;data]}`.
+
+`callendofday` deliberately **diverges** from TorQ, which sends `` (`endofday;x;y) ``. That second
+argument is `processdata`; legacy's own rdb never reads it, and the shipped `.u.end` alias passes
+`()!()` for it. Subscribers here are unary to match. Do not "fix" it for symmetry with
+`callendofperiod` - doing so would turn every unary `endofday` subscriber into a projection.
+
+That projection failure is the reason this matters, and it is completely silent. A subscriber whose
+arity does not match what is broadcast is **partially applied**: q returns a projection, the body
+never runs, and nothing throws, logs, or comes back to say so. `callendofperiod` was previously
+unary, which failed both ways at once - a `callendofperiod[c;n;d]` call threw `'rank`, so a caller
+following TorQ's contract could not call it at all, while the one-argument form silently no-opped
+every ternary subscriber. Both measured; both covered by the suite, whose two assertions fail
+against the unary implementation.

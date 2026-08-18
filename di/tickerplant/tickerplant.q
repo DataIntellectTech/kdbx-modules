@@ -44,7 +44,7 @@ openlog:{[date]
   / open the tp log for `date`, checking/repairing a pre-existing log via di.tplog; 0i if logging off
   if[0=count .z.m.logdir;:0i];
   l:hsym `$ .z.m.logdir,"/",.z.m.logname,string date;
-  if[count key l;l:tplog.check[l;0]];
+  if[count key l;l:tplog.check l];
   if[not count key l;l set ()];
   .z.m.logfile:l;
   h:hopen l;
@@ -98,7 +98,6 @@ init:{[deps]
   /   optional `batch (1b), `batchperiod (timespan), `logdir (string, "" disables logging),
   /   `logname (string), `subtables (symbol list), plus di.eodtime keys (rolltimezone/datatimezone/
   /   rolltimeoffset) forwarded verbatim.
-  / example: tp.init[`log`timer`schemas!(logdep;timerdep;`trade`quote!(tradeschema;quoteschema))]
   if[99h<>type deps;
     '"di.tickerplant: deps must be a dict with `log, `timer and `schemas keys"];
   if[not `log in key deps;
@@ -131,10 +130,11 @@ init:{[deps]
   / materialise the schemas as root tables (see the header note on root state), applying `g# to sym
   .z.m.schemas:deps`schemas;
   .z.m.tabs:key deps`schemas;
-  {[nm;s] (nm) set $[`sym in cols s;@[s;`sym;`g#];s]}'[.z.m.tabs;value deps`schemas];
-  / initialise the dependency modules: eodtime with the injected log + tz passthrough, pubsub over
-  / the subscribable tables
+  {[nm;s] nm set $[`sym in cols s;@[s;`sym;`g#];s]}'[.z.m.tabs;value deps`schemas];
+  / initialise the dependency modules: eodtime (log + tz passthrough), tplog (log), pubsub (over the
+  / subscribable tables). tplog now takes an injected log and must be init'd before check is called.
   eodtime.init[(enlist[`log]!enlist deps`log),(key[deps] inter eodtimekeys)#deps];
+  tplog.init[enlist[`log]!enlist deps`log];
   pubsub.setsubtables[$[`subtables in key deps;deps`subtables;.z.m.tabs]];
   pubsub.init[];
   / date, counts, and the tp log for today
@@ -188,13 +188,11 @@ gettables:{[]
   };
 
 getapimeta:{[]
-  / this module's api metadata, one row per CALLABLE api function (NOT init/getapimeta/version - those
-  / are plumbing/metadata di.torq handles by convention), for di.torq to collect and register with
-  / di.api. names are bare; di.torq applies process-wide qualification.
+  / callable api for di.torq to register with di.api (init/getapimeta/version are plumbing, omitted)
   :flip `name`public`descrip`params`return!flip(
-    (`upd;       1b; "feed entry point - stamp, log and publish (or buffer) an update";  "[symbol: table; list: data]";      "null");
-    (`subscribe; 1b; "register a subscriber for tables/syms (delegates to di.pubsub)";   "[symbol|list: tables; filters]";   "subscription result");
-    (`endofday;  1b; "flush, notify subscribers, roll the log and advance eod state";    "[]";                               "null");
-    (`getcounts; 1b; "current log/buffer message counts and trading date";              "[]";                               "dict: `i`j`d");
-    (`gettables; 1b; "the tables this tickerplant captures";                            "[]";                               "symbol list: table names"));
+    (`upd;1b;"feed entry point - stamp, log and publish (or buffer) an update";"[symbol table; list data]";"null");
+    (`subscribe;1b;"register a subscriber for tables/syms (delegates to di.pubsub)";"[symbol|list tables; filters]";"subscription result");
+    (`endofday;1b;"flush, notify subscribers, roll the log and advance eod state";"[]";"null");
+    (`getcounts;1b;"current log/buffer message counts and trading date";"[]";"dict `i`j`d");
+    (`gettables;1b;"the tables this tickerplant captures";"[]";"symbol list of table names"));
   };

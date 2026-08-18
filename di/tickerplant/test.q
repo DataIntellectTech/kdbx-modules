@@ -68,6 +68,14 @@ testemptyupd:{[]
   c:tp[`getcounts][];
   (0=count trade) and 0=c`j};
 
+/ an empty update still triggers an overdue roll (the roll check runs before the empty-data skip)
+testemptyupdtriggersroll:{[]
+  freshinit["emptyroll";1b];
+  oldd:first tp[`getcounts][]`d;
+  eod.setnextroll .z.p-0D01:00:00;
+  tp[`upd][`trade;()];
+  (oldd+1)=first tp[`getcounts][]`d};
+
 / zero-latency mode: upd publishes immediately, does NOT buffer into the root table, still logs
 testzerolatency:{[]
   freshinit["zl";0b];
@@ -80,8 +88,8 @@ testzerolatency:{[]
 testreinitnoleak:{[]
   fddir:"/proc/",(string .z.i),"/fd";
   freshinit["reinit";1b];
-  b:"J"$first system"ls ",fddir," | wc -l";
-  freshinit["reinit";1b]; freshinit["reinit";1b]; freshinit["reinit";1b];
+  b:"J"$first system"ls ",fddir," | wc -l";   / baseline AFTER the first init - one log handle is open
+  freshinit["reinit";1b]; freshinit["reinit";1b]; freshinit["reinit";1b];   / re-init must not add fds
   a:"J"$first system"ls ",fddir," | wc -l";
   tp[`upd][`trade;row`AAPL];
   (a=b) and 1=tp[`getcounts][]`j};

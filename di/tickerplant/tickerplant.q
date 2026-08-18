@@ -157,8 +157,9 @@ upd:{[t;x]
   / t is the table name, x the column data. wired to root `upd` by di.torq so feeds can call it.
   if[not -11h=type t;raiseerror[`upd;"table must be a symbol"]];
   if[not t in .z.m.tabs;raiseerror[`upd;"unknown table ",string t]];
-  if[not count x;:()];
   rollcheck .z.p;
+  / empty update carries no data - nothing to stamp/log, but the roll check above still runs
+  if[not count x;:()];
   x:stamp x;
   if[.z.m.batch;t insert x;writelog[t;x]];
   if[not .z.m.batch;publishrows[t;x];writelog[t;x]];

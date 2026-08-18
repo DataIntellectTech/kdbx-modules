@@ -2,6 +2,7 @@ action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,tp:use`di.tickerplant,1,,load the module under test
 before,0,0,q,timer:use`di.timer,1,,real di.timer (addjob works without timer.init - no live .z.ts)
 before,0,0,q,ntp:use`di.tplog,1,,di.tplog, to replay a tickerplant-written log
+before,0,0,q,eod:use`di.eodtime,1,,di.eodtime, to force a roll due in a test
 before,0,0,q,os:use`di.os,1,,os module for portable path resolution
 before,0,0,q,"system ""l "",os.abspath[""di/tickerplant/test.q""]",1,,load fixture helpers
 before,0,0,q,setupfixture[],1,,create the temp fixture root
@@ -21,6 +22,7 @@ comment,,,,,,,init / lifecycle
 true,0,0,q,testinit[],1,1,init materialises root tables (g# sym) and schedules the timer job
 true,0,0,q,testupdbatch[],1,1,batch upd stamps, buffers and logs
 true,0,0,q,testemptyupd[],1,1,an empty update is a no-op (no throw)
+true,0,0,q,testemptyupdtriggersroll[],1,1,an empty update still triggers an overdue roll
 true,0,0,q,testzerolatency[],1,1,zero-latency upd publishes without buffering
 true,0,0,q,testendofday[],1,1,endofday flushes, rolls the log and resets counts
 true,0,0,q,testreinitnoleak[],1,1,re-init closes the old log handle (no fd leak)

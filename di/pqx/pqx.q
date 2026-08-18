@@ -49,7 +49,7 @@ estimate:{[t;o;writeopt]
   / for a partition of data, estimates the size of the tables to be saved to disk
   / if calibrate flag is true in o, a test write is carried out
   / returns a table of storage stats for all isntruments and the compression ratio, which may have changed depending on calibration
-  cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;o[`timecol])]; /select rowcnt:count time by sym from t
+  cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by sym from t
   medsym:cnts @ first where abs[cnt-med[cnt]]=min[abs[cnt-med[cnt:cnts`rowcnt]]];
   bytesperrow:%[-22!t:.z.m.checkandconvertcols t[where t[o[`symcol]]=medsym[o[`symcol]]];medsym`rowcnt];
 
@@ -175,7 +175,7 @@ writefile:{[t;o;writeopt;writedir;map]
     res:.z.m.tryfn[`.m.di.0pqx.arrow.pq.writeParquetFromTable;(path;.z.m.checkandconvertcols t[i];writeopt)];
     $[first res;
       .z.m.loginfo[`pqx;"seqNo ",string[seqno]," write successful"];
-      .z.m.logwarn[`pqx;"seqNo ",string[seqno]," write unsuccessful. Error - ",last res];
+      .z.m.logwarn[`pqx;"seqNo ",string[seqno]," write unsuccessful. Error - ",last res]
     ];
     :`file`seq`syms`nsyms`rows`mintime`maxtime`estbytes`bytes`split`status!/: flip (
       hsym `$path;
@@ -188,7 +188,7 @@ writefile:{[t;o;writeopt;writedir;map]
       estbytes;
       @[hcount;hsym `$path;0];
       split;
-      `err`ok[first res]
+      `error`ok[first res]
     )
   }[t;symcol;writeopt;1<count seqno;;;]'[paths;seqno;estbytes;.z.m.datalookup[t;symcol;syms;count seqno]];
 
@@ -209,13 +209,13 @@ extract:{[t;tname;dt;o]
 
   / check for instrument and time cols, error out if not
   if[not opts[`symcol] in cols[t];
-    .z.m.logerr[`pqx;"No symcol found in table. Exiting..."];
-    '"di.pqx: no symcol found"
+    .z.m.logerr[`pqx;err:"di.pqx: no symcol found in table"];
+    'err
   ];
 
   if[not opts[`timecol] in cols[t];
-    .z.m.logerr[`pqx;"No timecol found in table. Exiting..."];
-    '"di.pqx: no timecol found"
+    .z.m.logerr[`pqx;err:"di.pqx: no timecol found in table"];
+    'err
   ];
 
   / if presort, sort by sym then time

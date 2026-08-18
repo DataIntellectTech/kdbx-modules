@@ -194,9 +194,9 @@ k4unit.moduletest`di.pqx
 `test.csv` drives `extract` across default and overridden options — presort on/off, an oversized
 instrument with `splitoversized` on and off, a `symcol` override, parallel (`peach`) writes, and a
 custom `filestub`/non-default codec — then asserts on the resulting `getmanifest[]` rows and (via
-`` .m.di.0pqx.arrow.pq.readParquetToTable ``) the files written back to disk. It also covers the
-failure paths: a zero-row table, a table missing `symcol`/`timecol`, and an invalid codec (see
-Notes).
+`` .m.di.0pqx.arrow.pq.readParquetToTable ``) the files written back to disk. It also covers a
+zero-row table and a table missing `symcol`/`timecol` (both fail outright), and an invalid `codec`
+(degrades gracefully — see Manifest Schema's `status` column).
 
 ---
 
@@ -207,6 +207,6 @@ Notes).
   `` `V2.LATEST ``) and `` `COMPRESSION `` (from `codec`) are passed to the writer.
 - `symcol`/`timecol` presence is validated unconditionally on every `extract` call, even when
   `presort` is `0b`.
-- A per-file write failure (e.g. an invalid `codec`) is caught and logged, but currently still
-  causes `extract` to throw rather than recording that file with `` status=`error `` in the manifest
-  as the schema implies it should — see `test.csv`'s invalid-codec case.
+- A per-file write failure (e.g. an invalid `codec`) is caught and logged at `warn`, and that file
+  is recorded with `` status=`err `` (and `bytes:0`) in the manifest — it does not abort the rest of
+  `extract`.

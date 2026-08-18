@@ -60,6 +60,8 @@ fail,0,0,q,pqx.extract[pqxempty;`pqxtrade;2025.07.21;enlist[`outdir]!enlist `:pq
 fail,0,0,q,pqx.extract[pqxnotime;`pqxtrade;2025.07.22;enlist[`outdir]!enlist `:pqxoutf2/],1,,Extract fails on a missing time column with presort on (the default)
 fail,0,0,q,pqx.extract[pqxnotime;`pqxtrade;2025.07.22;`outdir`presort!(`:pqxoutf3/;0b)],1,,Extract fails on a missing time column even with presort off - the column check is unconditional
 fail,0,0,q,pqx.extract[([]price:1.0 2.0 3.0);`pqxtrade;2025.07.23;enlist[`outdir]!enlist `:pqxoutf4/],1,,Extract fails when the table has no sym column at all
-fail,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.25;`outdir`codec`calibrate`compressionratio!(`:pqxoutf5/;`bogus;0b;0.3)],1,,Extract currently throws on an invalid codec rather than degrading that file to status=`error` in the manifest
+run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.25;`outdir`codec`calibrate`compressionratio!(`:pqxoutf5/;`bogus;0b;0.3)],1,,Extract degrades gracefully on an invalid codec rather than throwing
+true,0,0,q,`error~first exec status from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file is recorded with status=`error instead of aborting extract
+true,0,0,q,0~first exec bytes from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file has zero on-disk bytes recorded
 
 after,0,0,q,system "rm -rf pqxout1 pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxoutf1 pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5",1,,Remove parquet output directories written by tests

@@ -9,6 +9,12 @@
 / NB `version` must STAY in the export: di.depcheck resolves a dependency's version from the export
 / dict (checkdepversion) and classes a missing one as a FAILURE - which makes di.depcheck.init throw
 / for any process loading a module that declares this one as a hard dependency
-version:first read0`:::VERSION
+/ trim, and fail LOUD on a missing/unreadable/empty VERSION, rather than a bare `first read0`:
+/ a raw OS error names no module, and read0 strips the line terminator but NOT trailing spaces - so a
+/ padded file yields a padded version, which di.depcheck compares as a STRING and silently fails
+/ every dependent module's check. an empty value is worse still: it reads to depcheck as
+/ "exports no version", i.e. the exact failure the VERSION file was added to prevent
+version:@[{trim first read0 x};`:::VERSION;{'"di.dbwrite: VERSION file missing or unreadable"}];
+if[0=count version;'"di.dbwrite: VERSION file is empty"];
 
 export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;version])

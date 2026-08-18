@@ -2,7 +2,7 @@ action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,setup - load module and initialise with gmt defaults and log dep
 before,0,0,q,eodtime:use`di.eodtime,1,1,load di.eodtime module
 before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent no-op log mock - binary {[c;m]} matches the log contract
-before,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"GMT";0D00:00:00.000;logdep)],1,1,init with gmt defaults and log dep
+before,0,0,q,"eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$""GMT"";`$""GMT"";0D00:00:00.000;logdep)]",1,1,init with gmt defaults and log dep
 
 comment,,,,,,,getd
 true,0,0,q,-14h=type eodtime.getd[],1,1,getd returns date type
@@ -24,12 +24,12 @@ true,0,0,q,-12h=type eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll 
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns next midnight for gmt zero offset
 
 comment,,,,,,,getroll - gmt with rolltimeoffset
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"GMT";0D17:00:00.000;logdep)],1,1,reinit with 5pm gmt roll time
+run,0,0,q,"eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$""GMT"";`$""GMT"";0D17:00:00.000;logdep)]",1,1,reinit with 5pm gmt roll time
 true,0,0,q,2025.01.01D17:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns todays 5pm when before roll time
 true,0,0,q,2025.01.02D17:00:00.000000000=eodtime.getroll[2025.01.01D18:00:00.000000000],1,1,getroll returns next day 5pm when past roll time
 
 comment,,,,,,,setnextroll
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"GMT";0D00:00:00.000;logdep)],1,1,reinit with gmt defaults
+run,0,0,q,"eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$""GMT"";`$""GMT"";0D00:00:00.000;logdep)]",1,1,reinit with gmt defaults
 run,0,0,q,eodtime.setnextroll[2025.06.01D00:00:00.000000000],1,1,setnextroll does not error
 true,0,0,q,2025.06.01D00:00:00.000000000=eodtime.getnextroll[],1,1,getnextroll reflects setnextroll
 
@@ -42,22 +42,22 @@ run,0,0,q,eodtime.setd[2025.06.01],1,1,setd does not error
 true,0,0,q,2025.06.01=eodtime.getd[],1,1,getd reflects setd
 
 comment,,,,,,,utc-equivalent timezone shortcuts (GMT/UTC/Etc/GMT)
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"UTC";`$"Etc/GMT";0D00:00:00.000;logdep)],1,1,reinit with UTC/Etc/GMT shortcuts
+run,0,0,q,"eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$""UTC"";`$""Etc/GMT"";0D00:00:00.000;logdep)]",1,1,reinit with UTC/Etc/GMT shortcuts
 true,0,0,q,0D=eodtime.getdailyadjustment[],1,1,Etc/GMT datatimezone returns 0D without lookup
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,UTC rolltimezone returns correct roll
 
 comment,,,,,,,non-gmt rolltimezone (Europe/London)
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"Europe/London";`$"GMT";0D00:00:00.000;logdep)],1,1,reinit with London rolltimezone
+run,0,0,q,"eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$""Europe/London"";`$""GMT"";0D00:00:00.000;logdep)]",1,1,reinit with London rolltimezone
 true,0,0,q,-12h=type eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll returns timestamp type for non-gmt rolltimezone
 true,0,0,q,2025.01.02D00:00:00.000000000=eodtime.getroll[2025.01.01D12:00:00.000000000],1,1,getroll correct for london winter (utc+0)
 true,0,0,q,2025.07.01D23:00:00.000000000=eodtime.getroll[2025.07.01D12:00:00.000000000],1,1,getroll correct for london summer (utc+1 - midnight local is 23:00 utc)
 
 comment,,,,,,,getroll - dst transition overnight (europe/london clocks go back 2025.10.26 01:00 utc)
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"Europe/London";`$"GMT";0D05:00:00.000;logdep)],1,1,reinit with 5am london roll time
+run,0,0,q,"eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$""Europe/London"";`$""GMT"";0D05:00:00.000;logdep)]",1,1,reinit with 5am london roll time
 true,0,0,q,2025.10.26D05:00:00.000000000=eodtime.getroll[2025.10.25D12:00:00.000000000],1,1,rollover uses tomorrows post-transition offset (gmt) not todays bst offset
 
 comment,,,,,,,non-gmt datatimezone (Europe/London - DST aware)
-run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"Europe/London";0D00:00:00.000;logdep)],1,1,reinit with London datatimezone
+run,0,0,q,"eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$""GMT"";`$""Europe/London"";0D00:00:00.000;logdep)]",1,1,reinit with London datatimezone
 true,0,0,q,-16h=type eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns timespan type
 true,0,0,q,0D<=eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns non-negative offset
 
@@ -78,19 +78,24 @@ fail,0,0,q,eodtime.init[()!()],1,1,errors when log dependency is missing
 fail,0,0,q,eodtime.init[enlist[`log]!enlist 42],1,1,errors when log value is not a dictionary
 run,0,0,q,eodtime.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)],1,1,init succeeds with info and warn but no error key - only info is required
 run,0,0,q,.test.err:@[{eodtime.init[()!()]};(::);{x}],1,1,capture error string from init with missing log dep
-true,0,0,q,.test.err like "di.eodtime:*",1,1,error is prefixed di.eodtime:
+true,0,0,q,".test.err like ""di.eodtime:*""",1,1,error is prefixed di.eodtime:
 
 comment,,,,,,,init - accepts any dict already shaped to the binary {[c;m]} contract (e.g. di.log's logdict)
 run,0,0,q,sixlvllog:`trace`debug`info`warn`error`fatal!({[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]}),1,1,hand-built six-level dict matching di.log's logdict shape
-run,0,0,q,eodtime.init[`log`rolltimezone!(sixlvllog;`$"GMT")],1,1,superset log dict accepted as-is - only info/warn/error are used
+run,0,0,q,"eodtime.init[`log`rolltimezone!(sixlvllog;`$""GMT"")]",1,1,superset log dict accepted as-is - only info/warn/error are used
 
 comment,,,,,,,log call verification - capturing logger sees init message with binary {[c;m]} args
 run,0,0,q,caplog:`info`warn`error!({[c;m] `.test.cap upsert(`info;m)};{[c;m] `.test.cap upsert(`warn;m)};{[c;m] `.test.cap upsert(`error;m)}),1,1,capturing log mock - binary {[c;m]}
 run,0,0,q,.test.cap:([] fn:`symbol$();msg:()),1,1,initialise log capture table
 run,0,0,q,eodtime.init[enlist[`log]!enlist caplog],1,1,init with capturing logger
 true,0,0,q,1=count select from .test.cap where fn=`info,1,1,one info entry captured on init
-true,0,0,q,any (.test.cap`msg) like "initialised*",1,1,log message confirms initialisation
+true,0,0,q,"any (.test.cap`msg) like ""initialised*""",1,1,log message confirms initialisation
 comment,,,,,,,version - di.depcheck resolves this module's version from the export dict
 true,0,0,q,`version in key eodtime,1,1,version is exported - di.depcheck reads it there and FAILS the dependency check without it
-true,0,0,q,3=count "." vs eodtime.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"3=count ""."" vs eodtime.version",1,1,the VERSION file holds a parseable major.minor.patch string
 true,0,0,q,"not any eodtime.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+comment,,,,,,,"read0 strips the line terminator but NOT trailing spaces, so the \n\r assert above passed"
+comment,,,,,,,"while a padded VERSION still yielded ""0.1.0  "" - which di.depcheck compares as a STRING, so"
+comment,,,,,,,the padding silently fails every dependent module's check. these two catch that
+true,0,0,q,eodtime.version~trim eodtime.version,1,1,version carries no leading or trailing whitespace of any kind
+true,0,0,q,"eodtime.version~trim first read0 hsym`$(.Q.m.mp`di.eodtime),""/VERSION""",1,1,and it matches the VERSION file - the single source of truth - read module-relative rather than from the cwd

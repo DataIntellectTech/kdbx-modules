@@ -12,7 +12,6 @@ before,0,0,q,pqxaltsym:([]sym:`B`A`B`A`A;alt:`X`Y`X`Y`Y;time:2025.07.15D00:00:00
 before,0,0,q,pqxsingle:([]sym:enlist`AAPL;time:enlist 2025.07.15D09:30:00.000000000;price:enlist 123.45),1,,Single-row table edge case
 
 true,0,0,q,98h~type pqx.getmanifest[],1,,Manifest is a table before anything is written
-true,0,0,q,(`targetsize`maxfactor`splitoversized`calibrate`compressionratio`symcol`timecol`presort`rowgroupbytes`codec`complevel`dictcols`parallel`outdir`filestub!(512*1024*1024;1.5;1b;1b;0.30;`sym;`time;1b;128*1024*1024;`zstd;3;`sym`exchange;0b;`:.;"part"))~pqx.getdefault[],1,,getdefault returns the documented default options dict
 
 fail,0,0,q,pqx.init[()],1,,init fails when deps is not a dict
 fail,0,0,q,pqx.init[enlist[`nolog]!enlist logdep],1,,init fails when deps has no log key

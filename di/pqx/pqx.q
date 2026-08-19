@@ -260,11 +260,6 @@ extract:{[t;tname;dt;o]
   manifest,:res
  };
 
-getdefault:{[]
-  / return the current default options dict
-  :default;
- };
-
 getmanifest:{[]
   / return the manifest accumulated so far across all extract calls
   :manifest;

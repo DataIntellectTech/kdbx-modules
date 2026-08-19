@@ -56,8 +56,8 @@ pqx.init[enlist[`log]!enlist logdep]
 
 ## Options
 
-Passed as the `o` dictionary to `extract`, merged over the module's own `default` dict (inspectable
-via `getdefault[]`). Any keys omitted from `o` fall back to the default shown below.
+Passed as the `o` dictionary to `extract`, merged over the module's own `default` dict. Any keys
+omitted from `o` fall back to the default shown below.
 
 | Key | Default | Type | Description |
 |---|---|---|---|
@@ -127,7 +127,6 @@ pqx.init[enlist[`log]!enlist logdep]
 |---|---|
 | `init[deps]` | Wire the injected `log` dependency. Call once before the first `extract`. |
 | `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns nothing. |
-| `getdefault[]` | Return the current `default` options dict. |
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn` — are

@@ -637,6 +637,23 @@ true,0,0,q,2=count fdtab,1,1,and the replay runs UNFILTERED as legacy replayupd 
 
 comment,,,,,,,getsubscriptionhandles - resolve live tickerplant handles by proctype and/or procname. ported from TorQ .sub.getsubscriptionhandles (code/common/subscriptions.q:11)
 comment,,,,,,,di.servers is a HARD dependency reached through init.q's `use`, so there is nothing to inject and no absent-dependency case to test. seeding its registry exercises the REAL getservers
+comment,,,,,,,"BEFORE di.servers is initialised: getsubscriptionhandles must fail with THIS module context and"
+comment,,,,,,,"reach this module log, not propagate a bare di.servers signal past both. these rows must stay"
+comment,,,,,,,above the init row below - once di.servers is initialised the path cannot be reached again
+run,0,0,q,resetcap[],1,1,clear the log capture
+run,0,0,q,"esrv:@[{sub[`getsubscriptionhandles][`;`]};::;{[e] e}]",1,1,call getsubscriptionhandles while di.servers is still uninitialised
+true,0,0,q,"0<count esrv ss ""di.subscriptions: getsubscriptionhandles:""",1,1,the failure carries this module context rather than surfacing as a bare di.servers error
+true,0,0,q,"0<count esrv ss ""di.servers must be initialised""",1,1,and names the module that actually needs wiring
+true,0,0,q,"0<count select from caprows where lvl=`error,ctx=`getsubscriptionhandles",1,1,and it was logged here rather than bypassing this module log
+comment,,,,,,,"di.servers refuses every accessor until its own init has run, so the suite must init it before"
+comment,,,,,,,"driving getservers. it is then TORN DOWN immediately: init registers a .z.pc observer and a"
+comment,,,,,,,"serversretry timer job, and this suite fires .z.pc by hand (markdeadfor) against handles that"
+comment,,,,,,,"overlap the seeded SERVERS rows - di.servers own observer would null them out mid-suite."
+comment,,,,,,,"teardown releases both registrations while leaving the module initialised and its accessors"
+comment,,,,,,,"callable, which is exactly what di.servers separate registered/initialised flags are for"
+run,0,0,q,"realservers[`init][`log`timer`handlers`proctype`procname!(caplog;use`di.timer;handlerdep[];`subtest;`subtest1)]",1,1,init di.servers so its accessors are usable
+run,0,0,q,realservers[`teardown][],1,1,release its .z.pc observer and retry job - the accessors stay callable
+true,0,0,q,"not `servers in exec name from realhandlers[`list][`.z.pc]",1,1,di.servers own .z.pc observer is gone so it cannot interfere with this suite markdeadfor calls
 run,0,0,q,seedservers[],1,1,populate di.servers with four processes - three live, one with a null handle
 true,0,0,q,4=count .m.di.0servers.SERVERS,1,1,the seed landed in di.servers' own state
 true,0,0,q,3=count realservers.getservers[`],1,1,and the real getservers sees three live rows through it

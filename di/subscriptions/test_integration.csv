@@ -182,7 +182,7 @@ run,0,0,q,hclose PF,1,1,tidy up
 
 comment,,,,,,,di.servers END TO END - the module's servers dependency wired to the REAL di.servers rather than a mock. the unit suite proves the selection logic against a stand-in; this proves the two modules actually compose
 comment,,,,,,,di.servers dials the peer over genuine IPC and getsubscriptionhandles resolves it - then that resolved handle is used to subscribe. this is the whole rdb.q:163 path in one block
-run,0,0,q,"mocktimer:(enlist`addjob)!enlist (enlist`custom)!enlist {[id;func;params;period;mode;opts] }",1,1,di.servers validates a timer dict and schedules one retry job through it - a stub satisfies that contract, so this suite does not drag in di.timer for a job it never asserts on
+run,0,0,q,"mocktimer:`addjob`deletejobs!((enlist[`custom]!enlist {[id;func;params;period;mode;opts] });{[ids] })",1,1,di.servers validates a timer dict and schedules one retry job through it - a stub satisfies that contract, so this suite does not drag in di.timer for a job it never asserts on. deletejobs is part of that contract because di.servers teardown deletes its retry job through it, and it is validated as callable at init rather than left to fail inside a protected apply
 run,0,0,q,svc:use`di.servers,1,1,the same di.servers instance di.subscriptions imported - one module instance per process
 run,0,0,q,spawnpeer[],1,1,stand the tickerplant back up - the previous block killed it
 run,0,0,q,"(`$"":"",BASE,""/process.csv"") 0: (""host,port,proctype,procname"";""localhost,"",string[PEERPORT],"",tickerplant,peertp"")",1,1,write the strict 4-column phone book di.servers reads pointing at this run's live peer

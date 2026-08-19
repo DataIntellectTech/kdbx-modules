@@ -990,7 +990,15 @@ getsubscriptionhandles:{[proctype;procname]
   / against the parameter of the same name inside the select would silently compare the column
   / with itself and match every row
   pn:(),procname;
-  srvs:servers.getservers[`];
+  / di.servers refuses every accessor until its own init has run. that is deliberate on its side - a
+  / pre-init getservers used to return an empty table, indistinguishable from "nothing is connected" -
+  / but the raw signal names only di.servers and bypasses THIS module's log, so it is caught and
+  / re-raised through raiseerror: the caller learns which of the two modules is unwired, and the
+  / failure is observable in the log like every other domain error here. an empty result is NOT an
+  / acceptable fallback - "I cannot tell you" is not the same answer as "no handles"
+  srvs:@[{[] :servers.getservers[`]};::;
+    {[e] raiseerror[`getsubscriptionhandles;"could not read the di.servers server list (",e,
+      ") - di.servers must be initialised before subscription handles can be resolved"]}];
   bytype:$[0h=type proctype;0#srvs;servers.getservers[proctype]];
   byname:$[0h=type procname;0#srvs;$[`~procname;srvs;select from srvs where procname in pn]];
   / project BEFORE combining - inter requires identical column sets, and legacy projects first too

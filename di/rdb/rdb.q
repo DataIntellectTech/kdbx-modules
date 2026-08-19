@@ -48,10 +48,30 @@ aslist:{[x]
   :$[0>type x;enlist x;x];
   };
 
-ashsym:{[x]
-  / normalise a directory setting to an hsym, accepting `:hdb, `hdb, ":hdb" or "hdb"
+ashsym:{[k;x]
+  / normalise a directory setting to an hsym, accepting `:hdb, `hdb, ":hdb" or "hdb", naming the key
+  / when it is none of those. BINARY like asbool/aslong below, and for the same reason: without the
+  / key name the caller cannot tell which setting was rejected.
+  / the type check is not cosmetic. a bare `string x` accepts anything that stringifies, and this
+  / helper then failed two different ways (both measured against the previous unary version):
+  /   SILENTLY WRONG - 42 became `:42, 2026.08.19 became `:2026.08.19, 3.5 became `:3.5. savedown
+  /     would then write the day's data under a plausible-looking directory nobody asked for
+  /   LOUD BUT ANONYMOUS - a list of strings, a symbol VECTOR or an enlisted symbol threw a bare
+  /     'type from inside here, naming neither the module nor the key
+  / only a symbol atom or a string names ONE directory. NB ("a";"b") is not a list, it is the char
+  / vector "ab", and is still legitimately accepted as the relative path ab
+  if[not (type x) in -11 -10 10h;
+    '"di.rdb: ",string[k]," must be a symbol or a string naming one directory; got: ",.Q.s1 x];
   s:$[10h=abs type x;(),x;string x];
-  :hsym `$$[(0<count s) and ":"=first s;1_s;s];
+  / the leading : is stripped BEFORE the empty check, not after, so both ways of naming nothing are
+  / caught by the one guard: an empty value coerces to a bare ` (hsym`$"" is `), whose 1_string is ""
+  / - a relative path that silently resolves to the process's working directory - and a lone ":"
+  / strips down to exactly the same thing. rejected here rather than at save time.
+  / NB first of an empty char vector is the null char, not an error, so this needs no count guard
+  p:$[":"=first s;1_s;s];
+  if[0=count p;
+    '"di.rdb: ",string[k]," must name a directory; got an empty value: ",.Q.s1 x];
+  :hsym `$p;
   };
 
 asbool:{[k;x]
@@ -140,6 +160,22 @@ requireinit:{[ctx]
   / logger, so without this an early call dies with a bare 'type instead of a usable message
   if[not initialised[];
     '"di.rdb: ",string[ctx],": init must be called before any other function"];
+  };
+
+iscallable:{[x]
+  / internal - is x a genuinely callable value? 100 112h spans every callable form (lambda,
+  / primitive, operator, iterator, projection, composition), but 101h - the UNARY PRIMITIVE class,
+  / which the generic null :: shares with neg, not and count (measured) - sits INSIDE that range, so
+  / the bare range check is not enough. the whole class is excluded rather than :: alone: none of its
+  / members is a valid binary upd or a meaningful deletejobs, and :: is the one that actually turns up.
+  / that matters because :: is exactly what a dict hands back for a MISSING key when its value side
+  / is plain functions, which is what a real dep dict looks like: `deletejobs _ di.timer yields 101h,
+  / where a table-valued dep would yield the 99h null-shaped dict the presence check below describes.
+  / left in, an absent or explicitly-null timer`deletejobs passed init and teardown then ran
+  / @[::;ids;handler], which simply RETURNS the ids - deleting nothing, warning nothing, and logging
+  / success. measured end to end, hence the extra exclusion
+  t:type x;
+  :(t within 100 112h) and 101h<>t;
   };
 
 requirestart:{[ctx]
@@ -282,11 +318,13 @@ init:{[deps]
       "fails SILENTLY at teardown rather than loudly here; see di.timer"];
   / presence is NOT enough: a non-callable deletejobs reaches teardown's @[...] and lands in the same
   / amend interpretation as a missing key, so it also returns quietly having deleted nothing.
-  / 100 112h spans every callable form - lambda, primitive, operator, iterator, projection,
-  / composition - so a legitimate projection like deletejobs:somefn[;x] is not rejected
-  if[not (type deps[`timer]`deletejobs) within 100 112h;
-    '"di.rdb: timer`deletejobs must be a function [ids]; a non-callable value fails silently at ",
-      "teardown - see di.timer"];
+  / iscallable, not a bare `within 100 112h`: that range spans every callable form - lambda,
+  / primitive, operator, iterator, projection, composition, so a legitimate projection like
+  / deletejobs:somefn[;x] is not rejected - but it ALSO admits 101h (::), which is not callable and
+  / is precisely what a function-valued timer dep returns for a missing key. see iscallable
+  if[not iscallable deps[`timer]`deletejobs;
+    '"di.rdb: timer`deletejobs must be a function [ids]; a non-callable or null value fails ",
+      "silently at teardown - see di.timer"];
   / disabletimeout was renamed to suspendtimeoutonroll (same meaning, 1b = suspend around the roll).
   / rejected rather than silently ignored: the only callers who ever set it explicitly are the ones
   / who set it to 0b to turn the suspend OFF, and silently dropping that override would flip them
@@ -312,9 +350,13 @@ init:{[deps]
   / function a caller might reasonably pass: TorQ's own default upd is `insert` (102h), rdb.md tells
   / callers to supply `upsert` if they want upsert semantics (104h), and a projection is 104h too.
   / all three are binary and root-safe - insert/upsert take the table by SYMBOL, so they write to root
-  / exactly as updfn does - and all three were rejected before this widened
-  if[not (type c`upd) within 100 112h;
-    '"di.rdb: upd must be a binary function taking (tablename;data)"];
+  / exactly as updfn does - and all three were rejected before this widened.
+  / iscallable rather than the bare range, for the same reason as deletejobs above: 101h (::) is
+  / inside 100 112h. a null upd is not silent the way a null deletejobs is - it throws a bare 'match
+  / on the first tick - but that is a per-message failure in a live feed rather than a named error at
+  / startup, which is the whole point of validating here
+  if[not iscallable c`upd;
+    '"di.rdb: upd must be a binary function taking (tablename;data), and not null"];
   if[99h<>type c`savedownmanipulation;
     '"di.rdb: savedownmanipulation must be a dict of tablename!function"];
   / a non-positive or uncastable period would schedule the recovery job to run every cycle, or throw
@@ -363,7 +405,7 @@ init:{[deps]
   tpsel:assym c`tpselection;
   pname:assym c`procname;
   ptype:assym c`proctype;
-  hdbroot:ashsym c`hdbdir;
+  hdbroot:ashsym[`hdbdir;c`hdbdir];
   / is this the FIRST init in this process? read it BEFORE any write, because initialised[] probes
   / hdbdir and this must reflect the state on entry
   fresh:not initialised[];
@@ -614,7 +656,17 @@ handlesbytypeandname:{[types;names]
   / where clause at all, only function-locals and column names can
   tt:types;
   nn:names;
-  srvs:servers.getservers[`];
+  / PROTECTED read, for the same reason tphandle protects its gethandlebytype call: di.servers now
+  / refuses every accessor until its own init has run, and this sits on the endofday path
+  / (notifyhdbs -> hdbhandles), which must not abort the roll because a process wired di.rdb without
+  / wiring di.servers. it previously relied on di.servers returning an empty table when uninitialised
+  / - silently, which is exactly the behaviour di.servers removed - so the fallback now WARNS.
+  / projected to the three columns this function uses, so the fallback shape stays local rather than
+  / being a second copy of di.servers' SERVERS schema that would drift from it
+  srvs:@[{[] :select procname,proctype,w from servers.getservers[`]};::;
+    {[e] .z.m.logwarn[`handlesbytypeandname;"could not read the di.servers server list (",e,
+      ") - notifying no hdbs or gateways this cycle"];
+     :([]procname:`$();proctype:`$();w:`int$())}];
   bytype:$[0=count tt;0#srvs;select from srvs where proctype in tt];
   byname:$[0=count nn;0#srvs;select from srvs where procname in nn];
   :distinct exec w from bytype,byname;

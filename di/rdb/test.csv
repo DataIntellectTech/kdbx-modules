@@ -139,6 +139,13 @@ comment,,,,,,,"protected-apply into three-argument AMEND - it upserts the ids in
 comment,,,,,,,"the result and logs nothing, so the jobs survive and teardown still reports them removed"
 fail,0,0,q,"rdb.init[`log`timer!(.t.caplog;(enlist`addjob)!enlist(enlist[`custom]!enlist {[i;f;p;pe;m;o] }))]",1,1,init rejects a timer dict with no deletejobs - a silent teardown failure otherwise
 fail,0,0,q,"rdb.init[`log`timer!(.t.caplog;`addjob`deletejobs!((enlist[`custom]!enlist {[i;f;p;pe;m;o] });42))]",1,1,"init rejects a NON-CALLABLE deletejobs - presence alone is not enough, it lands in the same silent amend as a missing key"
+comment,,,,,,,"NULL is the case a bare `within 100 112h` misses: 101h (::) sits inside that range while"
+comment,,,,,,,"being callable in no useful sense, and it is exactly what a function-valued timer dep returns"
+comment,,,,,,,"for a missing key (`deletejobs _ di.timer yields 101h, not the 99h a table-valued dep gives)."
+comment,,,,,,,"teardown then runs @[::;ids;handler], which just RETURNS the ids - nothing deleted, nothing"
+comment,,,,,,,"warned, success logged. measured against the real di.timer, hence iscallable excludes 101h"
+fail,0,0,q,"rdb.init[`log`timer!(.t.caplog;`addjob`deletejobs!((enlist[`custom]!enlist {[i;f;p;pe;m;o] });(::)))]",1,1,init rejects a NULL deletejobs - the shape a real timer dep missing the key actually presents
+fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`upd]!enlist(::)]]",1,1,"init rejects a null upd - not silent like deletejobs (it throws a bare match on the first tick) but a per-message feed failure rather than a named startup error"
 comment,,,,,,,"disabletimeout was renamed to suspendtimeoutonroll. rejected rather than ignored: the only"
 comment,,,,,,,"callers who set it explicitly set it to 0b to turn the suspend OFF, and silently dropping that"
 comment,,,,,,,override would flip exactly those callers back to suspend-enabled
@@ -161,6 +168,24 @@ fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`savetables]!enlist ""true""]]",1,1,init r
 fail,0,0,q,rdb.init[.t.mkdeps[enlist[`gc]!enlist `yes]],1,1,init rejects a symbol boolean
 fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`timeoutlead]!enlist ""00:01:00""]]",1,1,"init rejects a non-temporal timeoutlead - it is subtracted from the roll inside start, AFTER the subscription is live"
 fail,0,0,q,rdb.init[.t.mkdeps[enlist[`pardefault]!enlist `notadate]],1,1,init rejects a non-date pardefault - it fills the partition list a gateway routes on
+comment,,,,,,,"hdbdir - ashsym stringified anything it was handed. an atom was accepted SILENTLY as a"
+comment,,,,,,,"path (42 became `:42, 2026.08.19 became `:2026.08.19) and savedown would then write the"
+comment,,,,,,,"day down under a directory nobody asked for; a list/vector threw a bare 'type naming"
+comment,,,,,,,neither the module nor the key. both shapes are now rejected by name
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist 42]],1,1,init rejects a long hdbdir - it was silently accepted as the path `:42
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist 2026.08.19]],1,1,init rejects a date hdbdir - it was silently accepted as a plausible-looking directory
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist 3.5]],1,1,init rejects a float hdbdir - any atom that stringifies used to get through
+fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist (""aa"";""bb"")]]",1,1,init rejects a list of strings - one directory means one atom or one string
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist `:a`:b]],1,1,init rejects a symbol vector hdbdir rather than throwing a bare type from inside ashsym
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist enlist .t.HD]],1,1,init rejects an enlisted hdbdir
+fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist `]]",1,1,"init rejects a null hdbdir - it resolved to a bare backtick, a relative path meaning the working directory"
+fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist """"]]",1,1,init rejects an empty-string hdbdir for the same reason
+fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`hdbdir]!enlist "":""]]",1,1,"init rejects a lone "":"" - it is a legal char atom that strips down to the same working-directory path, so the empty check runs AFTER the strip"
+before,0,0,q,".t.SHD:{[] p:1_string .t.HD; :{[x] rdb.init[.t.mkdeps[(enlist`hdbdir)!enlist x]]; :rdb.status[]`hdbdir} each (hsym`$p;`$p;"":"",p;p)}[]",1,1,"scenario: the four accepted hdbdir shapes must still resolve identically"
+true,0,0,q,1=count distinct .t.SHD,1,1,"`:dir, `dir, "":dir"" and ""dir"" all still resolve to the same hsym"
+true,0,0,q,.t.HD~first .t.SHD,1,1,and to the expected one - the type guard did not narrow what is accepted
+before,0,0,q,".t.SHDD:{[] rdb.init[`log`timer!(.t.caplog;.t.mtimer)]; :rdb.status[]`hdbdir}[]",1,1,scenario: hdbdir omitted entirely - the default must survive the new guard
+true,0,0,q,`:hdb~.t.SHDD,1,1,the hdbdir default is still `:hdb when the key is not supplied
 fail,0,0,q,rdb.init[.t.mkdeps[enlist[`tppollms]!enlist `fast]],1,1,"init rejects an uncastable tppollms, naming the key rather than throwing from di.servers"
 true,0,0,q,"{r:@[{rdb.init[.t.mkdeps[enlist[`timeoutlead]!enlist 00:05]]; :1b};::;{[e] :0b}]; rdb.init[.t.mkdeps[()!()]]; :r}[]",1,1,init accepts a minute as timeoutlead - a timestamp minus a minute is still a timestamp
 comment,,,,,,,"init - observable effects. ""init did not throw"" proves nothing: it passes under a"

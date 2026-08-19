@@ -107,7 +107,7 @@ dict** `init` takes.
 | `subscribeto` / `subscribesyms` | `` ` `` / `` ` `` | tables and syms to subscribe for; `` ` `` means all |
 | `schema` | `1b` | take the table schemas from the tickerplant |
 | `replaylog` | `1b` | replay the tickerplant log at subscribe |
-| `hdbdir` | `` `:hdb `` | hdb root written to |
+| `hdbdir` | `` `:hdb `` | hdb root written to. Must be a symbol or a string naming one directory - see the fourth-pass defect below |
 | `sortcsv` | `` ` `` | sort/attribute config handed to `di.dbwrite.readcsv`. Unset means `readcsv` is never called, and `di.dbwrite.sort` then falls back to its own `defaultparams`: sort by `time` ascending, no attributes. **TorQ defaults this to `` `:config/sort.csv ``** |
 | `savetables` | `1b` | if false, tables are wiped at eod but not written |
 | `onlyclearsaved` | `1b` | if true, a table whose save failed is kept rather than wiped (**TorQ defaults this to `0b`** - see divergences) |
@@ -450,6 +450,66 @@ reproduced before being fixed.
   the function being installed nor the one this module installed last time - the second half of that
   test is what keeps a legitimate re-init quiet when the `upd` config key itself changed.
 
+## Defects in this module fixed in the fourth review pass
+
+- **`ashsym` accepted anything that stringifies as a directory, silently.** It coerced with a bare
+  `string x`, so a `hdbdir` of the wrong *type* was never rejected - only the wrong *shape* was, and
+  then anonymously. Measured against the previous unary version:
+
+  | `hdbdir` | resolved to | how it failed |
+  |---|---|---|
+  | `42` | `` `:42 `` | **silently wrong** |
+  | `2026.08.19` | `` `:2026.08.19 `` | **silently wrong**, and looks like a real directory |
+  | `3.5` | `` `:3.5 `` | **silently wrong** - any atom that stringifies got through |
+  | `("aa";"bb")` | — | bare `'type` from inside `ashsym`, naming neither module nor key |
+  | `` `:a`:b `` | — | same |
+  | `` enlist `:hdb `` | — | same |
+  | `` ` `` / `""` / `":"` | `` ` `` | resolved to a relative path meaning the working directory |
+
+  The first group is the damaging one: `init` accepted it, and `savedown` would then write the day's
+  data under a directory nobody asked for, with the only trace being the path in the log. `ashsym` is
+  now binary (`ashsym[k;x]`), matching `asbool`/`aslong`'s existing convention in this file so the
+  error names the offending key, and requires a symbol atom or a string. The empty check moved in
+  with it, and runs *after* the leading `:` is stripped rather than before - `":"` is a perfectly
+  legal char atom that survives a count check and then strips down to the same working-directory
+  path as `` ` ``, so one guard placed after the strip closes both.
+
+  Nothing legitimate was narrowed: `` `:hdb ``, `` `hdb ``, `":hdb"` and `"hdb"` all still resolve
+  identically, the `` `:hdb `` default still applies when the key is omitted, and `("a";"b")` is
+  still accepted - it is the char vector `"ab"`, not a list. All asserted in `test.csv`.
+
+  Found while building `di.hdb`, which shares this helper's design and is far more exposed to it: an
+  rdb's `hdbdir` is a **write** target, so a wrong one eventually fails loudly at save time, whereas
+  an hdb's is a **read** source that mounts successfully and serves wrong data. Fixed in both.
+- **The callable checks admitted `::`, which is what a missing dep key actually looks like.**
+  `deletejobs` and `upd` were both validated with a bare `` (type x) within 100 112h ``. That range
+  is right about the *forms* it must accept - lambda, primitive, operator, iterator, projection,
+  composition - but `101h` is the unary-primitive class, and the generic null `::` is a member of it
+  (as are `neg`, `not` and `count`, measured). `::` is precisely what a **function-valued** dict
+  hands back for a missing key: `` `deletejobs _ di.timer `` yields `101h`, not the `99h` null-shaped
+  dict a table-valued dep would give, so the presence check one line above did not catch it either.
+
+  Left in, a null `deletejobs` passed `init`, and `teardown` then ran `@[::;ids;handler]` - a
+  three-argument amend that simply *returns* the ids. Nothing deleted, nothing warned, success
+  logged, and the recovery jobs still running against a torn-down module. A null `upd` is not silent
+  in the same way - it throws a bare `'match` on the first tick - but that is a per-message failure
+  in a live feed rather than a named error at startup, which is the entire point of validating here.
+
+  Both now go through `iscallable`, which excludes the whole `101h` class rather than `::` alone:
+  no member of it is a valid *binary* `upd` or a meaningful `deletejobs`, and `::` is the one that
+  actually turns up. Legitimate projections (`somefn[;x]`, `104h`) and `insert`/`upsert` are
+  unaffected.
+- **`handlesbytypeandname` read `di.servers` unprotected on the end-of-day path.** `di.servers` now
+  raises from every accessor until its own `init` has run, where it previously returned an empty
+  table; `hdbhandles` and `gatewayhandles` both route through this function, so a process that wired
+  `di.rdb` without wiring `di.servers` would have had the roll itself abort part way through. The
+  read is now protected and the fallback **warns** - the behaviour it replaces was the silent one -
+  and it is projected to the three columns this function uses, so the fallback shape stays local
+  rather than becoming a second copy of `di.servers`' `SERVERS` schema that would drift from it.
+  `tphandle` already protected its `gethandlebytype` call for the same reason. The `start[]` path
+  (`startup`, `waitfortype`, `gethandlebytype` in `connecttp`) is deliberately left unprotected: an
+  rdb that cannot resolve a tickerplant has nothing to do, and that failure should be loud.
+
 ## Known gaps
 
 - **`di.servers.startup[]` takes no argument** - see "who initialises what". The caller must
@@ -525,13 +585,14 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.rdb
 ```
 
-`test.csv` is a behavioural suite (**155 asserts**), not just a load-and-export check: it drives real
+`test.csv` is a behavioural suite (**169 asserts**), not just a load-and-export check: it drives real
 root tables through `upd`, both end-of-day modes, the wdb `reload` handshake, both partition
 sources, both `onlyclearsaved` paths, the subscription-filter loader and its three guard paths, the
 save-down manipulation hook and its fallback, the post-replay hook and its fallback, the timeout and
 resubscribe jobs, the gateway attribute push in both outcomes, multi-tickerplant-type resolution,
-config coercion, re-init safety (including that a *rejected* re-init moves no config), `teardown` and
-teardown-then-start, using a capturing logger and a mock timer. It asserts **observable effects** of
+config coercion (including every rejected `hdbdir` shape *and* the four accepted ones still
+resolving identically), null dependency values, re-init safety (including that a *rejected* re-init
+moves no config), `teardown` and teardown-then-start, using a capturing logger and a mock timer. It asserts **observable effects** of
 `init` rather than "init did not throw" - the latter passes even under a wrong `init` arity, which
 returns a projection instead of running.
 

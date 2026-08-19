@@ -49,7 +49,7 @@ estimate:{[t;o;writeopt]
   / for a partition of data, estimates the size of the tables to be saved to disk
   / if calibrate flag is true in o, a test write is carried out
   / returns a table of storage stats for all isntruments and the compression ratio, which may have changed depending on calibration
-  cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by sym from t
+  cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by sym from t, using appropriate substitutions for time and sym cols
   medsym:cnts @ first where abs[cnt-med[cnt]]=min[abs[cnt-med[cnt:cnts`rowcnt]]];
   bytesperrow:%[-22!t:.z.m.checkandconvertcols t[where t[o[`symcol]]=medsym[o[`symcol]]];medsym`rowcnt];
 

@@ -101,7 +101,7 @@ calcsize:{[tbl;symcol;syms;seqno]
   / find the estimated size in bytes for each instrument per file to be saved down
   / in the case of a larger instrument being split, return count[seqno] number of instances of estbytes
   .z.m.loginfo[`pqx;"Getting estimated bytes for planned files"];
-  :"j"$count[seqno]#%[sum[?[tbl;enlist(in;symcol;`syms);0b;()]`estbyt];count seqno]
+  :"j"$count[seqno]#%[sum[?[tbl;enlist(in;symcol;enlist syms);0b;()]`estbyt];count seqno]
  };
 
 plan:{[t;o;maxsize]
@@ -164,13 +164,12 @@ writefile:{[t;o;writeopt;writedir;map]
   syms:map[`syms];
   seqno:map[`seqno];
   estbytes:map[`estbytes];
-  symcol:o[`symcol];
 
   / build paths for each seqno
   paths:writedir,/:o[`filestub],/:"-",/:("0"^-5$string[seqno]),\:".parquet";
 
   / data to write, iterated by file
-  res:raze {[t;symcol;writeopt;split;path;seqno;estbytes;i]
+  res:raze {[t;o;writeopt;split;path;seqno;estbytes;i]
     .z.m.loginfo[`pqx;"Writing seqNo ",string[seqno],", path - ",path];
     res:.z.m.tryfn[`.m.di.0pqx.arrow.pq.writeParquetFromTable;(path;.z.m.checkandconvertcols t[i];writeopt)];
     $[first res;
@@ -180,17 +179,17 @@ writefile:{[t;o;writeopt;writedir;map]
     :`file`seq`syms`nsyms`rows`mintime`maxtime`estbytes`bytes`split`status!/: flip (
       hsym `$path;
       seqno;
-      enlist distinct[t[i][symcol]];
-      count[distinct[t[i][symcol]]];
+      enlist distinct[t[i][o`symcol]];
+      count[distinct[t[i][o`symcol]]];
       count[i];
-      first exec min time from t[i];
-      first exec max time from t[i];
+      first ?[t[i];();();(min;o`timecol)];
+      first ?[t[i];();();(max;o`timecol)];
       estbytes;
       @[hcount;hsym `$path;0];
       split;
       `error`ok[first res]
     )
-  }[t;symcol;writeopt;1<count seqno;;;]'[paths;seqno;estbytes;.z.m.datalookup[t;symcol;syms;count seqno]];
+  }[t;o;writeopt;1<count seqno;;;]'[paths;seqno;estbytes;.z.m.datalookup[t;o`symcol;syms;count seqno]];
 
   :res
  };

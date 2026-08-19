@@ -12,6 +12,12 @@ before,0,0,q,pqxaltsym:([]sym:`B`A`B`A`A;alt:`X`Y`X`Y`Y;time:2025.07.15D00:00:00
 before,0,0,q,pqxsingle:([]sym:enlist`AAPL;time:enlist 2025.07.15D09:30:00.000000000;price:enlist 123.45),1,,Single-row table edge case
 
 true,0,0,q,98h~type pqx.getmanifest[],1,,Manifest is a table before anything is written
+true,0,0,q,(`targetsize`maxfactor`splitoversized`calibrate`compressionratio`symcol`timecol`presort`rowgroupbytes`codec`complevel`dictcols`parallel`outdir`filestub!(512*1024*1024;1.5;1b;1b;0.30;`sym;`time;1b;128*1024*1024;`zstd;3;`sym`exchange;0b;`:.;"part"))~pqx.getdefault[],1,,getdefault returns the documented default options dict
+
+fail,0,0,q,pqx.init[()],1,,init fails when deps is not a dict
+fail,0,0,q,pqx.init[enlist[`nolog]!enlist logdep],1,,init fails when deps has no log key
+fail,0,0,q,pqx.init[enlist[`log]!enlist 5],1,,init fails when the log value is not a dict
+fail,0,0,q,pqx.init[enlist[`log]!enlist (enlist`info)!enlist {[c;m] }],1,,init fails when the log dict is missing required warn/error keys
 
 run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.15;enlist[`outdir]!enlist `:pqxout1/],1,,Extract a multi-sym table with default options
 true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout1*",1,,All input rows are accounted for across written files
@@ -56,7 +62,8 @@ run,0,0,q,pqx.extract[pqxsingle;`pqxtrade;2025.07.24;enlist[`outdir]!enlist `:pq
 true,0,0,q,1~exec first rows from pqx.getmanifest[] where file like "*pqxout9*",1,,Single-row table produces a single-row file
 true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout9*",1,,Single-row table produces exactly one file
 
-fail,0,0,q,pqx.extract[pqxempty;`pqxtrade;2025.07.21;enlist[`outdir]!enlist `:pqxoutf1/],1,,Extract fails on a zero-row table - calibration cannot infer a schema from no rows
+fail,0,0,q,pqx.extract[pqxempty;`pqxtrade;2025.07.21;enlist[`outdir]!enlist `:pqxoutf1/],1,,Extract fails on a zero-row table - explicit empty-table guard rejects it outright
+fail,0,0,q,pqx.extract[pqxempty;`pqxtrade;2025.07.21;`outdir`calibrate`compressionratio!(`:pqxoutf1b/;0b;0.3)],1,,Extract fails on a zero-row table even with calibrate off - the empty-table check is unconditional
 fail,0,0,q,pqx.extract[pqxnotime;`pqxtrade;2025.07.22;enlist[`outdir]!enlist `:pqxoutf2/],1,,Extract fails on a missing time column with presort on (the default)
 fail,0,0,q,pqx.extract[pqxnotime;`pqxtrade;2025.07.22;`outdir`presort!(`:pqxoutf3/;0b)],1,,Extract fails on a missing time column even with presort off - the column check is unconditional
 fail,0,0,q,pqx.extract[([]price:1.0 2.0 3.0);`pqxtrade;2025.07.23;enlist[`outdir]!enlist `:pqxoutf4/],1,,Extract fails when the table has no sym column at all
@@ -64,4 +71,4 @@ run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.25;`outdir`codec`calibrate`comp
 true,0,0,q,`error~first exec status from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file is recorded with status=`error instead of aborting extract
 true,0,0,q,0~first exec bytes from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file has zero on-disk bytes recorded
 
-after,0,0,q,system "rm -rf pqxout1 pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxoutf1 pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5",1,,Remove parquet output directories written by tests
+after,0,0,q,system "rm -rf pqxout1 pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5",1,,Remove parquet output directories written by tests

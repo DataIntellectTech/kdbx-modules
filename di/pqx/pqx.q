@@ -48,7 +48,7 @@ checkandconvertcols:{[t]
 estimate:{[t;o;writeopt]
   / for a partition of data, estimates the size of the tables to be saved to disk
   / if calibrate flag is true in o, a test write is carried out
-  / returns a table of storage stats for all isntruments and the compression ratio, which may have changed depending on calibration
+  / returns a table of storage stats for all instruments and the compression ratio, which may have changed depending on calibration
   cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by sym from t, using appropriate substitutions for time and sym cols
   medsym:cnts @ first where abs[cnt-med[cnt]]=min[abs[cnt-med[cnt:cnts`rowcnt]]];
   bytesperrow:%[-22!t:.z.m.checkandconvertcols t[where t[o[`symcol]]=medsym[o[`symcol]]];medsym`rowcnt];
@@ -65,7 +65,7 @@ estimate:{[t;o;writeopt]
 
 calibrateratio:{[t;o;writeopt]
   / writes a sample of data to disk and reads its size on disk
-  / calcaultes the compression ratio and returns if a new ratio was successfully calculated, otherwise old ratio is maintained
+  / calculates the compression ratio and returns if a new ratio was successfully calculated, otherwise old ratio is maintained
 
   / remove leading : from outdir
   testloc:$[":" ~ first string[o`outdir];
@@ -205,6 +205,12 @@ extract:{[t;tname;dt;o]
   .z.m.loginfo[`pqx;"Extracting ",string[tname]," data for ",string dt];
   / override default opts with o where applicable
   opts:default,o;
+
+  / check for count in tables, error out if not
+  if[not count[t];
+    .z.m.logerr[`pqx;err:"di.pqx: cannot extract from empty table"];
+    'err
+  ];
 
   / check for instrument and time cols, error out if not
   if[not opts[`symcol] in cols[t];

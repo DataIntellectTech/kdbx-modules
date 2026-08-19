@@ -78,8 +78,10 @@ via `getdefault[]`). Any keys omitted from `o` fall back to the default shown be
 | `filestub` | `"part"` | string | File name stub; files are written as `<filestub>-NNNNN.parquet` |
 
 Output files are written to `<outdir>/<tname>/date=<dt>/<filestub>-NNNNN.parquet`. `extract` throws
-(`` `di.pqx: no symcol found `` / `` `di.pqx: no timecol found ``) if the merged `symcol`/`timecol`
-is not a column of the input table — this check runs unconditionally, regardless of `presort`.
+(`` `di.pqx: no symcol found in table `` / `` `di.pqx: no timecol found in table ``) if the merged
+`symcol`/`timecol` is not a column of the input table — this check runs unconditionally, regardless
+of `presort`. It also throws (`` `di.pqx: cannot extract from empty table ``) if `t` has zero rows,
+regardless of `calibrate` — this check runs first, before any other validation.
 
 ---
 
@@ -206,7 +208,8 @@ zero-row table and a table missing `symcol`/`timecol` (both fail outright), and 
   nothing in the current write path reads them — only `` `PARQUET_VERSION `` (fixed at
   `` `V2.LATEST ``) and `` `COMPRESSION `` (from `codec`) are passed to the writer.
 - `symcol`/`timecol` presence is validated unconditionally on every `extract` call, even when
-  `presort` is `0b`.
+  `presort` is `0b`. A zero-row input table is rejected outright, before that check, regardless of
+  `calibrate`.
 - A per-file write failure (e.g. an invalid `codec`) is caught and logged at `warn`, and that file
   is recorded with `` status=`error `` (and `bytes:0`) in the manifest — it does not abort the rest of
   `extract`.

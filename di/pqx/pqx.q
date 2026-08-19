@@ -90,7 +90,7 @@ calibrateratio:{[t;o;writeopt]
 
   / clean test file
   .z.m.loginfo[`pqx;"Cleaning up test file"];
-  system "rm ",testloc;
+  hdel hsym `$testloc;
 
   / return new ratio
   .z.m.loginfo[`pqx;"Returning calibrated compression ratio"];
@@ -182,8 +182,8 @@ writefile:{[t;o;writeopt;writedir;map]
       enlist distinct[t[i][o`symcol]];
       count[distinct[t[i][o`symcol]]];
       count[i];
-      first ?[t[i];();();(min;o`timecol)];
-      first ?[t[i];();();(max;o`timecol)];
+      ?[t[i];();();(min;o`timecol)];
+      ?[t[i];();();(max;o`timecol)];
       estbytes;
       @[hcount;hsym `$path;0];
       split;
@@ -235,7 +235,7 @@ extract:{[t;tname;dt;o]
 
   / build dir locations - done before estimate/calibrate, as calibration's trial write lands under outdir
   if[not count key hsym `$writedir:1_string[opts[`outdir]],string[tname],"/date=",string[dt],"/";
-    system "mkdir -p ", writedir;
+    system "mkdir -p \"", writedir,"\"";
   ];
 
   / get symstats and new compression ratio

@@ -114,6 +114,15 @@ before,0,0,q,".t.S29:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[()!()
 comment,,,,,,,"S30 - the subscription-filter guard paths. all three signal through raiseerror, so they are"
 comment,,,,,,,captured in a scenario rather than driven as fail rows that would leave the module reconfigured
 before,0,0,q,".t.S30:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[enlist[`subfiltered]!enlist 1b]]; nocsv:@[{.m.di.0rdb.loadsubfilters[]; :0b};::;{[e] :1b}]; (hsym`$.t.BASE,""/bad.csv"") 0: (""tabname,other"";""trade,x""); rdb.init[.t.mkdeps[`subfiltered`subcsv!(1b;.t.BASE,""/bad.csv"")]]; badcols:@[{.m.di.0rdb.loadsubfilters[]; :0b};::;{[e] :1b}]; (hsym`$.t.BASE,""/bad2.csv"") 0: (""tabname,filters,columns"";""trade,price>(,""); rdb.init[.t.mkdeps[`subfiltered`subcsv!(1b;.t.BASE,""/bad2.csv"")]]; .m.di.0rdb.loadsubfilters[]; .t.mktrade[]; badfilter:@[{.m.di.0rdb.applyfilters[`trade]; :0b};::;{[e] :1b}]; rdb.init[.t.mkdeps[()!()]]; :`nocsv`badcols`badfilter!(nocsv;badcols;badfilter)}[]",1,1,"scenario: no subcsv, a csv missing columns, and an unparseable filter clause"
+comment,,,,,,,"S31 - a REJECTED re-init must move no config at all. the coercions used to run inline with"
+comment,,,,,,,"the writes, so a bad value part way down left the keys before it rewritten and the keys"
+comment,,,,,,,after it stale - measured with a bad schema value against a changed ignorelist
+before,0,0,q,".t.S31:{[] .t.clearroot[]; rdb.init[.t.mkdeps[`ignorelist`savetables!(`heartbeat`logmsg;1b)]]; was:(rdb.status[])`ignorelist; threw:@[{rdb.init[.t.mkdeps[`ignorelist`schema!(`only;`junk)]]; :0b};::;{[e] :1b}]; now:(rdb.status[])`ignorelist; rdb.init[.t.mkdeps[()!()]]; :`threw`same!(threw;was~now)}[]",1,1,scenario: a re-init that changes ignorelist and then fails on schema
+comment,,,,,,,"S32 - EVERY configured tickerplant type is tried, not just the first. TorQ resolves the whole"
+comment,,,,,,,"list in one lookup (rdb.q:162); this module used to take `first` and ignore the rest silently."
+comment,,,,,,,di.servers is substituted so the order types are attempted in can be observed
+before,0,0,q,.t.tried:(),1,1,fixture: sink recording which proctypes waitfortype was asked about
+before,0,0,q,".t.S32:{[] .t.clearroot[]; .t.resetcap[]; rs:.m.di.0rdb.servers; .t.tried::(); .m.di.0rdb.servers:`startup`waitfortype`gethandlebytype`getservers!({[] };{[t;a;b] .t.tried,::t; :t=`stp};{[t;s] :77i};{[x] :()}); rdb.init[.t.mkdeps[enlist[`tickerplanttypes]!enlist `tickerplant`stp`third]]; warned:.t.logged[`warn;""try each in turn""]; h:.m.di.0rdb.connecttp[]; tried:.t.tried; .m.di.0rdb.servers:rs; rdb.init[.t.mkdeps[()!()]]; :`warned`h`tried!(warned;h;tried)}[]",1,1,"scenario: three configured tickerplant types, only the second of which is up"
 before,0,0,q,rdb.init[.t.mkdeps[()!()]],1,1,re-init after the teardown scenario so the asserts below run against a live module
 comment,,,,,,,"init - dependency validation. every one of these must SIGNAL, not return quietly"
 fail,0,0,q,rdb.init[(::)],1,1,init rejects a non-dictionary deps
@@ -144,6 +153,16 @@ fail,0,0,q,rdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist 42]],1,1,init
 fail,0,0,q,rdb.init[.t.mkdeps[enlist[`resubscribeperiod]!enlist 0]],1,1,"init rejects a zero resubscribeperiod - it would run the check every timer cycle"
 fail,0,0,q,rdb.init[.t.mkdeps[enlist[`resubscribeperiod]!enlist -5]],1,1,init rejects a negative resubscribeperiod
 fail,0,0,q,rdb.init[.t.mkdeps[enlist[`resubscribeperiod]!enlist `nonsense]],1,1,"init rejects an uncastable resubscribeperiod, naming the config key rather than throwing from di.timer"
+comment,,,,,,,"config COERCION. every one of these was accepted before and threw a bare 'type much later:"
+comment,,,,,,,"`boolean$""true"" is 1111b, a four-element vector that init stored happily and that only"
+comment,,,,,,,"failed at the FIRST end of day, from inside savetable, naming no config key at all"
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`tickerplanttypes]!enlist `$()]],1,1,"init rejects an empty tickerplanttypes - it resolves to `, which di.servers matches against EVERY connected process"
+fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`savetables]!enlist ""true""]]",1,1,init rejects a string boolean rather than storing a four-element vector
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`gc]!enlist `yes]],1,1,init rejects a symbol boolean
+fail,0,0,q,"rdb.init[.t.mkdeps[enlist[`timeoutlead]!enlist ""00:01:00""]]",1,1,"init rejects a non-temporal timeoutlead - it is subtracted from the roll inside start, AFTER the subscription is live"
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`pardefault]!enlist `notadate]],1,1,init rejects a non-date pardefault - it fills the partition list a gateway routes on
+fail,0,0,q,rdb.init[.t.mkdeps[enlist[`tppollms]!enlist `fast]],1,1,"init rejects an uncastable tppollms, naming the key rather than throwing from di.servers"
+true,0,0,q,"{r:@[{rdb.init[.t.mkdeps[enlist[`timeoutlead]!enlist 00:05]]; :1b};::;{[e] :0b}]; rdb.init[.t.mkdeps[()!()]]; :r}[]",1,1,init accepts a minute as timeoutlead - a timestamp minus a minute is still a timestamp
 comment,,,,,,,"init - observable effects. ""init did not throw"" proves nothing: it passes under a"
 comment,,,,,,,"projection-returning wrong arity too, which is how a two-arg init fails silently"
 true,0,0,q,.t.S1[`roots]~4#1b,1,1,"init published upd, endofday, reload and endofperiod at root"
@@ -303,5 +322,12 @@ comment,,,,,,,S30 - the subscription-filter guard paths all signal
 true,0,0,q,.t.S30`nocsv,1,1,subfiltered with no subcsv configured is a named error
 true,0,0,q,.t.S30`badcols,1,1,a subcsv missing the required columns is a named error
 true,0,0,q,.t.S30`badfilter,1,1,an unparseable filter clause is a named error rather than a bare parse failure
+comment,,,,,,,S31 - a rejected re-init leaves the config exactly as it was
+true,0,0,q,.t.S31`threw,1,1,the bad re-init really was rejected
+true,0,0,q,.t.S31`same,1,1,"and it moved NO config - the key it had already rewritten before failing is back to its previous value"
+comment,,,,,,,S32 - every configured tickerplant type is tried
+true,0,0,q,`tickerplant`stp~.t.S32`tried,1,1,"start tries each configured tickerplant type in turn and stops at the first that is up - the third is never attempted"
+true,0,0,q,77i=.t.S32`h,1,1,and it connects over the type that answered rather than giving up on the first
+true,0,0,q,.t.S32`warned,1,1,init says out loud that more than one type is configured - the wait budget is split between them
 comment,,,,,,,cleanup
 before,0,0,q,"system""rm -rf "",.t.BASE",1,1,remove the scenario hdb root

@@ -100,7 +100,7 @@ dict** `init` takes.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `tickerplanttypes` | `` `tickerplant `` | proctype(s) to subscribe to |
+| `tickerplanttypes` | `` `tickerplant `` | proctype(s) to subscribe to. More than one is tried in turn, splitting `tpwaittimeout` between them. Must name at least one |
 | `hdbtypes` / `hdbnames` | `` `hdb `` / `` () `` | hdbs to notify at eod, resolved by type **or** by name |
 | `gatewaytypes` | `` () `` | gateways to push eod attributes to. empty means no push. **TorQ defaults this to `` `gateway ``** |
 | `ignorelist` | `` `heartbeat`logmsg `` | tables never saved or cleared at eod |
@@ -131,6 +131,14 @@ Three defaults differ from TorQ's: `onlyclearsaved` (a deliberate data-safety ch
 divergences), `sortcsv` and `gatewaytypes` (both TorQ paths/types that have no meaning until the
 caller supplies one, so they default to "not configured" rather than to a path that does not exist).
 
+**Every key is coerced and validated by `init`, before any of it is written.** The boolean keys must
+be booleans, the count keys whole numbers, `pardefault` a date, `timeoutlead` a temporal, and
+`tickerplanttypes` non-empty; anything else is refused with a message naming the key. That matters
+because config can arrive as strings from a `.toml` source: a bare `` `boolean$"true" `` is `1111b`,
+a four-element *vector*, which used to be stored without complaint and then threw a bare `'type` at
+the first end-of-day roll hours later. Coercing into locals first also means a rejected re-init
+leaves the running config exactly as it was, rather than half-rewritten.
+
 `sortcsv` is worth one further caveat: `di.dbwrite`'s sort config is **process-wide** state, not
 per-caller. A co-hosted module that calls `di.dbwrite.readcsv` changes the sort and attribute rules
 this rdb writes with, and the last caller wins.
@@ -145,6 +153,12 @@ this rdb writes with, and the last caller wins.
 `di.subscriptions.subscribe`. That call defines the subscribed tables at root from the
 tickerplant's schemas - **the schema comes from the tickerplant, not a local `database.q`** - and
 replays the log up to the message count the tickerplant reported at subscription time.
+
+When `tickerplanttypes` names more than one proctype they are tried in order, and `tpwaittimeout` is
+**split between them** rather than granted to each in full - three types under a 30s timeout still
+return within 30s, not 90. With the usual single type this is exactly `waitfortype` and nothing
+changes. `di.servers.waitfortype` takes one proctype at a time, which is why the loop lives here;
+TorQ resolves the whole list in a single `.sub.getsubscriptionhandles` lookup.
 
 ### Accumulation
 
@@ -411,6 +425,25 @@ reproduced before being fixed.
   logged success. It now dispatches on the return shape exactly as `notifyhdbs` does. The gateway
   push is the only signal a gateway gets that this rdb has rolled, so a silent failure there routes
   queries at the wrong process for the rest of the day.
+- **Only the first `tickerplanttypes` entry was ever used**, and an empty one was accepted. Both
+  halves matter. TorQ resolves the whole list in one lookup
+  (`.sub.getsubscriptionhandles[tickerplanttypes;();()!()]`, `rdb.q:162`), so taking `first` of it
+  was a silent narrowing of legacy behaviour, not a non-feature. And `` first `$() `` is `` ` ``,
+  which `di.servers` matches against **every** live connection - so an empty list meant the rdb
+  waited for "any process at all" and then subscribed to whatever it found first, an hdb or a
+  gateway included (measured). Every configured type is now tried in turn, `init` refuses an empty
+  list outright, and more than one is reported at `warn` because the wait budget is divided between
+  them.
+- **`init` coerced config *while* writing it**, so the "validate before mutate" promise held only for
+  the four keys with explicit guards. The coercions are where the remaining type errors live, and
+  config can legitimately arrive as strings from a `.toml` source. Measured: a bad `schema` value
+  threw a bare `'type` part way down the write block, having already rewritten `ignorelist` to its
+  new value and left every key after `schema` on its old one - with nothing in the message to say
+  which key was at fault. Worse, `` `boolean$"true" `` is `1111b`: `init` stored it happily and the
+  process only fell over at its first end-of-day roll, inside `savetable`. Every key is now coerced
+  into a local, with a per-key error message, before a single write lands; `timeoutlead` and
+  `pardefault` gained guards for the same reason (`timeoutlead` was subtracted from the roll time
+  *after* the subscription was already live).
 - **`installroot` clobbered a foreign root binding silently**, while `uninstallroot` deliberately
   refuses to *delete* one (`dropifours`). That asymmetry is how a co-hosted process loses its own
   `upd` without a word. Publishing now warns when the name already holds something that is neither
@@ -492,11 +525,12 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.rdb
 ```
 
-`test.csv` is a behavioural suite (**143 asserts**), not just a load-and-export check: it drives real
+`test.csv` is a behavioural suite (**155 asserts**), not just a load-and-export check: it drives real
 root tables through `upd`, both end-of-day modes, the wdb `reload` handshake, both partition
 sources, both `onlyclearsaved` paths, the subscription-filter loader and its three guard paths, the
 save-down manipulation hook and its fallback, the post-replay hook and its fallback, the timeout and
-resubscribe jobs, the gateway attribute push in both outcomes, re-init safety, `teardown` and
+resubscribe jobs, the gateway attribute push in both outcomes, multi-tickerplant-type resolution,
+config coercion, re-init safety (including that a *rejected* re-init moves no config), `teardown` and
 teardown-then-start, using a capturing logger and a mock timer. It asserts **observable effects** of
 `init` rather than "init did not throw" - the latter passes even under a wrong `init` arity, which
 returns a projection instead of running.

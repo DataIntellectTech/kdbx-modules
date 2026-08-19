@@ -54,6 +54,32 @@ ashsym:{[x]
   :hsym `$$[(0<count s) and ":"=first s;1_s;s];
   };
 
+asbool:{[k;x]
+  / coerce ONE config value to a boolean ATOM, naming the key when it cannot be. a bare `boolean$ is
+  / not safe here: config values can arrive as strings (see assym), and `boolean$"true" is 1111b - a
+  / four-element VECTOR that init accepted silently and that then threw a bare 'type at the FIRST end
+  / of day, hours later, from inside savetable (measured). the cast is checked, not trusted
+  b:@[{`boolean$x};x;{[e] :()}];
+  if[not -1h=type b;
+    '"di.rdb: ",string[k]," must be a boolean; got: ",.Q.s1 x];
+  :b;
+  };
+
+aslong:{[k;x]
+  / coerce ONE config value to a long ATOM, naming the key when it cannot be. same reasoning as
+  / asbool, plus one trap of its own: "j"$ on a STRING casts each char to its ascii code rather than
+  / parsing the number, so "30000" would silently become a five-element vector
+  / the two checks are NESTED rather than combined with `or`. q evaluates both sides of `or` eagerly,
+  / and `null` of the () sentinel below is an empty BOOLEAN LIST, not a boolean - so the combined
+  / form died on the list before it could raise the named error, handing back a bare 'type instead
+  / (measured on a symbol tppollms)
+  n:@[{"j"$x};x;{[e] :()}];
+  msg:"di.rdb: ",string[k]," must be a whole number; got: ",.Q.s1 x;
+  if[not -7h=type n;'msg];
+  if[null n;'msg];
+  :n;
+  };
+
 cfg:{[deps;dflts;k]
   / internal - resolve ONE config key off the single deps dict, falling back to its default. every
   / write in init stays an explicit .z.m.<name>: line so a reviewer can grep which keys reach module
@@ -269,8 +295,14 @@ init:{[deps]
   if[`disabletimeout in key deps;
     '"di.rdb: disabletimeout has been renamed to suspendtimeoutonroll (same meaning: 1b suspends ",
       "the query timeout around the roll); update your config"];
-  / resolve and VALIDATE config before any state is mutated, so a rejected re-init cannot leave the
-  / module half-configured with a wired logger and a nonsense partition source
+  / resolve config, then COERCE AND VALIDATE EVERY KEY INTO A LOCAL before a single write lands, so a
+  / rejected re-init cannot leave the module half-configured.
+  / the coercions are where the remaining type errors live - `boolean$ on a string, `$ on the wrong
+  / shape, "j"$ on a symbol - so running them inline with the writes made that promise only half
+  / true. measured: a bad `schema value threw a bare 'type part way down the block having ALREADY
+  / rewritten ignorelist to its new value, left every key after schema on its old one, and named
+  / nothing. resolved into locals first, a bad value throws before any module state moves, and each
+  / helper names its own key
   d:configdefaults[];
   c:cfg[deps;d];
   pvs:assym c`parvaluesrc;
@@ -287,10 +319,51 @@ init:{[deps]
     '"di.rdb: savedownmanipulation must be a dict of tablename!function"];
   / a non-positive or uncastable period would schedule the recovery job to run every cycle, or throw
   / from inside di.timer where the message would name the timer rather than the offending config key
-  rsp:@[{"j"$x};c`resubscribeperiod;{[e] :0N}];
-  if[(null rsp) or 0>=rsp;
+  rsp:aslong[`resubscribeperiod;c`resubscribeperiod];
+  if[0>=rsp;
     '"di.rdb: resubscribeperiod must be a positive whole number of seconds; got: ",
       .Q.s1 c`resubscribeperiod];
+  / tickerplanttypes must name at least one proctype. an EMPTY list is not a harmless default: the
+  / connect path used to take `first` of it, `first `$() is `, and di.servers matches ` against EVERY
+  / live connection - so the rdb waited for "any process at all" and then subscribed to whatever it
+  / found first, an hdb or a gateway included (measured). there is no sensible fallback for "no
+  / tickerplant type", so this is an error rather than a warning
+  tptypes:aslist assym c`tickerplanttypes;
+  if[0=count tptypes;
+    '"di.rdb: tickerplanttypes must name at least one proctype - an empty list resolves to `, ",
+      "which di.servers matches against every connected process"];
+  / timeoutlead is subtracted from di.eodtime's next roll inside start, AFTER the subscription is
+  / live, so a bad value there throws a bare 'type with a live subscription behind it and nothing in
+  / the message to say which key caused it
+  tlead:c`timeoutlead;
+  if[not (type tlead) in -16 -17 -18 -19h;
+    '"di.rdb: timeoutlead must be a timespan, minute, second or time; got: ",.Q.s1 tlead];
+  / pardefault fills the partition list whenever the configured source yields a null date, and that
+  / list is what a gateway routes on - a non-date poisons routing silently rather than throwing
+  pdflt:c`pardefault;
+  if[not -14h=type pdflt;
+    '"di.rdb: pardefault must be a date; got: ",.Q.s1 pdflt];
+  hbtypes:aslist assym c`hdbtypes;
+  hbnames:aslist assym c`hdbnames;
+  gwtypes:aslist assym c`gatewaytypes;
+  ignore:aslist assym c`ignorelist;
+  subto:assym c`subscribeto;
+  subsyms:assym c`subscribesyms;
+  schemaflag:asbool[`schema;c`schema];
+  replayflag:asbool[`replaylog;c`replaylog];
+  subfilt:asbool[`subfiltered;c`subfiltered];
+  savetabs:asbool[`savetables;c`savetables];
+  onlysaved:asbool[`onlyclearsaved;c`onlyclearsaved];
+  gcflag:asbool[`gc;c`gc];
+  reloaden:asbool[`reloadenabled;c`reloadenabled];
+  resuben:asbool[`resubscribeenabled;c`resubscribeenabled];
+  suspend:asbool[`suspendtimeoutonroll;c`suspendtimeoutonroll];
+  waitms:aslong[`tpwaittimeout;c`tpwaittimeout];
+  pollms:aslong[`tppollms;c`tppollms];
+  tpsel:assym c`tpselection;
+  pname:assym c`procname;
+  ptype:assym c`proctype;
+  hdbroot:ashsym c`hdbdir;
   / is this the FIRST init in this process? read it BEFORE any write, because initialised[] probes
   / hdbdir and this must reflect the state on entry
   fresh:not initialised[];
@@ -299,40 +372,50 @@ init:{[deps]
   .z.m.logerr:(deps`log)`error;
   .z.m.timer:deps`timer;
   / one explicit write per config key - a dynamic loop over the dict would hide a missing key
-  / completely, because a bare read of an unwritten name resolves silently to nothing
-  .z.m.tickerplanttypes:aslist assym c`tickerplanttypes;
-  .z.m.hdbtypes:aslist assym c`hdbtypes;
-  .z.m.hdbnames:aslist assym c`hdbnames;
-  .z.m.gatewaytypes:aslist assym c`gatewaytypes;
-  .z.m.ignorelist:aslist assym c`ignorelist;
-  .z.m.subscribeto:assym c`subscribeto;
-  .z.m.subscribesyms:assym c`subscribesyms;
-  .z.m.schema:`boolean$c`schema;
-  .z.m.replaylog:`boolean$c`replaylog;
-  .z.m.subfiltered:`boolean$c`subfiltered;
+  / completely, because a bare read of an unwritten name resolves silently to nothing. every value
+  / here is either a local coerced above or a straight pass-through (subcsv, sortcsv, upd,
+  / savedownmanipulation and postreplay need no coercion), so NOTHING in this block can throw
+  .z.m.tickerplanttypes:tptypes;
+  .z.m.hdbtypes:hbtypes;
+  .z.m.hdbnames:hbnames;
+  .z.m.gatewaytypes:gwtypes;
+  .z.m.ignorelist:ignore;
+  .z.m.subscribeto:subto;
+  .z.m.subscribesyms:subsyms;
+  .z.m.schema:schemaflag;
+  .z.m.replaylog:replayflag;
+  .z.m.subfiltered:subfilt;
   .z.m.subcsv:c`subcsv;
   .z.m.sortcsv:c`sortcsv;
-  .z.m.savetables:`boolean$c`savetables;
-  .z.m.onlyclearsaved:`boolean$c`onlyclearsaved;
-  .z.m.gc:`boolean$c`gc;
-  .z.m.reloadenabled:`boolean$c`reloadenabled;
+  .z.m.savetables:savetabs;
+  .z.m.onlyclearsaved:onlysaved;
+  .z.m.gc:gcflag;
+  .z.m.reloadenabled:reloaden;
   .z.m.parvaluesrc:pvs;
-  .z.m.pardefault:c`pardefault;
+  .z.m.pardefault:pdflt;
   .z.m.upd:c`upd;
   .z.m.savedownmanipulation:c`savedownmanipulation;
   .z.m.postreplay:c`postreplay;
-  .z.m.tpwaittimeout:"j"$c`tpwaittimeout;
-  .z.m.tppollms:"j"$c`tppollms;
-  .z.m.tpselection:assym c`tpselection;
-  .z.m.resubscribeenabled:`boolean$c`resubscribeenabled;
+  .z.m.tpwaittimeout:waitms;
+  .z.m.tppollms:pollms;
+  .z.m.tpselection:tpsel;
+  .z.m.resubscribeenabled:resuben;
   .z.m.resubscribeperiod:rsp;
-  .z.m.suspendtimeoutonroll:`boolean$c`suspendtimeoutonroll;
-  .z.m.timeoutlead:c`timeoutlead;
-  .z.m.procname:assym c`procname;
-  .z.m.proctype:assym c`proctype;
-  / hdbdir is written LAST of the config keys because initialised[] probes it - a re-init that threw
-  / part way through must not leave the module reporting itself as ready
-  .z.m.hdbdir:ashsym c`hdbdir;
+  .z.m.suspendtimeoutonroll:suspend;
+  .z.m.timeoutlead:tlead;
+  .z.m.procname:pname;
+  .z.m.proctype:ptype;
+  / hdbdir is still written LAST of the config keys because initialised[] probes it. with the
+  / coercions hoisted out this block can no longer throw, so the ordering is belt and braces rather
+  / than load-bearing - but a future edit that reintroduces a cast here would need it again
+  .z.m.hdbdir:hdbroot;
+  / more than one tickerplant type IS honoured - connecttp tries each in turn - but it is unusual
+  / enough to say out loud, because the wait budget each type gets is tpwaittimeout divided between
+  / them rather than granted to each in full
+  if[1<count tptypes;
+    .z.m.logwarn[`init;"tickerplanttypes names ",(string count tptypes)," proctypes (",
+      (", " sv string tptypes),") - start will try each in turn, splitting tpwaittimeout between ",
+      "them"]];
   / RUNTIME state is seeded only on a FRESH init. a re-init - di.torq re-applying config, a config
   / reload, a second wiring - must not wipe a live rdb's subscription, partition list or eod snapshot.
   / measured: wiping eodtabcount between the roll and the wdb's reload[date] leaves the prior day in
@@ -545,6 +628,38 @@ gatewayhandles:{[] :handlesbytypeandname[.z.m.gatewaytypes;`$()]};
 / start - the i/o phase
 / ============================================================
 
+waitonetp:{[budget;pollms;types;s]
+  / internal - ONE step of waitforanytp's fold. s is (nextindex;foundtype): once a type has been
+  / found, or the list is exhausted, every later step is a no-op, which is how the fold short
+  / circuits without a do/while
+  if[not null s 1;:s];
+  if[s[0]>=count types;:s];
+  t:types s 0;
+  :$[servers.waitfortype[t;budget;pollms];(1+s 0;t);(1+s 0;`)];
+  };
+
+waitforanytp:{[types;timeoutms;pollms]
+  / internal - block until ONE of the configured tickerplant proctypes connects, and return it, or `
+  / if none did. di.servers.waitfortype takes a SINGLE proctype, so the wait budget is split across
+  / the configured types rather than granted to each in full: three types under a 30s timeout must
+  / still return within 30s, not 90. with one configured type - overwhelmingly the common case - this
+  / is exactly waitfortype[t;timeoutms;pollms] and behaviour is unchanged.
+  / honouring more than the first type is FIDELITY to TorQ, not a new feature: legacy resolves the
+  / whole list in one lookup (.sub.getsubscriptionhandles[tickerplanttypes;();()!()], rdb.q:162),
+  / where this module previously took `first` of the list and silently ignored the rest
+  :last (count types) waitonetp[1|timeoutms div count types;pollms;types]/(0;`);
+  };
+
+tphandle:{[types;selection]
+  / internal - a live handle to any ONE of the configured tickerplant proctypes, or 0Ni. resolution
+  / only, never waiting - resubscribecheck calls this from a timer job and must return promptly.
+  / each lookup is protected because gethandlebytype raises when di.servers has not been initialised,
+  / and the caller is a job that must never throw
+  hs:{[s;t] :@[{[s;t] :servers.gethandlebytype[t;s]}[s];t;{[e] :0Ni}]}[selection] each types;
+  hs:hs where not null hs;
+  :$[count hs;first hs;0Ni];
+  };
+
 connecttp:{[]
   / internal - open the configured connections, block until a tickerplant is up, and hand back a
   / handle to it. the port of TorQ rdb.q:225-229: .servers.startupdepcycles becomes
@@ -553,10 +668,10 @@ connecttp:{[]
   / with. supplying a connections list covering the tickerplant and hdb proctypes is therefore part
   / of wiring di.servers, not something this module can do for it. see rdb.md
   servers.startup[];
-  tpt:first .z.m.tickerplanttypes;
-  if[not servers.waitfortype[tpt;.z.m.tpwaittimeout;.z.m.tppollms];
-    raiseerror[`start;"no ",(string tpt)," connection within ",(string .z.m.tpwaittimeout),
-      "ms - cannot start the rdb"]];
+  tpt:waitforanytp[.z.m.tickerplanttypes;.z.m.tpwaittimeout;.z.m.tppollms];
+  if[null tpt;
+    raiseerror[`start;"no ",(", " sv string .z.m.tickerplanttypes)," connection within ",
+      (string .z.m.tpwaittimeout),"ms - cannot start the rdb"]];
   tph:servers.gethandlebytype[tpt;.z.m.tpselection];
   if[null tph;
     raiseerror[`start;"di.servers reported a ",(string tpt)," connection but returned no handle"]];
@@ -659,12 +774,13 @@ resubscribecheck:{[]
   / a subscribed[] that throws is read as "not subscribed": a resubscribe attempt is protected and
   / costs one round trip, whereas skipping one leaves the feed dead until someone notices
   if[@[subscriptions.subscribed;::;{[e] :0b}];:()];
-  tpt:first .z.m.tickerplanttypes;
-  tph:@[{[t;s] :servers.gethandlebytype[t;s]}[tpt];.z.m.tpselection;
-        {[t;e] .z.m.logwarn[`resubscribe;"could not resolve a ",(string t)," handle: ",e];:0N}[tpt]];
+  / every configured tickerplant type is tried, not just the first - the same fidelity fix as
+  / connecttp, and for the same reason. resolution only: this runs on a timer, so it never waits
+  tph:tphandle[.z.m.tickerplanttypes;.z.m.tpselection];
   if[null tph;
-    .z.m.logwarn[`resubscribe;"subscription is down and no ",(string tpt)," handle is available ",
-      "yet - waiting for di.servers to reconnect"];
+    .z.m.logwarn[`resubscribe;"subscription is down and no ",
+      (", " sv string .z.m.tickerplanttypes)," handle is available yet - waiting for di.servers ",
+      "to reconnect"];
     :()];
   .z.m.loginfo[`resubscribe;"subscription is down - re-establishing on handle ",.Q.s1 tph];
   / NB neither the log replay nor the subscription filters are re-applied. di.subscriptions.resubscribe

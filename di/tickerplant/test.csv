@@ -1,8 +1,9 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,tp:use`di.tickerplant,1,,load the module under test
 before,0,0,q,timer:use`di.timer,1,,real di.timer (addjob works without timer.init - no live .z.ts)
-before,0,0,q,ntp:use`di.tplog,1,,di.tplog, to replay a tickerplant-written log
-before,0,0,q,eod:use`di.eodtime,1,,di.eodtime, to force a roll due in a test
+before,0,0,q,ntp:use`di.tplog,1,,"di.tplog, to replay a tickerplant-written log"
+before,0,0,q,eod:use`di.eodtime,1,,"di.eodtime, to force a roll due in a test"
+before,0,0,q,ps:use`di.pubsub,1,,"di.pubsub, to release the self-subscription a subdetails test leaves on handle 0"
 before,0,0,q,os:use`di.os,1,,os module for portable path resolution
 before,0,0,q,"system ""l "",os.abspath[""di/tickerplant/test.q""]",1,,load fixture helpers
 before,0,0,q,setupfixture[],1,,create the temp fixture root
@@ -17,18 +18,29 @@ fail,0,0,q,tp.init[(::)],1,1,init rejects a non-dict deps
 fail,0,0,q,tp.init depsnolog[],1,1,init rejects deps without a log key
 fail,0,0,q,tp.init depsonlylog[],1,1,init rejects deps without a timer
 fail,0,0,q,tp.init depsbadtimer[],1,1,init rejects a timer that does not expose addjob
+fail,0,0,q,tp.init depsnodeletejobs[],1,1,init rejects a timer without deletejobs - teardown needs it
 fail,0,0,q,tp.init depsnoschemas[],1,1,init rejects deps without schemas
+true,0,0,q,"0<count (@[{tp.init depsnodeletejobs[];""""};::;{[e] e}]) ss ""must expose deletejobs""",1,1,the deletejobs guard fails for its OWN reason - a fail row alone proves only that something threw
 comment,,,,,,,init / lifecycle
 true,0,0,q,testinit[],1,1,init materialises root tables (g# sym) and schedules the timer job
-true,0,0,q,testupdbatch[],1,1,batch upd stamps, buffers and logs
+true,0,0,q,testupdbatch[],1,1,"batch upd stamps, buffers and logs; i lags j until the flush"
 true,0,0,q,testemptyupd[],1,1,an empty update is a no-op (no throw)
 true,0,0,q,testemptyupdtriggersroll[],1,1,an empty update still triggers an overdue roll
-true,0,0,q,testzerolatency[],1,1,zero-latency upd publishes without buffering
-true,0,0,q,testendofday[],1,1,endofday flushes, rolls the log and resets counts
-true,0,0,q,testreinitnoleak[],1,1,re-init closes the old log handle (no fd leak)
+true,0,0,q,testzerolatency[],1,1,zero-latency upd publishes without buffering and advances i with j
+true,0,0,q,testendofday[],1,1,"endofday flushes, rolls the log and resets counts"
+true,0,0,q,testreinitpreservesstate[],1,1,a re-init preserves the counts / buffer / log handle and leaks no fd
 comment,,,,,,,di.tplog integration
 true,0,0,q,testlogroundtrip[],1,1,a tickerplant-written log replays through di.tplog
 true,0,0,q,testcheckrepaironroll[],1,1,rolling into a corrupt log repairs it via di.tplog.check
+comment,,,,,,,the subdetails / tablelist protocol di.subscriptions speaks
+true,0,0,q,testsubdetails[],1,1,subdetails returns all four required keys in the shapes di.subscriptions validates
+true,0,0,q,testsubdetailscountispublished[],1,1,the logfilelist message count is the published watermark i - not the logged total j
+true,0,0,q,testsubdetailsnolog[],1,1,logfilelist is empty when logging is disabled
+true,0,0,q,testsubdetailsunknown[],1,1,subdetails names the unpublished table it was asked for and logs the error
+true,0,0,q,testtablelist[],1,1,"tablelist accepts the one argument di.subscriptions sends, (`tablelist;`)"
+true,0,0,q,testrootandteardown[],1,1,the protocol is published at root and teardown gives both names back
+true,0,0,q,testreinitafterteardown[],1,1,a re-init after teardown re-publishes the protocol and re-schedules the job
+true,0,0,q,testrequireinit[],1,1,every callable export except upd names the init guard; upd is the documented hot-path exception
 comment,,,,,,,upd input validation
 fail,0,0,q,tp[`upd][1;()],1,1,upd rejects a non-symbol table
 fail,0,0,q,tp[`upd][`nope;()],1,1,upd rejects an unknown table

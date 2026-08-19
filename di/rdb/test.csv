@@ -83,6 +83,37 @@ comment,,,,,,,"S21 - a SECOND start[] on a healthy rdb. the resume path made thi
 comment,,,,,,,"setpartition is idempotent but addjob is not - it booked a second rdbtimeoutreset and"
 comment,,,,,,,"rdbresubscribe under the same ids (measured 2 jobs -> 4). start[] is now a no-op once started"
 before,0,0,q,".t.S21:{[] .t.clearroot[]; .t.jobrows::0#.t.jobrows; .t.resetcap[]; rdb.init[.t.mkdeps[()!()]]; .m.di.0rdb.subtables:enlist`trade; .m.di.0rdb.tplogdate:2026.08.01; rs:.m.di.0rdb.subscriptions; .m.di.0rdb.subscriptions:(enlist`subscribed)!enlist {[] :1b}; .m.di.0rdb.started:0b; rdb.start[]; j1:count .t.jobrows; rdb.start[]; j2:count .t.jobrows; .m.di.0rdb.subscriptions:rs; :`j1`j2`ids`noop!(j1;j2;count distinct exec id from .t.jobrows;.t.logged[`info;""start has already completed""])}[]",1,1,scenario: start twice on an rdb that already started
+comment,,,,,,,"S22 - a teardown followed by a start[] must give the root entry points back. regression:"
+comment,,,,,,,"only init published them, so teardown-then-start left the module reporting started 1b with"
+comment,,,,,,,"no root upd - every tick errored in the default .z.ps, the roll broadcast landed nowhere,"
+comment,,,,,,,and status[] still called it healthy. the same failure class as the half-started rdb
+before,0,0,q,".t.S22:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[()!()]]; rs:.m.di.0rdb.subscriptions; .m.di.0rdb.subscriptions:(enlist`subscribed)!enlist {[] :1b}; .m.di.0rdb.subtables:enlist`trade; .m.di.0rdb.tplogdate:2026.09.01; .m.di.0rdb.started:0b; rdb.start[]; rdb.teardown[]; gone:0=count (`upd`endofday`reload`endofperiod) inter key `.; ok:@[{rdb.start[]; :1b};::;{[e] :0b}]; back:(`upd`endofday`reload`endofperiod) in key `.; st:(rdb.status[])`started; .m.di.0rdb.subscriptions:rs; :`gone`ok`back`started!(gone;ok;back;st)}[]",1,1,"scenario: start, teardown, then start again WITHOUT re-initialising"
+comment,,,,,,,"S23 - pushattributes must DETECT a failed broadcast. postback traps its own send errors and"
+comment,,,,,,,"returns (vector;errorstring) rather than throwing, so the protected-apply handler could never"
+comment,,,,,,,"fire and the success line was unconditional. the REAL postback runs here - only the handle"
+comment,,,,,,,list is substituted - so the dispatch under test stays real
+before,0,0,q,".t.S23:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[`gatewaytypes`procname`proctype!(`gateway;`rdb1;`rdb)]]; rg:.m.di.0rdb.gatewayhandles; .m.di.0rdb.gatewayhandles:{[] :enlist 999i}; ok:@[{.m.di.0rdb.pushattributes[]; :1b};::;{[e] :0b}]; .m.di.0rdb.gatewayhandles:rg; :`ok`rejected`claimed!(ok; .t.logged[`error;""not accepted by every gateway""]; .t.logged[`info;""pushed eod attributes to""])}[]",1,1,scenario: every gateway handle rejects the eod attribute push
+comment,,,,,,,"S24 - savedownmanipulation, both halves: applied to the data actually written, and a"
+comment,,,,,,,manipulation that THROWS falling back to the unmodified table rather than losing the day
+before,0,0,q,".t.S24:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; m:`trade`quote!({[t] update price:price*2 from t};{[t] '`boom}); rdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist m]]; .t.mktrade[]; @[`.;`quote;:;([]time:2#.z.p;sym:`a`b;bid:1 2.0)]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.09.02]; d:.t.BASE,""/hdb/2026.09.02/""; :`prices`quoterows`logged!(@[{asc exec price from get hsym`$x};d,""trade"";{[e] :`float$()}]; @[{count get hsym`$x};d,""quote"";{[e] :-1}]; .t.logged[`error;""save down manipulation failed""])}[]",1,1,"scenario: one working manipulation, one that throws"
+comment,,,,,,,S25 - the postreplay hook runs after the writedown and a broken one must not abort the roll
+before,0,0,q,.t.pr:(),1,1,fixture: sink for the arguments postreplay is called with
+before,0,0,q,".t.S25:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[enlist[`postreplay]!enlist {[d;p] .t.pr::(d;p)}]]; .t.mktrade[]; endofday[2026.09.03]; good:.t.pr; .t.resetcap[]; rdb.init[.t.mkdeps[enlist[`postreplay]!enlist {[d;p] '`boom}]]; ok:@[{endofday[2026.09.04]; :1b};::;{[e] :0b}]; rdb.init[.t.mkdeps[()!()]]; :`good`ok`logged!(good;ok;.t.logged[`error;""post replay function failed""])}[]",1,1,"scenario: a recording postreplay, then one that throws"
+comment,,,,,,,"S26 - the gc config key gates the one collection this module still owns (di.dbwrite.savedown"
+comment,,,,,,,collects unconditionally on the save path - see the divergences in rdb.md)
+before,0,0,q,".t.S26:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[`reloadenabled`gc!(1b;1b)]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.09.05]; .m.di.0rdb.subtables:enlist`trade; .m.di.0rdb.started:1b; reload[2026.09.05]; on:.t.logged[`info;""running garbage collection""]; .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[`reloadenabled`gc!(1b;0b)]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; endofday[2026.09.06]; .m.di.0rdb.subtables:enlist`trade; .m.di.0rdb.started:1b; reload[2026.09.06]; :`on`off!(on; .t.logged[`info;""running garbage collection""])}[]",1,1,scenario: reload with gc on and then off
+comment,,,,,,,"S27 - hdbtypes and hdbnames are a UNION, not an intersection: a process NAMED in hdbnames is"
+comment,,,,,,,"notified even when its proctype is not in hdbtypes. TorQ razes the two lookups (rdb.q:120) and"
+comment,,,,,,,an intersection would silently drop it. di.servers is substituted so the union can be driven
+comment,,,,,,,without standing up real connections
+before,0,0,q,".t.S27:{[] .t.clearroot[]; rdb.init[.t.mkdeps[`hdbtypes`hdbnames!(`hdb;`oddball)]]; rs:.m.di.0rdb.servers; srv:([]procname:`hdb1`oddball`gw1;proctype:`hdb`weird`gateway;w:11 22 33i); .m.di.0rdb.servers:(enlist`getservers)!enlist {[s;x] :s}[srv]; h:.m.di.0rdb.hdbhandles[]; .m.di.0rdb.servers:rs; rdb.init[.t.mkdeps[()!()]]; :asc h}[]",1,1,scenario: resolve hdb handles by type and by name at once
+comment,,,,,,,S28 - the upd config key really does replace the root upd
+before,0,0,q,".t.S28:{[] .t.clearroot[]; rdb.init[.t.mkdeps[enlist[`upd]!enlist {[t;x] @[`.;t;,;update price:0n from x]}]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; r:`rows`prices!(count trade; exec price from trade); rdb.init[.t.mkdeps[()!()]]; :r}[]",1,1,scenario: a custom upd installed at root and driven
+comment,,,,,,,S29 - moveandclear on a table that is not there is a quiet no-op
+before,0,0,q,".t.S29:{[] .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[()!()]]; ok:@[{rdb.moveandclear[`.;`.t;`nosuchtable]; :1b};::;{[e] :0b}]; :`ok`absent`quiet!(ok; not `nosuchtable in key `.t; not .t.logged[`info;""moved ""])}[]",1,1,scenario: moveandclear an absent table
+comment,,,,,,,"S30 - the subscription-filter guard paths. all three signal through raiseerror, so they are"
+comment,,,,,,,captured in a scenario rather than driven as fail rows that would leave the module reconfigured
+before,0,0,q,".t.S30:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; rdb.init[.t.mkdeps[enlist[`subfiltered]!enlist 1b]]; nocsv:@[{.m.di.0rdb.loadsubfilters[]; :0b};::;{[e] :1b}]; (hsym`$.t.BASE,""/bad.csv"") 0: (""tabname,other"";""trade,x""); rdb.init[.t.mkdeps[`subfiltered`subcsv!(1b;.t.BASE,""/bad.csv"")]]; badcols:@[{.m.di.0rdb.loadsubfilters[]; :0b};::;{[e] :1b}]; (hsym`$.t.BASE,""/bad2.csv"") 0: (""tabname,filters,columns"";""trade,price>(,""); rdb.init[.t.mkdeps[`subfiltered`subcsv!(1b;.t.BASE,""/bad2.csv"")]]; .m.di.0rdb.loadsubfilters[]; .t.mktrade[]; badfilter:@[{.m.di.0rdb.applyfilters[`trade]; :0b};::;{[e] :1b}]; rdb.init[.t.mkdeps[()!()]]; :`nocsv`badcols`badfilter!(nocsv;badcols;badfilter)}[]",1,1,"scenario: no subcsv, a csv missing columns, and an unparseable filter clause"
 before,0,0,q,rdb.init[.t.mkdeps[()!()]],1,1,re-init after the teardown scenario so the asserts below run against a live module
 comment,,,,,,,"init - dependency validation. every one of these must SIGNAL, not return quietly"
 fail,0,0,q,rdb.init[(::)],1,1,init rejects a non-dictionary deps
@@ -202,7 +233,11 @@ true,0,0,q,.t.S15`down,1,1,"resubscribecheck never throws, even with di.servers 
 true,0,0,q,.t.S15`warned,1,1,resubscribecheck warns when there is no tickerplant handle to re-establish on
 true,0,0,q,.t.S12`again,1,1,teardown is idempotent - a second call must not die reading the .u.end it already removed
 comment,,,,,,,guards - every export refuses to run before the lifecycle stage it needs
-fail,0,0,q,rdb.reload[2026.01.01],1,1,reload refuses before start - subtables would be empty and it would silently drop nothing
+comment,,,,,,,"started is forced 0b HERE rather than relied on. this row used to be a bare reload call, and"
+comment,,,,,,,"it was passing for the wrong reason: a scenario had left started 1b and no root trade table,"
+comment,,,,,,,"so reload threw from grabattrs, not from requirestart. it stopped failing the moment a later"
+comment,,,,,,,scenario left a root table behind - the guard itself had never actually been under test
+fail,0,0,q,"{.m.di.0rdb.started:0b; rdb.reload[2026.01.01]}[]",1,1,reload refuses before start - subtables would be empty and it would silently drop nothing
 comment,,,,,,,api metadata and version - di.torq registers these with di.api
 true,0,0,q,(asc (key rdb) except `init`getapimeta)~asc exec name from rdb.getapimeta[],1,1,"getapimeta documents exactly the callable exports, with the plumbing omitted"
 true,0,0,q,not any `init`getapimeta in exec name from rdb.getapimeta[],1,1,framework plumbing is not registered in the api
@@ -235,5 +270,38 @@ comment,,,,,,,S21 - start is idempotent once completed
 true,0,0,q,.t.S21[`j1]~.t.S21`j2,1,1,a second start[] schedules no further jobs
 true,0,0,q,.t.S21[`ids]~.t.S21`j2,1,1,"no duplicate job ids - the regression was two rows per id, which no single-count assert would catch"
 true,0,0,q,.t.S21`noop,1,1,and it said so rather than silently doing nothing
+comment,,,,,,,S22 - a teardown followed by a start restores the root entry points
+true,0,0,q,.t.S22`gone,1,1,the scenario really did tear the root entry points down first
+true,0,0,q,.t.S22`ok,1,1,start[] runs again after a teardown rather than throwing
+true,0,0,q,.t.S22[`back]~4#1b,1,1,"and it re-published upd, endofday, reload and endofperiod - without this a restarted rdb reported started 1b with no root upd at all"
+true,0,0,q,.t.S22`started,1,1,the restarted rdb reports started
+comment,,,,,,,S23 - pushattributes detects a failed broadcast
+true,0,0,q,.t.S23`ok,1,1,pushattributes does not throw when the broadcast fails - a failed push must not abort the roll
+true,0,0,q,.t.S23`rejected,1,1,"it dispatched on postback's (vector;errorstring) shape and logged the failure"
+true,0,0,q,not .t.S23`claimed,1,1,and it no longer reports a push that never left the process
+comment,,,,,,,S24 - savedownmanipulation
+true,0,0,q,2 4.0~.t.S24`prices,1,1,the configured manipulation was applied to the data actually written to disk
+true,0,0,q,2=.t.S24`quoterows,1,1,"a manipulation that throws falls back to the unmodified table, so the day's rows still reach disk"
+true,0,0,q,.t.S24`logged,1,1,"and the failure was logged at error, not swallowed"
+comment,,,,,,,S25 - the postreplay hook
+true,0,0,q,(.t.HD;2026.09.03)~.t.S25`good,1,1,postreplay is invoked with the hdb directory and the partition just written
+true,0,0,q,.t.S25`ok,1,1,a postreplay that throws does not abort the roll - the data is already safely on disk
+true,0,0,q,.t.S25`logged,1,1,and the broken hook was logged at error
+comment,,,,,,,S26 - the gc config key
+true,0,0,q,.t.S26`on,1,1,reload collects when gc is on
+true,0,0,q,not .t.S26`off,1,1,and gc 0b suppresses the one collection this module owns
+comment,,,,,,,S27 - hdbtypes and hdbnames are a union
+true,0,0,q,11 22i~.t.S27,1,1,"a process named in hdbnames is notified even though its proctype is not in hdbtypes, and an unrelated gateway is left out"
+comment,,,,,,,S28 - the upd config key
+true,0,0,q,2=.t.S28`rows,1,1,a custom upd was installed at root and appended through
+true,0,0,q,all null .t.S28`prices,1,1,and it was the CONFIGURED function that ran - the default upd would not have nulled the price
+comment,,,,,,,S29 - moveandclear on an absent table
+true,0,0,q,.t.S29`ok,1,1,moveandclear on a table that is not there does not throw
+true,0,0,q,.t.S29`absent,1,1,and it creates nothing in the target namespace
+true,0,0,q,.t.S29`quiet,1,1,nor does it claim to have moved anything
+comment,,,,,,,S30 - the subscription-filter guard paths all signal
+true,0,0,q,.t.S30`nocsv,1,1,subfiltered with no subcsv configured is a named error
+true,0,0,q,.t.S30`badcols,1,1,a subcsv missing the required columns is a named error
+true,0,0,q,.t.S30`badfilter,1,1,an unparseable filter clause is a named error rather than a bare parse failure
 comment,,,,,,,cleanup
 before,0,0,q,"system""rm -rf "",.t.BASE",1,1,remove the scenario hdb root

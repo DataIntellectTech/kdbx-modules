@@ -28,7 +28,8 @@ asyncutil:use`di.asyncutil
 / a raw OS error names no module, and an empty or whitespace-padded value is worse than an error -
 / di.depcheck compares versions as strings, so padding silently breaks the comparison and an empty
 / value reads as "exports no version", failing every dependent module's check for a reason that
-/ points nowhere near the real cause. this is the shape di.servers already uses
+/ points nowhere near the real cause. this is the shape di.dbwrite and di.eodtime already use
+/ (di.servers still has the bare `first read0` form)
 version:@[{trim first read0 x};`:::VERSION;{'"di.rdb: VERSION file missing or unreadable"}];
 if[0=count version;'"di.rdb: VERSION file is empty"];
 

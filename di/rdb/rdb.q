@@ -70,8 +70,12 @@ configdefaults:{[]
   / NB built as ONE key!value pair, not as a chain of joined single-group dicts. joining dicts whose
   / value sides are differently-typed - a symbol vector onto a general list - throws 'type, the same
   / family of trap as joining di.log's logdict to a chain of single-key dicts (measured)
-  / NB onlyclearsaved defaults to 1b, where TorQ's default is 0b. this is the ONE default deliberately
-  / changed from legacy, and it is a data-safety choice: under 0b a savedown that throws still clears
+  / NB three defaults differ from TorQ. sortcsv (TorQ `:config/sort.csv) and gatewaytypes (TorQ
+  / `gateway) default to "not configured" here, because a TorQ-layout path and a proctype that may
+  / not exist are worse starting points than nothing - di.dbwrite falls back to its own defaultparams
+  / when no sort config is loaded, and pushattributes is a no-op with no gatewaytypes.
+  / the third is BEHAVIOURAL and is the one worth arguing: onlyclearsaved defaults to 1b, where
+  / TorQ's default is 0b. a data-safety choice: under 0b a savedown that throws still clears
   / the table, so the day's data is gone and the only trace is one line in the log. 1b keeps the table
   / in memory so the failure is recoverable - the rows are still queryable and can be written by hand.
   / the cost is a table that keeps growing while the save keeps failing, which is loud and bounded by
@@ -151,6 +155,22 @@ updfn:{[t;x]
   @[`.;t;,;$[98h=type x;x;99h=type x;flip x;flip (cols value t)!x]];
   };
 
+publishroot:{[nm;f]
+  / internal - publish ONE root entry point, warning first when the name already holds something that
+  / is neither the function about to be installed nor the one this module installed last time.
+  / uninstallroot deliberately refuses to delete a binding that is not ours (dropifours); installing
+  / over one silently is that same asymmetry in reverse, and it is how a co-hosted process loses its
+  / own upd without a word. comparing against rootinstalled as well as against f is what keeps a
+  / legitimate re-init QUIET when the `upd config key itself changed - root then holds the previous
+  / OURS, not a stranger's
+  if[nm in key `.;
+    cur:`. nm;
+    if[not any (f;.z.m.rootinstalled nm)~\:cur;
+      .z.m.logwarn[`installroot;"root ",(string nm)," was already bound to something di.rdb did not ",
+        "install - replacing it. teardown will not give the previous binding back"]]];
+  @[`.;nm;:;f];
+  };
+
 installroot:{[]
   / publish the entry points the rest of the stack calls this process on. all explicit root targets:
   /   upd         - driven by the live feed AND by di.subscriptions' -11! replay, so it must exist
@@ -160,11 +180,14 @@ installroot:{[]
   /                 @[`.;...] because a dotted name is not a key of the root namespace dictionary
   /   reload      - the wdb's (`reload;date) call, once it has persisted the prior day
   /   endofperiod - the tickerplant's intraday period roll
-  @[`.;`upd;:;.z.m.upd];
-  @[`.;`endofday;:;endofday];
-  @[`.;`reload;:;reload];
-  @[`.;`endofperiod;:;endofperiod];
+  nms:`upd`endofday`reload`endofperiod;
+  fs:(.z.m.upd;endofday;reload;endofperiod);
+  publishroot'[nms;fs];
   set[`.u.end;endofday];
+  / record what was published, so the NEXT install can tell "someone else took this name" from "the
+  / upd config key changed". written as ONE dict rather than amended per name: building it up with a
+  / joined single-key dict is the value-side type trap this module documents elsewhere
+  .z.m.rootinstalled:nms!fs;
   };
 
 uninstallroot:{[]
@@ -330,6 +353,9 @@ init:{[deps]
     / zero. without it both halves of the suspension are unconditional and clobber an operator's \T -
     / see timeoutreset/restoretimeout
     .z.m.timeoutsuspended:0b;
+    / what installroot last published at root, keyed by name. seeded here rather than at module load
+    / because publishroot reads it on the FIRST install, before installroot has written it
+    .z.m.rootinstalled:(`$())!();
     .z.m.started:0b];
   installroot[];
   .z.m.loginfo[`init;"di.rdb initialised - hdbdir ",(string .z.m.hdbdir),", reloadenabled ",
@@ -544,6 +570,14 @@ start:{[]
   / wired by the caller. TorQ makes the same split - .rdb.subscribe[] is its own function, called at
   / the end of rdb.q rather than inline with the config
   requireinit[`start];
+  / RE-PUBLISH the root entry points. init installs them, but teardown removes them and a caller may
+  / legitimately tear down and start again without re-initialising - measured: that left the module
+  / reporting started 1b with NO root upd, endofday, reload or endofperiod, so every tick errored in
+  / the default .z.ps, the tickerplant's roll broadcast landed nowhere, and status[] still called it
+  / healthy. the same half-started-but-reported-healthy failure this module already fixed twice.
+  / idempotent, so the ordinary init-then-start path is unaffected, and it runs BEFORE the resume
+  / guard below because an already-started rdb whose roots were torn down needs them back too
+  installroot[];
   / everything that can be checked WITHOUT talking to the tickerplant is checked first. subscribing
   / registers this handle for live delivery and there is no way to undo it, so a missing di.eodtime
   / must fail before that, not after - otherwise start[] throws with a live subscription behind it
@@ -813,24 +847,27 @@ notifyhdbs:{[date]
   / than throwing - a silent no-notify if it were passed through unchecked (measured)
   h:hdbhandles[];
   if[0=count h;
-    .z.m.logwarn[`notifyhdb;"no hdb connected to notify for reload"];
+    .z.m.logwarn[`notifyhdbs;"no hdb connected to notify for reload"];
     :()];
-  .z.m.loginfo[`notifyhdb;"sending reload for ",(string date)," to ",(string count h)," hdb handle(s)"];
+  .z.m.loginfo[`notifyhdbs;"sending reload for ",(string date)," to ",(string count h)," hdb handle(s)"];
   sent:@[asyncutil.postback[abs h;hdbmessage date;];reloadreply;
-    {[e] .z.m.logerr[`notifyhdb;"failed to send reload message to the hdbs: ",e];:enlist 0b}];
+    {[e] .z.m.logerr[`notifyhdbs;"failed to send reload message to the hdbs: ",e];:enlist 0b}];
   / postback returns TWO different shapes: a plain boolean vector when the broadcast went out, and
   / (booleanvector;errorstring) when it did not. so the flags are the whole result in one case and its
   / first element in the other - dispatch on type rather than letting `first` happen to suit both,
   / which it only does because the success vector is uniform
   ok:$[1h=type sent;sent;(),first sent];
   if[not all ok;
-    .z.m.logerr[`notifyhdb;"reload message was not accepted by every hdb handle"]];
+    .z.m.logerr[`notifyhdbs;"reload message was not accepted by every hdb handle"]];
   };
 
 reloadreply:{[r]
   / the postback di.asyncutil installs on the hdb's reply. legacy discards the sync result; keeping it
-  / means a reload that fails ON THE HDB is visible here rather than only in the hdb's own log
-  .z.m.loginfo[`notifyhdb;"hdb reload replied: ",.Q.s1 r];
+  / means a reload that fails ON THE HDB is visible here rather than only in the hdb's own log.
+  / logged under notifyhdbs' context, not its own: this is the tail of that broadcast, and an operator
+  / grepping one context wants the send and the reply together. TorQ tags the whole area `notifyhdb
+  / (singular, rdb.q:80) - renamed to match the function so a grep for the name finds its own lines
+  .z.m.loginfo[`notifyhdbs;"hdb reload replied: ",.Q.s1 r];
   };
 
 pushattributes:{[]
@@ -843,8 +880,17 @@ pushattributes:{[]
     .z.m.logwarn[`endofday;"no gateway connected to send eod attributes to"];
     :()];
   msg:(`setattributes;.z.m.procname;.z.m.proctype;getattributes[]);
-  @[asyncutil.postback[abs h;msg;];{[r] :(::)};
-    {[e] .z.m.logerr[`endofday;"failed to push eod attributes to the gateways: ",e]}];
+  / dispatch on postback's RETURN SHAPE, exactly as notifyhdbs does. the error handler below cannot
+  / carry this on its own: postback traps its own send failures and returns (booleanvector;errorstring)
+  / instead of throwing, so before this the handler was unreachable and the success line below fired
+  / unconditionally - measured against a dead handle, postback returned (,0b;"error: 999 is not an ipc
+  / handle") and this function still logged a push that never left the process
+  sent:@[asyncutil.postback[abs h;msg;];{[r] :(::)};
+    {[e] .z.m.logerr[`endofday;"failed to push eod attributes to the gateways: ",e];:enlist 0b}];
+  ok:$[1h=type sent;sent;(),first sent];
+  if[not all ok;
+    .z.m.logerr[`endofday;"eod attributes were not accepted by every gateway handle"];
+    :()];
   .z.m.loginfo[`endofday;"pushed eod attributes to ",(string count h)," gateway handle(s)"];
   };
 

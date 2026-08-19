@@ -9,4 +9,4 @@
 / value, or a misleading 0.0.0 that would corrupt depcheck's version comparison).
 version:@[{trim first read0 x};`:::VERSION;{'"di.servers: VERSION file missing or unreadable"}];
 if[0=count version;'"di.servers: VERSION file is empty"];
-export:([init;startup;getservers;gethandlebytype;waitfortype;getapimeta;version])
+export:([init;teardown;startup;getservers;gethandlebytype;waitfortype;getapimeta;version])

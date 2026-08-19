@@ -28,8 +28,48 @@ self:`proctype`procname!``;
 / guards init's one-time process-global side effects (the .z.pc observer + the retry timer job) so
 / init is IDEMPOTENT - di.torq calls it once per process, but a second call (a test re-run, a
 / future re-init) must not re-register: di.timer.addjob throws on a duplicate id. the dep refs are
-/ always refreshed; only the one-time registrations are guarded.
+/ always refreshed; only the one-time registrations are guarded. teardown resets it to 0b so a
+/ later init registers again - it is the SIDE-EFFECT guard only, deliberately not the initialised[]
+/ probe below (see there for why the two are separate flags).
 registered:0b;
+
+initialised:{[]
+  / has init run? .z.m.loginfo has no load-time default - its only value comes from init, so this
+  / probe cannot be fooled by a constant of the same name. that rules out the two obvious
+  / alternatives: `self` and `registered` are both declared at LOAD time above, so neither can tell
+  / "init ran" from "the module was merely loaded". it is also the truest probe of what requireinit
+  / actually protects - without a wired logger the module cannot even report its own failures.
+  / deliberately NOT `registered`: teardown resets that, and conflating the two would make every
+  / function report "init must be called" after a teardown, which is both untrue and would put
+  / SERVERS out of reach of the shutdown path teardown exists to serve. di.rdb (probes hdbdir,
+  / resets started) and di.subscriptions (probes subscriptions, resets observing) split them the
+  / same way.
+  :@[{.z.m.loginfo;1b};::;{[e] :0b}];
+  };
+
+requireinit:{[ctx]
+  / every exported function except init/getapimeta refuses to run before init has wired the deps.
+  / without this a pre-init call is SILENTLY wrong rather than loud, which is the worst shape a bug
+  / here could take: getservers returns an empty table, gethandlebytype 0Ni, and waitfortype spins
+  / its full timeout before returning 0b - all three indistinguishable from "genuinely nothing of
+  / that type is connected right now". signals with a plain ' and NOT raiseerror: the logger is the
+  / very thing that may not be wired yet.
+  if[not initialised[];
+    '"di.servers: ",string[ctx],": init must be called before any other function"];
+  };
+
+iscallable:{[x]
+  / internal - is x a genuinely callable value? 100 112h spans every callable form (lambda,
+  / primitive, operator, iterator, projection, composition), but 101h - the generic null :: - sits
+  / INSIDE that range while being callable in no useful sense, so the bare range check is not enough.
+  / that matters because :: is exactly what a dict hands back for a MISSING key when its value side
+  / is plain functions, which is what a real dep dict looks like (`deletejobs _ di.timer gives 101h,
+  / not the 99h a table-valued dep gives). admitting it lets an absent or explicitly-null dep reach
+  / teardown and no-op in silence: @[::;id;handler] simply returns id, deleting nothing, while
+  / teardown logs success. measured end to end, hence the extra exclusion
+  t:type x;
+  :(t within 100 112h) and 101h<>t;
+  };
 
 raiseerror:{[ctx;msg]
   / internal - log an error under ctx via the injected logger, then signal it, so a failure is
@@ -61,8 +101,36 @@ init:{[deps]
     '"di.servers: timer`addjob must be a variant dict (see di.timer addjob.custom/default/simple)"];
   if[not `custom in key deps[`timer]`addjob;
     '"di.servers: timer`addjob must expose the `custom variant [id;func;params;period;mode;opts]"];
+  / deletejobs is checked here for the same reason addjob is, and the consequence of NOT checking it
+  / is worse than a late error - it is a SILENT one. the timer dep's value side is dict-typed, so a
+  / MISSING key returns a null-shaped DICT rather than erroring. teardown's
+  / @[.z.m.timer[`deletejobs];ids;handler] then stops being protected-apply at all: @[x;y;z] is
+  / "try x[y], catch with z" only when x is a FUNCTION, and here x is a dict, so q reads the whole
+  / expression as three-argument AMEND. it upserts the job id into that throwaway dict using the
+  / error handler as the new value, discards the result (nothing in teardown captures it) and
+  / carries on. nothing throws, nothing warns, serversretry is never deleted, and teardown still
+  / logs success - a false positive. see di.rdb, which closes the identical trap
+  if[not `deletejobs in key deps`timer;
+    '"di.servers: timer dict must expose `deletejobs - teardown needs it, and a timer dep without ",
+      "it fails SILENTLY at teardown rather than loudly here; see di.timer"];
+  / presence is NOT enough: a non-callable deletejobs reaches teardown's @[...] and lands in exactly
+  / the same amend interpretation as a missing key, so it too returns quietly having deleted
+  / nothing. iscallable, not a bare `within 100 112h`: the range admits 101h (::), which is both a
+  / non-callable and the exact value a function-valued dep dict returns for a missing key - see there
+  if[not iscallable deps[`timer]`deletejobs;
+    '"di.servers: timer`deletejobs must be a function [ids]; a non-callable or null value fails ",
+      "silently at teardown - see di.timer"];
   if[99h<>type deps`handlers;
     '"di.servers: handlers value must be a dict (see di.handlers)"];
+  / register is what init calls and remove is what teardown calls; neither was validated before, so
+  / a handlers dep missing either failed late and obscurely at the call site instead of here, naming
+  / neither the module nor the missing key. same presence-then-callable pair as the timer checks
+  if[not all `register`remove in key deps`handlers;
+    '"di.servers: handlers dict must have `register`remove keys (init registers, teardown removes); ",
+      "got: ",(", " sv string key deps`handlers)];
+  if[not all iscallable each deps[`handlers]`register`remove;
+    '"di.servers: handlers`register and handlers`remove must both be functions, neither null ",
+      "- see di.handlers"];
   if[not all `proctype`procname in key deps;
     '"di.servers: proctype and procname (self-identity) are required in deps"];
   if[not all -11h=type each deps`proctype`procname;
@@ -91,6 +159,34 @@ init:{[deps]
     .z.m.registered:1b;
     ];
   .z.m.loginfo[`init;"di.servers initialised"];
+  };
+
+teardown:{[]
+  / release both process-global registrations init installed - the .z.pc observer and the
+  / serversretry timer job - so nothing of di.servers is left bound process-wide. paired with init's
+  / side effects, exactly as di.subscriptions.teardown is paired with its .z.pc registration and
+  / di.rdb.teardown with its root entry points and timer jobs.
+  / module state is deliberately LEFT INTACT - SERVERS above all - so a shutdown path can still
+  / inspect what was connected and to whom; only the process-global bindings are withdrawn. the same
+  / convention every other teardown in this project follows.
+  / IDEMPOTENT: a second call must not die on what the first already removed. both release calls are
+  / no-ops on an already-removed registration - di.timer.deletejobs is a delete-where over its jobs
+  / table (an id that is not there matches nothing) and di.handlers' removesimple early-returns with
+  / an info log when the event or the name is not registered. verified in both modules, not assumed.
+  requireinit[`teardown];
+  / called directly rather than through @[...]: init guarantees `remove is present and callable, so
+  / a throw here is a genuine handlers failure and should surface rather than be swallowed
+  .z.m.handlers[`remove][`.z.pc;`;`servers];
+  / NB this @[...] IS protected-apply only because init guarantees `deletejobs is present and is a
+  / function. were the key missing, x would be the null-shaped dict a dict-valued dep returns for an
+  / absent key and q would read the line as three-argument amend instead, deleting nothing and
+  / logging nothing while teardown reported success. the init check is what keeps this line honest
+  @[.z.m.timer[`deletejobs];`serversretry;
+    {[e] .z.m.logwarn[`teardown;"could not delete the serversretry timer job: ",e]}];
+  / reset the SIDE-EFFECT guard only, so a later init registers both again. initialised[] probes
+  / .z.m.loginfo, not this, so everything else stays callable after a teardown - see initialised[]
+  .z.m.registered:0b;
+  .z.m.loginfo[`teardown;"di.servers .z.pc registration and serversretry job removed"];
   };
 
 formathp:{[host;port]
@@ -130,6 +226,7 @@ startup:{[]
   / normalise connections to symbols to match process.csv's `proctype column (always a symbol via
   / the "S" spec): a .q settings file gives symbols already (`$ throws 'type on a symbol - it is
   / NOT idempotent, hence the type check); a .toml one gives plain strings (TOML has no symbol).
+  requireinit[`startup];
   conns:.z.m.connections;
   conns:$[11h=abs type conns;conns;`$conns];
   if[0=count conns;.z.m.loginfo[`servers;"no configured connections to make"];:()];
@@ -199,6 +296,7 @@ getservers:{[pt]
   / di.serverselect.getservers both implement, and which any consumer written against either expects.
   / matching with `in` rather than `=` is what makes both shapes work; a bare symbol still behaves
   / exactly as before, so every existing caller is unaffected
+  requireinit[`getservers];
   if[not 11h=abs type pt;raiseerror[`getservers;"proctype must be a symbol or symbol list"]];
   $[`~pt;
     select from .z.m.SERVERS where not null w;
@@ -221,6 +319,7 @@ updatestats:{[wh]
 gethandlebytype:{[pt;selection]
   / get a single live handle for a proctype via a selection algorithm (`any`roundrobin`last), or
   / 0Ni if none is connected. bumps usage stats on the chosen row.
+  requireinit[`gethandlebytype];
   if[not -11h=type pt;raiseerror[`gethandlebytype;"proctype must be a symbol"]];
   if[not -11h=type selection;raiseerror[`gethandlebytype;"selection must be a symbol (`any`roundrobin`last)"]];
   r:getservers[pt];
@@ -243,6 +342,8 @@ waitfortype:{[pt;timeoutms;pollms]
   / sleeping pollms. returns 1b once connected, 0b on timeout - the CALLER decides if that is fatal.
   / NOTE the blocking system"sleep" is fine at startup (single-threaded; the injected timer's .z.ts
   / just doesn't fire during the sleep).
+  / a zero or already-expired timeout performs NO active retry - see servers.md, waitfortype[pt;0;p]
+  requireinit[`waitfortype];
   if[not -11h=type pt;raiseerror[`waitfortype;"proctype must be a symbol"]];
   if[not (abs type timeoutms) within 5 7h;raiseerror[`waitfortype;"timeoutms must be an integer (ms)"]];
   if[not (abs type pollms) within 5 7h;raiseerror[`waitfortype;"pollms must be an integer (ms)"]];
@@ -262,6 +363,7 @@ getapimeta:{[]
   / di.api. init/getapimeta are plumbing (di.torq calls them by convention) and are deliberately NOT
   / listed - the registry describes the callable api, not plumbing. names are bare (di.torq qualifies).
   :flip `name`public`descrip`params`return!flip(
+    (`teardown;        1b; "release the .z.pc handler and retry job installed by init";                     "[]";                                       "null");
     (`startup;         1b; "open connections to configured proctypes from process.csv (reads init config)"; "[]";                                       "null");
     (`getservers;      1b; "live SERVERS rows for a proctype, a list of proctypes, or ` for all";   "[symbol|list: proctype, or ` for all]";           "table: live server rows");
     (`gethandlebytype; 1b; "one live handle for a proctype via any/roundrobin/last selection";      "[symbol: proctype; symbol: selection]";           "int: handle, 0Ni if none");

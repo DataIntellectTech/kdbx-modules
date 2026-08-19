@@ -20,9 +20,11 @@ rtmr:use`di.timer;
 / does NOT actually bind .z.pc - so the only cleanup path exercised here is the explicit retry->
 / cleanup, tested in isolation from the auto .z.pc hook (which di.handlers would install for real).
 handlercalls:([]event:`symbol$();name:`symbol$());
+/ remove DELETES the recorded row (it used to be a no-op), so teardown's release is observable the
+/ same way register's is - a no-op remove would let a broken teardown pass every assertion.
 mockhandlers:`register`remove`list!(
   {[ev;ph;nm;pri;fn]`handlercalls upsert(ev;nm)};
-  {[ev;ph;nm]};
+  {[ev;ph;nm] handlercalls::delete from handlercalls where event=ev,name=nm;};
   {[ev]});
 
 warnlogged:{[s] any (exec msg from logrows where lvl=`warn) like "*",s,"*"};

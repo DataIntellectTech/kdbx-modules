@@ -1,15 +1,74 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,svc:use`di.servers,1,1,load the module
-before,0,0,q,os:use`di.os,1,1,di.os for abspath (test harness only)
-before,0,0,q,"system ""l "", os.abspath[""di/servers/test.q""]",1,1,load recording mocks + real-peer fixture helpers
+comment,,,,,,,"paths are resolved from the MODULE directory via .Q.m.mp, not from the current working"
+comment,,,,,,,"directory. di.os.abspath[""di/servers/test.q""] resolved against CWD, so the suite only ran from"
+comment,,,,,,,"the repo root - from anywhere else it died with di/<cwd>/di/servers/test.q: No such file, which"
+comment,,,,,,,"reads like a missing fixture rather than a path bug. .Q.m.mp is what k4unit itself uses to find"
+comment,,,,,,,this very test.csv
+before,0,0,q,".t.MODDIR:.Q.m.mp`di.servers",1,1,this module's own directory - independent of where q was started
+before,0,0,q,"system ""l "", .t.MODDIR,""/test.q""",1,1,load recording mocks + real-peer fixture helpers
 before,0,0,q,setupfixture[],1,1,write a temp process.csv fixture (self/otherproc/deadproc) and pick free ports
 before,0,0,q,spawnpeer[],1,1,launch a genuinely separate q peer to act as otherproc
+comment,,,,,,,"requireinit - every exported function except getapimeta refuses to run before init. these rows"
+comment,,,,,,,"MUST stay above EVERY init attempt below, including the failing ones: an init validation gap"
+comment,,,,,,,"would let one of those rows succeed and wire the logger, and these rows would then fail for that"
+comment,,,,,,,"reason instead of a missing guard (measured). they assert the NAMED message rather than just"
+comment,,,,,,,"that something threw: a bare fail row would pass on any unrelated throw, and a row checking only"
+comment,,,,,,,"""returned 0/empty"" would still pass under the old silent behaviour and prove nothing"
+run,0,0,q,"estartup:@[{svc[`startup][]};::;{[e] e}]",1,1,call startup before init and capture the error text
+true,0,0,q,"0<count estartup ss ""init must be called before any other function""",1,1,startup refuses before init with the named message
+true,0,0,q,"0<count estartup ss ""di.servers: startup:""",1,1,and the message names the module and the function - not an unrelated throw
+run,0,0,q,"egetservers:@[{svc[`getservers][`otherproc]};::;{[e] e}]",1,1,call getservers before init and capture the error text
+true,0,0,q,"0<count egetservers ss ""init must be called before any other function""",1,1,getservers refuses before init with the named message
+true,0,0,q,"0<count egetservers ss ""di.servers: getservers:""",1,1,and the message names the module and the function - not an unrelated throw
+run,0,0,q,"egethandlebytype:@[{svc[`gethandlebytype][`otherproc;`any]};::;{[e] e}]",1,1,call gethandlebytype before init and capture the error text
+true,0,0,q,"0<count egethandlebytype ss ""init must be called before any other function""",1,1,gethandlebytype refuses before init with the named message
+true,0,0,q,"0<count egethandlebytype ss ""di.servers: gethandlebytype:""",1,1,and the message names the module and the function - not an unrelated throw
+run,0,0,q,"ewaitfortype:@[{svc[`waitfortype][`otherproc;2000;200]};::;{[e] e}]",1,1,call waitfortype before init and capture the error text
+true,0,0,q,"0<count ewaitfortype ss ""init must be called before any other function""",1,1,waitfortype refuses before init with the named message
+true,0,0,q,"0<count ewaitfortype ss ""di.servers: waitfortype:""",1,1,and the message names the module and the function - not an unrelated throw
+run,0,0,q,"eteardown:@[{svc[`teardown][]};::;{[e] e}]",1,1,call teardown before init and capture the error text
+true,0,0,q,"0<count eteardown ss ""init must be called before any other function""",1,1,teardown refuses before init with the named message
+true,0,0,q,"0<count eteardown ss ""di.servers: teardown:""",1,1,and the message names the module and the function - not an unrelated throw
+true,0,0,q,"0=count select from handlercalls where event=`.z.pc,name=`servers",1,1,none of the pre-init calls registered anything - init really has not run yet
 comment,,,,,,,init - dependency + config validation (plain signal; logger not wired yet)
 fail,0,0,q,svc.init[()!()],1,1,init with no deps errors
 fail,0,0,q,svc.init[enlist[`log]!enlist mocklog],1,1,init missing timer/handlers errors
 fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(42;rtmr;mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a non-dict log value
 fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!((enlist`info)!enlist{[c;m]};rtmr;mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a log dict missing warn/error
 fail,0,0,q,"svc.init[`log`timer`handlers!(mocklog;rtmr;mockhandlers)]",1,1,init rejects deps without proctype/procname identity
+comment,,,,,,,"deletejobs must be rejected HERE, because teardown cannot detect it missing: a dict-valued"
+comment,,,,,,,"dep returns a null-shaped DICT for an absent key, which turns teardown's @[...;ids;handler]"
+comment,,,,,,,"from protected-apply into three-argument AMEND - it upserts the id into that throwaway dict,"
+comment,,,,,,,"discards the result and logs nothing, so serversretry survives and teardown still reports it"
+comment,,,,,,,"removed. same trap di.rdb closes at init; handlers`remove is validated for the same reason"
+comment,,,,,,,"the SHAPE of the timer dep matters here. a dict returns the null of its value list for a"
+comment,,,,,,,"missing key, and for the realistic shape - a value side of plain functions, e.g. the real"
+comment,,,,,,,"di.timer with the key dropped - that null is :: , whose type is 101h. 101h is INSIDE the"
+comment,,,,,,,"100 112h callable range, so the callable check below does NOT reject it: the presence check"
+comment,,,,,,,"is the only thing standing between a caller and a silently-undeleted job. a table-valued"
+comment,,,,,,,"timer dep yields a 99h null-shaped dict instead, which the callable check DOES catch - so a"
+comment,,,,,,,"row written against that shape alone passes with the presence check deleted. do not simplify"
+comment,,,,,,,these back to one row
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;`deletejobs _ rtmr;mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a REALISTIC timer dep with no deletejobs - only the presence check can reject this shape
+run,0,0,q,"edjmiss:@[{svc[`init][`log`timer`handlers`proctype`procname!(mocklog;`deletejobs _ rtmr;mockhandlers;`selfproc;`selfinst)]};::;{[e] e}]",1,1,capture the error text so the row above cannot pass via the wrong check
+true,0,0,q,"0<count edjmiss ss ""must expose `deletejobs""",1,1,the PRESENCE check is what rejected it - its message is the one naming the missing key
+true,0,0,q,"0=count edjmiss ss ""must be a function""",1,1,and it did not fall through to the callable check - deleting the presence check flips both of these
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;(enlist`addjob)!enlist(enlist[`custom]!enlist {[i;f;p;pe;m;o] });mockhandlers;`selfproc;`selfinst)]",1,1,a table-valued timer dep with no deletejobs is rejected too - here the 99h null is caught by the callable check
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;`addjob`deletejobs!((enlist[`custom]!enlist {[i;f;p;pe;m;o] });42);mockhandlers;`selfproc;`selfinst)]",1,1,"init rejects a NON-CALLABLE deletejobs - presence alone is not enough, it lands in the same silent amend as a missing key"
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;rtmr;(enlist`register)!enlist mockhandlers`register;`selfproc;`selfinst)]",1,1,init rejects a handlers dict with no remove - teardown needs it
+comment,,,,,,,"a missing handlers key reaches the callable check as :: (symbol-vector indexing fills with"
+comment,,,,,,,"the generic null), and iscallable rejects that too - so the row above alone cannot tell which"
+comment,,,,,,,"check fired. these pin the presence check: its message is the one that names the missing key"
+run,0,0,q,"ehmiss:@[{svc[`init][`log`timer`handlers`proctype`procname!(mocklog;rtmr;(enlist`register)!enlist mockhandlers`register;`selfproc;`selfinst)]};::;{[e] e}]",1,1,capture the error text from a handlers dep with no remove
+true,0,0,q,"0<count ehmiss ss ""must have `register`remove keys""",1,1,the PRESENCE check rejected it - deleting that check flips this row
+true,0,0,q,"0=count ehmiss ss ""must both be functions""",1,1,and it did not fall through to the callable check
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;rtmr;`register`remove!(mockhandlers`register;42);`selfproc;`selfinst)]",1,1,init rejects a non-callable handlers remove for the same reason
+comment,,,,,,,"present-but-NULL is the case a bare `within 100 112h` misses: 101h (::) sits inside that"
+comment,,,,,,,"range while being callable in no useful sense, and @[::;id;handler] just returns id - so a"
+comment,,,,,,,"null dep would pass init, then delete nothing at teardown while teardown logged success"
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;rtmr,(enlist`deletejobs)!enlist(::);mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a deletejobs that is present but null - the key is there so only the callable check can reject it
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;rtmr;mockhandlers,(enlist`remove)!enlist(::);`selfproc;`selfinst)]",1,1,init rejects a handlers remove that is present but null for the same reason
 comment,,,,,,,init - wiring and idempotency
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,init with mock deps + config (dial otherproc and deadproc)
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,init registered its .z.pc observer via the handlers dep
@@ -69,8 +128,18 @@ true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapime
 comment,,,,,,,module metadata - exported version
 true,0,0,q,10h=type svc.version,1,1,version is a string
 true,0,0,q,0<count svc.version,1,1,version is non-empty
-true,0,0,q,"svc.version~trim first read0 hsym`$os.abspath[""di/servers/VERSION""]",1,1,exported version matches the VERSION file (the single source of truth)
+true,0,0,q,"svc.version~trim first read0 hsym`$.t.MODDIR,""/VERSION""",1,1,exported version matches the VERSION file (the single source of truth)
 comment,,,,,,,real di.log integration (the merged logger itself - not the recording mock)
 true,0,0,q,all `info`warn`error in key (use`di.log)[`logdict]`log,1,1,di.log logdict provides the info/warn/error keys the injected-log contract requires
 run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!((use`di.log)[`logdict]`log;rtmr;mockhandlers;`selfproc;`selfinst)]",1,1,init accepts di.log's real logdict end-to-end (idempotent re-init against the merged logger)
+comment,,,,,,,teardown - release the two process-global registrations init installed
+run,0,0,q,svc.teardown[],1,1,tear down
+true,0,0,q,"0=count select from handlercalls where event=`.z.pc,name=`servers",1,1,teardown removed the .z.pc registration through the injected handlers dep
+true,0,0,q,0=count select from rtmr.getalljobs[] where id=`serversretry,1,1,teardown deleted the serversretry job through the injected timer dep
+run,0,0,q,svc.getservers[`otherproc],1,1,getservers is still callable after teardown - the initialised probe is not the registered flag
+true,0,0,q,0<count .m.di.0servers.SERVERS,1,1,module state is deliberately left intact - SERVERS survives teardown for a shutdown path to inspect
+run,0,0,q,svc.teardown[],1,1,"a second teardown must not throw - deletejobs is a delete-where no-op, handlers.remove early-returns"
+run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,init after teardown - the registered guard was reset so both side effects install again
+true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,init after teardown re-registered the .z.pc observer rather than being skipped by the guard
+true,0,0,q,1=count select from rtmr.getalljobs[] where id=`serversretry,1,1,init after teardown rescheduled the retry job - and did not throw on a duplicate id
 after,0,0,q,teardownfixture[],1,1,kill the peer and remove the fixture dir

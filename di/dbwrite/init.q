@@ -17,4 +17,4 @@
 version:@[{trim first read0 x};`:::VERSION;{'"di.dbwrite: VERSION file missing or unreadable"}];
 if[0=count version;'"di.dbwrite: VERSION file is empty"];
 
-export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;version])
+export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;version;getapimeta])

@@ -234,3 +234,25 @@ gc:{[]
   r:.Q.gc[];
   .z.m.loginfo[`gc;"garbage collection returned ",(string `long$r%1048576),"MB. ",memstats[]];
   };
+
+getapimeta:{[]
+  / one row per CALLABLE export, for di.torq to register with di.api. init and getapimeta are
+  / omitted as plumbing. names are bare
+  :flip `name`public`descrip`params`return!flip(
+    (`readcsv;    1b; "read a sort-config csv and store it in module state";
+       "[symbol|hsym|string: file]";                                          "table: the stored config");
+    (`setconfig;  1b; "store a hand-built sort-config table in module state";
+       "[table: t (tabname/att/column/sort)]";                                "table: the stored config");
+    (`getconfig;  1b; "return the currently stored sort config";
+       "[]";                                                                  "table|generic null: config, or (::) if unset");
+    (`sort;       1b; "sort on-disk partition(s) for a table and apply attributes per stored config";
+       "[symbol: tabname; hsym|hsym list: dirs]";                             "null");
+    (`applyattr;  1b; "apply a single kdb+ attribute (p/s/g/u) to one on-disk column, best-effort";
+       "[hsym: dloc; symbol: colname; symbol: att]";                          "null");
+    (`savedown;   1b; "write an in-memory table to an hdb partition, sort it, then run gc";
+       "[hsym: dir; date|month|int: part; symbol: tabname; table: data]";     "null");
+    (`appenddown; 1b; "append rows to an existing on-disk partition without sorting";
+       "[hsym: dir; date|month|int: part; symbol: tabname; table: data]";     "null");
+    (`version;    1b; "module version string";
+       "[]";                                                                  "string: version"));
+  };

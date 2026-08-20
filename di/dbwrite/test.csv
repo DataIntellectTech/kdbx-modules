@@ -243,3 +243,7 @@ comment,,,,,,,"while a padded VERSION still yielded ""0.1.0  "" - which di.depch
 comment,,,,,,,the padding silently fails every dependent module's check. these two catch that
 true,0,0,q,dbwrite.version~trim dbwrite.version,1,1,version carries no leading or trailing whitespace of any kind
 true,0,0,q,"dbwrite.version~trim first read0 hsym`$(.Q.m.mp`di.dbwrite),""/VERSION""",1,1,and it matches the VERSION file - the single source of truth - read module-relative rather than from the cwd
+comment,,,,,,,getapimeta - di.torq reads this to register the module with di.api
+true,0,0,q,"(asc (key dbwrite) except `init`getapimeta)~asc exec name from dbwrite.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,"not any `init`getapimeta in exec name from dbwrite.getapimeta[]",1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols dbwrite.getapimeta[],1,1,getapimeta rows carry the registry columns

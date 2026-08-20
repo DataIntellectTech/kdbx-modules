@@ -1,26 +1,49 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-comment,,,,,,,Setup - load module, inject a silent mock logger and a capturing logger, create a scratch dir
+comment,,,,,,,Setup - load module, define mock loggers (info+error only - the minimum di.merge requires) and a scratch dir
 before,0,0,q,merge:use`di.merge,1,1,load the merge module
 before,0,0,q,os:use`di.os,1,1,load os for portable directory management in the on-disk tests
-before,0,0,q,mylog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent binary log mock - {[c;m]} is the internal contract
+before,0,0,q,mylog:`info`error!({[c;m]};{[c;m]}),1,1,silent binary log mock with only the required info/error keys
 before,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,1,capture table for the log-path assertions
-before,0,0,q,logcap:`info`warn`error!({[c;m]`caplog upsert(`info;c;m)};{[c;m]`caplog upsert(`warn;c;m)};{[c;m]`caplog upsert(`error;c;m)}),1,1,capturing binary logger recording level, context and message
-before,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,initialise with the silent logger
+before,0,0,q,logcap:`info`error!({[c;m]`caplog upsert(`info;c;m)};{[c;m]`caplog upsert(`error;c;m)}),1,1,capturing binary logger recording level context and message
 before,0,0,q,.test.root:`:mergetesttmp,1,1,scratch directory root for the on-disk merges
 before,0,0,q,{if[os.isdir x;os.deldir x]} .test.root,1,1,remove any leftover scratch dir from a previous run
 before,0,0,q,os.mkdir .test.root,1,1,create the scratch dir
 before,0,0,q,".test.splay:{[d;t] (` sv d,`) set t}",1,1,helper to write a table as a splayed partition directory
 before,0,0,q,".test.slash:{` sv x,`}",1,1,helper to append the trailing slash mergebypart expects on dest
 
-comment,,,,,,,init - dependency injection validation (log is required)
+comment,,,,,,,requireinit guard - every exported function except init/getapimeta refuses to run before init
+fail,0,0,q,merge.trackpartition[`:g1;1;1],1,1,trackpartition rejected before init
+fail,0,0,q,merge.clearpartsizes[],1,1,clearpartsizes rejected before init
+fail,0,0,q,merge.getpartsizes[],1,1,getpartsizes rejected before init
+fail,0,0,q,"merge.syncpartsizes[([ptdir:`symbol$()] rowcount:`long$();bytes:`long$())]",1,1,syncpartsizes rejected before init
+fail,0,0,q,merge.getpartchunks[`:d1`:d2;100],1,1,getpartchunks rejected before init
+fail,0,0,q,merge.mergebypart[enlist`sym;`:dest;`:seg1`:seg2],1,1,mergebypart rejected before init
+fail,0,0,q,"merge.mergebycol[(`t;([]a:`int$()));`:dest;`:seg]",1,1,mergebycol rejected before init
+fail,0,0,q,"merge.mergehybrid[enlist`sym;(`t;([]a:`int$()));`:dest;`:d1`:d2;100]",1,1,mergehybrid rejected before init
+fail,0,0,q,merge.checkpartitiontype[`t;enlist`sym],1,1,checkpartitiontype rejected before init
+fail,0,0,q,merge.checkenumerabletype[`t;enlist`sym],1,1,checkenumerabletype rejected before init
+fail,0,0,q,merge.getextrapartitions[`t;enlist`sym],1,1,getextrapartitions rejected before init
+fail,0,0,q,merge.getfirstcharpartitions[`t;enlist`sym],1,1,getfirstcharpartitions rejected before init
+true,0,0,q,".[merge.trackpartition;(`:g1;1;1);{x}]~""di.merge: trackpartition: init must be called before any other function""",1,1,requireinit error message names the function and is precise
+
+comment,,,,,,,init - dependency injection validation (log is required with info and error keys)
 fail,0,0,q,merge.init[(::)],1,1,init rejects :: as deps
 fail,0,0,q,merge.init[42],1,1,init rejects a non-dict deps value
 fail,0,0,q,merge.init[()!()],1,1,init rejects empty dict (log missing)
 fail,0,0,q,merge.init[enlist[`other]!enlist mylog],1,1,init rejects a dict missing the log key
 fail,0,0,q,merge.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
-fail,0,0,q,merge.init[enlist[`log]!enlist(`info`warn!(mylog`info;mylog`warn))],1,1,init rejects a log dict missing the error level
+fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`info]!enlist mylog`info)],1,1,init rejects a log dict missing the error level
+fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`error]!enlist mylog`error)],1,1,init rejects a log dict missing the info level
 true,0,0,q,"(8#@[merge.init;(::);{x}])~""di.merge""",1,1,error message is prefixed di.merge
-run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,re-init with a valid log dep
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,init with a valid minimal (info+error only) log dep
+
+comment,,,,,,,version and getapimeta
+true,0,0,q,`version in key merge,1,1,version is still an export - di.depcheck reads it there
+true,0,0,q,3=count "." vs merge.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any merge.version in ""\n\r""",1,1,no stray newline came through from the file
+true,0,0,q,"(asc (key merge) except `init`getapimeta)~asc exec name from merge.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,"not any `init`getapimeta in exec name from merge.getapimeta[]",1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols merge.getapimeta[],1,1,getapimeta rows carry the registry columns
 
 comment,,,,,,,trackpartition accumulates row count and bytes per partition directory
 run,0,0,q,merge.clearpartsizes[],1,1,start from an empty store
@@ -31,6 +54,32 @@ true,0,0,q,8=first exec rowcount from merge.getpartsizes[] where ptdir=`:t1,1,1,
 true,0,0,q,600=first exec bytes from merge.getpartsizes[] where ptdir=`:t1,1,1,byte estimates accumulate
 run,0,0,q,merge.clearpartsizes[],1,1,clear the store
 true,0,0,q,0=count merge.getpartsizes[],1,1,clearpartsizes empties the store
+
+comment,,,,,,,re-init preserves tracked-but-unmerged partitions rather than wiping them
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,merge.clearpartsizes[],1,1,start from an empty store
+run,0,0,q,merge.trackpartition[`:reinit1;9;90],1,1,track a segment before re-init
+run,0,0,q,caplog:0#caplog,1,1,reset the capture before the re-init under test
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,re-init with valid, unchanged deps
+true,0,0,q,1=count merge.getpartsizes[],1,1,the tracked partition survives the re-init
+true,0,0,q,9=first exec rowcount from merge.getpartsizes[] where ptdir=`:reinit1,1,1,its tracked values are unchanged
+true,0,0,q,"any {0<count x ss ""already tracked, preserved""} each caplog`msg",1,1,init logs that it preserved existing tracked partitions
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,re-init again with nothing tracked
+true,0,0,q,"not any {0<count x ss ""preserved""} each caplog`msg",1,1,init does not claim to have preserved anything when there was nothing tracked
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
+comment,,,,,,,syncpartsizes upserts a peer-received table into local tracked state
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[`:s1;5;50],1,1,track a local segment
+run,0,0,q,"merge.syncpartsizes[([ptdir:enlist`:s2] rowcount:enlist 7;bytes:enlist 70)]",1,1,sync a new partition received from a peer
+true,0,0,q,2=count merge.getpartsizes[],1,1,both the local and synced partitions are present
+true,0,0,q,5=first exec rowcount from merge.getpartsizes[] where ptdir=`:s1,1,1,the local partition is unaffected by the sync
+true,0,0,q,7=first exec rowcount from merge.getpartsizes[] where ptdir=`:s2,1,1,the synced partition's rowcount is present
+run,0,0,q,"merge.syncpartsizes[([ptdir:enlist`:s1] rowcount:enlist 99;bytes:enlist 999)]",1,1,sync an update to the already-tracked s1
+true,0,0,q,99=first exec rowcount from merge.getpartsizes[] where ptdir=`:s1,1,1,syncpartsizes replaces the matching row wholesale rather than accumulating
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
 
 comment,,,,,,,getpartchunks batches partitions up to the row-count limit
 run,0,0,q,merge.clearpartsizes[],1,1,reset the store
@@ -89,6 +138,18 @@ run,0,0,q,.test.splay[.test.rseg2;([]grp:1 2;px:3 4f)],1,1,segment 2
 run,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.rdest;(.test.rseg1;.test.rseg2)],1,1,merge with grp as the parted column - joined data is not parted so must be re-sorted
 true,0,0,q,(get .test.rdest)~([]grp:1 1 2 2;px:1 3 2 4f),1,1,rows re-sorted by grp so the p attribute can be applied
 
+comment,,,,,,,mergebypart logs an upsert failure via the injected logger instead of throwing
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,.test.edest:`:mergetesttmp/edest,1,1,destination partition directory with a deliberately mismatched column type
+run,0,0,q,.test.eseg:`:mergetesttmp/eseg,1,1,segment with a mismatched column type
+run,0,0,q,.test.splay[.test.edest;([]px:`int$())],1,1,destination column typed int
+run,0,0,q,.test.splay[.test.eseg;([]px:1 2)],1,1,segment column typed long - the upsert will type-mismatch
+run,0,0,q,merge.mergebypart[`$();.test.slash .test.edest;enlist .test.eseg],1,1,merge does not throw even though the underlying upsert fails
+true,0,0,q,`error in exec fn from caplog,1,1,the upsert failure is logged as an error
+true,0,0,q,"any {0<count x ss ""failed to merge to""} each caplog`msg",1,1,the logged message names the failure clearly rather than being corrupted by a double string conversion
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
 comment,,,,,,,mergehybrid merges under-limit partitions whole and over-limit ones column by column
 run,0,0,q,.test.hschema:([]px:`float$();sz:`long$()),1,1,column schema
 run,0,0,q,.test.htinfo:(`trade;.test.hschema),1,1,tableinfo pair
@@ -110,15 +171,18 @@ run,0,0,q,qsym:([]sym:`c`a`b`a`c;px:1 2 3 4 5),1,1,table with a repeating symbol
 true,0,0,q,3=count merge.getextrapartitions[`qsym;enlist`sym],1,1,one entry per distinct sym value
 true,0,0,q,(asc raze merge.getextrapartitions[`qsym;enlist`sym])~`a`b`c,1,1,the three distinct sym values
 
-comment,,,,,,,parted-column checks route through the injected logger
+comment,,,,,,,parted-column checks route through the injected logger and no longer reference sort.csv
 run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
 run,0,0,q,qtbl:([]a:1 2;b:3 4;f:1.0 2.0),1,1,table with long and float columns
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
 run,0,0,q,merge.checkpartitiontype[`qtbl;enlist`c],1,1,check a parted column absent from the table
 true,0,0,q,`error in exec fn from caplog,1,1,missing parted column is error-logged
+true,0,0,q,"not any {0<count x ss ""sort.csv""} each caplog`msg",1,1,the error message no longer references sort.csv
+true,0,0,q,"any {0<count x ss ""parted columns supplied""} each caplog`msg",1,1,the error message uses the reworded phrasing
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
 run,0,0,q,merge.checkpartitiontype[`qtbl;enlist`a],1,1,check a parted column present in the table
 true,0,0,q,`info in exec fn from caplog,1,1,present parted column is info-logged
+true,0,0,q,"not any {0<count x ss ""sort.csv""} each caplog`msg",1,1,the info message no longer references sort.csv either
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
 run,0,0,q,merge.checkenumerabletype[`qtbl;enlist`f],1,1,check a non-enumerable (float) parted column
 true,0,0,q,`error in exec fn from caplog,1,1,non-enumerable parted column is error-logged

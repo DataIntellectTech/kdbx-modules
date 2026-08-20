@@ -4,7 +4,7 @@ Converts an in-memory kdb+ table into one or more `.parquet` files via `kx.arrow
 by instrument and packed into files close to a configurable target size, splitting any single
 oversized instrument across multiple files where required. A manifest recording what was written
 (file, instruments, row count, time range, on-disk size) is accumulated in the module's private
-`manifest` table; `extract` itself has no return value.
+`manifest` table; `extract` also returns this same information for the files it just wrote.
 
 ---
 
@@ -87,8 +87,9 @@ regardless of `calibrate` — this check runs first, before any other validation
 
 ## Manifest Schema
 
-The module's `manifest` table accumulates one row per file written across all `extract` calls.
-`extract` does not return this table (or anything else) — call `getmanifest[]` to read it.
+The module's `manifest` table accumulates one row per file written across all `extract` calls; call
+`getmanifest[]` to read the full accumulated table. `extract` itself returns a table of the same
+shape, scoped to only the file(s) written by that call.
 
 | Column | Type | Description |
 |---|---|---|
@@ -126,7 +127,7 @@ pqx.init[enlist[`log]!enlist logdep]
 | Function | Description |
 |---|---|
 | `init[deps]` | Wire the injected `log` dependency. Call once before the first `extract`. |
-| `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns nothing. |
+| `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns that same per-file stats table, scoped to this call. |
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn` — are
@@ -145,9 +146,10 @@ required key.
 
 ### `extract[t;tname;dt;o]`
 Write table `t` out to one or more parquet files under `<outdir>/<tname>/date=<dt>/`, appending one
-row per file written to the module's `manifest`. `o` is merged over `default` (see Options). The
-output directory is created before the size-estimation/calibration step, so a fresh `outdir` works
-with the default `calibrate:1b`.
+row per file written to the module's `manifest` and returning that same set of rows (see Manifest
+Schema) scoped to this call only — it does not include rows from any earlier `extract` call. `o` is
+merged over `default` (see Options). The output directory is created before the
+size-estimation/calibration step, so a fresh `outdir` works with the default `calibrate:1b`.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -173,14 +175,17 @@ logger:use`di.log
 pqx.init[logger.logdict]
 
 // Write `trade` for 2025.07.15, overriding the target file size and codec
-pqx.extract[trade;`trade;2025.07.15;`targetsize`codec!(256*1024*1024;`gzip)]
+res:pqx.extract[trade;`trade;2025.07.15;`targetsize`codec!(256*1024*1024;`gzip)]
 
-// extract has no return value - inspect the accumulated manifest via the getter
-pqx.getmanifest[]
+// res holds only the row(s) written by this call
+res
 
 file                                      seq syms       nsyms rows  mintime                       maxtime                       estbytes bytes   split status
 --------------------------------------------------------------------------------------------------------------------------------------------------------------
 :./trade/date=2025.07.15/part-00001.parquet 1  `AAPL`MSFT 2     50000 2025.07.15D00:00:00.000000000 2025.07.15D23:59:59.000000000 1153433  1048576 0b    ok
+
+// getmanifest[] returns the full accumulated table across every extract call so far
+pqx.getmanifest[]
 ```
 
 ---

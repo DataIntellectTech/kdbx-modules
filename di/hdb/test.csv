@@ -1,0 +1,188 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,"fixtures - k4unit runs EVERY before row before ANY assert (k4unit.q:62-79), so each"
+comment,,,,,,,scenario runs in a before row and captures its outcome into a .t.S* dict; the asserts
+comment,,,,,,,only read those dicts. ORDER MATTERS TWICE: S0 must come before any init (it is the only
+comment,,,,,,,chance to observe the pre-init guards) and SF must come before any PARTITIONED mount
+comment,,,,,,,(once one has happened .Q.pf exists process-wide and the flat-database guard is untestable)
+before,0,0,q,hdb:use`di.hdb,1,1,load the module under test
+comment,,,,,,,S0 - every exported function refuses to run before init
+before,0,0,q,".t.S0:{[] :{[g] @[{[h] h[::];0b};g;{[e] :0<count e ss ""init must be called before""}]} each (hdb[`start];hdb[`teardown];hdb[`reload];hdb[`getattributes];hdb[`status])}[]",1,1,scenario: call every export before init has run
+comment,,,,,,,fixtures
+before,0,0,q,.t.caprows:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,fixture: capturing log sink - lives under .t so a mount never sees it as a root table
+before,0,0,q,".t.caplog:`info`warn`error!({[c;m] `.t.caprows insert (`info;c;m)};{[c;m] `.t.caprows insert (`warn;c;m)};{[c;m] `.t.caprows insert (`error;c;m)})",1,1,"fixture: the binary {[c;m]} log contract, capturing rather than discarding"
+before,0,0,q,.t.resetcap:{[] .t.caprows::0#.t.caprows; },1,1,fixture: resetcap
+before,0,0,q,".t.logged:{[lv;s] :any {[s;m] 0<count m ss s}[s] each (),exec msg from .t.caprows where lvl=lv}",1,1,"fixture: logged - substring search via ss, NOT like: a multi-wildcard like throws 'nyi"
+before,0,0,q,".t.os:use`di.os",1,1,fixture: os - di.os drives every filesystem operation in this suite so it runs on windows too. NOT a module dependency: di.hdb itself needs none, and deps.q is what di.depcheck reads
+before,0,0,q,".t.BASE:.t.os[`mktempdir][]",1,1,fixture: BASE - a real temp directory from di.os, which honours TMPDIR on unix and %TEMP% on windows. no hardcoded /tmp and no pid collision
+before,0,0,q,".t.SAFE:.t.os[`mktempdir][]",1,1,fixture: SAFE - a directory the suite never deletes, to stand in while the fixture root is removed
+before,0,0,q,".t.wipe:{[] .t.os[`cd] .t.SAFE; if[.t.os[`exists] .t.BASE;.t.os[`deldir] .t.BASE]; .t.os[`mkdir] .t.BASE; }",1,1,fixture: wipe - empty the fixture root portably. cds out FIRST because mounting chdirs the process INTO the database being deleted and every later shell call then fails on a missing cwd. exists-guarded because os.deldir is rm -r without -f
+before,0,0,q,".t.HD:hsym`$.t.BASE,""/hdb""",1,1,fixture: HD - the partitioned database this module mounts
+before,0,0,q,".t.FLAT:hsym`$.t.BASE,""/flat""",1,1,fixture: FLAT - a non-partitioned splayed database
+before,0,0,q,".t.mkpart:{[d] (hsym`$(1_string .t.HD),""/"",(string d),""/trade/"") set .Q.en[.t.HD;([]sym:`a`b;price:1 2.0)];}",1,1,fixture: mkpart - write one date partition
+before,0,0,q,".t.setupfixture:{[] .t.wipe[]; .t.os[`mkdir] .t.HD; .t.mkpart each 2026.08.18 2026.08.19; }",1,1,fixture: a clean two-partition database
+before,0,0,q,".t.mkflat:{[] .t.wipe[]; .t.os[`mkdir] .t.FLAT; (hsym`$(1_string .t.FLAT),""/quote/"") set .Q.en[.t.FLAT;([]sym:`a`b;bid:1 2.0)];}",1,1,fixture: mkflat - a flat splayed database carrying no partitions at all
+before,0,0,q,.t.clearroot:{[] {![`.;();0b;enlist x]} each tables[`.]; },1,1,fixture: clearroot - drop every ROOT table so each scenario controls what it observes
+before,0,0,q,".t.mkdeps:{[extra] :(`log`hdbdir!(.t.caplog;.t.HD)),extra}",1,1,"fixture: mkdeps - the ONE flat dict init takes, with per-scenario overrides joined on"
+comment,,,,,,,"PORTABILITY - path resolution is platform-dependent and this box is linux, so the"
+comment,,,,,,,windows branch is reached by passing the platform flag explicitly. isabspath and
+comment,,,,,,,resolvepath take it as a PARAMETER for exactly this reason. module internals are
+comment,,,,,,,"reachable as .m.di.0<name>.*, derived here rather than hardcoded"
+before,0,0,q,".t.NS:` sv `.m.di,first (key`.m.di) where (key`.m.di) like ""*hdb""",1,1,fixture: NS - this module's private namespace
+before,0,0,q,".t.priv:{[nm] :get ` sv .t.NS,nm}",1,1,fixture: priv - reach an unexported internal by name
+before,0,0,q,".t.PW:{[w;l] :.t.priv[`isabspath][w] each l}",1,1,fixture: PW - isabspath across a list of paths for one platform
+comment,,,,,,,"SI - the FIRST init in this process. must run before any start, and deliberately runs"
+comment,,,,,,,before the fixture database is created on disk: init does NO i/o and must not care
+before,0,0,q,".t.SI:{[] .t.wipe[]; exists:0<count key .t.HD; hdb[`init][.t.mkdeps[()!()]]; :hdb[`status][],(enlist`direxisted)!enlist exists}[]",1,1,scenario: init against a database directory that does not exist yet
+comment,,,,,,,"SF - a FLAT (non-partitioned) database. must run before any partitioned mount: legacy's"
+comment,,,,,,,@[value;.Q.pf;.Q.PV] throws there because the .Q.PV fallback is evaluated eagerly
+before,0,0,q,".t.SF:{[] .t.clearroot[]; .t.mkflat[]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist .t.FLAT]]; hdb[`start][]; ok:@[{hdb[`getattributes][]};::;{[e] :`THREW}]; :`ok`tabs!(ok;tables[`.])}[]",1,1,scenario: mount a flat database and ask for its attributes
+comment,,,,,,,S1 - init is pure configuration; start is what mounts
+before,0,0,q,".t.S1:{[] .t.clearroot[]; .t.setupfixture[]; .t.resetcap[]; hdb[`init][.t.mkdeps[()!()]]; pre:hdb[`status][]; hdb[`start][]; :`pre`post`root!(pre;hdb[`status][];`reload in key `.)}[]",1,1,scenario: init then start on the two-partition fixture
+comment,,,,,,,"S2 - the four hdbdir shapes a .q or .toml settings file can produce"
+before,0,0,q,".t.S2:{[] p:1_string .t.HD; :{[x] .t.clearroot[]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist x]]; hdb[`start][]; :hdb[`status][]`hdbdir} each (hsym`$p;`$p;"":"",p;p)}[]",1,1,"scenario: `:dir, `dir, "":dir"" and ""dir"" must all resolve to the same hsym and all mount"
+comment,,,,,,,"S3 - THE interop assertion: di.rdb's literal (`reload;date) message, applied the way the"
+comment,,,,,,,default .z.ps applies it. see hdb.q's header for the four producers that agree on this shape
+before,0,0,q,".t.S3:{[] .t.clearroot[]; .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; b4:hdb[`getattributes][]`partition; .t.mkpart 2026.08.20; .t.resetcap[]; value (`reload;2026.08.20); :`b4`after`warned`logged!(b4;hdb[`getattributes][]`partition;.t.logged[`warn;""is not present""];.t.logged[`info;""for partition 2026.08.20""])}[]",1,1,scenario: a partition written after start is picked up by di.rdb's exact message
+comment,,,,,,,S4 - a partition the caller names but this database does not carry
+before,0,0,q,".t.S4:{[] .t.resetcap[]; reload[2026.01.01]; :`warned`part!(.t.logged[`warn;""partition 2026.01.01 is not present""];hdb[`getattributes][]`partition)}[]",1,1,scenario: reload for a partition that did not arrive - warn but do not break
+comment,,,,,,,S5 - TorqX's niladic .hdb.reload[] convention against this unary reload
+before,0,0,q,".t.S5:{[] .t.resetcap[]; reload[]; :`ran`warned`part!(.t.logged[`info;""with no partition supplied""];.t.logged[`warn;""is not present""];hdb[`getattributes][]`partition)}[]",1,1,"scenario: reload[] binds date to (::) and must still remount, not no-op"
+comment,,,,,,,S6 - an hdbdir that does not exist
+before,0,0,q,".t.S6:{[] .t.resetcap[]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist hsym`$""/nonexistent/nope""]]; thrown:@[{hdb[`start][];0b};::;{[e] :0<count e ss ""failed to mount""}]; :`thrown`logged!(thrown;.t.logged[`error;""failed to mount""])}[]",1,1,scenario: the mount fails - it must be logged AND signalled
+comment,,,,,,,S7 - teardown and re-init safety
+before,0,0,q,".t.S7:{[] .t.clearroot[]; .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; hdb[`teardown][]; gone:not `reload in key `.; twice:@[{hdb[`teardown][];1b};::;{[e] :0b}]; kept:tables[`.]; hdb[`start][]; :`gone`twice`kept`republished`started!(gone;twice;`trade in kept;`reload in key `.;hdb[`status][]`started)}[]",1,1,"scenario: teardown removes the root entry point, keeps the mounted tables, and start puts it back"
+before,0,0,q,".t.S8:{[] hdb[`init][.t.mkdeps[()!()]]; :hdb[`status][]`started}[]",1,1,scenario: a re-init on a live hdb must not report it as unstarted
+comment,,,,,,,"S9 - a REJECTED init must not half-configure the module. found by smoke testing: validating"
+comment,,,,,,,the log KEYS but not the VALUES let a data-valued log dict through every guard, whereupon
+comment,,,,,,,init threw from its own closing log call with the new hdbdir and a poisoned logger already
+comment,,,,,,,"written - a bare 'length, and every later call including teardown died the same way"
+before,0,0,q,".t.S9:{[] .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; b4:hdb[`status][]`hdbdir; thrown:@[{hdb[`init][`log`hdbdir!((`info`warn`error!(1;2;3));hsym`$""/nonexistent/zzz"")];0b};::;{[e] :0<count e ss ""log dict values must be""}]; :`thrown`same`usable!(thrown;b4~hdb[`status][]`hdbdir;@[{hdb[`teardown][];1b};::;{[e] :0b}])}[]",1,1,scenario: an init rejected on its log values leaves the module exactly as it was
+comment,,,,,,,"S10 - 0Nd is ITSELF type -14h, so a bare type test called it a real partition and warned"
+comment,,,,,,,"""partition  is not present"" - naming no partition, since string 0Nd is """". a null date must"
+comment,,,,,,,take the same path as no date at all. driven through the ROOT reload the rdb actually calls
+before,0,0,q,".t.S10:{[] .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; .t.resetcap[]; reload[0Nd]; :`nowarn`nulled`part!(not .t.logged[`warn;""is not present""];.t.logged[`info;""with no partition supplied""];hdb[`getattributes][]`partition)}[]",1,1,scenario: reload[0Nd] remounts unconditionally rather than warning about an empty partition name
+comment,,,,,,,"S11 - re-init pointed at a DIFFERENT database. `fresh` alone kept started:1b, so status[]"
+comment,,,,,,,reported the NEW hdbdir as mounted while the process was still serving the OLD one
+before,0,0,q,".t.S11:{[] .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; live:hdb[`status][]`started; .t.resetcap[]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist .t.FLAT]]; mv:not hdb[`status][]`started; wn:.t.logged[`warn;""hdbdir changed""]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; .t.resetcap[]; hdb[`init][.t.mkdeps[()!()]]; :`live`moved`warned`kept`quiet!(live;mv;wn;hdb[`status][]`started;not .t.logged[`warn;""hdbdir changed""])}[]",1,1,scenario: changing hdbdir clears started and warns; re-applying the same hdbdir does neither
+comment,,,,,,,"S13 - a RELATIVE hdbdir. mounting a database CHDIRS the process into it, so before"
+comment,,,,,,,"init pinned relative values to the configuration-time cwd, start[] succeeded and then"
+comment,,,,,,,EVERY reload failed to mount - an hdb that can never pick up a new partition. NB `abs`
+comment,,,,,,,"is a reserved word (.Q.res) and cannot be a local name here - it throws 'assign"
+before,0,0,q,".t.S13:{[] .t.clearroot[]; .t.setupfixture[]; .t.os[`cd] .t.BASE; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist ""hdb""]]; ap:hdb[`status][]`hdbdir; hdb[`start][]; ok:@[{reload[2026.08.19];1b};::;{[e] :0b}]; :`ap`ok`pinned!(ap;ok;ap~hdb[`status][]`hdbdir)}[]",1,1,scenario: a relative hdbdir must survive the chdir that mounting performs
+comment,,,,,,,"S14 - whitespace normalisation. a config value from a .toml or .q settings file can"
+comment,,,,,,,"arrive padded; \l tolerates that, so padding must normalise rather than be rejected by"
+comment,,,,,,,the interior-space guard. init does no i/o so this needs no database on disk
+before,0,0,q,".t.S14:{[] base:1_string .t.HD; a:{[b] hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist b]]; :hdb[`status][]`hdbdir}; :`str`sym`plain!(a[""  "",base,""  ""];a[`$""  "",base,""  ""];a[base])}[]",1,1,scenario: padded string and symbol hdbdir values normalise to the same clean path
+comment,,,,,,,"S12 - an INT-partitioned hdb (.Q.pf is `int, not `date). MUST be the LAST before row:"
+comment,,,,,,,mounting it sets .Q.pf process-wide and no later date-partitioned scenario would survive.
+comment,,,,,,,"`date in pv` against a long vector threw a bare unlogged 'type AFTER a successful remount,"
+comment,,,,,,,so the caller was told its reload had failed when the database had in fact reloaded
+before,0,0,q,".t.mkintdb:{[] ip:.t.BASE,""/ipdb""; .t.wipe[]; .t.os[`mkdir] ip; {[ip;i] (hsym`$ip,""/"",string[i],""/trade/"") set .Q.en[hsym`$ip;([]sym:`a;price:enlist 1.0)];}[ip;] each 1 2; :hsym`$ip}",1,1,fixture: mkintdb - a database partitioned by INT rather than date
+before,0,0,q,".t.S12:{[] .t.clearroot[]; ip:.t.mkintdb[]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist ip]]; hdb[`start][]; pv:hdb[`status][]`partitions; .t.resetcap[]; ok:@[{reload[2026.08.19];1b};::;{[e] :0b}]; :`pv`ok`nowarn`noted!(pv;ok;not .t.logged[`warn;""is not present""];.t.logged[`info;""not date-partitioned""])}[]",1,1,scenario: a date-carrying reload against a database whose partitions are not dates
+comment,,,,,,,module metadata - version and getapimeta
+true,0,0,q,10h=type hdb`version,1,1,version is a string
+true,0,0,q,0<count hdb`version,1,1,version is non-empty
+true,0,0,q,"2=sum ""."" = hdb`version",1,1,the VERSION file holds a parseable major.minor.patch
+true,0,0,q,"not any hdb[`version] in ""\n\r""",1,1,no stray newline came through from the VERSION file
+true,0,0,q,`version in key hdb,1,1,version is still an export - di.depcheck resolves it from the export dict
+true,0,0,q,`name`public`descrip`params`return~cols hdb[`getapimeta][],1,1,getapimeta rows carry the registry columns
+true,0,0,q,"(asc (key hdb) except `init`getapimeta`version)~asc exec name from hdb[`getapimeta][]",1,1,getapimeta documents exactly the callable exports
+true,0,0,q,"not any `init`getapimeta`version in exec name from hdb[`getapimeta][]",1,1,plumbing and version are not registered in the api
+comment,,,,,,,init - dependency and config validation. one fail row per guard
+fail,0,0,q,hdb[`init][(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,hdb[`init][(enlist`hdbdir)!enlist .t.HD],1,1,init rejects deps with no log key
+fail,0,0,q,"hdb[`init][`log`hdbdir!(1;.t.HD)]",1,1,init rejects a non-dict log value
+fail,0,0,q,"hdb[`init][`log`hdbdir!((enlist`info)!enlist{[c;m]};.t.HD)]",1,1,init rejects a log dict missing warn and error
+fail,0,0,q,"hdb[`init][`log`hdbdir!((`info`warn`error!(1;2;3));.t.HD)]",1,1,"init rejects a log dict whose keys are right but whose VALUES are data, not functions"
+fail,0,0,q,hdb[`init][(enlist`log)!enlist .t.caplog],1,1,init rejects deps with no hdbdir - it is required and has no default
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;`)]",1,1,"init rejects a null hdbdir, which would otherwise reach system""l "" as a bare 'nyi"
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;42)]",1,1,init rejects a non-symbol non-string hdbdir - ashsym would stringify a long into `:42
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;2026.08.19)]",1,1,init rejects a date hdbdir - ashsym would stringify it into a plausible-looking directory
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;(""aa"";""bb""))]",1,1,init rejects a LIST of strings - ashsym would silently concatenate it into one wrong path
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;enlist .t.HD)]",1,1,init rejects an enlisted hdbdir - one directory means one atom or one string
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;"""")]",1,1,init rejects an empty-string hdbdir
+comment,,,,,,,S0 - the pre-init guards
+true,0,0,q,all .t.S0,1,1,every exported function refuses to run before init and says so by name
+comment,,,,,,,SF - a flat database does not throw the way legacy's unguarded read would
+true,0,0,q,99h=type .t.SF`ok,1,1,getattributes returned a dict rather than throwing on a non-partitioned database
+true,0,0,q,0=count .t.SF[`ok]`partition,1,1,a flat database reports no partitions
+true,0,0,q,`quote in .t.SF[`ok]`tables,1,1,the flat database's table is reported
+true,0,0,q,`quote in .t.SF`tabs,1,1,the flat database really was mounted into root
+comment,,,,,,,SI - the first init in the process
+true,0,0,q,not .t.SI`direxisted,1,1,the database directory genuinely did not exist when init was called
+true,0,0,q,not .t.SI`started,1,1,the first init does not start - it mounts nothing and does no i/o
+true,0,0,q,0=count .t.SI`partitions,1,1,and nothing is mounted after it
+true,0,0,q,.t.HD~.t.SI`hdbdir,1,1,init resolved hdbdir into module state without touching the filesystem
+comment,,,,,,,S1 - init does no i/o; start mounts
+comment,,,,,,,"S1 cannot assert `started` is 0b before start - SF has already started this module,"
+comment,,,,,,,and init deliberately does not reset runtime state on a re-init. SI asserts it instead
+true,0,0,q,.t.HD~.t.S1[`pre]`hdbdir,1,1,init resolved hdbdir into module state
+true,0,0,q,0=count .t.S1[`pre]`partitions,1,1,nothing is mounted before start runs
+true,0,0,q,.t.S1[`post]`started,1,1,start reports the hdb as started
+true,0,0,q,2026.08.18 2026.08.19~.t.S1[`post]`partitions,1,1,start mounted both fixture partitions
+true,0,0,q,`trade in .t.S1[`post]`tables,1,1,the fixture table is queryable at root after start
+true,0,0,q,.t.S1`root,1,1,init and start published reload at bare root
+comment,,,,,,,S2 - hdbdir resolution
+true,0,0,q,1=count distinct .t.S2,1,1,all four hdbdir input shapes resolve to the same hsym
+true,0,0,q,.t.HD~first .t.S2,1,1,and that hsym is the expected one
+comment,,,,,,,"S3 - the di.rdb interop this whole module turns on"
+true,0,0,q,2026.08.18 2026.08.19~.t.S3`b4,1,1,two partitions were mounted before the new one was written
+true,0,0,q,2026.08.18 2026.08.19 2026.08.20~.t.S3`after,1,1,"di.rdb's literal (`reload;date) message reached root reload and remounted"
+true,0,0,q,.t.S3`logged,1,1,reload used its date argument rather than discarding it
+true,0,0,q,not .t.S3`warned,1,1,a partition that did arrive produces no warning
+comment,,,,,,,S4 - a partition that did not arrive
+true,0,0,q,.t.S4`warned,1,1,reload warns when the notified partition is absent after the remount
+true,0,0,q,3=count .t.S4`part,1,1,and the remount still happened - the warning does not abort it
+comment,,,,,,,S5 - the TorqX niladic call shape
+true,0,0,q,.t.S5`ran,1,1,reload[] runs with date bound to (::) rather than silently doing nothing
+true,0,0,q,not .t.S5`warned,1,1,a null date skips the partition check instead of throwing on it
+true,0,0,q,3=count .t.S5`part,1,1,reload[] performed a real remount
+fail,0,0,q,reload[`notadate],1,1,reload rejects an argument that is neither a date nor null
+comment,,,,,,,S6 - a mount that fails
+true,0,0,q,.t.S6`thrown,1,1,a failed mount signals rather than returning quietly
+true,0,0,q,.t.S6`logged,1,1,and it was logged as an error before it was signalled
+comment,,,,,,,S7 and S8 - teardown and re-init
+true,0,0,q,.t.S7`gone,1,1,teardown removed the root reload entry point
+true,0,0,q,.t.S7`twice,1,1,a second teardown is a no-op rather than a throw
+true,0,0,q,.t.S7`kept,1,1,teardown left the mounted database in place - it does not unload
+true,0,0,q,.t.S7`republished,1,1,start after a teardown republishes the root entry point
+true,0,0,q,.t.S7`started,1,1,and reports the hdb as started again
+true,0,0,q,.t.S8,1,1,a re-init on a live hdb does not reset started
+comment,,,,,,,S9 - a rejected init leaves no half-configured state
+true,0,0,q,.t.S9`thrown,1,1,a log dict with data values is rejected by a message that names di.hdb and the shape
+true,0,0,q,.t.S9`same,1,1,and the rejected hdbdir did not reach module state
+true,0,0,q,.t.S9`usable,1,1,and the module is still usable afterwards - the previous logger survived
+comment,,,,,,,S10 - a null date is a null date whatever its type
+true,0,0,q,.t.S10`nulled,1,1,reload[0Nd] logs the no-partition-supplied path rather than a blank partition name
+true,0,0,q,.t.S10`nowarn,1,1,reload[0Nd] emits no partition-missing warning
+true,0,0,q,2=count .t.S10`part,1,1,and it still performed a real remount
+comment,,,,,,,S11 - changing hdbdir under a re-init
+true,0,0,q,.t.S11`live,1,1,the hdb was started before the re-init - the precondition the scenario needs
+true,0,0,q,.t.S11`moved,1,1,pointing init at a different hdbdir clears started - status must not claim the new database is mounted
+true,0,0,q,.t.S11`warned,1,1,and warns that the old database is still resident and answering queries
+true,0,0,q,.t.S11`kept,1,1,re-applying the SAME hdbdir leaves started alone
+true,0,0,q,.t.S11`quiet,1,1,and says nothing - a config re-apply is not a database change
+comment,,,,,,,S12 - a partition domain the notified date cannot be compared against
+true,0,0,q,1 2~.t.S12`pv,1,1,an int-partitioned database mounts and reports its int partitions
+true,0,0,q,.t.S12`ok,1,1,a date-carrying reload against it completes rather than throwing a bare 'type
+true,0,0,q,.t.S12`nowarn,1,1,and does not claim the partition is missing - the question cannot be asked
+true,0,0,q,.t.S12`noted,1,1,it says so at info instead of failing silently or loudly
+true,0,0,q,"""/""=first 1_string .t.S13`ap",1,1,init resolved the relative hdbdir to an absolute path
+true,0,0,q,.t.S13`ok,1,1,and reload still finds the database after start has chdired the process into it
+true,0,0,q,.t.S13`pinned,1,1,the resolved path is pinned - it does not drift with the working directory
+comment,,,,,,,"portability - isabspath, POSIX branch. a windows-style c:/data is RELATIVE here"
+true,0,0,q,"100000b~.t.PW[0b;(""/data/hdb"";""hdb"";""./hdb"";"""";""c:/data"";""\\\\host\\share"")]",1,1,POSIX treats only a leading slash as absolute
+comment,,,,,,,"portability - isabspath, WINDOWS branch, exercised from linux via the platform flag"
+true,0,0,q,"111100000b~.t.PW[1b;(""c:/data"";""C:\\data"";""//host/share"";""\\\\host\\share"";""hdb"";"".\\hdb"";""c:"";""cd:/x"";"""")]",1,1,"windows accepts a drive letter or a UNC share; c: alone and a two-letter cd: are not absolute"
+comment,,,,,,,portability - a path kdb+ cannot load at all is rejected at config time
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;""/tmp/with space/hdb"")]",1,1,"init rejects an hdbdir containing a space - \l throws a bare 'nyi on one and no escaping helps"
+fail,0,0,q,"hdb[`init][`log`hdbdir!(.t.caplog;""C:/Program Files/kdb/hdb"")]",1,1,the same guard catches the windows path shape where spaces are ordinary
+comment,,,,,,,S14 - padded config values normalise rather than failing
+true,0,0,q,.t.S14[`str]~.t.S14`plain,1,1,a whitespace-padded string hdbdir trims to the same path as the clean one
+true,0,0,q,.t.S14[`sym]~.t.S14`plain,1,1,and so does a padded symbol
+comment,,,,,,,portability - resolvepath pins relative paths and normalises separators
+true,0,0,q,"""/data/hdb""~.t.priv[`resolvepath][0b;""/work"";""/data/hdb""]",1,1,an absolute POSIX path is returned untouched
+true,0,0,q,"""/work/hdb""~.t.priv[`resolvepath][0b;""/work"";""hdb""]",1,1,a relative POSIX path is pinned to the working directory
+true,0,0,q,"""C:/data/hdb""~.t.priv[`resolvepath][1b;""C:\\Users\\ops"";""C:\\data\\hdb""]",1,1,"windows backslashes become forward slashes, and the drive letter keeps its case"
+true,0,0,q,"""C:/Users/ops/hdb""~.t.priv[`resolvepath][1b;""C:\\Users\\ops"";""hdb""]",1,1,and a relative windows path is pinned to a normalised working directory
+true,0,0,q,"""//host/share/db""~.t.priv[`resolvepath][1b;""C:\\Users\\ops"";""//host/share/db""]",1,1,a UNC share is left alone rather than pinned

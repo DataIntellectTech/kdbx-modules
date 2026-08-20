@@ -48,7 +48,7 @@ sides are tables.
 | `start` | `[]` | mount the configured database |
 | `reload` | `[date]` | remount, then warn if the notified partition did not arrive. Also published at bare root |
 | `getattributes` | `[]` | `` `partition`tables `` — the snapshot a gateway caches for this process |
-| `status` | `[]` | `` `started`hdbdir`partitions`tables `` |
+| `status` | `[]` | current state — `` `started`hdbdir`partitions`tables `` — plus operational history: `` `laststart`lastreload`consecutivefailures `` |
 | `teardown` | `[]` | remove the root entry point. Does **not** unload the database |
 | `version` | | module version string, read from `VERSION` |
 | `getapimeta` | `[]` | api metadata rows for `di.torq` to register with `di.api` |
@@ -66,33 +66,82 @@ only the ones `init` itself uses.
 
 `deps.q` is present and **empty**, which is deliberate — see below and `deps.q` itself.
 
-### Why the plan's `di.hdb -> di.sort` edge does not exist
+### Why there are no hard dependencies — the evidence, candidate by candidate
 
-The modularisation plan's tier table and its hard-dependency diagram both list `di.sort`. Two
-separate reasons that edge is not real:
+The plan's tier table lists `di.hdb -> di.sort`. That edge is not real, and because the question has
+been raised and independently re-checked more than once in review, the evidence is recorded here
+rather than left in review comments. Each candidate was checked against source and rejected on its
+own grounds.
 
-1. `di.sort` is not a mergeable module. PR #102 closed without merging, and its functionality lives
-   inside the merged `di.dbwrite`. The identical correction was already applied to `di.rdb`.
-2. More fundamentally, **nothing in the source references it**. Neither `hdbstandard.q` nor TorqX's
-   `di/hdb/hdb.q` mentions `.sort`, `.save`, `.gc` or `di.dbwrite` at all. Attributes are applied at
-   *write* time by whichever process calls `di.dbwrite.savedown`; an hdb only mounts what is already
-   on disk, attributes included, as a side effect of loading. The plan's "applies attributes"
-   describes what a caller **observes**, not an action this module performs.
+**`di.sort` — nothing left to depend on.** `di/sort/` does still exist, on the unmerged
+`origin/feature-sort` branch, exporting `init`, `readcsv` and `sorttab`. Those three were absorbed
+into the merged `di.dbwrite` as `init`, `readcsv` and `sort` — the same `validatts`, `checkconfig`,
+`getsortparams`, `sortdir`, `sortcolumns` and `applyattr` bodies, with `sorttab[config;tabname;dirs]`
+becoming `sort[tabname;dirs]` once the config moved into module state. So there is nothing left in
+`di.sort` to merge and nothing a module could usefully declare an edge to. `di.rdb` dropped the same
+phantom edge for the same reason. (Stated precisely because "di.sort does not exist" is falsifiable
+in one `git ls-tree` and would undermine an otherwise sound argument.)
 
-### Why there is no `di.servers`, `di.timer` or `di.handlers` dependency either
+**`di.dbwrite` — no call-graph intersection in either direction.** This is the closest real
+candidate, since `di.sort`'s functionality landed there. `di.dbwrite` exports nine names: `init`,
+`readcsv`, `setconfig`, `getconfig`, `sort`, `applyattr`, `savedown`, `appenddown`, `version`. Of
+those, `sort` and `applyattr` mutate on-disk data, `savedown` and `appenddown` write it, `readcsv`
+reads a *configuration* CSV, and the rest are in-memory. The argument does not rest on a slogan about
+what that surface does, though — it rests on the call graph: **`hdb.q` contains no `sort`,
+`applyattr`, `savedown`, `appenddown`, `dbwrite`, `xasc`, `.Q.en` or `.Q.par`, and `dbwrite.q`
+contains no `system"l"`, `.Q.pf`, `.Q.PV` or `reload`.** Neither module calls anything the other
+provides.
 
-- **`di.servers`** — `config/settings/hdb.q` sets `.servers.CONNECTIONS:()`. The hdb makes zero
-  outbound connections; it is dialled, it does not dial. (`di.idb`, which the plan correctly lists as
-  needing `di.servers`, is the contrasting case.)
-- **`di.timer`** — nothing here is scheduled. Confirmed absent from both the legacy source and the
-  TorqX prior art.
-- **`di.handlers`** — this module assigns no `.z.*` handler, and unlike `di.rdb` it has no reason to
-  observe one. `di.rdb` needs a `.z.pc`-driven resubscribe because it holds multi-message state (a
-  subscription) that can silently desynchronise from a connection's up/down status. `di.hdb` has no
-  equivalent: every operation is one-shot, so no per-client state can be stranded by a disconnect;
-  it opens no connections of its own, so nothing it depends on can silently drop; and
-  `getattributes` is pulled *by* a remote caller, whose connection lifecycle is that caller's
-  problem, not this module's.
+The two are *complementary on the same artefact* — one writes the database, the other mounts it —
+which is exactly why the plan could conflate them. Attributes are applied at **write** time by
+whichever process calls `di.dbwrite.savedown`; an hdb only mounts what is already on disk, attributes
+included, as a side effect of loading. The plan's "applies attributes" describes what a caller
+**observes**, not an action this module performs.
+
+**`di.servers` — the structural resemblance does not transfer.** The closest sibling modules
+(`di.idb`, `di.discovery`, `di.kill`) each take `di.servers` as their single dependency, which makes
+it the natural second guess. But `di.idb`'s reason is *functional*: it connects **out** to a wdb for
+partition information. `di.hdb` makes no outbound connections at all —
+`config/settings/hdb.q` sets `.servers.CONNECTIONS:()`. `di.idb` dials; `di.hdb` is dialled.
+
+**`di.timer`** — nothing here is scheduled. Confirmed absent from both the legacy source and the
+TorqX prior art.
+
+**`di.handlers`** — this module assigns no `.z.*` handler, and unlike `di.rdb` it has no reason to
+observe one. `di.rdb` needs a `.z.pc`-driven resubscribe because it holds multi-message state (a
+subscription) that can silently desynchronise from a connection's up/down status. `di.hdb` has no
+equivalent: every operation is one-shot, so no per-client state can be stranded by a disconnect; it
+opens no connections of its own, so nothing it depends on can silently drop; and `getattributes` is
+pulled *by* a remote caller, whose connection lifecycle is that caller's problem, not this module's.
+
+`di.os` is covered separately under Portability.
+
+### Where the `di.sort` row probably came from
+
+Worth recording, because "the plan is simply wrong" is a weaker and less useful answer than knowing
+what the row was tracking.
+
+**The supported explanation is the wdb, not the hdb.** `.sort` lives in
+`code/common/dbwriteutils.q:4`, and the processes that actually call it are `rdb.q` (`:54`, `:220`),
+`wdb.q` (`:321`, `:446`, and others) and `tickerlogreplay.q` — never the hdb. Critically,
+`config/settings/sort.q` is a **sort-mode wdb variant** whose config pairs `hdbdir:`:hdb` with
+`sortcsv`, `compression` and `gc`; `wdb.q:321` runs `.sort.sorttab` across `.Q.par[dir;pt;]` and then
+notifies the hdb to reload. A process configured with `hdbdir` that sorts **into** the hdb directory
+is a very easy thing to file under "hdb needs sort". The hdb query-serving process is the *recipient*
+of that reload, never the sorter.
+
+**`code/processes/compression.q` was also checked, and rejected.** It looks like a strong candidate:
+a separate `.cmp` namespace, its own config file, a one-shot `exitonfinish` lifecycle rather than a
+persistent query server, and it takes an hdb directory as `hdbpath`. But it contains **zero**
+references to `.sort`, `sorttab`, `getsortcsv`, `applyattr`, `.save.*` or `.Q.gc` — and neither does
+`code/common/compress.q`, the implementation behind it. There is no sort need there for the plan row
+to be tracking. Recorded so the dead end is not walked twice.
+
+> **Note for whoever builds `di.compression`:** the plan lists it as a Tier 1 standalone module with
+> no hard `di.*` dependencies, and that claim has **not** been verified against `compression.q` the
+> way this module's row was. Its real implementation lives in `code/common/compress.q`. Check it
+> properly rather than assuming the plan is right — the same stale `di.sort` row has now misled two
+> modules (`di.rdb`, `di.hdb`).
 
 ## Config
 
@@ -164,6 +213,45 @@ The mount itself is a protected apply, logged and re-signalled through `raiseerr
 `` system"l" `` throws an OS message naming neither the module nor the config key the path came from
 (measured: `"/missing/path. OS reports: No such file or directory"`), and that bare string is exactly
 what a calling rdb sees.
+
+### Operational history — `laststart`, `lastreload`, `consecutivefailures`
+
+`status[]` reports three fields that are history rather than current state, so an operator or a
+monitoring process can answer *"when did this last actually work"* and *"is this degrading"* without
+grepping logs.
+
+| Field | Set | Meaning |
+|---|---|---|
+| `laststart` | after a `start[]` mount returns without throwing | when the database was last mounted from cold. Null until one succeeds |
+| `lastreload` | after a `reload[]` mount returns without throwing | when a remount last succeeded. Null until one does |
+| `consecutivefailures` | `+1` on a `reload` mount failure, `0` on a successful `reload` | how many reloads have failed in a row |
+
+Three deliberate asymmetries:
+
+- **The counter tracks `reload` only, never `start`.** A failed `start` is a configuration fault,
+  caught immediately at deployment and already loud. Repeated `reload` failures are something else —
+  an hdb that came up fine and has since quietly stopped picking up new partitions, which is
+  invisible until someone queries for data that should be there.
+- **A successful `start` does not clear the counter.** Only a successful `reload` does. The counter
+  answers "is the reload path working", and a manual restart is not evidence that it is.
+- **All three are seeded on a *fresh* `init` only** — unlike `started`, which is also cleared when
+  `hdbdir` moves. A re-init, whether from `di.torq` re-applying config or an operator re-pointing the
+  directory, must not erase the record of when the process last worked; that record is most useful
+  precisely when someone has just changed something. The test suite proves this by re-initialising
+  twice, through a deliberately broken path and back, and asserting `laststart` survives.
+
+This is the escalation path the partition-missing warning deliberately does not provide. That warning
+stays a warning, for the reason given above — but "this has failed N times running" is now a
+queryable fact rather than a log line to count.
+
+The counter increment is itself wrapped in a protected apply. That is not defensive padding: the
+write can genuinely throw. Under multithreaded input a remote `reload` runs on a secondary thread,
+where any global write — a module-local one included — raises `` 'noupdate ``. Measured over real IPC
+before the guard existed, the caller was handed
+`` noupdate: `.m.di.0hdb `.z.m.consecutivefailures `` **instead of** the real
+`` di.hdb: reload: failed to mount <path>: sys ``. A diagnostic counter had destroyed the diagnosis it
+exists to serve. The rule the guard encodes: **recording a failure must never change what the caller
+is told about it.**
 
 ### Teardown
 
@@ -403,6 +491,48 @@ they are not a reason for this module to take the edge, and this module does not
   escaping form avoids it. `init` now rejects such an `hdbdir` up front with the reason rather than
   letting it surface as a bare `'nyi`; see Portability. The gap is that such a database cannot be
   served at all, which is a real constraint on Windows deployments in particular.
+- **The `hdbdir`-moved check can false-positive on a case-insensitive filesystem, and is left that
+  way deliberately.** `init` decides whether a re-init has re-pointed the database by comparing the
+  resolved `hdbdir` to the previous one as an **exact string**. On Windows, and on macOS as normally
+  configured, the filesystem is case-insensitive: `` `:/Data/HDB `` and `` `:/data/hdb `` name the
+  same directory but do not match, so a re-init that changes only the spelling reports a move that
+  did not happen — clearing `started` and warning that the old database is still resident.
+
+  Case-folding the comparison was considered and rejected, for three reasons.
+
+  1. **The two failure modes are not symmetric.** The false positive costs a spurious warning, a
+     `started:0b` that under-reports a working hdb, and — if an operator reacts — one redundant but
+     harmless remount. Folding case risks the opposite error: two genuinely different directories on
+     a case-sensitive volume compare equal, `started` stays `1b`, and `status[]` reports the process
+     as serving a database it has never mounted. That is precisely the defect the moved-check was
+     added to fix. One direction is noise; the other is the module lying about what it serves.
+  2. **Folding on `iswindows` would not even be complete on its own terms.** `iswindows` is
+     `` .z.o in `w32`w64 ``, and macOS is `` `m64 `` — so the obvious narrow fix leaves the macOS
+     false positive exactly where it was, while introducing the silent-wrong-state risk everywhere.
+  3. **Case sensitivity is a property of the volume, not the platform**, and cannot be determined
+     from the path string. APFS can be configured case-sensitive and NTFS supports it; any static
+     per-platform rule is a guess. The exact comparison at least guesses in the loud direction.
+
+  The test suite pins the behaviour (`S15`): a re-init differing only in case is treated as a move.
+  On Linux that is simply correct. It does **not** demonstrate the false positive — that needs a
+  case-insensitive volume, which the build machine does not have — so this gap is documented rather
+  than covered.
+- **A remote `reload` cannot work under multithreaded input (`-p -N`), and the module warns at
+  `start[]`.** kdb+ processes each incoming message on a secondary thread when the port is negative,
+  and `` system"l" `` is forbidden there — it throws `` 'sys ``. Measured over real IPC between two
+  processes: an hdb started with `-p -5059` serves queries normally but fails every remote reload.
+
+  This is a kdb+ restriction rather than a module one, and legacy is affected identically — a bare
+  `` system"l" `` in `hdbstandard.q`'s shape throws the same `` 'sys `` from the same thread (measured
+  side by side in the same process). `di.hdb` does two things legacy does not: it names the failure
+  (`di.hdb: reload: failed to mount <path>: sys`, where legacy gives a bare `` 'sys ``), and it warns
+  at `start[]` that reload cannot work in this configuration — so the constraint surfaces at
+  deployment rather than at the first end-of-day roll.
+
+  It is a **warning, not a refusal**: a read-only hdb that is never told to reload is a perfectly
+  legitimate deployment, and multithreaded input is a sensible choice for one. Detection is
+  `` 0>system"p" ``, which reports the signed port (`0i` when none is set).
+
 - **`teardown` cannot unload the database.** q has no unmount; see Behaviour.
 - **`.dqe.notifyhdb` is a dangling legacy reference.** `code/processes/dqe.q:100,117,142` calls
   `.dqe.notifyhdb[.os.pth .dqe.dqedbdir]'[hdbs]`, apparently intending a reload that takes a
@@ -431,7 +561,7 @@ q)k4unit:use`di.k4unit
 q)k4unit.moduletest`di.hdb
 ```
 
-73 assertions (60 `true`, 13 `fail`) across 30 fixture/scenario `before` rows, all inline in
+101 assertions (86 `true`, 15 `fail`) across 40 fixture/scenario `before` rows, all inline in
 `test.csv` under a `.t.` namespace — there is no `test.q`, so nothing depends on the process's
 working directory. That last point is load-bearing rather than tidy: mounting chdirs the process,
 so every fixture path is absolute.

@@ -73,6 +73,22 @@ comment,,,,,,,"S14 - whitespace normalisation. a config value from a .toml or .q
 comment,,,,,,,"arrive padded; \l tolerates that, so padding must normalise rather than be rejected by"
 comment,,,,,,,the interior-space guard. init does no i/o so this needs no database on disk
 before,0,0,q,".t.S14:{[] base:1_string .t.HD; a:{[b] hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist b]]; :hdb[`status][]`hdbdir}; :`str`sym`plain!(a[""  "",base,""  ""];a[`$""  "",base,""  ""];a[base])}[]",1,1,scenario: padded string and symbol hdbdir values normalise to the same clean path
+comment,,,,,,,"S15 - a re-init differing ONLY in case. the moved comparison is an exact string"
+comment,,,,,,,"match, so this is treated as a move. on linux that is simply correct; on a"
+comment,,,,,,,"case-insensitive volume it is a false positive, accepted deliberately - folding case"
+comment,,,,,,,"risks a false NEGATIVE, which would report started:1b for a database not being served"
+before,0,0,q,".t.S15:{[] .t.clearroot[]; .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; live:hdb[`status][]`started; .t.resetcap[]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist hsym`$.t.BASE,""/HDB""]]; :`live`moved`warned!(live;not hdb[`status][]`started;.t.logged[`warn;""hdbdir changed""])}[]",1,1,scenario: a case-only hdbdir change is treated as a move - the documented behaviour
+comment,,,,,,,"S16 - operational history. laststart/lastreload/consecutivefailures are seeded"
+comment,,,,,,,"FRESH-ONLY, so they survive a re-init: the two re-inits below are what proves it."
+comment,,,,,,,"the counter is incremented only by a reload mount failure and reset only by a"
+comment,,,,,,,successful reload - a failed start is a config fault, not operational degradation
+before,0,0,q,".t.S16:{[] .t.clearroot[]; .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; a:hdb[`status][]; hdb[`start][]; b:hdb[`status][]; reload[2026.08.18]; c:hdb[`status][]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist hsym`$""/nonexistent/nope""]]; {@[{reload[2026.08.18]};::;{[e] 0b}]} each til 3; d:hdb[`status][]; hdb[`init][.t.mkdeps[()!()]]; reload[2026.08.18]; e:hdb[`status][]; :`a`b`c`d`e!(a;b;c;d;e)}[]",1,1,scenario: five status snapshots across start, good reload, three failures and recovery
+comment,,,,,,,"S17 - a failed reload must still report WHY. the failure counter is bumped inside the"
+comment,,,,,,,"error trap, and that write can itself throw - under multithreaded input (-p -N) a"
+comment,,,,,,,"module-local write raises 'noupdate on a secondary thread. measured over real IPC:"
+comment,,,,,,,"the caller was handed ""noupdate: .z.m.consecutivefailures"" INSTEAD of the mount"
+comment,,,,,,,"error, so the bump is now protected. a diagnostic must never destroy the diagnosis"
+before,0,0,q,".t.S17:{[] .t.clearroot[]; .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist hsym`$""/nonexistent/nope""]]; b4:hdb[`status][]`consecutivefailures; msg:@[{reload[2026.08.18];""""};::;{[e] :e}]; :`msg`bumped!(msg;1=(hdb[`status][]`consecutivefailures)-b4)}[]",1,1,scenario: a failed reload signals the named mount error AND still counts the failure
 comment,,,,,,,"S12 - an INT-partitioned hdb (.Q.pf is `int, not `date). MUST be the LAST before row:"
 comment,,,,,,,mounting it sets .Q.pf process-wide and no later date-partitioned scenario would survive.
 comment,,,,,,,"`date in pv` against a long vector threw a bare unlogged 'type AFTER a successful remount,"
@@ -113,6 +129,9 @@ true,0,0,q,not .t.SI`direxisted,1,1,the database directory genuinely did not exi
 true,0,0,q,not .t.SI`started,1,1,the first init does not start - it mounts nothing and does no i/o
 true,0,0,q,0=count .t.SI`partitions,1,1,and nothing is mounted after it
 true,0,0,q,.t.HD~.t.SI`hdbdir,1,1,init resolved hdbdir into module state without touching the filesystem
+true,0,0,q,null .t.SI`laststart,1,1,laststart is null at the first init - nothing has started yet
+true,0,0,q,null .t.SI`lastreload,1,1,and lastreload is null - nothing has reloaded yet
+true,0,0,q,0=.t.SI`consecutivefailures,1,1,and the failure counter starts at zero
 comment,,,,,,,S1 - init does no i/o; start mounts
 comment,,,,,,,"S1 cannot assert `started` is 0b before start - SF has already started this module,"
 comment,,,,,,,and init deliberately does not reset runtime state on a re-init. SI asserts it instead
@@ -186,3 +205,21 @@ true,0,0,q,"""/work/hdb""~.t.priv[`resolvepath][0b;""/work"";""hdb""]",1,1,a rel
 true,0,0,q,"""C:/data/hdb""~.t.priv[`resolvepath][1b;""C:\\Users\\ops"";""C:\\data\\hdb""]",1,1,"windows backslashes become forward slashes, and the drive letter keeps its case"
 true,0,0,q,"""C:/Users/ops/hdb""~.t.priv[`resolvepath][1b;""C:\\Users\\ops"";""hdb""]",1,1,and a relative windows path is pinned to a normalised working directory
 true,0,0,q,"""//host/share/db""~.t.priv[`resolvepath][1b;""C:\\Users\\ops"";""//host/share/db""]",1,1,a UNC share is left alone rather than pinned
+comment,,,,,,,S15 - a case-only hdbdir change
+true,0,0,q,.t.S15`live,1,1,the hdb was started before the re-init - the precondition the scenario needs
+true,0,0,q,.t.S15`moved,1,1,a path differing only in case is treated as a move - exact comparison, documented
+true,0,0,q,.t.S15`warned,1,1,and warns that the old database is still resident
+comment,,,,,,,S16 - operational history in status[]
+true,0,0,q,"`started`hdbdir`partitions`tables`laststart`lastreload`consecutivefailures~key .t.S16`b",1,1,status carries the operational history fields alongside current state
+true,0,0,q,not null .t.S16[`b]`laststart,1,1,a successful start records laststart
+true,0,0,q,.t.S16[`b][`lastreload]~.t.S16[`a]`lastreload,1,1,"and leaves lastreload exactly as it was - start is not a reload, and by now the process has history"
+true,0,0,q,not null .t.S16[`c]`lastreload,1,1,a successful reload records lastreload
+true,0,0,q,.t.S16[`c][`laststart]~.t.S16[`b]`laststart,1,1,and does not disturb laststart
+true,0,0,q,3=.t.S16[`d]`consecutivefailures,1,1,three failed reloads increment the counter three times
+true,0,0,q,.t.S16[`d][`laststart]~.t.S16[`b]`laststart,1,1,"laststart survived two re-inits - history is seeded fresh-only, not per-init"
+true,0,0,q,0=.t.S16[`e]`consecutivefailures,1,1,and one successful reload clears the counter
+comment,,,,,,,S17 - a failed reload reports the reason and still counts
+true,0,0,q,"0<count (.t.S17`msg) ss ""di.hdb: reload: failed to mount""",1,1,"the caller gets the named mount error, not a bare 'noupdate from the counter write"
+true,0,0,q,.t.S17`bumped,1,1,and the failure was still counted - the protection does not skip the bump
+comment,,,,,,,multithreaded input detection
+true,0,0,q,not .t.priv[`multithreaded][],1,1,"multithreaded[] is false in an ordinary process - system""p"" is 0i or positive"

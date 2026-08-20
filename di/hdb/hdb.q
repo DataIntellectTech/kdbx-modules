@@ -179,6 +179,22 @@ partitions:{[]
   :@[{value .Q.pf};::;{[e] :@[{value`.Q.PV};::;{[e2] :0#0Nd}]}];
   };
 
+bumpfailures:{[]
+  / internal - record one more consecutive reload failure. called ONLY from inside reload's error
+  / trap, and called through a protected apply there, because this write can itself throw: under
+  / multithreaded input (a negative -p) a remote reload runs on a secondary thread, where every
+  / global write - including a module-local one - raises 'noupdate. measured: without that guard the
+  / caller was handed "noupdate: `.m.di.0hdb `.z.m.consecutivefailures" INSTEAD of the real
+  / "failed to mount ...: sys", i.e. a diagnostic counter destroyed the diagnosis it exists to serve
+  .z.m.consecutivefailures:1+.z.m.consecutivefailures;
+  };
+
+multithreaded:{[]
+  / internal - is this process using multithreaded input? a NEGATIVE port is how kdb+ enables it, and
+  / system"p" reports the signed value (0i when no port is set). measured on KDB-X 0.1.2/2025.11.17
+  :0>system"p";
+  };
+
 mount:{[ctx]
   / internal - the one place this module mounts the database, shared by start and reload so the two
   / cannot drift. legacy's system"l ." (hdbstandard.q:3) relies on the process's working directory
@@ -280,7 +296,15 @@ init:{[deps]
   / re-applying the SAME config must not report a live hdb as unstarted, which is what `fresh` is for,
   / but pointing init at a DIFFERENT directory is not a re-apply: this module has definitively not
   / mounted that one. measured before this branch existed - status[] reported started:1b against the
-  / new hdbdir while the process was still serving the old database
+  / new hdbdir while the process was still serving the old database.
+  / EXACT string comparison, deliberately, and it CAN false-positive: on a case-insensitive volume
+  / (windows, and macOS by default) `:/Data/HDB and `:/data/hdb are the same directory but compare
+  / unequal, so a re-init that only changes the spelling reports a move that did not happen. left
+  / exact because the two failure modes are not symmetric - a false positive costs a spurious warning
+  / and an idempotent remount, whereas case-folding risks a false NEGATIVE that would report
+  / started:1b against a database this process is not serving, which is the very defect this branch
+  / was added to fix. folding on iswindows would also miss macOS (`m64), so it would not even be a
+  / complete fix on its own terms. see hdb.md, known gaps
   moved:$[fresh;0b;not hdbroot~.z.m.hdbdir];
   .z.m.loginfo:(deps`log)`info;
   .z.m.logwarn:(deps`log)`warn;
@@ -292,8 +316,15 @@ init:{[deps]
   / changing the database says nothing about who owns the root name
   if[fresh or moved;
     .z.m.started:0b];
+  / OPERATIONAL HISTORY is seeded FRESH-ONLY, unlike `started` above. that asymmetry is the point: a
+  / re-init - di.torq re-applying config, or an operator re-pointing hdbdir - must not erase the
+  / record of when this process last actually worked. "when did the last successful mount happen" is
+  / only useful if it outlives the config change that prompted someone to ask
   if[fresh;
-    .z.m.rootinstalled:(`$())!()];
+    .z.m.rootinstalled:(`$())!();
+    .z.m.laststart:0Np;
+    .z.m.lastreload:0Np;
+    .z.m.consecutivefailures:0];
   installroot[];
   .z.m.loginfo[`init;"di.hdb initialised - hdbdir ",1_string .z.m.hdbdir];
   / warned, not silent: the process is now configured for one database while still holding another.
@@ -334,11 +365,25 @@ start:{[]
   / idempotent, so the ordinary init-then-start path is unaffected
   installroot[];
   mount[`start];
+  / reached only on success - mount signals on failure. this is the "when did this last actually
+  / work" an operator or a monitoring layer would otherwise have to grep the log for
+  .z.m.laststart:.z.p;
   .z.m.started:1b;
   pv:partitions[];
   t:tables[`.];
   .z.m.loginfo[`start;"mounted ",(1_string .z.m.hdbdir)," - ",(string count pv)," partition(s), ",
     (string count t)," table(s): ",", " sv string t];
+  / WARN ONCE, at the point this process commits to serving, if remote reload cannot work here.
+  / under multithreaded input kdb+ runs each incoming message on a secondary thread, and system"l"
+  / is forbidden there - it throws 'sys. that is a kdb+ restriction, not a module one: legacy's bare
+  / system"l ." throws the identical 'sys (both measured over real IPC). serving queries is
+  / unaffected, and a read-only hdb that is never told to reload is a legitimate deployment, so this
+  / is a warning rather than a refusal. said HERE because the alternative is discovering it at the
+  / first end-of-day roll, which is the failure mode this module has twice been hardened against
+  if[multithreaded[];
+    .z.m.logwarn[`start;"this process uses multithreaded input (port ",(string system"p"),") - a ",
+      "remote reload CANNOT work in that mode: kdb+ forbids system\"l\" off the main thread and ",
+      "throws 'sys. queries are unaffected. run with a positive port if this hdb must answer reload"]];
   };
 
 reload:{[date]
@@ -362,7 +407,22 @@ reload:{[date]
   havedate:(-14h=type date) and not null date;
   .z.m.loginfo[`reload;"reload command has been called remotely",
     $[havedate;" for partition ",string date;" with no partition supplied"]];
-  mount[`reload];
+  / COUNT consecutive mount failures without changing anything the caller sees. mount has already
+  / logged and signalled through raiseerror; this catches that signal, records it, and re-raises the
+  / SAME string, so the "error: server fail: ..." di.rdb reads back through postback is unchanged.
+  / counted on RELOAD only, never on start: a failed start is a configuration fault caught
+  / immediately at deployment, whereas repeated reload failures are an operational degradation
+  / pattern - an hdb that has silently stopped picking up new partitions. that is the escalation path
+  / the partition-missing warning deliberately does not provide: the warning stays a warning, and
+  / "this has failed N times running" becomes a fact a monitor can alert on instead of a log line to
+  / count. see hdb.md
+  / the bump is itself PROTECTED, so that recording a failure can never replace the report of it.
+  / see bumpfailures - under multithreaded input the counter write throws 'noupdate and would mask
+  / the mount error entirely. a diagnostic must never change what the caller is told
+  @[mount;`reload;{[e] @[bumpfailures;::;{[e2] 0b}]; 'e}];
+  / past this point the remount succeeded
+  .z.m.lastreload:.z.p;
+  .z.m.consecutivefailures:0;
   pv:partitions[];
   / the ONLY detector for the failure this module is least able to notice on its own: an hdbdir that
   / mounts SUCCESSFULLY and then silently serves the wrong data. a WARNING, not an error - an hdb
@@ -404,10 +464,17 @@ getattributes:{[]
   };
 
 status:{[]
-  / a snapshot of how this hdb is wired and what it currently serves. `started` distinguishes an hdb
-  / that has been configured from one that has actually mounted - the two are separate steps here
+  / a snapshot of how this hdb is wired, what it currently serves, and when it last worked. `started`
+  / distinguishes an hdb that has been configured from one that has actually mounted - the two are
+  / separate steps here.
+  / the last three are OPERATIONAL HISTORY rather than current state: laststart and lastreload are
+  / null until the corresponding operation has succeeded once, and consecutivefailures counts reload
+  / mount failures since the last successful reload. they exist so "when did this last work" and "is
+  / this degrading" are queryable facts rather than something only a log grep can answer
   requireinit[`status];
-  :`started`hdbdir`partitions`tables!(.z.m.started;.z.m.hdbdir;partitions[];tables[`.]);
+  :`started`hdbdir`partitions`tables`laststart`lastreload`consecutivefailures!
+    (.z.m.started;.z.m.hdbdir;partitions[];tables[`.];
+     .z.m.laststart;.z.m.lastreload;.z.m.consecutivefailures);
   };
 
 / ============================================================
@@ -426,6 +493,7 @@ getapimeta:{[]
        "[date: partition just persisted, or null]"; "null");
     (`getattributes; 1b; "the partition list and table list a gateway caches for this hdb";
        "[]";                                       "dict: partition, tables");
-    (`status;        1b; "how this hdb is wired and what it currently serves";
-       "[]";                                       "dict: started, hdbdir, partitions, tables"));
+    (`status;        1b; "how this hdb is wired, what it serves, and when it last worked";
+       "[]";
+       "dict: started, hdbdir, partitions, tables, laststart, lastreload, consecutivefailures"));
   };

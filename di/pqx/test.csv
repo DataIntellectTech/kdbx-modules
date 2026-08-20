@@ -26,6 +26,14 @@ true,0,0,q,all 0<exec bytes from pqx.getmanifest[] where file like "*pqxout1*",1
 true,0,0,q,all (exec mintime from pqx.getmanifest[] where file like "*pqxout1*")=min pqxbasic`time,1,,mintime matches the earliest business timestamp in the input data
 true,0,0,q,all (exec maxtime from pqx.getmanifest[] where file like "*pqxout1*")=max pqxbasic`time,1,,maxtime matches the latest business timestamp in the input data
 
+run,0,0,q,manifestcountbefore:count pqx.getmanifest[],1,,Snapshot manifest row count before capturing extract's return value
+run,0,0,q,pqxret1:pqx.extract[pqxbasic;`pqxtrade;2025.07.20;enlist[`outdir]!enlist `:pqxout1b/],1,,Capture extract's return value directly for a fresh extract call
+true,0,0,q,9~exec sum rows from pqxret1,1,,extract's return value carries exactly this call's written-file stats
+true,0,0,q,1~count pqxret1,1,,extract's return value has exactly one row - all three instruments fit in a single file at default target size
+true,0,0,q,manifestcountbefore>0,1,,Sanity check - manifest already held rows from an earlier extract before this call
+true,0,0,q,not pqxret1~pqx.getmanifest[],1,,extract's return value is scoped to this call, not the entire accumulated manifest
+true,0,0,q,(count pqxret1)<count pqx.getmanifest[],1,,extract's return value is smaller than the full manifest once prior calls have run
+
 run,0,0,q,pqx.extract[pqxunsorted;`pqxtrade;2025.07.15;enlist[`outdir]!enlist `:pqxout2/],1,,Extract with default presort on
 run,0,0,q,pqxfile2:1_string first exec file from pqx.getmanifest[] where file like "*pqxout2*",1,,Resolve the path written for the presorted extract
 run,0,0,q,pqxread2:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile2;(0#`)!()],1,,Read the written file back for verification
@@ -70,4 +78,4 @@ run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.25;`outdir`codec`calibrate`comp
 true,0,0,q,`error~first exec status from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file is recorded with status=`error instead of aborting extract
 true,0,0,q,0~first exec bytes from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file has zero on-disk bytes recorded
 
-after,0,0,q,system "rm -rf pqxout1 pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5",1,,Remove parquet output directories written by tests
+after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5",1,,Remove parquet output directories written by tests

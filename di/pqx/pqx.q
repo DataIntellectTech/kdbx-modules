@@ -257,7 +257,9 @@ extract:{[t;tname;dt;o]
   res:raze parallelfn [.z.m.writefile[t;opts;writeopt;writedir]; plans];
   .Q.gc[];
 
-  manifest,:res
+  / attach to global manifest and return stats for this extract
+  manifest,:res;
+  :res
  };
 
 getmanifest:{[]

@@ -37,8 +37,11 @@
 / compares numbers, so "0.0.0" and "" failed identically - both measured). the three modules were
 / versioned at 0.1.0 as their own separate change; di.depcheck.init now returns cleanly with di.rdb
 / loaded. see rdb.md
-/ NB di.subscriptions is pinned at 0.2.0, not 0.1.0 - start[] calls the 5-arg subscribe and reads
-/ `subtables and `tplogdate off its return, both of which are that release's shape
+/ NB di.subscriptions is pinned at 0.1.0, the version it actually ships. start[] calls the 5-arg
+/ subscribe and reads `subtables and `tplogdate off its return, and 0.1.0 already has all three
+/ (subscriptions.q:733 subscribe:{[tph;tabs;syms;setschema;replay]}, :656 tplogdate, :297 subtables),
+/ so nothing here needs a later release. an earlier 0.2.0 pin was aspirational and would have failed
+/ the check outright - di.depcheck compares against the exported version and there is no 0.2.0
 / NB a single-dependency manifest needs enlist on BOTH sides (see di/permissions/deps.q); this one has
 / five, so the plain dict form is correct here
-deps:`di.servers`di.subscriptions`di.dbwrite`di.eodtime`di.asyncutil!("0.1.0";"0.2.0";"0.1.0";"0.1.0";"0.1.0");
+deps:`di.servers`di.subscriptions`di.dbwrite`di.eodtime`di.asyncutil!("0.1.0";"0.1.0";"0.1.0";"0.1.0";"0.1.0");

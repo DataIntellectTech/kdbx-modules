@@ -272,7 +272,7 @@ may call it twice.
 | `TorQ code/processes/rdb.q:77` | `hdbmessage:{[d](`reload;d)}`, async, applied by the default `.z.ps` | `reload[date]` |
 | `TorQ code/processes/wdb.q:479` | `reloadfunc: @[{(1b;`. `reload x)};d;…]`, async | `reload[date]` |
 | `TorQ code/processes/wdb.q:482` | `syncreloadfunc: @[h;({(1b;`reload x)};d);…]`, sync | `reload[date]` |
-| **shipped `di.rdb`** `rdb.q:947` | `hdbmessage:{[date] :(`reload;date)}` via `di.asyncutil.postback` | `reload[date]` |
+| **shipped `di.rdb`** `rdb.q:999` | `hdbmessage:{[date] :(`reload;date)}` via `di.asyncutil.postback` | `reload[date]` |
 
 TorqX's `di/hdb/hdb.q` instead ships `reload:{[] …}`, published as `.hdb.reload` via
 `` set[`.hdb.reload;reload] ``, and its own `di/proc/rdb` calls it as a bare `".hdb.reload[]"` string.
@@ -307,7 +307,8 @@ were a feature.
 
 ### `hdbdir` is required with no default — stricter than `di.rdb`
 
-`di.rdb` defaults `hdbdir` to `` `:hdb `` (`rdb.q:119`). `di.hdb` deliberately does not, and the
+`di.rdb` defaults `hdbdir` to `` `:hdb `` (`rdb.q:132,138` — its `configdefaults` key/value pair).
+`di.hdb` deliberately does not, and the
 asymmetry is the point: for an rdb, a wrong `hdbdir` means **writing** to the wrong — probably
 empty — directory, which is annoying and loud. For an hdb it means **mounting** and then silently
 serving whatever happens to be at that path: wrong query results that look like right ones. There is
@@ -362,7 +363,7 @@ remotely evaluate `.proc.getattributes[]` on the far side of *every* new connect
 result. In the new module world that mechanism has no equivalent: the real `di.servers` (PR #120) has
 no `attributes` column, no `getdetails`, and never remote-evals anything on connect. `di.rdb` solves
 the same problem in the opposite direction, **pushing** `` (`setattributes;procname;proctype;attrs) ``
-to its gateways (`rdb.q:998`) — a path an hdb cannot use, because it makes zero outbound connections.
+to its gateways (`rdb.q:1050`) — a path an hdb cannot use, because it makes zero outbound connections.
 
 So the data ships and the transport does not. `di.torq` can call `getattributes[]` and publish it
 under whatever process-identity convention it settles on — the same declare-here/register-there
@@ -378,7 +379,7 @@ actually guard.
 
 ### Root `reload` is contended with `di.rdb`
 
-`di.rdb` publishes a unary root `reload` of its own (`rdb.q:209`). A process co-hosting both would
+`di.rdb` publishes a unary root `reload` of its own (`rdb.q:220-227`, its own `publishroot`). A process co-hosting both would
 lose one of them, decided by publish order. `di.hdb` carries `di.rdb`'s `publishroot` warning for
 exactly this — it logs when the name already holds something this module did not install.
 
@@ -561,7 +562,7 @@ q)k4unit:use`di.k4unit
 q)k4unit.moduletest`di.hdb
 ```
 
-101 assertions (86 `true`, 15 `fail`) across 40 fixture/scenario `before` rows, all inline in
+105 assertions (90 `true`, 15 `fail`) across 43 fixture/scenario `before` rows, all inline in
 `test.csv` under a `.t.` namespace — there is no `test.q`, so nothing depends on the process's
 working directory. That last point is load-bearing rather than tidy: mounting chdirs the process,
 so every fixture path is absolute.
@@ -586,7 +587,12 @@ with a null date; a failed mount being logged *and* signalled; `getattributes` o
 teardown/re-teardown/re-start/re-init safety; and one scenario per defect in the table above — a
 rejected `init` leaving no half-configured state (`S9`), a null date (`S10`), a re-init that moves
 `hdbdir` (`S11`), an int-partitioned database (`S12`) and a relative `hdbdir` surviving the chdir
-that mounting performs (`S13`).
+that mounting performs (`S13`). Two more scenarios prove branches that were reachable but never
+actually reached: a one-character `hdbdir`, which q parses as a char *atom* rather than a char
+vector and which the type guard accepts but no earlier scenario ever fed in (`S18`); and the
+multithreaded warning inside `start`, forced by temporarily overriding the private `multithreaded[]`
+helper — `system"p"` cannot be made negative from inside a running process, so this is the only way
+to exercise that branch without a real `-p -N` process (`S19`).
 
 Note for anyone extending the suite: `abs` is a reserved word (`.Q.res`) and cannot be used as a
 local name in a test row — it throws `'assign` at parse time and aborts the whole run.

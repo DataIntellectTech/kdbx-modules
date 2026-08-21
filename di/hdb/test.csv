@@ -89,6 +89,17 @@ comment,,,,,,,"module-local write raises 'noupdate on a secondary thread. measur
 comment,,,,,,,"the caller was handed ""noupdate: .z.m.consecutivefailures"" INSTEAD of the mount"
 comment,,,,,,,"error, so the bump is now protected. a diagnostic must never destroy the diagnosis"
 before,0,0,q,".t.S17:{[] .t.clearroot[]; .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; hdb[`start][]; hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist hsym`$""/nonexistent/nope""]]; b4:hdb[`status][]`consecutivefailures; msg:@[{reload[2026.08.18];""""};::;{[e] :e}]; :`msg`bumped!(msg;1=(hdb[`status][]`consecutivefailures)-b4)}[]",1,1,scenario: a failed reload signals the named mount error AND still counts the failure
+comment,,,,,,,"S18 - a bare one-character hdbdir is a CHAR ATOM under q's own parsing rules (type -10h),"
+comment,,,,,,,"not a char vector. the type guard explicitly allows -10h alongside -11 10h, but no scenario"
+comment,,,,,,,had ever fed one in - the accepted branch was reachable but never actually reached. no i/o
+comment,,,,,,,needed - init resolves config only
+before,0,0,q,".t.S18:{[] a:hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist ""a""]]; atom:hdb[`status][]`hdbdir; v:hdb[`init][.t.mkdeps[(enlist`hdbdir)!enlist enlist ""a""]]; vec:hdb[`status][]`hdbdir; :`atomtype`atom`vec!(-10h=type ""a"";atom;vec)}[]",1,1,scenario: a one-character hdbdir arrives as a char atom - init must resolve it the same as the equivalent char-vector form
+comment,,,,,,,"S19 - the multithreaded warning branch inside start[]. system""p"" cannot be made negative"
+comment,,,,,,,"from inside a running process, so the only way to exercise this branch without a real -p -N"
+comment,,,,,,,"process is to override the private multithreaded[] helper for the duration of one call, then"
+comment,,,,,,,put it back - proving both the warning fires AND the override does not leak into later scenarios
+before,0,0,q,".t.privset:{[nm;f] :(` sv .t.NS,nm) set f}",1,1,"fixture: privset - override an internal by name for one scenario, mirroring .t.priv's read-only reach"
+before,0,0,q,".t.S19:{[] .t.clearroot[]; .t.setupfixture[]; hdb[`init][.t.mkdeps[()!()]]; orig:.t.priv[`multithreaded]; .t.privset[`multithreaded;{[] 1b}]; .t.resetcap[]; hdb[`start][]; .t.privset[`multithreaded;orig]; restored:orig~.t.priv[`multithreaded]; :`warned`restored!(.t.logged[`warn;""remote reload CANNOT work""];restored)}[]",1,1,scenario: start warns when multithreaded[] reports true - forced via a temporary override of the internal helper, then restored
 comment,,,,,,,"S12 - an INT-partitioned hdb (.Q.pf is `int, not `date). MUST be the LAST before row:"
 comment,,,,,,,mounting it sets .Q.pf process-wide and no later date-partitioned scenario would survive.
 comment,,,,,,,"`date in pv` against a long vector threw a bare unlogged 'type AFTER a successful remount,"
@@ -223,3 +234,9 @@ true,0,0,q,"0<count (.t.S17`msg) ss ""di.hdb: reload: failed to mount""",1,1,"th
 true,0,0,q,.t.S17`bumped,1,1,and the failure was still counted - the protection does not skip the bump
 comment,,,,,,,multithreaded input detection
 true,0,0,q,not .t.priv[`multithreaded][],1,1,"multithreaded[] is false in an ordinary process - system""p"" is 0i or positive"
+comment,,,,,,,S18 - a char-atom hdbdir
+true,0,0,q,.t.S18`atomtype,1,1,confirms the input really was a char atom (type -10h) and not a length-1 vector - the branch this test exists to reach
+true,0,0,q,.t.S18[`atom]~.t.S18`vec,1,1,a one-character hdbdir resolves identically whether it arrives as a char atom or an explicitly-enlisted char vector
+comment,,,,,,,S19 - the multithreaded warning branch inside start
+true,0,0,q,.t.S19`warned,1,1,start logs the multithreaded warning when multithreaded[] reports true
+true,0,0,q,.t.S19`restored,1,1,"the temporary override was restored - later use of multithreaded[] sees the real system""p"" check again"

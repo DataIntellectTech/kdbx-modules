@@ -17,7 +17,7 @@
 /   TorQ code/processes/rdb.q:77   hdbmessage:{[d](`reload;d)} - async, applied by the default .z.ps
 /   TorQ code/processes/wdb.q:479  reloadfunc:     @[{(1b;`. `reload x)};d;...] - async
 /   TorQ code/processes/wdb.q:482  syncreloadfunc: @[h;({(1b;`reload x)};d);...] - sync
-/   di.rdb rdb.q:947               hdbmessage:{[date] :(`reload;date)} via di.asyncutil.postback
+/   di.rdb rdb.q:999               hdbmessage:{[date] :(`reload;date)} via di.asyncutil.postback
 / TorqX's di/hdb/hdb.q instead ships reload:{[]...} published as .hdb.reload, matching NONE of them.
 / building it that way would have been silently incompatible with the di.rdb already in review, and
 / silently is the operative word: a niladic function called with an extra argument does NOT throw
@@ -30,8 +30,10 @@
 / ============================================================
 
 ashsym:{[x]
-  / normalise a directory setting to an hsym, accepting `:hdb, `hdb, ":hdb" or "hdb". lifted from
-  / di.rdb rdb.q:51-55 rather than ported from TorqX's datahome/resolvedir, which joins a relative
+  / normalise a directory setting to an hsym, accepting `:hdb, `hdb, ":hdb" or "hdb". same normalisation
+  / approach as di.rdb's ashsym (rdb.q:51-55), simplified to unary since this module has only one
+  / path-like config key - di.rdb's version is binary, {[k;x]}, because it names the offending key
+  / across several path-like settings. not ported from TorqX's datahome/resolvedir, which joins a relative
   / path onto TORQXDATAHOME/TORQXAPPHOME - environment variables specific to TorqX's own sample-app
   / deployment and established nowhere in kdbx-modules. config values arrive as symbols from a .q
   / settings file and as strings from a .toml one, so both shapes are accepted here
@@ -131,7 +133,8 @@ publishroot:{[nm;f]
   / is neither the function about to be installed nor the one this module installed last time.
   / comparing against rootinstalled as well as against f keeps a legitimate re-init quiet.
   / NB `reload` at root is genuinely contended: di.rdb publishes a unary root reload of its own
-  / (rdb.q:209), so a process co-hosting both silently loses one without this warning. real TorQ
+  / (rdb.q:220-227, its own publishroot), so a process co-hosting both silently loses one without
+  / this warning. real TorQ
   / deployments always run the rdb and the hdb as separate processes, so this is documented rather
   / than designed around - changing the shared convention would mean editing di.rdb too. see hdb.md
   if[nm in key `.;
@@ -242,8 +245,9 @@ init:{[deps]
   if[not all 100h<=type each deps[`log]`info`warn`error;
     '"di.hdb: log dict values must be binary {[ctx;msg]} functions; got types: ",
       (", " sv string type each deps[`log]`info`warn`error)," - see di.log"];
-  / hdbdir is REQUIRED with NO default, a deliberate divergence from di.rdb (rdb.q:119 defaults it to
-  / `:hdb). for an rdb a wrong hdbdir means WRITING to the wrong - probably empty - directory, which
+  / hdbdir is REQUIRED with NO default, a deliberate divergence from di.rdb (rdb.q:132,138 - its
+  / configdefaults key/value pair - defaults it to `:hdb). for an rdb a wrong hdbdir means WRITING to
+  / the wrong - probably empty - directory, which
   / is annoying and loud; for an hdb it means MOUNTING and then silently serving whatever happens to
   / be at that path, which is wrong query results that look like right ones. there is no default that
   / is safe to guess, so the module refuses to guess one
@@ -360,7 +364,7 @@ start:{[]
   / buys the same no-real-database-needed testability
   requireinit[`start];
   / RE-PUBLISH the root entry point. init installs it, but teardown removes it and a caller may
-  / legitimately tear down and start again without re-initialising - di.rdb rdb.q:688-695 measured
+  / legitimately tear down and start again without re-initialising - di.rdb rdb.q:740-747 measured
   / exactly that, leaving a process reporting itself started with no root entry point at all.
   / idempotent, so the ordinary init-then-start path is unaffected
   installroot[];
@@ -454,7 +458,7 @@ getattributes:{[]
   / far side of every new connection.
   / NOT published at root as .proc.getattributes in v1: the new di.servers has no attributes column,
   / no getdetails, and never remote-evals anything on connect, so that mechanism has no equivalent
-  / yet. di.rdb solves the same problem by PUSHING (`setattributes;...) to its gateways (rdb.q:998),
+  / yet. di.rdb solves the same problem by PUSHING (`setattributes;...) to its gateways (rdb.q:1050),
   / a path an hdb cannot use - config/settings/hdb.q sets .servers.CONNECTIONS:(), so it makes zero
   / outbound connections. so the data ships and the transport does not: di.torq can call this and
   / publish it under whatever process-identity convention it settles on, the same

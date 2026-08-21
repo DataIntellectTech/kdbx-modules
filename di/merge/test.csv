@@ -147,6 +147,20 @@ run,0,0,q,.test.splay[.test.rseg2;([]grp:1 2;px:3 4f)],1,1,segment 2
 run,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.rdest;(.test.rseg1;.test.rseg2)],1,1,merge with grp as the parted column - joined data is not parted so must be re-sorted
 true,0,0,q,(get .test.rdest)~([]grp:1 1 2 2;px:1 3 2 4f),1,1,rows re-sorted by grp so the p attribute can be applied
 
+comment,,,,,,,mergebypart isolates one missing/corrupt segment from healthy batch-mates in the same batch
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,.test.midest:`:mergetesttmp/midest,1,1,destination partition directory
+run,0,0,q,.test.miseg1:`:mergetesttmp/miseg1,1,1,segment 1 (healthy)
+run,0,0,q,.test.miseg2:`:mergetesttmp/miseg2,1,1,segment 2 (never written - missing)
+run,0,0,q,.test.splay[.test.midest;([]grp:`long$();px:`float$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.miseg1;([]grp:1 2;px:1 2f)],1,1,write only the healthy segment
+run,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.midest;(.test.miseg1;.test.miseg2)],1,1,batch the healthy segment together with a missing one
+true,0,0,q,(get .test.midest)~([]grp:1 2;px:1 2f),1,1,the healthy segment's data still lands in dest rather than the whole batch being lost
+true,0,0,q,`error in exec fn from caplog,1,1,the missing segment is error-logged
+true,0,0,q,"any {0<count x ss ""failed to read segment""} each caplog`msg",1,1,the log names the read failure
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
 comment,,,,,,,mergebypart logs an upsert failure via the injected logger instead of throwing
 run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
@@ -175,6 +189,22 @@ run,0,0,q,merge.mergehybrid[`$();.test.htinfo;.test.hdest;(.test.h1;.test.h2);10
 true,0,0,q,(get .test.hdest)~([]px:10 11 20 21 22f;sz:1 2 3 4 5),1,1,h1 merged whole first then h2 merged column by column
 run,0,0,q,merge.clearpartsizes[],1,1,clear the store
 
+comment,,,,,,,mergehybrid resorts and attributes the whole destination once both merge paths have run
+run,0,0,q,.test.pattinfo:(`trade;([]grp:`long$();px:`float$())),1,1,tableinfo pair with grp as the parted column
+run,0,0,q,.test.pdest2:`:mergetesttmp/pdest2,1,1,destination partition directory
+run,0,0,q,.test.pg1:`:mergetesttmp/pg1,1,1,under-limit segment - takes the whole-partition path
+run,0,0,q,.test.pg2:`:mergetesttmp/pg2,1,1,over-limit segment - takes the column-by-column path
+run,0,0,q,.test.splay[.test.pdest2;([]grp:`long$();px:`float$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.pg1;([]grp:2 2;px:20 21f)],1,1,write the under-limit segment - grp 2, sorts after grp 1
+run,0,0,q,.test.splay[.test.pg2;([]grp:1 1 1;px:10 11 12f)],1,1,write the over-limit segment - grp 1, sorts before grp 2
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[.test.pg1;2;0],1,1,pg1 is small (2 rows)
+run,0,0,q,merge.trackpartition[.test.pg2;3;0],1,1,pg2 is large (3 rows) - over the limit below
+run,0,0,q,merge.mergehybrid[enlist`grp;.test.pattinfo;.test.pdest2;(.test.pg1;.test.pg2);2],1,1,limit of 2: pg1 (whole-partition) written before pg2 (column-by-column) - lands out of grp order
+true,0,0,q,(get .test.pdest2)~([]grp:1 1 1 2 2;px:10 11 12 20 21f),1,1,mergehybrid resorts the full destination so grp ends up ascending despite the write order
+true,0,0,q,`p=first exec a from meta[.test.pdest2] where c=`grp,1,1,the parted attribute is applied to the whole destination, not left unset or scoped to one batch
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
 comment,,,,,,,getextrapartitions returns the distinct parted-column combinations
 run,0,0,q,qsym:([]sym:`c`a`b`a`c;px:1 2 3 4 5),1,1,table with a repeating symbol column
 true,0,0,q,3=count merge.getextrapartitions[`qsym;enlist`sym],1,1,one entry per distinct sym value
@@ -199,6 +229,8 @@ true,0,0,q,"not any {0<count x ss ""sort.csv""} each caplog`msg",1,1,the info me
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
 run,0,0,q,merge.checkenumerabletype[`qtbl;enlist`f],1,1,check a non-enumerable (float) parted column
 true,0,0,q,`error in exec fn from caplog,1,1,non-enumerable parted column is error-logged
+true,0,0,q,all 10h=type each exec msg from caplog,1,1,the error message is a flat string not a malformed nested list
+true,0,0,q,"any {0<count x ss ""not all columns f""} each caplog`msg",1,1,the error message names the offending column as flat text
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
 run,0,0,q,merge.checkenumerabletype[`qtbl;enlist`a],1,1,check an enumerable (long) parted column
 true,0,0,q,`info in exec fn from caplog,1,1,enumerable parted column is info-logged

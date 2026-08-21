@@ -90,7 +90,7 @@ merge.getpartchunks[partdirs; 1000000]
 ```
 
 ### `mergebypart[extrapartitiontype;dest;partchunks]`
-Merge one batch of whole partition segments into destination partition `dest`, re-sorting by the parted column(s) `extrapartitiontype` first if the `p#` attribute cannot otherwise be applied. Typically iterated over the output of `getpartchunks`.
+Merge one batch of whole partition segments into destination partition `dest`, re-sorting by the parted column(s) `extrapartitiontype` first if the `p#` attribute cannot otherwise be applied. Typically iterated over the output of `getpartchunks`. Each segment in `partchunks` is read individually and protected: a missing or corrupt segment file is error-logged and dropped, it does not take its batch-mates down with it - the rest of the batch still merges. If every segment in the batch fails to read, nothing is upserted and that is error-logged too.
 ```q
 merge.mergebypart[`sym; ` sv dest,`] each merge.getpartchunks[partdirs;lim]
 ```
@@ -102,7 +102,7 @@ merge.mergebycol[(`trade;schema); dest] each partdirs
 ```
 
 ### `mergehybrid[extrapartitiontype;tableinfo;dest;partdirs;mergelimit]`
-Merge `partdirs` using whichever method fits each: whole-partition for those within `mergelimit`, column-by-column for any single partition over it (creating the `.d` file if column-by-column merging produced none).
+Merge `partdirs` using whichever method fits each: whole-partition for those within `mergelimit`, column-by-column for any single partition over it (creating the `.d` file if column-by-column merging produced none). If `extrapartitiontype` is non-empty, once both paths have finished it re-sorts and re-applies the `p#` attribute to `dest` as a whole - see "The parted attribute is applied once, on the whole destination" below for why that happens here rather than per-batch.
 
 ### `checkpartitiontype[tablename;extrapartitiontype]`
 Error-log any parted column supplied for the table that is absent from it.
@@ -173,16 +173,54 @@ the log rather than something a future debugger has to discover by reading sourc
 
 **`mergebycol` deliberately keeps failing uncaught on a missing/corrupt segment column; `mergebypart`
 does not.** These are not equivalent failure modes, so making them match would not obviously be the
-safer choice - it might be the wrong one. `mergebypart` fails per whole partition: if one partition's
-upsert fails, `dest` simply doesn't get that partition's data yet, which is incomplete but still
-internally consistent. `mergebycol` merges one column at a time into the *same* `dest`; if a swallowed
-failure let it carry on past a bad column, `dest` would end up with some columns reflecting the new
-data and others silently stale - a genuinely worse, silently-inconsistent partition, not just a
-delayed merge. So `mergebycol`'s column read is intentionally left unprotected: a missing or
-unreadable segment column throws straight out of `mergebycol`/`mergehybrid`'s column-by-column path,
-by design, rather than risking a half-updated destination. (This also happens to match the legacy
-TorQ source and Olly's draft, both of which have the same unprotected-read structure - but the reason
-to keep it here is the partial-column-write risk above, not merely that it matches prior behaviour.)
+safer choice - it might be the wrong one. `mergebypart` reads each segment in a batch individually and
+protected: a missing/corrupt segment file is error-logged and dropped without disturbing its
+batch-mates, which still merge. The remaining, surviving segments in the batch are then joined and
+upserted as one unit - if *that* upsert itself fails (e.g. a schema mismatch), the whole batch's data
+is lost together, which is incomplete but still internally consistent: `dest` simply doesn't get that
+batch's data yet, nothing else in `dest` is disturbed. `mergebycol` merges one column at a time into
+the *same* `dest`; if a swallowed failure let it carry on past a bad column, `dest` would end up with
+some columns reflecting the new data and others silently stale - a genuinely worse,
+silently-inconsistent partition, not just a delayed merge. So `mergebycol`'s column read is
+intentionally left unprotected: a missing or unreadable segment column throws straight out of
+`mergebycol`/`mergehybrid`'s column-by-column path, by design, rather than risking a half-updated
+destination. (This also happens to match the legacy TorQ source and Olly's draft, both of which have
+the same unprotected-read structure - but the reason to keep it here is the partial-column-write risk
+above, not merely that it matches prior behaviour.)
+
+---
+
+## The parted attribute is applied once, on the whole destination
+
+A full write-down-and-merge smoke test (real segments, real `di.log`, both of TorQ's `partbyenum`
+and `partbyfirstchar` write patterns) found that `mergehybrid` never actually left `dest` with the
+`p#` attribute set, even when every batch merged cleanly - `mergebypart`'s own resort logic decides
+*whether* `p#` could apply and reorders rows accordingly, but applying the attribute to an in-memory
+batch and then `upsert`-ing it to disk does not persist the attribute: `upsert` appends raw values
+onto the on-disk column, it does not carry an in-memory attribute through to the file. Confirmed
+empirically (`meta` on the merged destination showed no attribute on the parted column, in a
+mergebypart-only scenario with nothing left to resort).
+
+Worse, `mergebycol` never even tries: for TorQ's `partbyfirstchar` write mode, a single segment can
+hold *several* parted-column values in arrival order, not one. If that segment is large enough to
+route through `mergebycol` instead of `mergebypart`, its rows are appended as-is - the destination
+ends up genuinely unsorted and non-contiguous by the parted column. Confirmed empirically too: after
+merging first-character-grouped segments through `mergehybrid`, the destination's parted column was
+neither sorted nor grouped on disk.
+
+Trying to fix this per-batch (inside `mergebypart`, or per-column inside `mergebycol`) cannot give a
+real guarantee either way: a batch that is already correctly grouped in isolation can still land next
+to a *different* batch's values on disk, and `upsert` does not re-validate the combined result.
+The only way to genuinely guarantee `` `p# `` on `dest` is to look at the whole thing at once. So
+`mergehybrid` does that as a final step, after every whole-partition batch and every column-by-column
+segment has been merged: it reads `dest` back, re-sorts it by `extrapartitiontype`, re-applies the
+attribute, and writes the whole table back. This is a deliberate, necessary departure from this
+module's "keeps memory flat" design goal (see the file header) for that one final step - the
+alternative is a `dest` that is silently never truly parted, which is worse. Batch-by-batch merging
+into `dest` still only ever holds one batch/column in memory at a time; only this last step reads
+`dest` in full, once, per `mergehybrid` call. `mergebypart` called standalone in a caller-driven loop
+(bypassing `mergehybrid` - see its usage example above) does **not** get this guarantee automatically;
+route through `mergehybrid` if a properly parted `dest` matters.
 
 ---
 
@@ -236,7 +274,9 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.merge
 ```
 
-The test suite injects a no-op binary mock logger (and a capturing logger for the log-path assertions). It covers: dependency validation (non-dict deps / missing / non-dict / incomplete `log` all throw, with the `di.merge` error prefix); the `requireinit` guard rejecting every exported function before `init` has run; config application via row-count vs byte-size batching, defaults and overrides; `trackpartition`/`getpartsizes`/`clearpartsizes`/`syncpartsizes`; the `getpartchunks` batching and `partlimit` splitting logic; `version`/`getapimeta` shape; and end-to-end `mergebypart`, `mergebycol` and `mergehybrid` against real on-disk segments written to a scratch directory (cleaned up afterwards).
+The test suite injects a no-op binary mock logger (and a capturing logger for the log-path assertions). It covers: dependency validation (non-dict deps / missing / non-dict / incomplete `log` all throw, with the `di.merge` error prefix); the `requireinit` guard rejecting every exported function before `init` has run; config application via row-count vs byte-size batching, defaults and overrides; `trackpartition`/`getpartsizes`/`clearpartsizes`/`syncpartsizes`; the `getpartchunks` batching and `partlimit` splitting logic; `version`/`getapimeta` shape; end-to-end `mergebypart`, `mergebycol` and `mergehybrid` against real on-disk segments written to a scratch directory (cleaned up afterwards); `mergebypart` isolating one missing segment from healthy batch-mates in the same batch; and `mergehybrid` re-sorting and re-attributing the whole destination once both merge paths have run.
+
+Mock loggers only check that a message was logged at the right level - they do not process the message content the way a real logger does, so they cannot catch a malformed message (a list where a flat string was expected, for instance). Where a message's *shape* matters, not just that it fired, the test asserts on structure too (e.g. `10h=type` on the captured message) rather than relying on the mock alone.
 
 ---
 
@@ -246,3 +286,4 @@ The test suite injects a no-op binary mock logger (and a capturing logger for th
 - `init` must be called before any other function - enforced by the `requireinit` guard on every other exported function, not just documented convention.
 - The `VERSION`-file read pattern (fail loud on missing/unreadable/empty, `trim` against trailing whitespace) follows `di.servers`, not `di.eodtime` (which has no `VERSION` handling at all).
 - The merge functions operate on on-disk paths (`get`/`set`/`upsert` against file symbols); they do not manage the segment or destination directory lifecycle - that remains the caller's responsibility.
+- A real-logger smoke test (see "The parted attribute is applied once, on the whole destination" above) also caught `checkenumerabletype`'s error-message construction building a malformed list instead of a flat string for a multi-symbol `extrapartitiontype` - the k4unit mock loggers don't process message content, so this was invisible there. Fixed to match `checkpartitiontype`'s already-correct `", " sv string ...` pattern, with a regression test that checks the message's shape (`10h=type`), not just that it fired.

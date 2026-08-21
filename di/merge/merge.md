@@ -132,7 +132,8 @@ Both legacy callers (`wdb.q`, `tickerlogreplay.q`) call `checkpartitiontype`, `g
 writedown modes, which `tickerlogreplay.q`'s simpler `partandmerge` replay mode has no equivalent
 of. A future consumer that only exercises the tickerlogreplay-style call pattern (as `di.wdb` will
 initially, most likely) should not assume the full API surface is exercised end-to-end by that
-usage alone - `checkenumerabletype`/`getfirstcharpartitions` need their own coverage.
+usage alone - `getfirstcharpartitions` needs its own coverage, which it now has (see `test.csv`);
+`checkenumerabletype` is covered by the parted-column-checks block.
 
 ---
 
@@ -146,10 +147,11 @@ usage alone - `checkenumerabletype`/`getfirstcharpartitions` need their own cove
 | rowcount | `long` | accumulated row count written to that segment |
 | bytes | `long` | accumulated byte-size estimate of that segment |
 
-`getpartchunks[partdirs;mergelimit]` silently drops any requested `partdirs` entry that has not
-been `trackpartition`'d - it filters against `getpartsizes[]`, so an untracked partition is simply
+`getpartchunks[partdirs;mergelimit]` drops any requested `partdirs` entry that has not been
+`trackpartition`'d - it filters against `getpartsizes[]`, so an untracked partition is simply
 absent from every batch rather than raising an error. Callers must ensure every partition they mean
-to merge has been tracked first.
+to merge has been tracked first. `getpartchunks` logs an info line naming how many requested
+partitions had no tracked size whenever it drops any - the filtering behaviour itself is unchanged.
 
 ---
 

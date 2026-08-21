@@ -106,6 +106,15 @@ run,0,0,q,merge.trackpartition[`:e3;1;0],1,1,track e3
 true,0,0,q,merge.getpartchunks[`:e1`:e2`:e3;1000000]~(`:e1`:e2;enlist`:e3),1,1,a huge data limit would take all three but partlimit splits them 2+1
 run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the default partlimit
 
+comment,,,,,,,getpartchunks logs when a requested partdir has no tracked size and drops it
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[`:f1;10;100],1,1,track only f1
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+true,0,0,q,merge.getpartchunks[`:f1`:f2;1000]~enlist enlist`:f1,1,1,the untracked partition f2 is silently dropped from the result
+true,0,0,q,"any {0<count x ss ""1 of 2 requested partition""} each caplog`msg",1,1,getpartchunks logs how many requested partitions had no tracked size
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
 comment,,,,,,,mergebycol appends each segment's columns to the destination partition
 run,0,0,q,.test.cschema:([]px:`float$();sz:`long$()),1,1,column schema
 run,0,0,q,.test.ctinfo:(`quote;.test.cschema),1,1,tableinfo pair (name;schema)
@@ -170,6 +179,10 @@ comment,,,,,,,getextrapartitions returns the distinct parted-column combinations
 run,0,0,q,qsym:([]sym:`c`a`b`a`c;px:1 2 3 4 5),1,1,table with a repeating symbol column
 true,0,0,q,3=count merge.getextrapartitions[`qsym;enlist`sym],1,1,one entry per distinct sym value
 true,0,0,q,(asc raze merge.getextrapartitions[`qsym;enlist`sym])~`a`b`c,1,1,the three distinct sym values
+
+comment,,,,,,,getfirstcharpartitions groups partition values by first character not by full value
+run,0,0,q,fctbl:([]sym:`aa`ab`ba`bb`ac;px:1 2 3 4 5),1,1,table with symbol values sharing first characters
+true,0,0,q,merge.getfirstcharpartitions[`fctbl;enlist`sym]~(`aa`ab`ac;`ba`bb),1,1,values grouped by first character not by full value
 
 comment,,,,,,,parted-column checks route through the injected logger and no longer reference sort.csv
 run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger

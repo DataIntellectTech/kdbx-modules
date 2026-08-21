@@ -101,6 +101,12 @@ getpartchunks:{[partdirs;mergelimit]
   requireinit[`getpartchunks];
   / tracked sizes for just the partitions we are merging
   t:select from .z.m.partsizes where ptdir in partdirs;
+  / a requested partdir with no tracked size is silently absent from t above - log it so the gap
+  / is visible rather than something a caller has to notice missing from the merge batch. distinct
+  / on both sides so a duplicate partdir in the request doesn't skew the count
+  if[0<n:count distinct[partdirs] except exec ptdir from t;
+    .z.m.loginfo[`merge;"getpartchunks: ",string[n]," of ",string[count distinct partdirs],
+      " requested partition(s) have no tracked size, dropped"]];
   / the measure we accumulate against the limit
   r:$[.z.m.mergebybytelimit;exec bytes from t;exec rowcount from t];
   / running-total scan resets to the current partition whenever adding it would breach the limit

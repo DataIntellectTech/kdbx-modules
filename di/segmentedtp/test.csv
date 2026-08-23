@@ -1,0 +1,194 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,stp:use`di.segmentedtp,1,1,load module
+before,0,0,q,.t.priv:`$".m.di.0segmentedtp",1,1,qualified private-namespace handle for white-box checks
+comment,,,,,,,mock dependencies
+before,0,0,q,"mocklog:`info`warn`error!({[c;m]::};{[c;m]::};{[c;m]::})",1,1,no-op binary logger
+before,0,0,q,".t.jobs:([id:`symbol$()]func:();params:();period:`int$();mode:`short$())",1,1,captured timer jobs table
+before,0,0,q,"mocktimer:`addjob`deletejobs`enablejobs`disablejobs`enable`disable!((`$())!();{[ids]:()};{[ids]:()};{[ids]:()};{[]:()};{[]:()})",1,1,mock timer base
+before,0,0,q,"mocktimer[`addjob]:enlist[`custom]!enlist {[id;func;params;period;mode;opts] `.t.jobs upsert (id;func;params;period;mode)}",1,1,mock timer addjob captures the job
+before,0,0,q,".t.regs:([event:`symbol$();phase:`symbol$();name:`symbol$()]func:())",1,1,captured handler registrations table
+before,0,0,q,"mockhandlers:`register`remove!({[event;phase;nm;pri;func] `.t.regs upsert (event;phase;nm;func)};{[event;phase;nm] delete from `.t.regs where event=event,phase=phase,name=nm})",1,1,mock handlers
+before,0,0,q,".t.tradesch:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$())",1,1,trade schema
+before,0,0,q,".t.quotesch:([]time:`timestamp$();sym:`symbol$();bid:`float$();ask:`float$())",1,1,quote schema
+before,0,0,q,"system ""rm -rf /tmp/di_segmentedtp_k4unit""; system ""mkdir -p /tmp/di_segmentedtp_k4unit""",1,1,clean scratch log directory
+before,0,0,q,".t.basedeps:`log`timer`handlers`schemas`kdbtplog!(mocklog;mocktimer;mockhandlers;`trade`quote!(.t.tradesch;.t.quotesch);""/tmp/di_segmentedtp_k4unit"")",1,1,minimal valid deps template
+comment,,,,,,,init - dependency validation - a fail row per guard - init must be called before any other function
+fail,0,0,q,stp.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,stp.init[()!()],1,1,init rejects a deps dict missing log
+fail,0,0,q,"stp.init[(enlist`log)!enlist ""notadict""]",1,1,init rejects a non-dict log value
+fail,0,0,q,"stp.init[(enlist`log)!enlist (enlist`info)!enlist {[c;m]:()}]",1,1,init rejects a log dict missing warn/error
+fail,0,0,q,stp.init[.t.basedeps _ `timer],1,1,init rejects deps missing timer
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`timer)!enlist ""notadict""]",1,1,init rejects a non-dict timer value
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`timer)!enlist ()!()]",1,1,init rejects a timer dict missing addjob
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`timer)!enlist (enlist`addjob)!enlist ()!()]",1,1,init rejects a timer addjob missing the custom variant
+fail,0,0,q,"stp.init[.t.basedeps,enlist[`timer]!enlist (mocktimer,enlist[`deletejobs]!enlist `notafunction)]",1,1,init rejects a non-function timer deletejobs
+fail,0,0,q,"stp.init[.t.basedeps,enlist[`timer]!enlist (mocktimer _ `disable)]",1,1,init rejects a timer dict missing disable
+fail,0,0,q,stp.init[.t.basedeps _ `handlers],1,1,init rejects deps missing handlers
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`handlers)!enlist ""notadict""]",1,1,init rejects a non-dict handlers value
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`handlers)!enlist (enlist`register)!enlist {[e;p;n;pr;f]:()}]",1,1,init rejects a handlers dict missing remove
+fail,0,0,q,stp.init[.t.basedeps _ `schemas],1,1,init rejects deps missing schemas
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`schemas)!enlist ""notadict""]",1,1,init rejects a non-dict schemas value
+fail,0,0,q,stp.init[.t.basedeps _ `kdbtplog],1,1,init rejects deps missing kdbtplog
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`errorlogname)!enlist `trade]",1,1,init rejects errorlogname colliding with a real captured table name - currlog cannot distinguish the two by tbl key alone
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`multilogperiod)!enlist 0D00:00:00]",1,1,init rejects a zero multilogperiod - gentimeformat of the resulting null currperiod is the empty string, which would collide every period's filename onto one name
+comment,,,,,,,"multilog/batchmode/replayperiod domain checks - found during a holistic re-read: unlike"
+comment,,,,,,,"multilogperiod/errorlogname above, these three had NO domain validation at all. an unrecognised"
+comment,,,,,,,"multilog crashed init itself with a bare 'rank (the naming dispatch dict indexed with a missing key"
+comment,,,,,,,"returns generic null, applied as a 3-arg function); an unrecognised batchmode passed init silently"
+comment,,,,,,,"and only threw 'rank on the first upd, misfiled by errmode as a data-quality ""bad message"" forever;"
+comment,,,,,,,"an unrecognised replayperiod was worst of all - no error anywhere, subdetails' logfilelist silently"
+comment,,,,,,,came back as the raw table list instead of (msgcount;logfile) pairs. all three confirmed directly
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`multilog)!enlist `bogus]",1,1,init rejects an unrecognised multilog mode
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`batchmode)!enlist `bogus]",1,1,init rejects an unrecognised batchmode
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`replayperiod)!enlist `bogus]",1,1,init rejects an unrecognised replayperiod
+comment,,,,,,,init failure messages name the module and the missing key - not a bare unrelated throw
+true,0,0,q,"0<count (@[stp.init;(::);{x}]) ss ""di.segmentedtp""",1,1,init error message is prefixed with the module name
+true,0,0,q,"0<count (@[stp.init;.t.basedeps _ `kdbtplog;{x}]) ss ""kdbtplog""",1,1,missing-kdbtplog error names the missing key
+true,0,0,q,"0<count (@[stp.init;.t.basedeps _ `timer;{x}]) ss ""timer""",1,1,missing-timer error names the missing key
+comment,,,,,,,exported functions require init first. CAPTURED IN A BEFORE-ROW CLOSURE, not bare fail rows -
+comment,,,,,,,"k4unit runs ALL before rows first, as one group in file order, and only THEN all true/fail rows"
+comment,,,,,,,"(confirmed against k4unit.q's own KUrt: ""exec ... from KUTI where action=`before"" runs as one"
+comment,,,,,,,"batch, with the comment ""preserve run,true,fail order"" applying only to those three actions"
+comment,,,,,,,relative to each other - NOT to before rows relative to true/fail). a bare fail row here would
+comment,,,,,,,"therefore run AFTER scenario A's own init below (also a before row), not before it - so the"
+comment,,,,,,,"pre-init throw has to be captured DURING this before-row instead, which correctly runs first"
+comment,,,,,,,"among befores since it is positioned earlier in the file than scenario A's own before rows"
+before,0,0,q,".t.preinit:`upd`getcounts`subdetails`tablelist`teardown!(.[stp.upd;(`trade;());{[e]`threw}];@[stp.getcounts;(::);{`threw}];.[stp.subdetails;(`trade;`);{[e]`threw}];@[stp.tablelist;`;{`threw}];@[stp.teardown;(::);{`threw}])",1,1,capture whether each export throws before any init has ever run in this process
+true,0,0,q,`threw~.t.preinit`upd,1,1,upd throws before init - unset module state (unguarded, but still fails)
+true,0,0,q,`threw~.t.preinit`getcounts,1,1,getcounts requires init
+true,0,0,q,`threw~.t.preinit`subdetails,1,1,subdetails requires init
+true,0,0,q,`threw~.t.preinit`tablelist,1,1,tablelist requires init
+true,0,0,q,`threw~.t.preinit`teardown,1,1,teardown requires init
+comment,,,,,,,scenario A - the one FRESH init in this suite (default tabperiod/defaultbatch). k4unit runs every
+comment,,,,,,,"row in ONE process, so a second stp.init call anywhere below this point would be a RE-init (module"
+comment,,,,,,,"state persists - see segmentedtp.md's design notes), not a fresh one. genuinely different"
+comment,,,,,,,"multilog/batchmode configs that need a truly fresh init are covered in test_integration.csv instead,"
+comment,,,,,,,"each as its own spawned process. handler/job registration is captured INSIDE the closure, before"
+comment,,,,,,,"teardown runs - the mock's own accumulated state after the full closure completes reflects"
+comment,,,,,,,"POST-teardown reality (handlers mock deletes on remove; timer mock does not), not the moment"
+comment,,,,,,,init actually registered them
+before,0,0,q,".t.scenA:{[] stp.init[.t.basedeps]; hreg:`.z.exit in exec event from .t.regs where name=`segmentedtp; jreg:`segmentedtp in exec id from .t.jobs; stp.upd[`trade;(enlist`AAPL;enlist 100.5;enlist 10)]; stp.upd[`trade;(enlist`MSFT;enlist 200.25;enlist 5)]; c:stp.getcounts[]; sd:stp.subdetails[`trade`quote;`]; am:stp.getapimeta[]; tt:stp.tablelist[`]; stp.teardown[]; :`counts`subdetails`apimeta`tabs`hreg`jreg!(c;sd;am;tt;hreg;jreg)}",1,1,scenario A closure - fresh init, exercise the lifecycle, teardown, capture results
+before,0,0,q,.t.rA:.t.scenA[],1,1,run scenario A once
+true,0,0,q,2=.t.rA[`counts][`j]`trade,1,1,scenario A - j counted both writes for trade (defaultbatch writes immediately)
+true,0,0,q,0=.t.rA[`counts][`j]`quote,1,1,scenario A - quote untouched
+true,0,0,q,-14h=type .t.rA[`counts][`d],1,1,scenario A - getcounts reports an actual date
+true,0,0,q,`schemalist`logfilelist`rowcounts`date~key .t.rA`subdetails,1,1,scenario A - subdetails returns the full protocol shape
+true,0,0,q,0<count .t.rA[`subdetails][`logfilelist],1,1,scenario A - logfilelist is non-empty once logs are open
+true,0,0,q,(asc`trade`quote)~asc .t.rA`tabs,1,1,scenario A - tablelist reports both captured tables
+true,0,0,q,"(asc `upd`teardown`tablelist`subdetails`readcustomcsv`setcustommode`getcounts)~asc exec name from .t.rA`apimeta",1,1,getapimeta documents exactly the callable exports
+true,0,0,q,"not any `init`getapimeta`version in exec name from .t.rA`apimeta",1,1,getapimeta does not register framework plumbing
+true,0,0,q,`name`public`descrip`params`return~cols .t.rA`apimeta,1,1,getapimeta rows carry the registry columns
+true,0,0,q,.t.rA`jreg,1,1,init scheduled the tick timer job under a stable id
+true,0,0,q,.t.rA`hreg,1,1,init registered the .z.exit handler
+true,0,0,q,99h=type stp.getcounts[],1,1,teardown does NOT un-initialise the module - requireinit stays satisfied afterward (initialised[] probes schemas, which teardown deliberately leaves intact) so getcounts still succeeds, matching di.tickerplant's teardown philosophy documented in segmentedtp.md
+comment,,,,,,,re-init lifecycle - teardown resets the scheduled/handlerregistered flags precisely so a GENUINE
+comment,,,,,,,"re-init (not just the first, fresh one) re-registers both. this closure inits again (module is"
+comment,,,,,,,"already initialised from scenario A, so this is a true re-init), captures registration state,"
+comment,,,,,,,then tears down again to leave the module clean for the rows that follow
+before,0,0,q,".t.ri:{[] stp.init[.t.basedeps]; hreg:`.z.exit in exec event from .t.regs where name=`segmentedtp; jreg:`segmentedtp in exec id from .t.jobs; stp.teardown[]; :`hreg`jreg!(hreg;jreg)}",1,1,re-init lifecycle closure
+before,0,0,q,.t.riR:.t.ri[],1,1,run the re-init lifecycle scenario once
+true,0,0,q,.t.riR`hreg,1,1,a genuine re-init (after an earlier teardown) still re-registers the .z.exit handler - not silently skipped because handlerregistered was never reset
+true,0,0,q,.t.riR`jreg,1,1,a genuine re-init still re-schedules the timer job - not silently skipped because scheduled was never reset
+comment,,,,,,,subdetails after init - zero match and partial match, distinct from the before-init zero-throw
+comment,,,,,,,"captured in .t.preinit above. the module is still initialised here (teardown does not"
+comment,,,,,,,un-initialise it) so these exercise the real post-init subdetails code path
+true,0,0,q,"`THREW~.[stp.subdetails;(`nosuchtable;`);{[e]`THREW}]",1,1,subdetails still throws for a wholly nonexistent table once initialised - di.pubsub registered nothing, so failing leaves no half subscription
+true,0,0,q,"`schemalist`logfilelist`rowcounts`date~key .[stp.subdetails;(`trade`nosuchtable;`);{[e]`THREW}]",1,1,subdetails with a partial match (one real table, one fake) still succeeds and returns data for the real one instead of failing the whole call
+comment,,,,,,,"errmode / badmsg - a malformed update must be caught and logged, not thrown, and must not"
+comment,,,,,,,"advance j (the write genuinely did not happen, the count must not claim otherwise). captured as"
+comment,,,,,,,"ONE closure, not separate capture/act/check rows - k4unit runs ALL before rows first as one"
+comment,,,,,,,"batch (see the earlier notes on this), so a capture-then-later-check split across rows would be"
+comment,,,,,,,"corrupted by any OTHER before row's writes landing in between (confirmed: it was, by the"
+comment,,,,,,,immediate-mode test below writing to the same table's j in its own before-phase step
+before,0,0,q,".t.bm:{[] j0:.t.priv[`j]`trade; r:stp.upd[`trade;(enlist`AAPL;enlist 100.5)]; j1:.t.priv[`j]`trade; :`r`j0`j1!(r;j0;j1)}",1,1,badmsg closure - capture, act, capture, all atomically
+before,0,0,q,.t.bmR:.t.bm[],1,1,run the badmsg scenario once
+true,0,0,q,.t.bmR[`r]~(::),1,1,upd swallows a malformed message under errmode (too few columns) rather than throwing
+true,0,0,q,(.t.bmR`j1)=.t.bmR`j0,1,1,the failed write did not advance j - badmsg caught it before any count changed
+comment,,,,,,,naming modes - filename shape, tested via direct dispatch (mode-agnostic, needs only logprefix, which
+comment,,,,,,,scenario A already set and teardown does not clear)
+true,0,0,q,"0<count (string .t.priv[`logname][`tabperiod][`:/x;`trade;2026.01.01D00:00:00]) ss ""stp_trade""",1,1,tabperiod naming includes the prefix and table name
+true,0,0,q,.t.priv[`logname][`tabular]~.t.priv[`logname][`tabperiod],1,1,tabular and tabperiod share the identical naming function body
+true,0,0,q,"0<count (string .t.priv[`logname][`singular][`:/x;`trade;2026.01.01D00:00:00]) ss ""stp_2026""",1,1,singular naming uses the prefix and timestamp
+true,0,0,q,"not 0<count (string .t.priv[`logname][`singular][`:/x;`trade;2026.01.01D00:00:00]) ss ""trade""",1,1,singular naming does not embed the table name
+true,0,0,q,"0<count (string .t.priv[`logname][`periodic][`:/x;`trade;2026.01.01D00:00:00]) ss ""stp_periodic""",1,1,periodic naming shape
+true,0,0,q,"0<count (string .t.priv[`logname][`error][`:/x;`segmentederrorlogfile;2026.01.01D00:00:00]) ss ""stp_segmentederrorlogfile""",1,1,error naming shape
+comment,,,,,,,rolltabs - the negative control for the design mistake caught during review (see segmentedtp.md's
+comment,,,,,,,"naming and rolling design note): a custom-assigned tabular/singular table must be EXCLUDED from"
+comment,,,,,,,"periodic rolling, while a periodic/tabperiod-assigned one participates. tested by poking module"
+comment,,,,,,,"state directly through the private namespace, not a second full init - a namespace symbol reads"
+comment,,,,,,,"via bracket-index (priv[`name]) but writes need the qualified set form, hence this helper. ALL"
+comment,,,,,,,"FOUR poke+check steps run sequentially INSIDE one before-row closure, not as separate"
+comment,,,,,,,"interleaved before/true rows - k4unit batches every before row ahead of every true/fail row,"
+comment,,,,,,,"so four separate pokes would all run first (each overwriting the last), and all four checks"
+comment,,,,,,,would then run afterward against only the FINAL poke's state
+before,0,0,q,".t.poke:{[nm;val] (`$"".m.di.0segmentedtp."",string nm) set val}",1,1,helper - write a module-private state var from outside
+before,0,0,q,".t.rt:{[] .t.poke[`custommode;`trade`quote!`tabular`periodic]; .t.poke[`multilog;`custom]; .t.poke[`logtabs;`trade`quote]; a:.t.priv[`rolltabs][]; .t.poke[`custommode;`trade`quote!`singular`tabperiod]; b:.t.priv[`rolltabs][]; .t.poke[`custommode;`trade`quote!`periodic`tabperiod]; c:.t.priv[`rolltabs][]; .t.poke[`multilog;`tabperiod]; d:.t.priv[`rolltabs][]; :`tabularexcl`singularexcl`noneexcl`nonecustom!(a;b;c;d)}",1,1,rolltabs scenario closure - four poke+check steps in sequence
+before,0,0,q,.t.rR:.t.rt[],1,1,run the rolltabs scenario once
+true,0,0,q,(enlist`quote)~.t.rR`tabularexcl,1,1,rolltabs excludes the tabular-assigned table and keeps only the periodic-assigned one
+true,0,0,q,(enlist`quote)~.t.rR`singularexcl,1,1,rolltabs excludes a singular-assigned table too - not just tabular
+true,0,0,q,(asc`trade`quote)~asc .t.rR`noneexcl,1,1,rolltabs keeps every table when none is tabular/singular-assigned
+true,0,0,q,(asc`trade`quote)~asc .t.rR`nonecustom,1,1,rolltabs is unconditionally the whole set under a non-custom top-level mode
+comment,,,,,,,"immediate mode - write and publish together, no batching lag. i/j are already out of sync for"
+comment,,,,,,,"trade at this point (scenario A's defaultbatch writes advanced j but nothing ever flushed to"
+comment,,,,,,,"advance i), so this checks the DELTA across one immediate-mode update, not absolute i=j."
+comment,,,,,,,"captured as ONE closure - poke, act, restore, all atomically - for the same reason badmsg is:"
+comment,,,,,,,"splitting poke/act/restore across separate before rows still runs them all in the SAME"
+comment,,,,,,,"before-phase batch as everything else, in file order, but any true/fail assertion checking"
+comment,,,,,,,"the poked state runs strictly AFTER every before row including the restore - so a separate"
+comment,,,,,,,"true row would see the value already put back, not the poked one (confirmed: it did)"
+before,0,0,q,".t.im:{[] .t.poke[`batchmode;`immediate]; j0:.t.priv[`j]`trade; i0:.t.priv[`i]`trade; stp.upd[`trade;(enlist`XYZ;enlist 50.0;enlist 1)]; j1:.t.priv[`j]`trade; i1:.t.priv[`i]`trade; .t.poke[`batchmode;`defaultbatch]; :`j0`i0`j1`i1!(j0;i0;j1;i1)}",1,1,immediate-mode closure - poke, capture, act, capture, restore, all atomically
+before,0,0,q,.t.imR:.t.im[],1,1,run the immediate-mode scenario once
+true,0,0,q,1=(.t.imR`j1)-.t.imR`j0,1,1,immediate mode wrote exactly one message to the log synchronously
+comment,,,,,,,"the i (published) side of immediate mode is NOT checked here. scenario A's own subdetails call"
+comment,,,,,,,"above registered THIS in-process caller as a subscriber under a bogus handle (0 - not a real"
+comment,,,,,,,"IPC handle, since subdetails was called directly rather than over real IPC), and di.pubsub"
+comment,,,,,,,"correctly tries to notify it - confirmed directly: pubsub.publish throws ""0 is not an ipc"
+comment,,,,,,,"handle"" from this point on in this shared process, caught here by errmode the same way"
+comment,,,,,,,"real bad data would be. that is di.pubsub working as designed against a test-only artifact,"
+comment,,,,,,,"not a module bug - the real i=j synchronicity check lives in test_integration.csv instead,"
+comment,,,,,,,in a fresh process with no such pollution
+comment,,,,,,,"createlogs off - a REAL bug found during smoke testing: init correctly skips opening any"
+comment,,,,,,,"logs, but .z.m.dldir is then never set, and openlog/setmeta/openlogerr referenced it"
+comment,,,,,,,"unconditionally - every single upd threw an unrelated undefined-variable error, and for a"
+comment,,,,,,,"BAD message specifically, badmsg's own error-recovery path (openlogerr) threw a SECOND,"
+comment,,,,,,,"unrelated error that would have escaped errmode entirely (a throw inside an error handler"
+comment,,,,,,,"is not caught by the protected apply it is handling). fixed by making openlog return a null"
+comment,,,,,,,sentinel when createlogs is off and having every write-path check it before touching dldir.
+before,0,0,q,".t.cl:{[] .t.poke[`createlogs;0b]; j0:.t.priv[`j]`trade; r1:.[stp.upd;(`trade;(enlist`AAPL;enlist 100.5;enlist 10));{x}]; r2:.[stp.upd;(`trade;(enlist`AAPL;enlist 100.5));{x}]; j1:.t.priv[`j]`trade; .t.poke[`createlogs;1b]; :`r1`r2`j0`j1!(r1;r2;j0;j1)}",1,1,createlogs-off closure - poke, act with a good and a bad message, capture, restore, all atomically
+before,0,0,q,.t.clR:.t.cl[],1,1,run the createlogs-off scenario once
+true,0,0,q,.t.clR[`r1]~(::),1,1,a normal update does not throw with createlogs off
+true,0,0,q,.t.clR[`r2]~(::),1,1,a malformed update ALSO does not throw with createlogs off - the error-recovery path itself must not fail
+true,0,0,q,(.t.clR`j1)=.t.clR`j0,1,1,j never advances with createlogs off - neither message was actually written
+comment,,,,,,,"upd on a schema-valid but custom-mode-unassigned table - without this guard the call falls"
+comment,,,,,,,"through to openlog, which indexes the naming dispatch dict with a null mode and throws a"
+comment,,,,,,,"confusing internal 'rank; with errmode off that throw would not even be caught, crashing the"
+comment,,,,,,,"process for what is really a config gap. must fail fast and clearly instead, unconditionally."
+comment,,,,,,,"captured as ONE closure for the same reason badmsg/immediate-mode are - a separate restore-poke"
+comment,,,,,,,"row runs in the same before-phase batch as the poke-to-custom row, strictly before any"
+comment,,,,,,,"true/fail assertion, so a later true row would see multilog already back to tabperiod"
+comment,,,,,,,"(confirmed: it did, and the guard correctly did not fire for a now-valid tabperiod table)"
+before,0,0,q,".t.ut:{[] .t.poke[`multilog;`custom]; .t.poke[`logtabs;enlist`trade]; msg:.[stp.upd;(`quote;(enlist`AAPL;enlist 100.0;enlist 101.0));{x}]; .t.poke[`multilog;`tabperiod]; .t.poke[`logtabs;`trade`quote]; :msg}",1,1,unassigned-table closure - poke, act, capture, restore, all atomically
+before,0,0,q,.t.utR:.t.ut[],1,1,run the unassigned-table scenario once
+true,0,0,q,not .t.utR~(::),1,1,upd on the unassigned table fails fast and clearly - not a confusing internal 'rank, and not a silent success
+true,0,0,q,0<count .t.utR ss "no custom logging mode assigned",1,1,the error message names the real problem (missing custom-mode assignment), not a misleading data-shape complaint
+comment,,,,,,,readcustomcsv / setcustommode validation
+comment,,,,,,,"NB every table literal below uses enlist on EVERY column - an all-atom-column table (e.g."
+comment,,,,,,,"([]tabname:`trade;mode:`tabperiod)) throws its own 'rank at construction on this build, before"
+comment,,,,,,,"setcustommode is ever called. without enlist these fail rows passed for the wrong reason -"
+comment,,,,,,,checkcustommode's own validation below was never actually reached or exercised
+fail,0,0,q,"stp.setcustommode[([]notatabname:enlist`trade;notamode:enlist`tabperiod)]",1,1,setcustommode rejects unrecognised columns
+fail,0,0,q,"stp.setcustommode[([]tabname:enlist`trade)]",1,1,setcustommode rejects a missing required column
+fail,0,0,q,"stp.setcustommode[([]tabname:enlist 0N;mode:enlist`tabperiod)]",1,1,setcustommode rejects a null tabname
+fail,0,0,q,"stp.setcustommode[([]tabname:enlist`trade;mode:enlist`notarealmode)]",1,1,setcustommode rejects an unrecognised mode value
+fail,0,0,q,"stp.setcustommode[([]tabname:enlist`trade;mode:enlist`custom)]",1,1,setcustommode rejects `custom` itself as a per-table mode
+true,0,0,q,"stp.setcustommode[([]tabname:`trade`quote;mode:`tabular`periodic)]~(::)",1,1,setcustommode accepts a valid config and returns null
+fail,0,0,q,"stp.readcustomcsv[`nosuchfile]",1,1,readcustomcsv fails loud on a missing file
+before,0,0,q,"(hsym `$""/tmp/di_segmentedtp_k4unit/custom.csv"") 0: (""tabname,mode"";""trade,tabular"";""quote,periodic"")",1,1,write a valid custom-mode csv fixture
+true,0,0,q,"stp.readcustomcsv[""/tmp/di_segmentedtp_k4unit/custom.csv""]~(::)",1,1,readcustomcsv reads a valid file and returns null
+before,0,0,q,"(hsym `$""/tmp/di_segmentedtp_k4unit/badcustom.csv"") 0: (""tabname,mode"";""trade,notarealmode"")",1,1,write an invalid custom-mode csv fixture
+fail,0,0,q,"stp.readcustomcsv[""/tmp/di_segmentedtp_k4unit/badcustom.csv""]",1,1,readcustomcsv validates the file's contents the same way setcustommode does
+comment,,,,,,,version / getapimeta metadata contract
+true,0,0,q,`version in key stp,1,1,version is exported
+true,0,0,q,3=count "." vs stp.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any stp.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+true,0,0,q,`getapimeta in key stp,1,1,getapimeta is exported

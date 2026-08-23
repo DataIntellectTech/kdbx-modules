@@ -1,0 +1,140 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration suite - spawns FRESH child q processes for scenarios that need a genuinely fresh
+comment,,,,,,,"init (a different multilog/batchmode config than test.csv's own shared-process scenario A) -"
+comment,,,,,,,"a second stp.init call in ONE process is a RE-init, not a fresh one, and would not reseed"
+comment,,,,,,,"runtime state (see segmentedtp.md's design notes). each scenario is a real, separate q"
+comment,,,,,,,"process, using real di.pubsub/di.eodtime/di.tplog/di.timer/di.handlers (not mocks) so the"
+comment,,,,,,,".z.exit flush and the on-disk naming/rolling behaviour are exercised for real, not simulated."
+comment,,,,,,,"kept separate from test.csv because moduletest only ever loads test.csv - leaving these rows"
+comment,,,,,,,"there would make every unit run spawn multiple q processes. RUN IT IN A FRESH q SESSION: after"
+comment,,,,,,,moduletest the unit rows are still loaded and would re-run here against dirty module state.
+comment,,,,,,,needs a q binary reachable via QHOME - each scenario is launched with $QHOME/bin/q.
+before,0,0,q,\l test.q,1,1,load the child-process-spawning scenario helpers (memorybatchscenario / custommodescenario / periodichandlescenario / daytimestampscenario)
+comment,,,,,,,memorybatch risk mitigation - segmentedtp.md's memorybatch section: data is neither logged nor
+comment,,,,,,,"published until the timer flush OR a clean .z.exit. the child never calls teardown or fires"
+comment,,,,,,,"the timer - it inits, inserts two rows, and exits cleanly, so the ONLY way the data reaches"
+comment,,,,,,,disk is the real .z.exit handler this module registers via the injected handlers dependency.
+before,0,0,q,.t.mb:memorybatchscenario["/tmp/di_segmentedtp_it_mb"],1,1,run the memorybatch scenario - real init, two buffered upds, clean exit, then replay the on-disk log
+true,0,0,q,0<.t.mb,1,1,at least one message was written and replayable AFTER the clean exit - proves the .z.exit flush actually ran and actually wrote the buffer to disk
+comment,,,,,,,custom mode rolltabs - the real on-disk counterpart to test.csv's in-process negative control.
+comment,,,,,,,"a tabular-assigned table must sit out a period roll entirely; a periodic-assigned one must not -"
+comment,,,,,,,both halves are checked so this cannot pass by simply never rolling anything
+before,0,0,q,.t.cm:custommodescenario["/tmp/di_segmentedtp_it_cm"],1,1,run the custom-mode scenario - real init, a real endofperiod call, real on-disk log files
+true,0,0,q,.t.cm`tradeunchanged,1,1,the tabular-assigned table's logfile is untouched by the period roll - excluded from rolltabs
+true,0,0,q,.t.cm`quotechanged,1,1,the periodic-assigned table's logfile DID roll to a new name - proves the roll itself happened, not just that nothing rolled
+comment,,,,,,,"pre-init log-safety regression - a REAL bug found while pinning the phantom-table guard below:"
+comment,,,,,,,"checkcustommode/readcustomcsv are documented as callable BEFORE init (their own header"
+comment,,,,,,,"comment: the natural call order is load custom assignment, then init), but both called"
+comment,,,,,,,".z.m.logerr/.loginfo directly - unset until init runs. every call threw a confusing internal"
+comment,,,,,,,"error instead of the intended message, even a perfectly VALID readcustomcsv call. test.csv"
+comment,,,,,,,"cannot catch this - its shared process already called stp.init earlier, masking the gap"
+before,0,0,q,.t.pv:preinitvalidationscenario["/tmp/di_segmentedtp_it_pv"],1,1,run the pre-init validation scenario - real, genuinely pre-init calls to setcustommode/readcustomcsv
+true,0,0,q,.t.pv`r1ok,1,1,an invalid pre-init setcustommode call signals the real validation message - not an internal .z.m.logerr indexing error
+true,0,0,q,.t.pv`r2ok,1,1,a valid pre-init readcustomcsv call succeeds cleanly - not defeated by its own unconditional success-path logging call
+comment,,,,,,,"custom-mode phantom-table guard - real on-disk counterpart to test.csv's own out-of-scope items"
+comment,,,,,,,"(this was verified by hand during adversarial testing but never pinned with a permanent"
+comment,,,,,,,"regression test). a custom-mode config assigning a table not in schemas must be rejected at a"
+comment,,,,,,,"real, fresh init before any log file is opened for it"
+before,0,0,q,.t.pt:phantomtablescenario["/tmp/di_segmentedtp_it_pt"],1,1,run the phantom-table scenario - real init with a custom-mode table absent from schemas
+true,0,0,q,.t.pt`threw,1,1,init rejects a custom-mode config referencing a table not in schemas
+true,0,0,q,.t.pt`hasmsg,1,1,the error message names both the guard reason and the offending table
+true,0,0,q,not .t.pt`direxists,1,1,no stplogs directory was created - the guard fires before createdld/openlog, so no orphan log file is ever opened
+comment,,,,,,,"fresh/re-init poisoning regression - a REAL bug found during a holistic re-read of the whole"
+comment,,,,,,,"implementation file: every validation guard in init (multilogperiod, errorlogname collision,"
+comment,,,,,,,"the multilog/batchmode/replayperiod domain checks) ran AFTER .z.m.schemas was already written,"
+comment,,,,,,,"so a THROWN init still left initialised[] reporting true. a caller who fixed their config and"
+comment,,,,,,,"retried was then silently treated as a RE-init, skipping first-time state seeding entirely -"
+comment,,,,,,,"the corrected retry itself threw on undefined .z.m.scheduled, and upd afterward threw on"
+comment,,,,,,,"undefined .z.m.logtabs. test.csv cannot catch this - scenario A's own init already succeeded"
+comment,,,,,,,there, so initialised[] is correctly true before this bug could ever be observed
+before,0,0,q,.t.fp:freshinitpoisonscenario["/tmp/di_segmentedtp_it_fp"],1,1,run the fresh/re-init poisoning scenario - a real, genuinely fresh process
+true,0,0,q,.t.fp`r1threw,1,1,the first init call - a deliberately invalid config - throws as expected
+true,0,0,q,.t.fp`r2ok,1,1,a second init call with corrected config succeeds cleanly - not silently treated as a re-init that skips first-time state seeding
+true,0,0,q,.t.fp`r3ok,1,1,upd after the corrected init succeeds - .z.m.logtabs and the rest of fresh-init state were genuinely seeded, not skipped
+comment,,,,,,,"getmeta[`open] restart-recovery regression - a REAL bug found during a holistic re-read: a process"
+comment,,,,,,,"that dies before closing its currently-open period (a crash, or any exit skipping .z.exit) leaves"
+comment,,,,,,,"that row permanently null-end in the persisted stpmeta. getmeta[`open] used to APPEND a fresh row"
+comment,,,,,,,"on top with no check for one already there - confirmed directly by chaining three restarts"
+comment,,,,,,,"against the same log directory without a clean close: the metatable ended up with FIVE rows all"
+comment,,,,,,,"pointing at the exact same physical logfile, and subdetails' logfilelist (via getlogs`day`)"
+comment,,,,,,,"reported that one file five times over - a subscriber replaying ""the day"" would replay the same"
+comment,,,,,,,"data five times. fixed by reconciling against any existing null-end row for the same tables"
+comment,,,,,,,"before appending: same logname (a restart within the same period window) means RESUME it, not"
+comment,,,,,,,"duplicate it - a real crash (exit 1, skipping .z.exit) followed by a real restart into the same dir"
+before,0,0,q,.t.cr:crashresumescenario["/tmp/di_segmentedtp_it_cr"],1,1,run the crash/resume scenario - a real crash (exit 1) followed by a real restart into the same log directory
+true,0,0,q,1=.t.cr`rowcount,1,1,exactly one metatable row exists for the resumed table after restart - not duplicated on top of the crashed process's dangling row
+true,0,0,q,.t.cr`resumed,1,1,the restart logged that it was resuming an existing logfile after an unclean prior shutdown
+comment,,,,,,,"getmeta[`open] restart-recovery regression, other half: a stale null-end row with a DIFFERENT"
+comment,,,,,,,"logname than the one currently in use - a genuinely orphaned segment left by a process that"
+comment,,,,,,,"crashed, then was restarted only after enough real time passed to cross a period boundary."
+comment,,,,,,,"reproducing that with a real elapsed-time gap would need an actual wait through a period"
+comment,,,,,,,"boundary, so this drives getmeta directly (white-box, the same technique daytimestampscenario/"
+comment,,,,,,,"custommodescenario already use) - seeding one fake stale row with a non-matching logname and"
+comment,,,,,,,"re-invoking getmeta[`open] to prove it is force-closed (msgcount left null, not guessed - a real"
+comment,,,,,,,"count would mean replaying the file) while the REAL open row is left untouched"
+before,0,0,q,.t.om:orphanedmetascenario["/tmp/di_segmentedtp_it_om"],1,1,run the orphaned-metatable-row scenario - a seeded stale row with a non-matching logname
+true,0,0,q,.t.om`fakeclosed,1,1,the orphaned row (different logname) is force-closed rather than left dangling forever
+true,0,0,q,.t.om`fakemsgnull,1,1,the orphaned row's msgcount is left null (honestly unknown) rather than guessed
+true,0,0,q,.t.om`realstillopen,1,1,the REAL currently-open row for the same table is left untouched - not itself force-closed or duplicated
+true,0,0,q,.t.om`closedwarned,1,1,closing the orphaned row logged a warning naming it as left open by an unclean prior shutdown
+comment,,,,,,,shared-handle regression - a REAL bug found during smoke testing: singular/periodic modes have
+comment,,,,,,,"multiple tables sharing one logical log file, but openlog's reuse check used to be keyed on"
+comment,,,,,,,"(tbl;logname) - a second table resolving to the same logname as an already-open first table got"
+comment,,,,,,,"its own independent hopen call to that same path, producing a file di.tplog could not replay at"
+comment,,,,,,,"all ('rank, confirmed directly against the raw file before the fix). fixed by reusing ANY currlog"
+comment,,,,,,,"row with a matching logname, not just this table's own. this writes real alternating"
+comment,,,,,,,trade/quote traffic through periodic mode and proves the file replays cleanly with the full row
+comment,,,,,,,"count - not just that init/upd did not throw, which the corrupt-file version also satisfied"
+before,0,0,q,.t.ph:periodichandlescenario["/tmp/di_segmentedtp_it_ph"],1,1,run the periodic shared-handle scenario - real init, alternating writes, real replay
+true,0,0,q,.t.ph`samehandle,1,1,trade and quote share the SAME os handle for their shared periodic logfile
+true,0,0,q,10=.t.ph`replaycount,1,1,the shared log file replays cleanly with all 10 messages - not corrupt
+true,0,0,q,5=.t.ph`tradecount,1,1,all 5 trade messages replayed correctly
+true,0,0,q,5=.t.ph`quotecount,1,1,all 5 quote messages replayed correctly
+comment,,,,,,,day-roll timestamp regression - a REAL bug found during smoke testing: dayrollover computed the
+comment,,,,,,,"new day's currperiod (and next-roll target) from .z.p (real wall-clock ""now"") rather than the"
+comment,,,,,,,"EVENT time (data`p, the timestamp checkends actually detected the roll at). under any latency"
+comment,,,,,,,"between the two, the new log file landed in the correct new-day DIRECTORY but carried the WRONG"
+comment,,,,,,,(stale) timestamp in its own FILENAME. fixed by using data`p throughout dayrollover.
+before,0,0,q,.t.dt:daytimestampscenario["/tmp/di_segmentedtp_it_dt"],1,1,run the day-roll timestamp scenario - forces a real day roll via checkends with a future timestamp
+true,0,0,q,.t.dt,1,1,the new log file's own filename carries the new day's date - not the stale wall-clock date it was actually opened at
+comment,,,,,,,"immediate mode i/j synchronicity - test.csv cannot check this cleanly: scenario A's own"
+comment,,,,,,,"subdetails call there registers the in-process caller as a subscriber under a bogus (non-IPC)"
+comment,,,,,,,"handle, and di.pubsub correctly throws trying to notify it on any later publish - caught by"
+comment,,,,,,,"errmode there, but for reasons that have nothing to do with immediate mode itself. a fresh"
+comment,,,,,,,child process here never calls subdetails - zero subscribers - so publish behaves the way a
+comment,,,,,,,real immediate-mode write actually does.
+before,0,0,q,.t.im:immediatemodescenario["/tmp/di_segmentedtp_it_imm"],1,1,run the immediate-mode scenario - real init, one update, no prior subscriber pollution
+true,0,0,q,1=.t.im`jdelta,1,1,immediate mode wrote exactly one message to the log synchronously
+true,0,0,q,.t.im`ideltaeqjdelta,1,1,immediate mode's i and j advance by the same amount in one call - published in the same call as written, no batching lag
+comment,,,,,,,"rapid successive period-roll stress test - never exercised before this session. 20 period rolls"
+comment,,,,,,,"back to back with no delay between them, proving the naming/metatable machinery (including this"
+comment,,,,,,,"session's own getmeta and shared-handle fixes) holds up under rapid succession, not just one roll"
+comment,,,,,,,"at a time: every period gets its own distinct logname, exactly one row stays open, seq increments"
+comment,,,,,,,"with no gaps or duplicates. driven through endofperiod, not periodrollover alone - see"
+comment,,,,,,,custommodescenario's own note on why periodrollover alone would not actually advance currperiod
+before,0,0,q,.t.rp:rapidperiodrollscenario["/tmp/di_segmentedtp_it_rp"],1,1,run 20 rapid successive period rolls back to back
+true,0,0,q,21=.t.rp`rowcount,1,1,exactly 21 metatable rows exist (1 initial + 20 rolled) - none missing
+true,0,0,q,21=.t.rp`distinctlognames,1,1,every one of the 21 rows has its own distinct logname - no naming collisions under rapid rolls
+true,0,0,q,1=.t.rp`nullendcount,1,1,exactly one row remains open (the current period) - none left dangling
+true,0,0,q,.t.rp`seqok,1,1,seq increments 1..21 with no gaps or duplicates across 20 rapid rolls
+comment,,,,,,,"rapid successive day-roll stress test - never exercised before this session. 10 day rolls back to"
+comment,,,,,,,"back with no delay, using TWO tables sharing one OS handle (periodic mode) so the shared-handle"
+comment,,,,,,,"logic is exercised under rapid day-roll succession too. multilogperiod is set to 1D explicitly -"
+comment,,,,,,,"periodic mode does not force this the way singular/tabular do, and jumping a full day at once"
+comment,,,,,,,"from a shorter, non-daily period skips intermediate period boundaries and correctly trips"
+comment,,,,,,,"endofperiod's own ""next period is in the past"" safety guard - confirmed directly while designing"
+comment,,,,,,,"this test. each day gets its own directory with its own single-row stpmeta, wiped and restarted"
+comment,,,,,,,"fresh every day-roll by design - the real assertion is that every intervening day exists, none"
+comment,,,,,,,skipped or duplicated, and the shared handle survives all 10 rolls intact
+before,0,0,q,.t.rd:rapiddayrollscenario["/tmp/di_segmentedtp_it_rd"],1,1,run 10 rapid successive day rolls back to back with two tables sharing one handle
+true,0,0,q,.t.rd`samehandle,1,1,trade and quote still share the same os handle after 10 rapid day rolls
+true,0,0,q,.t.rd`alldayspresent,1,1,every day from start to end has its own directory - none skipped or duplicated across 10 rapid rolls
+comment,,,,,,,"replayperiod:`period` coverage - never directly exercised before this session (only `day`, the"
+comment,,,,,,,"default). proves subdetails' logfilelist under `period` mode reports ONLY the current period's"
+comment,,,,,,,"live count/logname, correctly excluding closed history - the opposite of `day` mode's multi-entry,"
+comment,,,,,,,"whole-day picture. one period roll creates exactly the closed-vs-open contrast needed: two entries"
+comment,,,,,,,under `day` mode for the same state, but exactly one under `period` mode
+before,0,0,q,.t.pm:periodmodescenario["/tmp/di_segmentedtp_it_pm"],1,1,run the replayperiod:`period` scenario - one period roll then a subdetails call
+true,0,0,q,1=.t.pm`periodcount,1,1,subdetails' logfilelist under period mode has exactly one entry - not the closed prior period too
+true,0,0,q,.t.pm`msgcounteqj,1,1,that one entry's msgcount matches the live j count for the CURRENT period exactly - not a 0Wj sentinel, not a cross-period total
+true,0,0,q,2=.t.pm`daycount,1,1,for contrast, the same state under day mode reports two entries - proving period and day modes genuinely differ

@@ -52,7 +52,15 @@ requireinit:{[ctx]
 mergeonecol:{[dest;segment;col]
   / filepaths to the destination column and the matching column in the segment
   destcol:` sv dest,col;
-  destdata:get segcol:` sv segment,col;
+  segcol:` sv segment,col;
+  / the read is deliberately NOT swallowed - a partial column failure must abort the whole
+  / mergebycol/mergehybrid call rather than leave dest half-updated across columns (see merge.md,
+  / "Two deliberate design decisions from adversarial testing") - but wrap it so the propagated
+  / error names the failing column and is logged, instead of a bare context-free read error
+  destdata:.[get;enlist segcol;
+    {[segcol;e] .z.m.logerr[`merge;"failed to read segment column ",(string segcol),
+      ", aborting this merge - error is - ",e];
+      '"di.merge: mergeonecol: failed to read segment column ",(string segcol),", error is - ",e}[segcol;]];
   .z.m.loginfo[`merge;"merging ",(string segcol)," to ",string destcol];
   .[upsert;(destcol;destdata);
     {[dc;e] .z.m.logerr[`merge;"failed to save data to ",(string dc)," with error : ",e]}[destcol;]];
@@ -173,9 +181,11 @@ mergehybrid:{[extrapartitiontype;tableinfo;dest;partdirs;mergelimit]
     exec ptdir from .z.m.partsizes where ptdir in partdirs,bytes>mergelimit;
     exec ptdir from .z.m.partsizes where ptdir in partdirs,rowcount>mergelimit];
   if[(count overlimit)<>count partdirs;
-    partdirs:partdirs except overlimit;
-    .z.m.loginfo[`merge;"merging ",(", " sv string partdirs)," by whole partition"];
-    mergebypart[extrapartitiontype;` sv dest,`]'[getpartchunks[partdirs;mergelimit]];
+    / a distinct name, not a reassignment of partdirs - partdirs keeps meaning "everything
+    / requested" for the rest of the function, in case a later addition needs the full list
+    underlimit:partdirs except overlimit;
+    .z.m.loginfo[`merge;"merging ",(", " sv string underlimit)," by whole partition"];
+    mergebypart[extrapartitiontype;` sv dest,`]'[getpartchunks[underlimit;mergelimit]];
     ];
   if[0<>count overlimit;
     .z.m.loginfo[`merge;"merging ",(", " sv string overlimit)," column by column"];

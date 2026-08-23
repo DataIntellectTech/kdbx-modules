@@ -127,6 +127,20 @@ run,0,0,q,.test.splay[.test.cseg2;([]px:enlist 5f;sz:enlist 50)],1,1,write segme
 run,0,0,q,merge.mergebycol[.test.ctinfo;.test.cdest;] each (.test.cseg1;.test.cseg2),1,1,merge both segments column by column
 true,0,0,q,(get .test.cdest)~([]px:1 2 3 4 5f;sz:10 20 30 40 50),1,1,destination holds the seed rows then each segment appended in order
 
+comment,,,,,,,mergebycol/mergeonecol signals loudly (not logged-and-swallowed) on a segment missing a column - by design, see merge.md
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,.test.mcdest:`:mergetesttmp/mcdest,1,1,destination partition directory
+run,0,0,q,.test.mcseg:`:mergetesttmp/mcseg,1,1,segment missing the sz column entirely
+run,0,0,q,.test.splay[.test.mcdest;([]px:enlist 1f;sz:enlist 10)],1,1,destination expects both px and sz
+run,0,0,q,.test.splay[.test.mcseg;([]px:enlist 2f)],1,1,segment only has px - sz is missing
+run,0,0,q,.test.mcerr:.[merge.mergebycol;((`quote;.test.cschema);.test.mcdest;.test.mcseg);{x}],1,1,call mergebycol once capturing the propagated error instead of letting it throw out of the test
+true,0,0,q,10h=type .test.mcerr,1,1,mergebycol signalled rather than returning normally on the missing column
+true,0,0,q,"0<count .test.mcerr ss ""mcseg/sz""",1,1,the propagated error names the failing segment column path
+true,0,0,q,`error in exec fn from caplog,1,1,the failure is logged via logerr before it is re-signalled
+true,0,0,q,"any {0<count x ss ""failed to read segment column""} each caplog`msg",1,1,the logged message describes the read failure
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
 comment,,,,,,,mergebypart joins whole segments and upserts them to the destination
 run,0,0,q,.test.pdest:`:mergetesttmp/pdest,1,1,destination partition directory
 run,0,0,q,.test.pseg1:`:mergetesttmp/pseg1,1,1,segment 1
@@ -203,6 +217,34 @@ run,0,0,q,merge.trackpartition[.test.pg2;3;0],1,1,pg2 is large (3 rows) - over t
 run,0,0,q,merge.mergehybrid[enlist`grp;.test.pattinfo;.test.pdest2;(.test.pg1;.test.pg2);2],1,1,limit of 2: pg1 (whole-partition) written before pg2 (column-by-column) - lands out of grp order
 true,0,0,q,(get .test.pdest2)~([]grp:1 1 1 2 2;px:10 11 12 20 21f),1,1,mergehybrid resorts the full destination so grp ends up ascending despite the write order
 true,0,0,q,`p=first exec a from meta[.test.pdest2] where c=`grp,1,1,the parted attribute is applied to the whole destination, not left unset or scoped to one batch
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
+comment,,,,,,,mergehybrid takes only the whole-partition path when overlimit is empty (both partitions under the limit)
+run,0,0,q,.test.hedest:`:mergetesttmp/hedest,1,1,destination partition directory
+run,0,0,q,.test.he1:`:mergetesttmp/he1,1,1,segment 1 - under limit
+run,0,0,q,.test.he2:`:mergetesttmp/he2,1,1,segment 2 - under limit
+run,0,0,q,.test.splay[.test.hedest;([]px:`float$();sz:`long$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.he1;([]px:10 11f;sz:1 2)],1,1,write segment 1
+run,0,0,q,.test.splay[.test.he2;([]px:20 21f;sz:3 4)],1,1,write segment 2
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[.test.he1;2;0],1,1,he1 is small (2 rows)
+run,0,0,q,merge.trackpartition[.test.he2;2;0],1,1,he2 is also small (2 rows) - both under the limit
+run,0,0,q,merge.mergehybrid[`$();.test.htinfo;.test.hedest;(.test.he1;.test.he2);100],1,1,limit of 100 - overlimit is empty so everything takes the whole-partition path
+true,0,0,q,(get .test.hedest)~([]px:10 11 20 21f;sz:1 2 3 4),1,1,both segments merged whole - the column-by-column path never ran
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
+comment,,,,,,,mergehybrid takes only the column-by-column path when every partition is over the limit (overlimit equals partdirs)
+run,0,0,q,.test.hodest:`:mergetesttmp/hodest,1,1,destination partition directory
+run,0,0,q,.test.ho1:`:mergetesttmp/ho1,1,1,segment 1 - over limit
+run,0,0,q,.test.ho2:`:mergetesttmp/ho2,1,1,segment 2 - over limit
+run,0,0,q,.test.splay[.test.hodest;([]px:`float$();sz:`long$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.ho1;([]px:enlist 30f;sz:enlist 5)],1,1,write segment 1
+run,0,0,q,.test.splay[.test.ho2;([]px:enlist 31f;sz:enlist 6)],1,1,write segment 2
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[.test.ho1;50;0],1,1,ho1 is large (50 rows) - over the limit below
+run,0,0,q,merge.trackpartition[.test.ho2;60;0],1,1,ho2 is also large (60 rows) - both over the limit
+run,0,0,q,merge.mergehybrid[`$();.test.htinfo;.test.hodest;(.test.ho1;.test.ho2);10],1,1,limit of 10 - overlimit equals partdirs so everything takes the column-by-column path
+true,0,0,q,(get .test.hodest)~([]px:30 31f;sz:5 6),1,1,both segments merged column by column - the whole-partition path never ran
 run,0,0,q,merge.clearpartsizes[],1,1,clear the store
 
 comment,,,,,,,getextrapartitions returns the distinct parted-column combinations

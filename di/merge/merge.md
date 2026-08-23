@@ -26,6 +26,8 @@ On-disk data-merging utilities for the write-down flow, extracted from TorQ's `c
 
 The parted (`` `p# ``) column(s) for a table - `extrapartitiontype` in the function signatures below - are **passed in by the caller**. TorQ's original `merge.q` read these from the `.sort.params` global (populated from `sort.csv`); on extraction that coupling was removed so `di.merge` does not depend on `di.sort`. The caller (e.g. `di.wdb`) obtains the parted columns from its own sort configuration and passes them to `mergebypart` / `mergehybrid` / the check functions.
 
+**`tablename` must resolve as a real global/root table.** `checkpartitiontype`, `checkenumerabletype`, `getextrapartitions` and `getfirstcharpartitions` all take `tablename` and dereference it directly - `checkpartitiontype` via `cols get tablename`, the other three via `meta[tablename]` or a functional select (`` ?[tablename;...] ``). None of them accept an in-memory table value in place of a resolvable symbol; this matches legacy TorQ's own behaviour and is not a limitation introduced by this module.
+
 **Logging contract.** Internally the module calls the logger through `.z.m.loginfo[\`ctx;"msg"]` / `.z.m.logerr[\`ctx;"msg"]` (binary `{[c;m]}` - context symbol + message). Pass a plain `` `info`error `` (or fuller) dict of `{[c;m]}` functions - `di.log`'s `logdict` is a ready-made example. No auto-detection or adaptation is performed; the dict must already conform.
 
 ---

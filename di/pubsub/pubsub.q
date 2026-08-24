@@ -76,9 +76,11 @@ closesub:{[h]
 / silently destroyed every observer another module had already registered - measured: with a
 / di.handlers registration in place first, loading this module stopped it firing while di.handlers
 / went on listing it as registered, so the failure was invisible from the registry.
-/ this stays a raw assignment rather than a di.handlers registration because the modularisation
-/ plan classifies di.pubsub as STANDALONE - it takes no injected dependencies, so it cannot reach
-/ di.handlers without contradicting its own tier
+/ this stays a raw assignment (not a di.handlers registration) at LOAD time, because di.pubsub is
+/ STANDALONE - it takes no REQUIRED injected dependency, and this code runs before init is ever
+/ called, so it cannot depend on anything init might later receive. it remains active even when a
+/ caller does pass a handlers dep to init (see init, below) - it is di.pubsub's own always-on safety
+/ net, chaining correctly either way
 priorpc:@[value;`.z.pc;{[e] (::)}];
 .z.pc:{[w]
   closesub[w];
@@ -164,8 +166,38 @@ getsubtables:{[]
 setsubtables`;
 
 initialized:0b;
+registered:0b;
 
-init:{
+iscallable:{[x]
+  / internal - is x a genuinely callable value? 100 112h spans every callable form, but 101h - the
+  / generic null :: - sits INSIDE that range while being callable in no useful sense, and :: is
+  / exactly what a dep dict hands back for a missing key. see di.servers' identical helper
+  t:type x;
+  (t within 100 112h) and 101h<>t
+  };
+
+init:{[deps]
+  / deps: OPTIONAL - unlike every DI'd module's init, di.pubsub has no REQUIRED injected dependency,
+  / so pubsub[`init][] (the original, still-supported call shape) keeps working: a unary function
+  / called with no args binds deps to the generic null ::, same as always.
+  / .
+  / an OPTIONAL `handlers` key (di.handlers' register dict) ADDITIONALLY registers closesub as a
+  / named observer on .z.pc, so di.handlers.list[`.z.pc] lists `pubsub explicitly - closing the
+  / actual gap the raw .z.pc block (above) used to leave: a di.handlers registration made elsewhere
+  / stayed correctly chained, but pubsub's own hook stayed invisible to the registry itself.
+  / the raw chaining block keeps running regardless of whether handlers is passed here - it fires at
+  / module LOAD time, before init is ever called, so it cannot be conditionally skipped from inside
+  / init. that is harmless, not a double-registration bug: closesub is idempotent under a repeat call
+  / (delhandle/delhandlef are both remove-if-present), so a disconnect invoking it via both the raw
+  / chain and a handlers dispatch in the same tick is a no-op on the second call
+  if[not (::)~deps;
+    if[99h<>type deps;'"di.pubsub: deps, if given, must be a dict"];
+    if[`handlers in key deps;
+      if[not iscallable deps[`handlers]`register;
+        '"di.pubsub: handlers`register must be a function [event;phase;name;priority;func] - see di.handlers"];
+      if[not registered;
+        (deps[`handlers][`register])[`.z.pc;`;`pubsub;0j;closesub];
+        .z.m.registered:1b]]];
   .z.m.t:$[count subtables;subtables;tables[]except`reqfilteredtbl];
   .z.m.schemas:t!extractschema each t;
   .z.m.tabcols:t!cols each t;

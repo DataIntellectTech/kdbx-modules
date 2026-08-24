@@ -54,7 +54,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 | `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`). **Ternary**: `callendofperiod[currentperiod;nextperiod;data]`. |
 | `pubsub.closesub`         | Remove handle upon connection close.                                         | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
-| `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas).  |
+| `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas). `deps` is OPTIONAL - `pubsub.init[]` still works unchanged. An OPTIONAL `` `handlers `` key (a `di.handlers` register dict) additionally registers `closesub` as a named `.z.pc` observer, so `di.handlers.list[`.z.pc]` lists `` `pubsub `` explicitly - see Notes below.  |
 | `pubsub.version`          | Module version string, read from the `VERSION` file. `di.depcheck` resolves a dependency's minimum from here. |
 ---
 
@@ -96,9 +96,21 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
   reporting the registration as live while it no longer fired, so the loss was invisible. The guard
   is asserted in `test.csv` by a child process that installs a handler *before* loading this module,
   which is the only way to observe load-time ordering.
-- It stays a raw assignment rather than a `di.handlers` registration because the modularisation plan
-  classifies `di.pubsub` as **standalone** — it takes no injected dependencies, so reaching
-  `di.handlers` would contradict its own tier.
+- This raw assignment stays in place unconditionally (it runs at module **load** time, before `init`
+  is ever called, so it cannot depend on anything `init` might later receive) — `di.pubsub` remains
+  **standalone**: `init[]` with no argument, or with a `deps` dict that omits `` `handlers ``, behaves
+  exactly as before.
+- **`init`'s OPTIONAL `` `handlers `` key closes the one real gap the chaining above left**: chaining
+  correctly preserved whatever `di.handlers` had already wired, but `di.pubsub`'s own hook stayed
+  invisible to `di.handlers`' own registry (`di.handlers.list[`.z.pc]` never named `` `pubsub ``, even
+  though it correctly fired). Passing a `` `handlers `` dep (`di.handlers`'s register dict, or the
+  whole `di.handlers` module handle) additionally registers `closesub` as a named observer, so it now
+  shows up there. The raw chain keeps running regardless — `closesub` is idempotent under a repeat
+  call (`delhandle`/`delhandlef` are both remove-if-present), so a disconnect invoking it via both the
+  raw chain and a `di.handlers` dispatch in the same tick is a harmless no-op on the second call, not
+  a double-registration bug. Asserted in `test.csv` by a child process that inits `di.handlers` then
+  `di.pubsub` with a `handlers` dep, and checks all three: registry visibility, `closesub` actually
+  running, and the repeat-call idempotency.
 
 - By default, all tables on top level of the process are available for subscription.
 - The user should define the `.u.sub` and the `.u.pub` functions within the process.

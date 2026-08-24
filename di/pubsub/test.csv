@@ -67,6 +67,15 @@ run,0,0,q,"chainres:system (getenv[`QHOME]),""/bin/q "",chaindir,""/probe.q -q""
 true,0,0,q,"(enlist ""1"")~first chainres",1,1,"THE ASSERTION - the handler installed before the load still fired (string 1b is a one-char STRING, not a char atom). a replacing assignment prints 0, and the loss is invisible from any registry"
 run,0,0,q,"system ""rm -rf "",chaindir",1,1,clean up
 
+comment,,,,,,,init's OPTIONAL handlers dep additionally registers closesub with di.handlers itself - the actual
+comment,,,,,,,gap the raw .z.pc chaining above works around but does not close: di.handlers.list[`.z.pc] could
+comment,,,,,,,not see pubsub's own hook. only observable in a SEPARATE process (a fresh module load)
+run,0,0,q,"regdir:tmpdir""dipubsubreg""; system ""rm -rf "",regdir; system ""mkdir -p "",regdir",1,1,temp dir for the registration probe
+run,0,0,q,"(`$"":"",regdir,""/probe2.q"") 0: (""handlers:use`di.handlers;"";""mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]});"";""handlers.init[enlist[`log]!enlist mocklog];"";""pubsub:use`di.pubsub;"";""pubsub.init[enlist[`handlers]!enlist handlers];"";""VISIBLE:0<count select from handlers.list[`.z.pc] where name=`pubsub;"";""`.m.di.0pubsub.reqalldict set (enlist`trade)!enlist enlist 77i;"";""BEFORE:`trade in key .m.di.0pubsub.reqalldict;"";"".z.pc 77i;"";""AFTER1:`trade in key .m.di.0pubsub.reqalldict;"";"".z.pc 77i;"";""AFTER2:`trade in key .m.di.0pubsub.reqalldict;"";""-1 \"" \"" sv string each (VISIBLE;BEFORE;AFTER1;AFTER2);"";""exit 0"")",1,1,"a child that inits di.handlers, then inits di.pubsub WITH a handlers dep: VISIBLE checks di.handlers.list[`.z.pc] now names pubsub, BEFORE/AFTER1 check closesub still runs when .z.pc fires (a directly-seeded fake handle is gone from reqalldict afterward), AFTER2 checks firing .z.pc a second time does not error (closesub is idempotent, not a double-registration bug). a single space-joined RESULT line, not per-flag one-char strings - q's parser silently collapses a parenthesized list of same-length 1-char strings into a flat char vector, so a naive (""1"";""1"";""0"";""0"") literal type-mismatches system's genuine list-of-strings result and can never match"
+run,0,0,q,"regres:system (getenv[`QHOME]),""/bin/q "",regdir,""/probe2.q -q""",1,1,run it in a genuinely separate process
+true,0,0,q,"(first regres)~""1 1 0 0""",1,1,"THE ASSERTION - visible=1 (registered in di.handlers), before=1/after1=0 (closesub ran on the real .z.pc fire), after2=0 (firing it twice stayed harmless)"
+run,0,0,q,"system ""rm -rf "",regdir",1,1,clean up
+
 comment,,,,,,,the STRING entry points must SIGNAL when a subscribe matched nothing. they exist for non-kdb+ clients which cannot inspect a q result shape, so an error has to arrive as an error
 comment,,,,,,,the guard that used to do this could never fire: errmsg is built with `$ so it is a symbol, and last of either success shape is the schema list - never the 10h string it tested for
 fail,0,0,q,"h(`pubsub.subscribestr;""nosuchtable"";"""")",1,1,subscribestr signals on a table that does not exist

@@ -1,0 +1,137 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration suite - proves di.tickerplant speaks the subdetails/tablelist protocol di.subscriptions
+comment,,,,,,,"requires, by driving a REAL di.subscriptions against a REAL di.tickerplant over genuine IPC."
+comment,,,,,,,"the tickerplant is the spawned PEER and di.subscriptions runs here, not the other way round: a q"
+comment,,,,,,,process blocked in a sync call does not accept a new inbound connection (measured - the subscriber
+comment,,,,,,,"dialling back into a busy parent times out), so the side that DIALS has to be the side that drives."
+comment,,,,,,,that is also how di/rdb and di/subscriptions arrange their own suites.
+comment,,,,,,,"kept separate because moduletest only ever loads test.csv, so leaving these rows there would make"
+comment,,,,,,,every unit run spawn processes and bind ports.
+comment,,,,,,,RUN IT IN A FRESH q SESSION: after moduletest the unit rows are still loaded and would re-run
+comment,,,,,,,"against dirty module state, reporting phantom failures."
+comment,,,,,,,needs a q binary reachable via QHOME - each peer is launched with $QHOME/bin/q
+comment,,,,,,,"fixtures - the subscriber side, which is the code di.torq will eventually contain"
+before,0,0,q,sub:use`di.subscriptions,1,1,the consumer whose protocol this suite exists to satisfy
+before,0,0,q,hnd:use`di.handlers,1,1,di.subscriptions needs a handlers dep for its .z.pc observer
+before,0,0,q,caprows:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,capturing log sink
+before,0,0,q,caplog:`info`warn`error!({[c;m] `caprows insert (`info;c;m)};{[c;m] `caprows insert (`warn;c;m)};{[c;m] `caprows insert (`error;c;m)}),1,1,the binary {[c;m]} log dep contract
+before,0,0,q,hnd.init[enlist[`log]!enlist caplog],1,1,wire di.handlers
+before,0,0,q,sub.init[`log`handlers!(caplog;`register`remove!(hnd`register;hnd`remove))],1,1,"wire di.subscriptions - one dict, the call shape di.torq uses"
+before,0,0,q,"upd:{[t;x] c:cols value t; @[`.;t;,;$[98h=type x;x;99h=type x;flip x;0>type first x;flip c!enlist each x;flip c!x]]}",1,1,"a root upd, which the -11! replay drives. di.subscriptions refuses to replay without one. it normalises the same payload shapes di.subscriptions' own payloadtable does - a table, a column dict, a list of atoms, or a list of column vectors"
+before,0,0,q,"tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i}",1,1,honours TMPDIR and appends the pid so two runs cannot collide
+before,0,0,q,"BASE:tmpdir""ditickerplantintegration""",1,1,fixture: BASE
+before,0,0,q,"system""rm -rf "",BASE",1,1,clean slate
+before,0,0,q,"system""mkdir -p "",BASE",1,1,create the working directory
+before,0,0,q,"@[system;""pkill -f '"",BASE,""' 2>/dev/null || true"";{[e] :(::)}]",1,1,kill any peer left behind by an aborted earlier run
+comment,,,,,,,NO PORT NUMBER APPEARS IN THIS SUITE. each peer is started with -p 0W so the OS assigns a free
+comment,,,,,,,port and the peer writes it to a file we read back. scanning from a hardcoded base is not portable
+comment,,,,,,,and still races - a port held by a blocked non-q process reads as free
+before,0,0,q,"readport:{[f;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; p:0N; while[(.z.p<deadline) and null p; if[count key hsym`$f;p:""J""$first read0 hsym`$f]; if[null p;system""sleep 0.05""]]; :p}",1,1,wait for a peer to report the port the OS gave it
+comment,,,,,,,"the tickerplant peer source, one complete line per row - a split literal would become several expressions"
+before,0,0,q,PBODY:(),1,1,the peer body
+before,0,0,q,"PBODY,:enlist ""tp:use`di.tickerplant;""",1,1,"the module under test - the REAL di.tickerplant, not a hand-rolled subdetails stand-in"
+before,0,0,q,"PBODY,:enlist ""timer:use`di.timer;""",1,1,"the real timer - addjob works without timer.init, so no live .z.ts fires here"
+before,0,0,q,"PBODY,:enlist ""caprows:([]lvl:`symbol$();ctx:`symbol$();msg:());""",1,1,"capturing log sink, so the tickerplant's own errors can be read back"
+before,0,0,q,"PBODY,:enlist ""caplog:`info`warn`error!({[c;m] `caprows insert (`info;c;m)};{[c;m] `caprows insert (`warn;c;m)};{[c;m] `caprows insert (`error;c;m)});""",1,1,the binary {[c;m]} log dep contract
+before,0,0,q,"PBODY,:enlist ""trade:([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`long$());""",1,1,"the captured table - a g# attribute, so the whole schema handoff is exercised end to end"
+before,0,0,q,"PBODY,:enlist ""tp.init[`log`timer`schemas`logdir`logname`batch!(caplog;timer;enlist[`trade]!enlist trade;LOGDIR;\""tp\"";BATCH)];""",1,1,"stand the tickerplant up - init publishes subdetails and tablelist at ROOT, where our .z.pg finds them"
+before,0,0,q,"PBODY,:enlist ""priorpc:@[value;`.z.pc;{[e] (::)}];""",1,1,"capture di.pubsub's own .z.pc, which it self-assigns at load - clobbering it would break subscriber cleanup"
+before,0,0,q,"PBODY,:enlist "".z.pc:{[w] if[not (::)~priorpc;priorpc w]; if[w>0;exit 0]};""",1,1,"self-exit backstop, CHAINED onto di.pubsub's handler. GUARDED on w>0: a child started with </dev/null hits stdin EOF as soon as the script ends and that fires .z.pc[0], so an unguarded backstop kills the peer before the parent can connect (measured)"
+before,0,0,q,"PBODY,:enlist ""mkrow:{[i] (enlist `$\""S\"",string i;enlist 1.0*i;enlist `long$10*i)};""",1,1,"a feed update: sym, price, size as one-element COLUMN VECTORS - the shape a real feed sends, and what the log replay on the far side can normalise. no time column, so the tickerplant stamps it"
+before,0,0,q,"PBODY,:enlist ""feed:{[ns] {[i] tp[`upd][`trade;mkrow i]} each ns; :count ns};""",1,1,drive the feed entry point
+before,0,0,q,"PBODY,:enlist ""flushtp:{[] .m.di.0tickerplant.publishbuffer[]; :`flushed};""",1,1,force one batch flush - the timer is never started in this peer
+before,0,0,q,"PBODY,:enlist ""counts:{[] :tp[`getcounts][]};""",1,1,read the published (i) and logged (j) counts back
+before,0,0,q,"PBODY,:enlist ""errs:{[] :exec ctx from caprows where lvl=`error};""",1,1,read back anything the tickerplant logged at error
+before,0,0,q,"peerlines:{[d;tok;batch] :((""(hsym`$\"""",d,""/port\"") 0: enlist string system\""p\"";"");(""TOKEN:`"",(string tok),"";"");(""LOGDIR:\"""",d,""/tplogs\"";"");(""system\""mkdir -p \"",LOGDIR;"");(""BATCH:"",$[batch;""1b"";""0b""],"";"")),PBODY}",1,1,"prepend the port report, an identity token, the log directory and the batch mode, then the body"
+before,0,0,q,"spawnpeer:{[nm;tok;batch] d:BASE,""/"",nm; system""rm -rf "",d; system""mkdir -p "",d; (hsym`$d,""/tp.q"") 0: peerlines[d;tok;batch]; system (getenv[`QHOME]),""/bin/q "",d,""/tp.q -p 0W -q </dev/null >/dev/null 2>&1 &""; p:readport[d,""/port"";8000]; if[null p;'""integration: peer "",nm,"" never reported a port""]; h:hopen (`$"":localhost:"",string p;5000); if[not tok~@[h;""TOKEN"";{[e] :`}];hclose h;'""integration: the peer that answered is not this run's""]; :h}",1,1,spawn one tickerplant peer and return a handle to it. NB the script path comes BEFORE the flags - q silently ignores a script that follows them
+before,0,0,q,"settle:{[h] system""sleep 0.4""; h""1+1""; system""sleep 0.2""; h""1+1"";}",1,1,let an async publish arrive and our own inbound queue drain
+comment,,,,,,,SCENARIO 1 - batch mode (the default). we subscribe with rows already published AND rows still
+comment,,,,,,,buffered on the tickerplant. that is the case which separates the two candidate message counts:
+comment,,,,,,,"subdetails must report the PUBLISHED watermark i (4), so we replay 4 and then receive the 2"
+comment,,,,,,,buffered rows at the next flush. reporting the logged total j would replay 6 and deliver 2 again
+before,0,0,q,"H1:spawnpeer[""tp1"";`tp1tok;1b]",1,1,"spawn a batch-mode tickerplant. this ONE handle carries the control calls, the subscription and the live feed - exactly as a real subscriber's does"
+before,0,0,q,"PID1:H1"".z.i""",1,1,"its pid, for the leak check"
+before,0,0,q,H1 (`feed;til 4),1,1,"four updates: logged, and buffered in the peer's root table"
+before,0,0,q,"PRE:H1""counts[]""",1,1,capture: counts before anything is published
+before,0,0,q,"H1""flushtp[]""",1,1,publish the buffer to nobody - this is what moves i up to j
+before,0,0,q,"MID:H1""counts[]""",1,1,capture: counts after the flush
+before,0,0,q,H1 (`feed;4 5),1,1,"two more updates: logged, still buffered, NOT yet published"
+before,0,0,q,"ATSUB:H1""counts[]""",1,1,capture: the counts a subscriber arriving now is answered from
+before,0,0,q,TPD:ATSUB`d,1,1,capture: the trading date the tickerplant reports
+before,0,0,q,R1:sub.subscribe[H1;`;`;1b;1b],1,1,"THE CALL UNDER TEST - ` for all tables, so tablelist is exercised too; define the schemas at root and replay the log"
+before,0,0,q,REPLAYED:count trade,1,1,"capture: rows recovered from the tp log, before any live delivery"
+before,0,0,q,ATT1:exec first a from meta trade where c=`sym,1,1,capture: the attribute the tickerplant's schema carried across
+before,0,0,q,SUBSCRIBED1:sub.subscribed[],1,1,capture: di.subscriptions reports a live subscription
+before,0,0,q,"H1""flushtp[]""",1,1,"publish the two buffered rows - we are a registered subscriber now, so they come to us"
+before,0,0,q,settle[H1],1,1,let them arrive
+before,0,0,q,FINAL:count trade,1,1,capture: total rows here
+before,0,0,q,SYMS:exec sym from trade,1,1,"capture: the syms, in order - proves no gap and no duplicate"
+before,0,0,q,"PERR1:H1""errs[]""",1,1,capture: anything the tickerplant logged at error
+before,0,0,q,"TABS1:H1""tablelist[`]""",1,1,"capture: the tablelist reply, in the arity di.subscriptions actually sends"
+comment,,,,,,,"SCENARIO 2 - zero-latency mode. every logged message has already gone out, so i must equal j and"
+comment,,,,,,,the subscriber must replay all three. with i stuck at its seeded 0 this replayed nothing
+before,0,0,q,sub.unsubscribe[H1],1,1,release the first subscription so the duplicate guard does not reject the second
+before,0,0,q,@[hclose;H1;{[e] :(::)}],1,1,close the peer - the backstop makes it exit
+before,0,0,q,![`.;();0b;enlist`trade],1,1,"drop the table, so scenario 2 starts from nothing and its row counts stand alone"
+before,0,0,q,"system""sleep 0.4""",1,1,let the peer exit
+before,0,0,q,"H2:spawnpeer[""tp2"";`tp2tok;0b]",1,1,spawn a ZERO-LATENCY tickerplant
+before,0,0,q,"PID2:H2"".z.i""",1,1,"its pid, for the leak check"
+before,0,0,q,H2 (`feed;til 3),1,1,"three updates: published immediately to nobody, and logged"
+before,0,0,q,"PRE2:H2""counts[]""",1,1,capture: i must already equal j - nothing is ever buffered in this mode
+before,0,0,q,"BUF2:H2""count trade""",1,1,capture: zero-latency does not buffer into the peer's root table
+before,0,0,q,R2:sub.subscribe[H2;`trade;`;1b;1b],1,1,"subscribe against the zero-latency tickerplant, naming the table explicitly this time"
+before,0,0,q,REPLAYED2:count trade,1,1,capture: rows recovered from the log
+before,0,0,q,H2 (`feed;3 4),1,1,"two more updates, published live this time"
+before,0,0,q,settle[H2],1,1,let them arrive
+before,0,0,q,FINAL2:count trade,1,1,capture: total rows here
+before,0,0,q,SYMS2:exec sym from trade,1,1,"capture: the syms, in order"
+before,0,0,q,"PERR2:H2""errs[]""",1,1,capture: anything the tickerplant logged at error
+comment,,,,,,,teardown - close the peer and prove neither leaked
+before,0,0,q,@[sub.unsubscribe;H2;{[e] :(::)}],1,1,release the second subscription
+before,0,0,q,@[hclose;H2;{[e] :(::)}],1,1,close the peer - the backstop makes it exit
+before,0,0,q,"system""sleep 0.5""",1,1,let it exit
+before,0,0,q,"gone:{[pid] :0=count @[{system"""" sv (""ps -p "";string x;"" -o pid="")};pid;{[e] :()}]}",1,1,"ps throws 'os when the pid is absent, so the probe has to be wrapped"
+before,0,0,q,GONE1:gone PID1,1,1,capture: no leaked first peer
+before,0,0,q,GONE2:gone PID2,1,1,capture: no leaked second peer
+before,0,0,q,SERR:exec ctx from caprows where lvl=`error,1,1,capture: anything di.subscriptions logged at error on this side
+before,0,0,q,"system""rm -rf "",BASE",1,1,remove the working directory
+comment,,,,,,,scenario 1 - batch mode
+true,0,0,q,(0=PRE`i) and 4=PRE`j,1,1,"i does not move while the rows are only buffered - four logged, none published"
+true,0,0,q,4=MID`i,1,1,the flush brings i up to j
+true,0,0,q,(4=ATSUB`i) and 6=ATSUB`j,1,1,at subscribe time two more messages are logged but not yet published
+true,0,0,q,4=REPLAYED,1,1,"THE TEST - di.subscriptions replayed exactly the PUBLISHED watermark, not the logged total"
+true,0,0,q,6=FINAL,1,1,and then received the two buffered rows once each: no gap and no duplicate. reporting j would give 8
+true,0,0,q,"SYMS~`$""S"",/:string til 6",1,1,"every row arrived exactly once, in order - a row count alone could hide an offsetting error"
+true,0,0,q,`g=ATT1,1,1,the g# attribute reached this side through schemalist
+true,0,0,q,(enlist`trade)~R1`subtables,1,1,di.subscriptions resolved the ` request through tablelist and subscribed to trade
+true,0,0,q,(enlist`trade)~TABS1,1,1,tablelist answers the (`tablelist;`) call di.subscriptions sends - a niladic form would throw 'rank and be silently downgraded
+true,0,0,q,TPD~R1`tplogdate,1,1,tplogdate matches the date the tickerplant reported and named its log after
+true,0,0,q,(99h=type R1`rowcounts) and 4=(R1`rowcounts)`trade,1,1,"rowcounts reports rows PUBLISHED for the table, so it agrees with the message count in the same reply"
+true,0,0,q,SUBSCRIBED1,1,1,di.subscriptions holds a live subscription on the handle
+true,0,0,q,0=count PERR1,1,1,the tickerplant logged nothing at error during the whole exchange
+comment,,,,,,,scenario 2 - zero-latency mode
+true,0,0,q,(3=PRE2`i) and 3=PRE2`j,1,1,i tracks j when every message is published as it is logged
+true,0,0,q,0=BUF2,1,1,zero-latency does not buffer into the tickerplant's root table
+true,0,0,q,3=REPLAYED2,1,1,all three pre-subscription messages were replayed - with i stuck at 0 this would replay none
+true,0,0,q,5=FINAL2,1,1,"the two live updates arrived on top, once each"
+true,0,0,q,"SYMS2~`$""S"",/:string til 5",1,1,"every row arrived exactly once, in order"
+true,0,0,q,(enlist`trade)~R2`subtables,1,1,the explicitly-named table was subscribed
+true,0,0,q,0=count PERR2,1,1,the tickerplant logged nothing at error
+comment,,,,,,,teardown
+true,0,0,q,GONE1 and GONE2,1,1,neither tickerplant peer leaked
+true,0,0,q,0=count SERR,1,1,di.subscriptions logged nothing at error during the entire run
+comment,,,,,,,"VERSION guards. these are LOAD-time, so they can only be observed in a CHILD process - the module"
+comment,,,,,,,is already loaded here and cannot be reloaded with a different VERSION file. a temp QPATH tree
+comment,,,,,,,symlinks every other module and copies di/tickerplant so only its VERSION is altered
+before,0,0,q,"VBASE:BASE,""/vtree""",1,1,root for the VERSION-guard trees
+before,0,0,q,"mkvtree:{[nm;mut] d:VBASE,""/"",nm; realdi:""/"" sv -1_ ""/"" vs .Q.m.mp`di.tickerplant; system""rm -rf "",d; system""mkdir -p "",d,""/di""; system""ln -s "",realdi,""/* "",d,""/di/ 2>/dev/null""; system""rm -f "",d,""/di/tickerplant""; system""cp -r "",realdi,""/tickerplant "",d,""/di/tickerplant""; mut d; :d}",1,1,build a temp module tree whose di/tickerplant VERSION can be mutated. links EVERY module and overwrites only tickerplant - hand-listing deps would rot as the graph changes
+before,0,0,q,"loadin:{[d] f:d,""/probe.q""; (hsym`$f) 0: (""r:@[{use`di.tickerplant; :`OK};::;{[e] `$\""THREW: \"",e}];"";""if[r~`OK; tpx:use`di.tickerplant; r:`$\""OK [\"",tpx.version,\""]\""];"";""(hsym`$\"""",d,""/out\"") 0: enlist string r;"";""exit 0;""); system ""QPATH="",d,"" "",(getenv[`QHOME]),""/bin/q "",f,"" -q </dev/null >/dev/null 2>&1""; :$[count key hsym`$d,""/out"";first read0 hsym`$d,""/out"";""NO OUTPUT""]}",1,1,load di.tickerplant in a child q against that tree. QPATH MUST be set for the child - inheriting ours makes it load the REAL module and every case passes vacuously
+before,0,0,q,"VGOOD:loadin mkvtree[""good"";{[d] }]",1,1,control: an untouched VERSION must load cleanly
+before,0,0,q,"VMISSING:loadin mkvtree[""missing"";{[d] system""rm -f "",d,""/di/tickerplant/VERSION""}]",1,1,a missing VERSION must fail loudly and name the module
+before,0,0,q,"VEMPTY:loadin mkvtree[""empty"";{[d] (hsym`$d,""/di/tickerplant/VERSION"") 0: enlist """"}]",1,1,an empty VERSION must fail loudly and name the module
+before,0,0,q,"VPAD:loadin mkvtree[""pad"";{[d] (hsym`$d,""/di/tickerplant/VERSION"") 0: enlist ""0.1.0  ""}]",1,1,"a padded VERSION must load and be TRIMMED. written from q, not shell printf - the quoting does not survive system[] and silently produces an empty file, which tests the wrong guard"
+before,0,0,q,"system""rm -rf "",VBASE",1,1,remove the VERSION-guard trees
+true,0,0,q,"""OK [0.1.0]""~VGOOD",1,1,"control - a clean VERSION loads and reports the exact version. BRACKETED because writing a bare string through 0:/read0 strips trailing spaces, which would destroy the padding the last assert looks for"
+true,0,0,q,"0<count VMISSING ss ""di.tickerplant: VERSION file missing or unreadable""",1,1,a missing VERSION names di.tickerplant rather than surfacing a raw OS error that points nowhere
+true,0,0,q,"0<count VEMPTY ss ""di.tickerplant: VERSION file is empty""",1,1,"an empty VERSION is rejected, not accepted as a version that reads to di.depcheck as 'exports no version'"
+true,0,0,q,"""OK [0.1.0]""~VPAD",1,1,"a padded VERSION is TRIMMED to the bare semver. asserts the VALUE, not just that it loaded - the naive read loads happily and hands di.depcheck a padded string di.depcheck compares as a string"

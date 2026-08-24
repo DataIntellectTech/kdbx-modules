@@ -446,6 +446,28 @@ above — it is moot here regardless, since chained mode itself is out of scope.
   directly through `dayrollover`, white-box) leaked exactly 5 file descriptors; 0 after. Fixed by
   closing the error log's own handle alongside the captured tables', every day-roll — `closelog` is a
   safe no-op if no error-log handle was ever actually open.
+- **``getlogs[`period]`` reported one entry per requested *table* rather than per physical *file*,
+  double-listing a shared log with two partial counts — a real bug found during review, confirmed
+  directly.** Under `singular`/`periodic` naming several tables share one physical log file while
+  keeping independent `j` counts. The original built a `(j;logname)` pair per requested table and
+  deduped with `distinct` — but two tables sharing one file produce pairs whose *first* elements
+  genuinely differ, so `distinct` cannot collapse them. Measured directly with three tables across two
+  files (`j` of 10/5/7): `logfilelist` came back as three entries, listing the shared file **twice**,
+  once with `10` and once with `5`, when the file actually holds 15 messages. A subscriber replaying
+  ``replayperiod:`period`` under either shared-file mode therefore replayed that one file twice, and
+  neither count matched what was in it. ``getlogs[`day]`` never had this: its rows come from the
+  metatable, whose `msgcount` is `` `int$sum .z.m.j tabs `` — already summed across the whole
+  shared-file `tbls` group. Fixed by giving `` `period`` the same aggregation: group `.currlog` by
+  `logname` and sum `j` per group, one row per distinct physical file. The sum spans **every** table
+  writing to that file, including ones the subscriber did not request, because replaying the file
+  consumes their messages too — exactly what `` `day`` already does via its `tbls` column. Legacy
+  `stplog.q:121-123` carries the identical per-table shape and the identical bug; this is a deliberate
+  divergence, not a porting slip. Two incidental improvements fall out: with `createlogs` off (empty
+  `.currlog`) the old form emitted junk `(count;` `)` entries with a null logname, where the new form
+  correctly returns an empty list; and the old form's `@\:` indexing produced the same junk pair for
+  any requested table with no `.currlog` row at all. `periodmodescenario` could not have caught any of
+  this — it subscribes a **single** table, where per-table and per-file are identical by definition, so
+  `sharedfileperiodscenario` was added to make the multi-table shared-file case explicit and permanent.
 
 ## Design divergences from TorQ
 
@@ -496,10 +518,10 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.segmentedtp
 ```
 
-`test_integration.csv` (58 checks) drives real on-disk log files across naming modes, a real period
+`test_integration.csv` (66 checks) drives real on-disk log files across naming modes, a real period
 and day roll, and a real `.z.exit` flush on simulated shutdown, each as its own spawned child q
-process using real `di.pubsub`/`di.eodtime`/`di.tplog`/`di.timer`/`di.handlers` (not mocks). Twelve of
-its seventeen scenarios exist specifically as regressions for bugs found during post-implementation
+process using real `di.pubsub`/`di.eodtime`/`di.tplog`/`di.timer`/`di.handlers` (not mocks). Thirteen
+of its eighteen scenarios exist specifically as regressions for bugs found during post-implementation
 smoke testing and later review passes (the remaining five close out stress-testing and coverage gaps
 — see below): `periodichandlescenario` proves `singular`/`periodic` mode's multi-table
 shared log file replays cleanly with the correct row count (not just that writing to it didn't throw
@@ -553,7 +575,7 @@ about `di.tplog`. `loadvolumescenario` drives 1500 messages across 30 period rol
 scenario here runs single-digit counts) and measures `/proc/self/fd` before and after, proving
 correctness and resource stability hold under real per-roll volume, not just repeated small rolls.
 
-Three more scenarios close out the last two items ever left open in this module's own review history —
+Four more scenarios close out the last two items ever left open in this module's own review history —
 rapid successive rolls had never been stress-tested, and ``replayperiod:`period`` had never been
 directly exercised (only `` `day``, the default). `rapidperiodrollscenario` drives 20 period rolls back
 to back with no delay between them (through `endofperiod`, not `periodrollover` alone — see
@@ -571,6 +593,16 @@ the past" safety guard, confirmed directly while designing this test.) `periodmo
 `subdetails`' `logfilelist` under ``replayperiod:`period`` reports ONLY the current period's live
 count and logname — excluding closed history entirely, the opposite of `` `day`` mode's whole-day
 picture — using the same process state to show both modes report differently for the exact same data.
+That one subscribes a **single** table, though, where "one entry per table" and "one entry per file"
+are the same statement — so `sharedfileperiodscenario` covers the case it structurally cannot:
+**two** tables sharing one `periodic` log file with deliberately **unequal** message counts (3 and 2,
+so no per-table count can coincide with the correct per-file total), then a period-mode `subdetails`
+call. It asserts the shared file appears exactly **once** in `logfilelist` and that its count is the
+**sum** across both tables — the regression for the ``getlogs[`period]`` aggregation bug in the design
+notes — plus that a subscriber requesting only *one* of the sharing tables still gets that file's full
+count, since replaying it consumes the other table's messages too. Against the pre-fix implementation
+four of its assertions fail (two entries, count `3` rather than `5`); its two precondition rows (one
+shared handle, one shared logname) pass either way, by design.
 `moduletest` only ever loads `test.csv`, so load and run this suite directly, in a fresh session:
 
 ```q

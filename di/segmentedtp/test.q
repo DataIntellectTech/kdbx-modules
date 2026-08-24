@@ -829,3 +829,55 @@ loadvolumescenario:{[dir]
     "J"$last "=" vs toks 1;("J"$last "=" vs toks 3)-"J"$last "=" vs toks 2;
     "J"$last "=" vs toks 4;"J"$last "=" vs toks 5;nrolls*permsg);
   };
+
+/ regression test for a real bug found during review: getlogs[`period] built one (j;logname) pair per
+/ REQUESTED table and deduped with distinct. under singular/periodic naming several tables share one
+/ PHYSICAL log file while keeping independent j counts, so two such tables produced two pairs against
+/ the same logname whose first elements genuinely differ - distinct cannot collapse those. subdetails'
+/ logfilelist therefore listed the one shared file twice, each entry carrying only that table's own
+/ partial count, so a subscriber replayed the same file twice and neither count matched what the file
+/ actually holds. getlogs[`day] never had this: its rows come from the metatable, whose msgcount is
+/ already summed across the whole shared-file tbls group. periodmodescenario above could not catch it -
+/ it subscribes a SINGLE table, where per-table and per-file are the same thing by definition. this
+/ scenario makes the multi-table shared-file case explicit and permanent: two tables under `periodic`
+/ with DELIBERATELY UNEQUAL message counts (3 vs 2), so a per-table result cannot be mistaken for a
+/ correct per-file one at any count. also asserts the subset case - a subscriber asking for only ONE
+/ of the sharing tables still gets the file's FULL count, because replaying that file consumes the
+/ other table's messages too. multilogperiod is a full day so nothing rolls mid-scenario: the only
+/ thing under test is how one open shared file is reported
+sharedfileperiodscenario:{[dir]
+  lines:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "quote:([]time:`timestamp$();sym:`symbol$();bid:`float$();ask:`float$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilog`multilogperiod`replayperiod!",
+      "(mocklog;timer;handlers;`trade`quote!(trade;quote);\"",dir,"\";`periodic;1D;`period);";
+    "stp.init[deps];";
+    "priv:`$\".m.di.0segmentedtp\";";
+    "stp.upd[`trade;(enlist`AAPL;enlist 100.5;enlist 10)];";
+    "stp.upd[`trade;(enlist`MSFT;enlist 200.25;enlist 5)];";
+    "stp.upd[`trade;(enlist`GOOG;enlist 300.0;enlist 3)];";
+    "stp.upd[`quote;(enlist`AAPL;enlist 100.0;enlist 101.0)];";
+    "stp.upd[`quote;(enlist`MSFT;enlist 200.0;enlist 201.0)];";
+    "lf:(stp.subdetails[`trade`quote;`])`logfilelist;";
+    "lft:priv[`getlogs][`period][enlist`trade];";
+    "lnames:distinct exec logname from `.currlog where tbl in `trade`quote;";
+    "samehandle:1=count distinct exec handle from `.currlog where tbl in `trade`quote;";
+    "-1 \"RESULT entries=\",(string count lf),\" msgcount=\",(string first first lf),",
+      "\" jtotal=\",(string sum priv[`j]`trade`quote),\" lnamecount=\",(string count lnames),",
+      "\" samehandle=\",(string samehandle),\" subsetentries=\",(string count lft),",
+      "\" subsetcount=\",(string first first lft),",
+      "\" lnameok=\",string (last first lf)~first lnames;";
+    "exit 0;");
+  out:runchild[dir;lines];
+  line:first out where out like "RESULT entries=*";
+  toks:" " vs line;
+  :`entries`msgcount`jtotal`lnamecount`samehandle`subsetentries`subsetcount`lnameok!(
+    "J"$last "=" vs toks 1;"J"$last "=" vs toks 2;"J"$last "=" vs toks 3;"J"$last "=" vs toks 4;
+    "1"=first last "=" vs toks 5;"J"$last "=" vs toks 6;"J"$last "=" vs toks 7;
+    "1"=first last "=" vs toks 8);
+  };

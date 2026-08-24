@@ -202,3 +202,19 @@ true,0,0,q,1500=.t.lv`jfinal,1,1,every one of the 1500 messages was logged - j r
 true,0,0,q,0=.t.lv`fddelta,1,1,zero file descriptors leaked across 1500 messages and 30 rolls
 true,0,0,q,31=.t.lv`rowcount,1,1,exactly one metatable row per roll plus the still-open one - no duplication under volume
 true,0,0,q,1=.t.lv`nullendcount,1,1,exactly one row remains open under volume - none left dangling
+comment,,,,,,,"shared-file period-replay regression - a REAL bug found during review: getlogs[`period] built one"
+comment,,,,,,,"(j;logname) pair per REQUESTED table and deduped with distinct. under singular/periodic naming"
+comment,,,,,,,"several tables share one PHYSICAL file with independent j counts, so the pairs differ in their first"
+comment,,,,,,,"element and distinct cannot collapse them - the one shared file was listed once per table, each with"
+comment,,,,,,,"only that table's partial count. periodmodescenario above cannot catch this: it subscribes a SINGLE"
+comment,,,,,,,"table, where per-table and per-file are identical by definition. fixed by grouping on logname and"
+comment,,,,,,,summing j per group - the same whole-group aggregation getlogs[`day] gets from the metatable's tbls
+before,0,0,q,.t.sf:sharedfileperiodscenario["/tmp/di_segmentedtp_it_sf"],1,1,run two tables sharing one periodic log file with deliberately unequal counts (3 trade / 2 quote) then a period-mode subdetails call
+true,0,0,q,.t.sf`samehandle,1,1,precondition - both tables really are writing to one shared os handle under periodic naming
+true,0,0,q,1=.t.sf`lnamecount,1,1,precondition - both tables really do share a single physical logname
+true,0,0,q,1=.t.sf`entries,1,1,logfilelist has exactly ONE entry for the shared file - not one per table
+true,0,0,q,.t.sf[`msgcount]=.t.sf`jtotal,1,1,that entry's count is the SUM across both tables (5) - not either table's own count alone
+true,0,0,q,5=.t.sf`msgcount,1,1,the summed count is the literal 5 messages written - unequal 3/2 split so a per-table count cannot coincide with it
+true,0,0,q,.t.sf`lnameok,1,1,the single entry names the shared logfile itself
+true,0,0,q,1=.t.sf`subsetentries,1,1,a subscriber asking for only ONE of the sharing tables still gets exactly one entry for that file
+true,0,0,q,5=.t.sf`subsetcount,1,1,and that entry carries the file's FULL count - replaying it consumes the other table's messages too

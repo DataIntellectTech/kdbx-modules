@@ -642,9 +642,19 @@ tick:{[]
 
 getlogs:(`$())!();
 
-/ current period only - live counts and lognames straight from currlog/j
+/ current period only - live counts and lognames straight from currlog/j. ONE entry per PHYSICAL
+/ file, not per requested table: under singular/periodic naming several tables share a single log
+/ file while keeping independent j counts, so building a (j;logname) pair per table listed that one
+/ file once per table, each carrying only that table's own partial count. distinct never collapsed
+/ them - the pairs differ in their FIRST element, so they are not duplicates. group by logname and
+/ sum j across every table writing to it, including ones this subscriber did not request: the file
+/ physically holds their messages too, so a replay of it consumes them. that is exactly the
+/ whole-group aggregation getlogs[`day] already gets for free from the metatable's tbls column.
+/ legacy stplog.q:121-123 carries the same per-table shape and the same bug - a deliberate divergence
 getlogs[`period]:{[t]
-  :distinct flip (.z.m.j;exec tbl!logname from `.currlog where tbl in t)@\:t;
+  lnames:distinct exec logname from `.currlog where tbl in t;
+  grouped:exec tbl by logname from `.currlog where logname in lnames;
+  :flip (`long$sum each .z.m.j value grouped;key grouped);
   };
 
 / the whole day - every closed log this trading day (msgcount 0Wj = replay-all sentinel, since a

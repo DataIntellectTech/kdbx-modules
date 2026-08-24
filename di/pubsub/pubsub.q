@@ -166,7 +166,6 @@ getsubtables:{[]
 setsubtables`;
 
 initialized:0b;
-registered:0b;
 
 iscallable:{[x]
   / internal - is x a genuinely callable value? 100 112h spans every callable form, but 101h - the
@@ -189,15 +188,22 @@ init:{[deps]
   / module LOAD time, before init is ever called, so it cannot be conditionally skipped from inside
   / init. that is harmless, not a double-registration bug: closesub is idempotent under a repeat call
   / (delhandle/delhandlef are both remove-if-present), so a disconnect invoking it via both the raw
-  / chain and a handlers dispatch in the same tick is a no-op on the second call
+  / chain and a handlers dispatch in the same tick is a no-op on the second call.
+  / .
+  / re-registers on EVERY init call that supplies handlers, not just the first - there is no one-shot
+  / latch here. di.handlers.register is itself idempotent under a repeat call with the same name
+  / (registersimple's upsertphase deletes then re-adds by name, see di.handlers), so calling it again
+  / on a re-init costs nothing; a one-shot latch, by contrast, would silently swallow a LATER init
+  / call's registration attempt - including one meaning to re-point pubsub at a genuinely different
+  / handlers instance - with no error and no way to tell it never took effect. omitting `handlers on a
+  / later call leaves any earlier registration exactly as it was; di.pubsub never infers a
+  / deregistration from a bare re-init, the same as every other injected dep here
   if[not (::)~deps;
     if[99h<>type deps;'"di.pubsub: deps, if given, must be a dict"];
     if[`handlers in key deps;
       if[not iscallable deps[`handlers]`register;
         '"di.pubsub: handlers`register must be a function [event;phase;name;priority;func] - see di.handlers"];
-      if[not registered;
-        (deps[`handlers][`register])[`.z.pc;`;`pubsub;0j;closesub];
-        .z.m.registered:1b]]];
+      (deps[`handlers][`register])[`.z.pc;`;`pubsub;0j;closesub]]];
   .z.m.t:$[count subtables;subtables;tables[]except`reqfilteredtbl];
   .z.m.schemas:t!extractschema each t;
   .z.m.tabcols:t!cols each t;

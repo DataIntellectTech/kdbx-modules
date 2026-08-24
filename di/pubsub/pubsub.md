@@ -109,8 +109,20 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
   call (`delhandle`/`delhandlef` are both remove-if-present), so a disconnect invoking it via both the
   raw chain and a `di.handlers` dispatch in the same tick is a harmless no-op on the second call, not
   a double-registration bug. Asserted in `test.csv` by a child process that inits `di.handlers` then
-  `di.pubsub` with a `handlers` dep, and checks all three: registry visibility, `closesub` actually
-  running, and the repeat-call idempotency.
+  `di.pubsub` with a `handlers` dep (subscribing through the **public** `subscribe` entry point, using
+  the caller's real `.z.w` handle — not an internal `reqalldict` write and a fabricated handle, which
+  would silently stop testing anything observable if that private variable's name or shape ever
+  changed), and checks all three: registry visibility, `closesub` actually running, and the
+  repeat-call idempotency.
+- **`init` re-registers with `di.handlers` on *every* call that supplies `` `handlers ``, not just the
+  first.** There is no one-shot latch: `di.handlers.register` is itself idempotent under a repeat call
+  with the same name (`registersimple`'s `upsertphase` deletes then re-adds by name), so calling it
+  again on a re-init costs nothing. A one-shot latch was tried and removed — it silently swallowed a
+  *later* `init` call's registration attempt (including one meaning to re-point `di.pubsub` at a
+  genuinely different `handlers` instance) with no error and no way to tell it never took effect,
+  confirmed by a mock `handlers` dict that counts calls to `register` across two `init` calls. Omitting
+  `` `handlers `` on a later call still leaves any earlier registration exactly as it was — `di.pubsub`
+  never infers a deregistration from a bare re-init, the same as every other injected dep here.
 
 - By default, all tables on top level of the process are available for subscription.
 - The user should define the `.u.sub` and the `.u.pub` functions within the process.

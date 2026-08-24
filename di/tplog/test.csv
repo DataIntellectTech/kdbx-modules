@@ -30,10 +30,16 @@ comment,,,,,,,check / repair corruption utilities
 true,0,0,q,testcheckclean[],1,1,check returns a clean log unchanged
 true,0,0,q,testcheckcorruptwarns[],1,1,check repairs a corrupt log and logs a warning
 true,0,0,q,testrepaircreatesgood[],1,1,repair writes a .good file
+true,0,0,q,testrepairrejectsdir[],1,1,repair rejects a directory path instead of writing .good inside it
 comment,,,,,,,public-function input validation
 fail,0,0,q,tp[`logname][`notastring;2026.08.13],1,1,logname rejects a non-string dir
 fail,0,0,q,tp[`replay]["notasymbol"],1,1,replay rejects a non-symbol logfile
 fail,0,0,q,tp[`check]["notasymbol"],1,1,check rejects a non-symbol logfile
 fail,0,0,q,tp[`repair]["notasymbol"],1,1,repair rejects a non-symbol logfile
 fail,0,0,q,tp[`replayupto][tp[`logname]["/x";2026.08.13];`notanint],1,1,replayupto rejects a non-integral n
+comment,,,,,,,directory-path rejection (a directory is a valid symbol but not a valid log file)
+fail,0,0,q,tp[`replay][dirhandle"repdir1"],1,1,replay rejects a directory path
+fail,0,0,q,tp[`replayupto][dirhandle"repdir2";1],1,1,replayupto rejects a directory path
+fail,0,0,q,tp[`check][dirhandle"repdir3"],1,1,check rejects a directory path
+fail,0,0,q,tp[`repair][dirhandle"repdir4"],1,1,repair rejects a directory path
 after,0,0,q,teardownfixture[],1,,remove the temp fixture root

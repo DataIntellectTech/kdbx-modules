@@ -29,6 +29,15 @@ raiseerror:{[ctx;msg]
 / on corruption, so trap the throw. (-11!(-1) counts too but runs upd - don't use it here.)
 corruptp:{[logfile] `corrupt~@[{-11!(-2;x);`ok};logfile;{`corrupt}]};
 
+/ true if logfile names an existing directory rather than a file. `-11h=type logfile` (checked by
+/ every caller below) only confirms the value is A symbol, not that it names a real log file - a
+/ directory path passes that guard, and corruptp's own throw-catching then misreports it as
+/ "corrupt" rather than "not a file". measured: `key` on a directory returns its listing (type 11h,
+/ a symbol list), on a plain file returns the file's own name back (type -11h, a symbol atom), and
+/ on a nonexistent path returns () (type 0h) - so 11h=type key f is a precise, portable directory
+/ test with no filesystem shell-out
+isdir:{[logfile] 11h=type key logfile};
+
 logname:{[dir;date]
   / <dir>/tp<date>, one log file per date
   if[not 10h=type dir;raiseerror[`logname;"dir must be a string"]];
@@ -65,6 +74,7 @@ replay:{[logfile]
   / repair if corrupt, then replay through the root upd. the non-executing corruptp check up front
   / means good messages are not replayed twice.
   if[not -11h=type logfile;raiseerror[`replay;"logfile must be a symbol"]];
+  if[isdir logfile;raiseerror[`replay;"logfile is a directory, not a file: ",string logfile]];
   -11! $[corruptp logfile;repair logfile;logfile]
   };
 
@@ -72,12 +82,14 @@ replayupto:{[logfile;n]
   / replay only the first n messages - a subscriber replays up to the point it subscribed
   if[not -11h=type logfile;raiseerror[`replayupto;"logfile must be a symbol"]];
   if[not (type n) in -7 -6h;raiseerror[`replayupto;"n must be an int or long"]];
+  if[isdir logfile;raiseerror[`replayupto;"logfile is a directory, not a file: ",string logfile]];
   -11!(n;$[corruptp logfile;repair logfile;logfile])
   };
 
 check:{[logfile]
   / logfile if it is usable, else a repaired copy
   if[not -11h=type logfile;raiseerror[`check;"logfile must be a symbol"]];
+  if[isdir logfile;raiseerror[`check;"logfile is a directory, not a file: ",string logfile]];
   if[not corruptp logfile;:logfile];
   .z.m.logwarn[`check;"corrupt log, repairing ",1_string logfile];
   repair logfile
@@ -86,6 +98,7 @@ check:{[logfile]
 repair:{[logfile]
   / write every message that still deserialises to <logfile>.good
   if[not -11h=type logfile;raiseerror[`repair;"logfile must be a symbol"]];
+  if[isdir logfile;raiseerror[`repair;"logfile is a directory, not a file: ",string logfile]];
   goodlog:`$string[logfile],".good";
   goodlogh:hopen goodlog set ();
   repairover[logfile;goodlogh] over `start`size!(0j;chunk);

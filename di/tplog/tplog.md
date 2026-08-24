@@ -76,6 +76,19 @@ kdb+:
 `replay`/`replayupto` check with the non-executing `corruptp`, repair to a `.good` file if needed (a
 byte-scan that never calls `upd`), then replay once, so no message is processed twice.
 
+`replay`/`replayupto`/`check`/`repair` validate that `logfile` is *a* symbol, but a symbol alone
+doesn't mean it names a real log file — a directory path is a valid symbol too. Before the `isdir`
+guard was added, a directory handed to any of these was misreported as merely "corrupt" (`corruptp`
+traps whatever `-11!(-2;…)` throws on a directory, indistinguishable from real corruption) and
+`repair` would then silently write `<dir>/.good` *inside* that directory rather than raising a clear
+error. Found via `di.segmentedtp`'s own stress-testing (a test script's unguarded glob for a
+not-yet-existing `.good` file legitimately resolved to a bare directory path and fed it to `replay`)
+— not a `di.segmentedtp` exposure, since that module only ever calls in with paths it computed itself,
+but a real gap in this module regardless. Fixed: `replay`/`replayupto`/`check`/`repair` now reject a
+directory path outright (`isdir`, checked via `type key` — 11h for a directory's listing, -11h for a
+real file's own name back, 0h for nonexistent) with a "logfile is a directory, not a file" error,
+before `corruptp` ever gets a chance to mischaracterise it.
+
 ## Known limitations
 
 - `repair` is tuned to the `(`upd;`trade;…)` message shape (inherited from `tplogutils`); other tables
@@ -87,10 +100,12 @@ byte-scan that never calls `upd`), then replay once, so no message is processed 
 
 ## Testing
 
-`test.csv` / `test.q` (k4unit, 25 checks) cover the metadata/version contract, strict `init`
+`test.csv` / `test.q` (k4unit, 30 checks) cover the metadata/version contract, strict `init`
 validation, public-input validation, the open/write/roll lifecycle, fail-fast `open` on a corrupt log,
-`replay` recovering a corrupt log while processing each message exactly once, `replayupto`, and
-`check`/`repair` on clean and corrupt logs (asserting the warning via a capturing logger).
+`replay` recovering a corrupt log while processing each message exactly once, `replayupto`,
+`check`/`repair` on clean and corrupt logs (asserting the warning via a capturing logger), and
+`replay`/`replayupto`/`check`/`repair` all rejecting a directory path instead of mistaking it for a
+corrupt log.
 
 ```q
 q)k4unit:use`di.k4unit

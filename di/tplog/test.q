@@ -32,6 +32,11 @@ teardownfixture:{[] system "rm -rf ",base;}
 / a fresh, empty per-test directory; returns the dir string
 freshdir:{[sub] dd:base,"/",sub; system "rm -rf ",dd; system "mkdir -p ",dd; dd}
 
+/ a fresh, empty per-test directory; returns it as the SAME symbol shape a logfile handle takes -
+/ for asserting that replay/replayupto/check/repair reject a directory rather than mistaking it for
+/ a corrupt log
+dirhandle:{[sub] `$":",freshdir[sub]}
+
 / write n trade messages into a fresh clean log under sub; close; return the log filename handle
 writelog:{[sub;n]
   dd:freshdir sub;
@@ -134,4 +139,15 @@ testrepaircreatesgood:{[]
   fn:corrupt[writelog["rep";5];12];
   g:tp[`repair] fn;
   (g~`$string[fn],".good") and not ()~key g
+  }
+
+/ repair must reject a directory path rather than silently creating <dir>/.good inside it - the exact
+/ bug found via segmentedtp's own testing: a test script's unguarded glob for a not-yet-existing
+/ .good file resolved to a bare directory path, which corruptp's throw-catching then misreported as
+/ merely "corrupt", so repair happily wrote a .good file inside the directory instead of raising a
+/ clear "not a file" error. asserts both the throw AND that the directory is left untouched
+testrepairrejectsdir:{[]
+  dh:dirhandle"repdir";
+  threw:`THREW~.[tp[`repair];enlist dh;{[e]`THREW}];
+  threw and 0=count key dh
   }

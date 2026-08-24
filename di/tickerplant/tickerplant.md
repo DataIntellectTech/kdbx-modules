@@ -135,7 +135,8 @@ the two numbers in one reply always agree about what has been published.
 
 Hard (imported via `use` in `init.q`, declared in `deps.q`): `di.pubsub`, `di.eodtime`, `di.tplog`.
 Injected via `init`: `log` and `timer` (both required; validated by `di.depcheck`'s contract check,
-not declared in `deps.q`).
+not declared in `deps.q`), plus an **optional** `handlers` (`di.handlers`' register dict) forwarded
+verbatim to `di.pubsub.init` — see the design note below.
 
 `di.tplog` is used only for check/repair on recovery — when `openlog` finds a pre-existing log it runs
 it through `tplog.check`, repairing a corrupt one. The tickerplant appends to and rolls the log itself
@@ -185,9 +186,15 @@ tickerplant must not do to its own log.
   protocol and the timer job — and deliberately leaves module state and the captured tables intact,
   so a shutdown path can still inspect or save what is buffered. A re-init after a teardown
   re-publishes the protocol and re-schedules the job.
-- **No `di.handlers` dependency.** Subscriber-disconnect cleanup is handled by `di.pubsub`'s own
-  `.z.pc`. (`di.pubsub` should migrate to `di.handlers` so `.z.*` is not assigned outside the central
-  registry — tracked separately, out of scope here.)
+- **`handlers` is optional and only ever forwarded, never consumed directly.** Subscriber-disconnect
+  cleanup is handled by `di.pubsub`'s own `.z.pc` (it self-assigns the event, chaining onto whatever
+  already owned it — `di.tickerplant` itself still takes no direct `di.handlers` dependency and
+  registers nothing of its own). `di.pubsub.init` now accepts an optional `handlers` key (`di.handlers`'
+  register dict) that additionally registers that hook with the central registry, so
+  `di.handlers.list[`.z.pc]` names `pubsub` explicitly instead of only chaining through it invisibly.
+  This module forwards its own optional `handlers` dep straight through, unvalidated — `di.pubsub`
+  validates its own shape — the same way `log` is forwarded to `di.eodtime`/`di.tplog` above. Omitting
+  `handlers` is fully supported: `di.pubsub.init[(::)]` behaves exactly as it always has.
 
 ## Design divergences from TorQ
 

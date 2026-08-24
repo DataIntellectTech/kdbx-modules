@@ -13,9 +13,13 @@
 / protocol di.subscriptions speaks, and an IPC caller reaches them through the default .z.pg/.z.ps,
 / so a module-local binding would be invisible. teardown gives them back.
 / .
-/ NB subscriber-disconnect cleanup is handled by di.pubsub's own .z.pc (it self-assigns it). this
-/ module therefore takes no di.handlers dependency. FLAG: di.pubsub should migrate to di.handlers so
-/ .z.pc is not assigned outside the central registry - out of scope here, tracked separately.
+/ NB subscriber-disconnect cleanup is handled by di.pubsub's own .z.pc (it self-assigns it, chaining
+/ onto whatever already owned the event). di.pubsub's init now ALSO takes an optional `handlers key
+/ (di.handlers' register dict) to register that hook with the central registry so it is visible via
+/ di.handlers.list[`.z.pc], not just chained through it - this module forwards its own OPTIONAL
+/ `handlers dep straight through, unvalidated (di.pubsub validates its own shape), the same way it
+/ forwards `log to di.eodtime/di.tplog below. omitting `handlers here is still fully supported -
+/ di.pubsub.init[(::)] behaves exactly as before
 
 / ============================================================
 / constants (load-time)
@@ -203,8 +207,9 @@ init:{[deps]
   / the tp log, publish the subscription protocol at root and schedule the batch/roll timer job.
   / deps: a dict with `log (required), `timer (required), `schemas (required, tablename!schema) and
   /   optional `batch (1b), `batchperiod (timespan), `logdir (string, "" disables logging),
-  /   `logname (string), `subtables (symbol list), plus di.eodtime keys (rolltimezone/datatimezone/
-  /   rolltimeoffset) forwarded verbatim.
+  /   `logname (string), `subtables (symbol list), `handlers (di.handlers' register dict, forwarded
+  /   verbatim to di.pubsub.init - see the header note), plus di.eodtime keys (rolltimezone/
+  /   datatimezone/rolltimeoffset) forwarded verbatim.
   / dependencies and config are re-applied on EVERY init; RUNTIME state - the date, the message and
   / row counts, and the open log - is seeded only on the FIRST. see the fresh block below
   if[99h<>type deps;
@@ -256,7 +261,9 @@ init:{[deps]
   eodtime.init[(enlist[`log]!enlist deps`log),(key[deps] inter eodtimekeys)#deps];
   tplog.init[enlist[`log]!enlist deps`log];
   pubsub.setsubtables[$[`subtables in key deps;deps`subtables;.z.m.tabs]];
-  pubsub.init[];
+  / `handlers is OPTIONAL and forwarded as-is - di.pubsub.init validates its own shape if given, and
+  / treats the generic-null argument below exactly like the old niladic pubsub.init[] call
+  pubsub.init[$[`handlers in key deps;enlist[`handlers]!enlist deps`handlers;(::)]];
   / RUNTIME state is seeded only on a FRESH init. a re-init - di.torq re-applying config, a config
   / reload, a second wiring - must not rewind a live tickerplant's date, zero the message counts a
   / subscriber replays against, or reopen (and so leak) the log it is already writing to. di.rdb and

@@ -4,6 +4,7 @@ before,0,0,q,timer:use`di.timer,1,,real di.timer (addjob works without timer.ini
 before,0,0,q,ntp:use`di.tplog,1,,"di.tplog, to replay a tickerplant-written log"
 before,0,0,q,eod:use`di.eodtime,1,,"di.eodtime, to force a roll due in a test"
 before,0,0,q,ps:use`di.pubsub,1,,"di.pubsub, to release the self-subscription a subdetails test leaves on handle 0"
+before,0,0,q,handlers:use`di.handlers,1,,"di.handlers, to verify the OPTIONAL handlers dep init forwards to di.pubsub is actually wired through"
 before,0,0,q,os:use`di.os,1,,os module for portable path resolution
 before,0,0,q,"system ""l "",os.abspath[""di/tickerplant/test.q""]",1,,load fixture helpers
 before,0,0,q,setupfixture[],1,,create the temp fixture root
@@ -29,6 +30,7 @@ true,0,0,q,testemptyupdtriggersroll[],1,1,an empty update still triggers an over
 true,0,0,q,testzerolatency[],1,1,zero-latency upd publishes without buffering and advances i with j
 true,0,0,q,testendofday[],1,1,"endofday flushes, rolls the log and resets counts"
 true,0,0,q,testreinitpreservesstate[],1,1,a re-init preserves the counts / buffer / log handle and leaks no fd
+true,0,0,q,testhandlersforwarded[],1,1,init's optional handlers dep is forwarded to di.pubsub so its .z.pc hook is visible in di.handlers' own registry
 comment,,,,,,,di.tplog integration
 true,0,0,q,testlogroundtrip[],1,1,a tickerplant-written log replays through di.tplog
 true,0,0,q,testcheckrepaironroll[],1,1,rolling into a corrupt log repairs it via di.tplog.check

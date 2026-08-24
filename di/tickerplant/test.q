@@ -76,6 +76,18 @@ testinit:{[]
 
 / batch mode: upd stamps, buffers into the root table and logs (bumping j). i is the PUBLISHED
 / watermark and must NOT move while the rows are still buffered - it catches up at the flush
+/ init's OPTIONAL `handlers dep is forwarded verbatim to di.pubsub.init - see the design note in
+/ tickerplant.md. a fresh init WITH a handlers dep must make di.pubsub's own .z.pc hook visible in
+/ di.handlers' own registry (di.handlers.list[`.z.pc] naming `pubsub), which omitting the key (every
+/ other test here) never triggers
+testhandlersforwarded:{[]
+  resetmodule[];
+  dd:freshdir"handlers";
+  `trade set 0#trade;
+  handlers.init[enlist[`log]!enlist caplog[]];
+  tp.init mkdeps[dd;1b],enlist[`handlers]!enlist handlers;
+  0<count select from handlers.list[`.z.pc] where name=`pubsub};
+
 testupdbatch:{[]
   freshinit["updb";1b];
   tp[`upd][`trade;row`AAPL];

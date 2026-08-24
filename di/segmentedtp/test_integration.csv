@@ -117,6 +117,7 @@ true,0,0,q,21=.t.rp`rowcount,1,1,exactly 21 metatable rows exist (1 initial + 20
 true,0,0,q,21=.t.rp`distinctlognames,1,1,every one of the 21 rows has its own distinct logname - no naming collisions under rapid rolls
 true,0,0,q,1=.t.rp`nullendcount,1,1,exactly one row remains open (the current period) - none left dangling
 true,0,0,q,.t.rp`seqok,1,1,seq increments 1..21 with no gaps or duplicates across 20 rapid rolls
+true,0,0,q,20=.t.rp`jfinal,1,1,"j accumulates to 20 across 20 period rolls, not reset to 0 by rolllog - only dayrollover resets i/j, matching di.tickerplant's own day-scoped semantics"
 comment,,,,,,,"rapid successive day-roll stress test - never exercised before this session. 10 day rolls back to"
 comment,,,,,,,"back with no delay, using TWO tables sharing one OS handle (periodic mode) so the shared-handle"
 comment,,,,,,,"logic is exercised under rapid day-roll succession too. multilogperiod is set to 1D explicitly -"
@@ -138,3 +139,66 @@ before,0,0,q,.t.pm:periodmodescenario["/tmp/di_segmentedtp_it_pm"],1,1,run the r
 true,0,0,q,1=.t.pm`periodcount,1,1,subdetails' logfilelist under period mode has exactly one entry - not the closed prior period too
 true,0,0,q,.t.pm`msgcounteqj,1,1,that one entry's msgcount matches the live j count for the CURRENT period exactly - not a 0Wj sentinel, not a cross-period total
 true,0,0,q,2=.t.pm`daycount,1,1,for contrast, the same state under day mode reports two entries - proving period and day modes genuinely differ
+comment,,,,,,,"roll-safety guard blast-radius regression - a REAL bug found during review: the three roll-safety"
+comment,,,,,,,"guards (endofperiod/dayrollover/checkends) called di.timer's PROCESS-WIDE disable, which gates"
+comment,,,,,,,"main[] for every job of every module sharing that timer instance, not just this module's own tick"
+comment,,,,,,,"job. a segmentedtp-specific clock-skew trip would silently halt every other module's timer-driven"
+comment,,,,,,,"work in the same process. fixed by switching to disablejobs[enlist`segmentedtp], which only"
+comment,,,,,,,touches this module's own job status
+before,0,0,q,.t.rg:rollguardscenario["/tmp/di_segmentedtp_it_rg"],1,1,run the roll-guard scenario - real init plus a second real unrelated timer job, then a deterministic guard trip
+true,0,0,q,.t.rg`threw,1,1,the deliberately-tripped guard still throws its intended error
+true,0,0,q,.t.rg`globalenabled,1,1,di.timer's process-wide enabled flag is untouched by the guard trip - other modules' timer-driven work is not silently halted
+true,0,0,q,not .t.rg`segmentedtpstatus,1,1,segmentedtp's own timer job IS disabled by the guard trip - the fix still does its intended job
+true,0,0,q,.t.rg`unrelatedstatus,1,1,the unrelated job's status is untouched - the guard's blast radius is scoped to segmentedtp's own job only
+comment,,,,,,,"openlog corruption-repair shared-handle regression - a REAL bug found during review: openlog's"
+comment,,,,,,,"handle-reuse check queried .currlog by the PRE-repair logname, but di.tplog.repair returns a NEW"
+comment,,,,,,,"<name>.good path and never hands back a handle. under singular/periodic mode a second table's"
+comment,,,,,,,"openlog call recomputed the same original (still-corrupt) name, missed the first table's already-"
+comment,,,,,,,"repaired-and-open handle, and opened an independent second handle onto what should be one shared"
+comment,,,,,,,"file. fixed by re-running the reuse check against the REPAIRED name before falling through to hopen"
+before,0,0,q,.t.sh:sharedhandlerepairscenario["/tmp/di_segmentedtp_it_sh"],1,1,run the shared-handle corruption-repair scenario - real traffic, real on-disk corruption, real restart into the same directory
+true,0,0,q,.t.sh`samehandle,1,1,trade and quote share the SAME os handle onto the repaired file after a restart that hits corruption in both tables' openlog calls
+true,0,0,q,.t.sh`replayok,1,1,the repaired file replays without throwing - not corrupted a second time by a competing independent handle
+true,0,0,q,0<.t.sh`replaycount,1,1,at least some messages survive the repair and replay cleanly
+comment,,,,,,,"error-log file-descriptor leak regression - a REAL bug found during review: dayrollover's"
+comment,,,,,,,"unconditional openlogerr[] call (errmode/createlogs on, the defaults) never closed the PREVIOUS"
+comment,,,,,,,"day's error-log handle first - closelog each .z.m.logtabs only covers the captured tables, and"
+comment,,,,,,,"errorlogname can never be one of them (init's own collision guard). confirmed directly via"
+comment,,,,,,,"/proc/self/fd before the fix: 5 real day-rolls leaked exactly 5 fds. fixed by closing the error"
+comment,,,,,,,log's own handle alongside the captured tables', every day-roll
+before,0,0,q,.t.el:errorlogleakscenario["/tmp/di_segmentedtp_it_el"],1,1,run the error-log leak scenario - 5 real day-rolls, real /proc/self/fd counts before and after
+true,0,0,q,0=.t.el`delta,1,1,5 real day-rolls leak zero file descriptors - the previous day's error-log handle is closed before the next day's is opened
+comment,,,,,,,"guard-recovery regression - a REAL bug found during review: a tripped roll-safety guard disabled"
+comment,,,,,,,"segmentedtp's own timer job (disablejobs) but nothing ever re-enabled it, even once the module's"
+comment,,,,,,,"own roll state self-healed on a later natural attempt. defaultbatch's publish path runs ONLY via"
+comment,,,,,,,"the timer's tick -> ztsfn -> pubclear, never inline in upd, so it stayed silently dead forever:"
+comment,,,,,,,"confirmed directly before the fix, j (logged) kept climbing while i (published) stayed frozen,"
+comment,,,,,,,"with no error anywhere pointing at why. fixed by re-enabling on every successful roll, in both"
+comment,,,,,,,endofperiod and dayrollover
+before,0,0,q,.t.gr:guardrecoveryscenario["/tmp/di_segmentedtp_it_gr"],1,1,run the guard-recovery scenario - trip the guard for real, let real wall-clock time cross the boundary, then a single normal upd
+true,0,0,q,.t.gr`threw,1,1,the deliberately-tripped guard still throws its intended error
+true,0,0,q,not .t.gr`statusaftertrip,1,1,segmentedtp's own timer job is disabled immediately after the trip
+true,0,0,q,.t.gr`updok,1,1,a perfectly well-formed upd after real time crosses the boundary succeeds - the module's own roll state self-heals on the next natural attempt
+true,0,0,q,.t.gr`statusafterrecovery,1,1,the timer job is RE-ENABLED once a real roll succeeds - not left permanently disabled after a one-time transient trip
+comment,,,,,,,"combined-failure regression - corruption and a guard-trip/recovery happening close together, not"
+comment,,,,,,,"just each in isolation. corrupts the CURRENTLY OPEN periodic-mode shared file, then immediately"
+comment,,,,,,,"trips the roll-safety guard, then lets real wall-clock time cross the boundary for a natural"
+comment,,,,,,,"recovery - proving the two failure modes do not corrupt each other's handling when they overlap"
+before,0,0,q,.t.cf:combinedfailurescenario["/tmp/di_segmentedtp_it_cf"],1,1,run the combined-failure scenario - corrupt the live shared file, trip the guard, recover for real
+true,0,0,q,.t.cf`threw,1,1,the deliberately-tripped guard still throws its intended error even with a corrupt file in play
+true,0,0,q,not .t.cf`statusaftertrip,1,1,the timer job is disabled by the trip regardless of the corruption
+true,0,0,q,.t.cf`r2ok,1,1,the first post-recovery upd succeeds cleanly
+true,0,0,q,.t.cf`r3ok,1,1,the second post-recovery upd succeeds cleanly too
+true,0,0,q,.t.cf`statusafter,1,1,the timer job re-enables on the natural recovery, exactly as when no corruption is involved
+true,0,0,q,.t.cf`samehandle,1,1,trade and quote are still sharing one handle after the combined sequence - the shared-handle mechanism is not disturbed by the corruption/guard-trip interaction
+true,0,0,q,.t.cf`oldfileuntouched,1,1,the old corrupted file is superseded by a fresh periodic-mode filename rather than ever being reopened or repaired in place
+true,0,0,q,.t.cf`jadvanced,1,1,logging genuinely resumes after recovery - j advances past its pre-corruption value
+comment,,,,,,,"load-volume regression - every other scenario here runs single-digit message counts. proves"
+comment,,,,,,,"correctness AND resource stability under real per-roll volume: 30 period rolls of 50 messages"
+comment,,,,,,,"each (1500 total), with /proc/self/fd measured before and after so a per-message or per-roll leak"
+comment,,,,,,,"under sustained volume would be caught here even though no single low-volume roll would surface it"
+before,0,0,q,.t.lv:loadvolumescenario["/tmp/di_segmentedtp_it_lv"],1,1,run 30 period rolls of 50 messages each - 1500 total
+true,0,0,q,1500=.t.lv`jfinal,1,1,every one of the 1500 messages was logged - j reaches the exact expected total under volume
+true,0,0,q,0=.t.lv`fddelta,1,1,zero file descriptors leaked across 1500 messages and 30 rolls
+true,0,0,q,31=.t.lv`rowcount,1,1,exactly one metatable row per roll plus the still-open one - no duplication under volume
+true,0,0,q,1=.t.lv`nullendcount,1,1,exactly one row remains open under volume - none left dangling

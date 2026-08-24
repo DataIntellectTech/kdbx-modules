@@ -439,14 +439,134 @@ rapidperiodrollscenario:{[dir]
     "nullendcount:count select from mt where null end;";
     / = not ~ - seq is int, til is long; ~ is strict on type as well as value and would never match
     "seqok:all (asc exec seq from mt)=1+til count mt;";
+    / i/j must NOT be reset by a period roll (only dayrollover resets them - see rolllog's own header
+    / comment). each of the n iterations writes exactly one message before its own roll, so with the
+    / fix j accumulates to n; the old bug reset it to 0 inside every single one of these rolls, so j
+    / would end at 0 regardless of n - a clean, deterministic differentiator, no timing dependency
+    "jfinal:priv[`j]`trade;";
     "-1 \"RESULT rowcount=\",(string rowcount),\" distinctlognames=\",(string distinctlognames),",
-      "\" nullendcount=\",(string nullendcount),\" seqok=\",string seqok;";
+      "\" nullendcount=\",(string nullendcount),\" seqok=\",(string seqok),\" jfinal=\",string jfinal;";
     "exit 0;");
   out:runchild[dir;lines];
   line:first out where out like "RESULT rowcount=*";
   toks:" " vs line;
-  :`rowcount`distinctlognames`nullendcount`seqok!("J"$last "=" vs toks 1;"J"$last "=" vs toks 2;
-    "J"$last "=" vs toks 3;"1"=first last "=" vs toks 4);
+  :`rowcount`distinctlognames`nullendcount`seqok`jfinal!("J"$last "=" vs toks 1;"J"$last "=" vs toks 2;
+    "J"$last "=" vs toks 3;"1"=first last "=" vs toks 4;"J"$last "=" vs toks 5);
+  };
+
+/ regression test for a real bug found during review: the three roll-safety guards (endofperiod,
+/ dayrollover, checkends) used to call di.timer's PROCESS-WIDE disable, which gates main[] for every
+/ job of every module sharing that timer instance - not just this module's own tick job. a
+/ segmentedtp-specific clock-skew trip would silently halt every other module's timer-driven work in
+/ the same process. proves the fix's actual blast-radius claim: a real, unrelated timer job registered
+/ through the SAME real di.timer instance must survive the guard trip untouched, while segmentedtp's
+/ own job is correctly disabled. white-box asserts against di.timer's own private state
+/ (.m.di.0timer.enabled/.jobs), the same technique di.timer's own test.csv and di.heartbeat's real-
+/ timer integration test already use - this is the only reliable way to observe the process-wide flag,
+/ which di.timer does not expose through any export. endofperiod is called directly (not via checkends
+/ + a wall-clock jump) with an event timestamp set deliberately far beyond nextperiod+multilogperiod,
+/ so the guard trips deterministically regardless of real time
+rollguardscenario:{[dir]
+  lines:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilogperiod!(mocklog;timer;handlers;enlist[`trade]!enlist trade;\"",dir,"\";0D00:00:01);";
+    "stp.init[deps];";
+    / di.timer's own `enabled` flag defaults to 0b at module load and is only ever set 1b inside
+    / di.timer.init - segmentedtp never calls it (segmentedtp only reaches timer through the injected
+    / addjob/deletejobs/disablejobs functions, never timer's own init), so it must be called here
+    / directly or `enabled` would read 0b regardless of whether the fix or the old bug is in effect,
+    / making the globalenabled assertion below meaningless
+    "timer[`init][(::)];";
+    "timer[`addjob][`custom][`unrelatedjob;{[]::};();`int$60000;1h;()!()];";
+    "priv:`$\".m.di.0segmentedtp\";";
+    "cp:priv`currperiod; np:cp+priv`multilogperiod;";
+    "r:.[priv[`endofperiod];(cp;np;`p`proctype`tables!(np+1D;`segmentedtp;enlist`trade);1b);{x}];";
+    "threw:not r~(::);";
+    "globalenabled:.m.di.0timer.enabled;";
+    "segmentedtpstatus:.m.di.0timer.jobs[`segmentedtp][`status];";
+    "unrelatedstatus:.m.di.0timer.jobs[`unrelatedjob][`status];";
+    "-1 \"RESULT threw=\",(string threw),\" globalenabled=\",(string globalenabled),",
+      "\" segmentedtpstatus=\",(string segmentedtpstatus),\" unrelatedstatus=\",string unrelatedstatus;";
+    "exit 0;");
+  out:runchild[dir;lines];
+  line:first out where out like "RESULT threw=*";
+  toks:" " vs line;
+  :`threw`globalenabled`segmentedtpstatus`unrelatedstatus!(
+    "1"=first last "=" vs toks 1;"1"=first last "=" vs toks 2;
+    "1"=first last "=" vs toks 3;"1"=first last "=" vs toks 4);
+  };
+
+/ regression test for a real bug found during review: openlog's handle-reuse check queried .currlog by
+/ the PRE-repair logname, but di.tplog.repair returns a NEW <name>.good path and opens/closes its own
+/ handle internally, never returning one to the caller. under singular/periodic mode - where multiple
+/ tables share one logical log file - a second table's openlog call recomputed the same original
+/ (still-corrupt) name, missed the first table's already-repaired-and-open handle, and opened an
+/ independent second handle onto what should be one shared file. reproduced end to end: real init
+/ writes real traffic under periodic mode, the resulting on-disk file is corrupted with the exact
+/ byte-smash technique di.tplog's own test.q corrupt helper uses (proven to trigger its corruption
+/ detection), then a fresh restart into the same directory drives BOTH tables' openlog through the
+/ repair path during init's own fresh-open block
+sharedhandlerepairscenario:{[dir]
+  lines1:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "quote:([]time:`timestamp$();sym:`symbol$();bid:`float$();ask:`float$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilog!(mocklog;timer;handlers;`trade`quote!(trade;quote);\"",dir,"\";`periodic);";
+    "stp.init[deps];";
+    "do[3;stp.upd[`trade;(enlist`AAPL;enlist 100.5;enlist 10)];stp.upd[`quote;(enlist`AAPL;enlist 100.0;enlist 101.0)]];";
+    "stp.teardown[];";
+    "exit 0;");
+  runchild[dir;lines1];
+  / corrupt the shared log file on disk, in THIS process - same byte-smash technique as di.tplog's own
+  / test.q corrupt helper (smash k bytes starting at the file's midpoint)
+  daydir:first key hsym `$dir,"/stplogs";
+  files:key hsym `$dir,"/stplogs/",string daydir;
+  logfile:first files where files like "stp_periodic*";
+  fn:hsym `$dir,"/stplogs/",string[daydir],"/",string logfile;
+  b:read1 fn;
+  p:count[b] div 2;
+  k:12;
+  fn set @[b;p+til k&count[b]-p;:;k#0xff];
+  / restart into the SAME directory - both tables' openlog calls hit the same corrupt file during
+  / init's fresh-open block
+  lines2:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "quote:([]time:`timestamp$();sym:`symbol$();bid:`float$();ask:`float$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilog!(mocklog;timer;handlers;`trade`quote!(trade;quote);\"",dir,"\";`periodic);";
+    "stp.init[deps];";
+    "htrade:exec first handle from `.currlog where tbl=`trade;";
+    "hquote:exec first handle from `.currlog where tbl=`quote;";
+    "-1 \"RESULT samehandle=\",string htrade~hquote;";
+    "do[2;stp.upd[`trade;(enlist`MSFT;enlist 50.0;enlist 1)];stp.upd[`quote;(enlist`MSFT;enlist 49.5;enlist 50.5)]];";
+    "exit 0;");
+  out:runchildkeep[dir;lines2];
+  sameline:first out where out like "RESULT samehandle=*";
+  samehandle:"1"=first last "=" vs sameline;
+  / the original corrupt file is left untouched on disk by design (di.tplog.repair never rewrites in
+  / place) - the .good file is the live, repaired log to check
+  files2:key hsym `$dir,"/stplogs/",string daydir;
+  goodfile:first files2 where files2 like "*.good";
+  tplog:use`di.tplog;
+  tplog[`init][enlist[`log]!enlist `info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()})];
+  `trade set ([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());
+  `quote set ([]time:`timestamp$();sym:`symbol$();bid:`float$();ask:`float$());
+  upd::{[t;x] t insert x;};
+  n:@[tplog[`replay];hsym `$dir,"/stplogs/",string[daydir],"/",string goodfile;{[e] -1;`THREW}];
+  :`samehandle`replayok`replaycount!(samehandle;not n~`THREW;n);
   };
 
 / stress test - N day rolls back to back, no delay between them, with TWO tables sharing one OS
@@ -531,4 +651,181 @@ periodmodescenario:{[dir]
   toks:" " vs line;
   :`periodcount`msgcounteqj`daycount!("J"$last "=" vs toks 1;
     ("J"$last "=" vs toks 2)=("J"$last "=" vs toks 3);"J"$last "=" vs toks 4);
+  };
+
+/ regression test for a real bug found during review: dayrollover's unconditional openlogerr[] call
+/ (when errmode/createlogs are on, the defaults) never closed the PREVIOUS day's error-log handle
+/ first - closelog each .z.m.logtabs only covers the captured tables, and errorlogname is guaranteed
+/ (by init's own collision guard) to never be one of them, so the error log's old os handle was
+/ silently overwritten in .currlog and never closed. a real file-descriptor leak, one per day, for the
+/ lifetime of a long-running process - confirmed directly, before the fix, via /proc/self/fd: 5 real
+/ day-rolls leaked exactly 5 fds. drives dayrollover directly (white-box, matching daytimestampscenario
+/ and rapiddayrollscenario's own technique) rather than via checkends/real wall-clock jumps, so the fd
+/ count is measured around EXACTLY n roll calls with nothing else able to open/close fds in between
+errorlogleakscenario:{[dir]
+  n:5;
+  lines:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilogperiod!(mocklog;timer;handlers;enlist[`trade]!enlist trade;\"",dir,"\";0D01);";
+    "stp.init[deps];";
+    "priv:`$\".m.di.0segmentedtp\";";
+    "fdbefore:count key hsym`$\"/proc/self/fd\";";
+    "onedayroll:{[i] priv[`dayrollover][`p`proctype`tables!(.z.p;`segmentedtp;enlist`trade)]};";
+    "onedayroll each til ",(string n),";";
+    "fdafter:count key hsym`$\"/proc/self/fd\";";
+    "-1 \"RESULT fdbefore=\",(string fdbefore),",
+      "\" fdafter=\",(string fdafter),\" delta=\",string fdafter-fdbefore;";
+    "exit 0;");
+  out:runchild[dir;lines];
+  line:first out where out like "RESULT fdbefore=*";
+  toks:" " vs line;
+  :`fdbefore`fdafter`delta!("J"$last "=" vs toks 1;"J"$last "=" vs toks 2;"J"$last "=" vs toks 3);
+  };
+
+/ regression test for a real bug found during review: a tripped roll-safety guard disabled
+/ segmentedtp's own timer job (disablejobs) but nothing ever re-enabled it, even after the module's
+/ OWN roll state self-healed on a later natural attempt (upd's inline checkends call already recovers
+/ the roll state, confirmed directly - seq/currperiod advance normally again). left as-is, defaultbatch's
+/ publish path - which runs ONLY via the timer's tick -> ztsfn -> pubclear, never inline in upd - stayed
+/ silently dead forever: confirmed directly before this fix, j (logged) kept climbing while i
+/ (published) stayed frozen, with no error anywhere pointing at why. this scenario drives the exact
+/ same repro used to find the bug: trip the guard with a deliberate large jump (rollguardscenario's
+/ technique), let REAL wall-clock time cross the now near-term period boundary, then a single normal
+/ upd - which drives a natural, successful roll via the inline checkends call - must resume the
+/ disabled job, not just recover the module's own internal roll state
+guardrecoveryscenario:{[dir]
+  lines:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilogperiod!(mocklog;timer;handlers;enlist[`trade]!enlist trade;\"",dir,"\";0D00:00:01);";
+    "stp.init[deps];";
+    "timer[`init][(::)];";
+    "priv:`$\".m.di.0segmentedtp\";";
+    "cp:priv`currperiod; np:cp+priv`multilogperiod;";
+    "rtrip:.[priv[`endofperiod];(cp;np;`p`proctype`tables!(np+1D;`segmentedtp;enlist`trade);1b);{[e]`THREW}];";
+    "threw:`THREW~rtrip;";
+    "statusaftertrip:first exec status from timer[`getalljobs][] where id=`segmentedtp;";
+    "system \"sleep 2\";";
+    "rupd:.[stp.upd;(`trade;(enlist`MSFT;enlist 200.0;enlist 5));{[e]`THREW}];";
+    "updok:not `THREW~rupd;";
+    "statusafterrecovery:first exec status from timer[`getalljobs][] where id=`segmentedtp;";
+    "-1 \"RESULT threw=\",(string threw),\" statusaftertrip=\",(string statusaftertrip),",
+      "\" updok=\",(string updok),\" statusafterrecovery=\",string statusafterrecovery;";
+    "exit 0;");
+  out:runchild[dir;lines];
+  line:first out where out like "RESULT threw=*";
+  toks:" " vs line;
+  :`threw`statusaftertrip`updok`statusafterrecovery!(
+    "1"=first last "=" vs toks 1;"1"=first last "=" vs toks 2;
+    "1"=first last "=" vs toks 3;"1"=first last "=" vs toks 4);
+  };
+
+/ combined-failure regression: corruption and a guard-trip/recovery happening close together, not just
+/ each in isolation. corrupts the CURRENTLY OPEN periodic-mode shared file (worse than
+/ sharedhandlerepairscenario, which only corrupts between restarts), then immediately trips the "next
+/ period is in the past" guard, then lets real wall-clock time cross the boundary for a natural
+/ recovery. proves: the guard trip and recovery behave identically whether or not a corrupt file is
+/ sitting in .currlog: no throw escapes the recovery, the shared handle stays intact, the timer job
+/ re-enables, logging genuinely resumes (j advances) - and, distinctly, that the OLD corrupted file is
+/ simply superseded by a fresh periodic-mode filename (per-second naming) rather than ever being
+/ reopened or "repaired" in place - confirmed by comparing the old and new lognames directly.
+/ NB a first draft of this scenario chased a phantom bug that turned out to be in the test script
+/ itself (di.tplog.replay called against a glob that legitimately matched nothing, producing a
+/ directory path rather than a file) - not in segmentedtp. this version does not attempt file-level
+/ replay verification at all, since rapidperiodrollscenario/periodichandlescenario/
+/ sharedhandlerepairscenario already cover replay correctness in isolation; this scenario is purely
+/ about the two failure modes not corrupting each other's handling when they overlap
+combinedfailurescenario:{[dir]
+  lines:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "quote:([]time:`timestamp$();sym:`symbol$();bid:`float$();ask:`float$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilog`multilogperiod!(mocklog;timer;handlers;`trade`quote!(trade;quote);\"",dir,"\";`periodic;0D00:00:01);";
+    "stp.init[deps];";
+    "timer[`init][(::)];";
+    "priv:`$\".m.di.0segmentedtp\";";
+    "do[3;stp.upd[`trade;(enlist`AAPL;enlist 100.5;enlist 10)];stp.upd[`quote;(enlist`AAPL;enlist 100.0;enlist 101.0)]];";
+    "jbefore:priv[`j]`trade;";
+    "oldfile:exec first logname from `.currlog where tbl=`trade;";
+    "b:read1 oldfile; p:count[b] div 2;";
+    "oldfile set @[b;p+til 12&count[b]-p;:;12#0xff];";
+    "cp:priv`currperiod; np:cp+priv`multilogperiod;";
+    "r1:.[priv[`endofperiod];(cp;np;`p`proctype`tables!(np+1D;`segmentedtp;`trade`quote);1b);{[e]`THREW}];";
+    "threw:`THREW~r1;";
+    "statusaftertrip:first exec status from timer[`getalljobs][] where id=`segmentedtp;";
+    "system \"sleep 2\";";
+    "r2:.[stp.upd;(`trade;(enlist`MSFT;enlist 200.0;enlist 5));{[e]`THREW}];";
+    "r3:.[stp.upd;(`quote;(enlist`MSFT;enlist 199.5;enlist 200.5));{[e]`THREW}];";
+    "r2ok:not `THREW~r2; r3ok:not `THREW~r3;";
+    "statusafter:first exec status from timer[`getalljobs][] where id=`segmentedtp;";
+    "htrade:exec first handle from `.currlog where tbl=`trade;";
+    "hquote:exec first handle from `.currlog where tbl=`quote;";
+    "samehandle:htrade~hquote;";
+    "newfile:exec first logname from `.currlog where tbl=`trade;";
+    "oldfileuntouched:oldfile<>newfile;";
+    "jadvanced:(priv[`j]`trade)>jbefore;";
+    "-1 \"RESULT threw=\",(string threw),\" statusaftertrip=\",(string statusaftertrip),",
+      "\" r2ok=\",(string r2ok),\" r3ok=\",(string r3ok),\" statusafter=\",(string statusafter),",
+      "\" samehandle=\",(string samehandle),\" oldfileuntouched=\",(string oldfileuntouched),",
+      "\" jadvanced=\",string jadvanced;";
+    "exit 0;");
+  out:runchild[dir;lines];
+  line:first out where out like "RESULT threw=*";
+  toks:" " vs line;
+  :`threw`statusaftertrip`r2ok`r3ok`statusafter`samehandle`oldfileuntouched`jadvanced!(
+    "1"=first last "=" vs toks 1;"1"=first last "=" vs toks 2;"1"=first last "=" vs toks 3;
+    "1"=first last "=" vs toks 4;"1"=first last "=" vs toks 5;"1"=first last "=" vs toks 6;
+    "1"=first last "=" vs toks 7;"1"=first last "=" vs toks 8);
+  };
+
+/ load-volume regression: every other integration scenario runs single-digit message counts. proves
+/ correctness and resource stability under real per-roll VOLUME, not just roll-count - 30 period rolls
+/ of 50 messages each (1500 total), driven directly through endofperiod (white-box, deterministic, no
+/ real wall-clock dependency, matching rapidperiodrollscenario's own technique). asserts j reaches the
+/ exact expected total, the metatable has exactly one row per roll plus the still-open one, and -
+/ critically - /proc/self/fd shows zero growth across the whole run, so a per-message or per-roll
+/ leak under real sustained volume would be caught here even though no single roll would surface it
+loadvolumescenario:{[dir]
+  nrolls:30; permsg:50;
+  lines:(
+    "stp:use`di.segmentedtp;";
+    "handlers:use`di.handlers;";
+    "timer:use`di.timer;";
+    "mocklog:`info`warn`error!({[c;m]:()};{[c;m]:()};{[c;m]:()});";
+    "handlers.init[enlist[`log]!enlist mocklog];";
+    "trade:([]time:`timestamp$();sym:`symbol$();price:`float$();size:`long$());";
+    "deps:`log`timer`handlers`schemas`kdbtplog`multilogperiod!(mocklog;timer;handlers;enlist[`trade]!enlist trade;\"",dir,"\";0D00:00:01);";
+    "stp.init[deps];";
+    "priv:`$\".m.di.0segmentedtp\";";
+    "fdbefore:count key hsym`$\"/proc/self/fd\";";
+    "syms:",(string permsg),"?`3; prices:",(string permsg),"?1000f; sizes:1+",(string permsg),"?100;";
+    "oneroll:{[i] do[",(string permsg),";stp.upd[`trade;(enlist first 1?syms;enlist first 1?prices;enlist first 1?sizes)]];",
+      "cp:priv`currperiod;np:cp+priv`multilogperiod;",
+      "priv[`endofperiod][cp;np;`p`proctype`tables!(np;`segmentedtp;enlist`trade);1b]};";
+    "oneroll each til ",(string nrolls),";";
+    "fdafter:count key hsym`$\"/proc/self/fd\";";
+    "mt:select from priv[`metatable] where tbls~\\:enlist`trade;";
+    "-1 \"RESULT jfinal=\",(string priv[`j]`trade),\" fdbefore=\",(string fdbefore),",
+      "\" fdafter=\",(string fdafter),\" rowcount=\",(string count mt),",
+      "\" nullendcount=\",string count select from mt where null end;";
+    "exit 0;");
+  out:runchild[dir;lines];
+  line:first out where out like "RESULT jfinal=*";
+  toks:" " vs line;
+  :`jfinal`fddelta`rowcount`nullendcount`expected!(
+    "J"$last "=" vs toks 1;("J"$last "=" vs toks 3)-"J"$last "=" vs toks 2;
+    "J"$last "=" vs toks 4;"J"$last "=" vs toks 5;nrolls*permsg);
   };

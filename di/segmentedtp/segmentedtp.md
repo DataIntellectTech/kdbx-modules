@@ -26,7 +26,7 @@ stp.init[`log`timer`handlers`schemas`kdbtplog!(logdep;timerdep;handlersdep;
 | Key | Required | Description |
 |---|---|---|
 | `log` | yes | `` `info`warn`error `` dict of `{[ctx;msg]}` functions |
-| `timer` | yes | `di.timer`'s exports; must expose `addjob` (with the `custom` variant), `deletejobs` and `disable` |
+| `timer` | yes | `di.timer`'s exports; must expose `addjob` (with the `custom` variant), `deletejobs`, `disablejobs` and `enablejobs` |
 | `handlers` | yes | `di.handlers`'s exports; must expose `register` and `remove` — used **solely** for `.z.exit` |
 | `schemas` | yes | `tablename!schema` dict; the tables to capture |
 | `kdbtplog` | yes, no default | base log directory (`stplogs/<logprefix>_<date>/` is created under it) |
@@ -240,6 +240,13 @@ happens immediately in `upd`, but the published count lags until the next timer 
 structurally multi-log where a plain tickerplant is single-log, so the same watermark pair needs
 tracking once per table rather than once per process.
 
+Both `i` and `j` accumulate for the whole trading day and reset only at day-roll (`dayrollover`) —
+never at a period roll (`rolllog`), even though a period roll closes and reopens every table's log
+file. This matches `di.tickerplant`'s own day-scoped `i`/`j` semantics exactly; a period-roll reset
+was an earlier bug in this module (caught during review — see the design notes below), since it made
+`getcounts` report counts dropping to zero on every `multilogperiod` boundary (hourly, by default)
+rather than accumulating for the day as documented.
+
 ## Dependencies
 
 Hard (imported via `use` in `init.q`, declared in `deps.q`): `di.pubsub`, `di.eodtime`, `di.tplog`.
@@ -255,7 +262,25 @@ rename or overwrite the corrupt file in place — `di.tplog.repair` writes every
 deserialises into a brand-new `<name>.good` file, leaving the original corrupt file on disk,
 untouched, for later inspection. `openlog` uses the **returned** path as the live log going forward
 (`currlog` records whatever is actually on disk) and logs a warning when it differs from the one
-requested.
+requested. Under `singular`/`periodic` mode, where multiple tables share one logical log file,
+`openlog` re-runs its handle-reuse check against the **repaired** name too (not just the originally
+requested one) before opening a fresh handle — see the design notes below for the bug this closes.
+
+`di.tplog.replay`/`check`/`repair` used to only validate that `logfile` was *a* symbol
+(`-11h=type logfile`) — not that it named a real, readable file. Passed a path to a directory,
+`corruptp` reported it corrupt and `repair` silently created a `.good` marker file *inside* that
+directory rather than raising a clear "not a file" error. Found while stress-testing `segmentedtp`
+(a test script's own bug — an unguarded glob for a `.good` file that legitimately did not exist yet —
+built exactly such a directory path and fed it to `replay`); never a reachable `segmentedtp` exposure
+itself, since this module only ever calls `di.tplog` with paths it computed itself via its own naming
+functions, never a caller-supplied or glob-derived one. Fixed directly in `di.tplog` (not here) —
+`replay`/`replayupto`/`check`/`repair` now reject a directory path outright before `corruptp` gets a
+chance to mischaracterise it; see `di.tplog`'s own design notes and testing section.
+
+`di.pubsub` self-assigns `.z.pc` at load time rather than routing through `di.handlers` — a known,
+pre-existing exposure `di.tickerplant` already documents as tracked separately, not something
+`di.segmentedtp` introduces or can fix on its own. This module inherits the same exposure through the
+same hard dependency.
 
 ## Chained mode — explicitly out of scope
 
@@ -371,6 +396,56 @@ above — it is moot here regardless, since chained mode itself is out of scope.
   (`updfn`'s three modes, ``ztsfn[`memorybatch]``, `openlogerr`, `setmeta`) check it before touching
   `dldir`. With logging off, `upd` still stamps, buffers/publishes and advances `i`/`rowcounts` per
   the batch mode — only the write itself, and `j`, are skipped.
+- **The three roll-safety guards (`endofperiod`, `dayrollover`, `checkends`) disable only this
+  module's own timer job, not the whole timer instance — a real bug found during review.** All three
+  originally called `di.timer`'s `disable`, a **process-wide** flag that gates `main[]` for every job
+  of every module sharing that timer instance (`di/timer/init.q`), not just this module's. A
+  segmented-TP-specific clock-skew trip (e.g. "next period is in the past") would silently halt every
+  other module's timer-driven work in the same process, with nothing in their own logs pointing at
+  why. Fixed by switching all three call sites, and `init`'s corresponding dependency validation, to
+  `disablejobs[enlist`segmentedtp]`, which only flips `status` for this module's own job id.
+- **A tripped roll-safety guard disabled segmentedtp's own timer job but never re-enabled it, even
+  after the module's own roll state self-healed — a real bug found during a dedicated smoke-test
+  pass, confirmed directly.** `upd`'s own inline `checkends` call already recovers cleanly on the next
+  natural roll attempt (`seq`/`currperiod` advance normally again — proven directly, including across a
+  real wall-clock delay), but nothing ever called `enablejobs` to match. Left as-is, `defaultbatch`'s
+  publish path — which runs *only* via the timer's `tick` → `ztsfn` → `pubclear`, never inline in
+  `upd` — stayed silently dead forever after a single transient clock/data glitch: measured directly,
+  `j` (logged) kept climbing across further normal messages while `i` (published) stayed frozen, with
+  no error anywhere pointing at why, and a well-formed message could throw straight out of `upd`
+  (uncaught by `errmode`, since `checkends` runs outside its protection) purely from stale roll
+  bookkeeping. Fixed by calling `enablejobs[enlist`segmentedtp]` on every successful roll, in both
+  `endofperiod` and `dayrollover` — harmless if the job was never disabled, since it just re-asserts
+  `status:1b`. `init` now requires `enablejobs` on the injected `timer` dict alongside `disablejobs`.
+- **`openlog`'s corruption-repair path could open a second, independent OS handle onto a file another
+  table had already repaired and opened — a real bug found during review.** Under `singular`/
+  `periodic` mode, every table computes the same log filename. If the file was corrupt on the first
+  table's `openlog` call, `di.tplog.check` repairs it to a **new** `<name>.good` path (`repair` opens
+  and closes its own handle internally, never returning one), and that first table's handle gets
+  registered under the repaired name. A second table's `openlog` call recomputes the same *original*
+  (still-corrupt) name, so its own reuse check — which queried by the pre-repair name — found nothing,
+  fell through, re-ran `check` against the same corrupt file, and opened an independent second handle
+  onto what should be one shared file, corrupting it. Fixed by re-running the reuse check against the
+  repaired name before falling through to `hopen`.
+- **`rolllog` reset `i`/`j` on every period roll, not just day roll — a real bug found during
+  review.** With the default `0D01` `multilogperiod`, this made `getcounts` report counts dropping to
+  zero hourly rather than accumulating for the day, contradicting the day-scoped semantics documented
+  above and diverging from `di.tickerplant`'s own precedent. `dayrollover` already performed the
+  correct day-scoped reset; `rolllog`'s own reset was simply removed.
+- **`schemas` config values are validated as actual tables at `init`, not just that `schemas` itself
+  is a dict.** A non-table value previously surfaced as a raw, unhelpful error deep inside
+  `createtables` instead of a clear, named rejection — inconsistent with every other config mistake in
+  `init`, which does get one.
+- **`dayrollover` leaked one OS file handle per day, indefinitely — a real bug found during a
+  dedicated smoke-test pass, confirmed directly via `/proc/self/fd`.** `openlogerr` is called
+  unconditionally on every day-roll (when `errmode`/`createlogs` are on, the defaults) to open the new
+  day's error log, but `closelog each .z.m.logtabs` — the line meant to close out the previous day's
+  handles first — only ever covers the *captured* tables; `errorlogname` is guaranteed by `init`'s own
+  collision guard to never be one of them. The previous day's error-log handle was therefore silently
+  overwritten in `.currlog` and never closed. Measured before the fix: 5 real day-rolls (driven
+  directly through `dayrollover`, white-box) leaked exactly 5 file descriptors; 0 after. Fixed by
+  closing the error log's own handle alongside the captured tables', every day-roll — `closelog` is a
+  safe no-op if no error-log handle was ever actually open.
 
 ## Design divergences from TorQ
 
@@ -390,9 +465,9 @@ above — it is moot here regardless, since chained mode itself is out of scope.
 
 ## Testing
 
-`test.csv`/`test.q` (k4unit, 76 checks) cover: `init` DI-validation (a reject path per guard,
-including the `errorlogname`-collision, zero-`multilogperiod`, custom-mode-unassigned-table and
-`multilog`/`batchmode`/`replayperiod` domain guards), each naming mode's filename shape including
+`test.csv`/`test.q` (k4unit, 78 checks) cover: `init` DI-validation (a reject path per guard,
+including the `errorlogname`-collision, zero-`multilogperiod`, non-table `schemas` value,
+custom-mode-unassigned-table and `multilog`/`batchmode`/`replayperiod` domain guards), each naming mode's filename shape including
 the `tabular`/`tabperiod` shared-body case,
 `defaultbatch` and `immediate` batch-mode write timing (`memorybatch` and the full `immediate`
 publish-synchronicity check live in `test_integration.csv` instead — see below),
@@ -421,11 +496,11 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.segmentedtp
 ```
 
-`test_integration.csv` (33 checks) drives real on-disk log files across naming modes, a real period
+`test_integration.csv` (58 checks) drives real on-disk log files across naming modes, a real period
 and day roll, and a real `.z.exit` flush on simulated shutdown, each as its own spawned child q
-process using real `di.pubsub`/`di.eodtime`/`di.tplog`/`di.timer`/`di.handlers` (not mocks). Eight of
-its eleven scenarios exist specifically as regressions for bugs found during post-implementation
-smoke testing and later review passes (the remaining three close out stress-testing and coverage gaps
+process using real `di.pubsub`/`di.eodtime`/`di.tplog`/`di.timer`/`di.handlers` (not mocks). Twelve of
+its seventeen scenarios exist specifically as regressions for bugs found during post-implementation
+smoke testing and later review passes (the remaining five close out stress-testing and coverage gaps
 — see below): `periodichandlescenario` proves `singular`/`periodic` mode's multi-table
 shared log file replays cleanly with the correct row count (not just that writing to it didn't throw
 — the corrupted-file version of this bug satisfied that weaker check); `daytimestampscenario` proves
@@ -450,7 +525,33 @@ the dangling row rather than duplicating it; and `orphanedmetascenario` drives `
 (white-box — reproducing a genuinely orphaned, different-logname stale row needs a real elapsed-time
 gap across a period boundary, impractical to wait for in a fast test) to prove the OTHER half of that
 same fix: a stale row for an abandoned logname is force-closed rather than left dangling forever, with
-its message count left honestly null rather than guessed.
+its message count left honestly null rather than guessed; `rollguardscenario` proves the roll-safety
+guard fix's actual blast-radius claim — a real, unrelated timer job registered through the same real
+`di.timer` instance survives a deliberately-tripped guard untouched (`di.timer`'s process-wide
+`enabled` flag and the unrelated job's own `status` are both unaffected), while `segmentedtp`'s own
+job is correctly disabled; and `sharedhandlerepairscenario` reproduces the `openlog` corruption-repair
+handle-reuse bug end to end — real `singular`/`periodic`-mode traffic, real on-disk corruption (via
+the same byte-smash technique `di.tplog`'s own `test.q` uses), and a real restart proving both
+tables end up sharing one handle onto the repaired file rather than a second table opening its own
+independent handle and corrupting it again; `errorlogleakscenario` drives 5 real day-rolls
+directly through `dayrollover` and measures `/proc/self/fd` before and after, proving the error log's
+own OS handle is closed every day-roll rather than silently leaked (0 delta — this scenario reliably
+measured a +5 leak before the fix); and `guardrecoveryscenario` trips a roll-safety guard for real,
+lets real wall-clock time cross the (now near-term) period boundary, and proves a single subsequent
+normal `upd` — which drives a natural, successful roll via the inline `checkends` call — re-enables
+segmentedtp's own timer job, not just the module's internal roll state.
+
+`combinedfailurescenario` deliberately overlaps two failure modes that had only ever been tested in
+isolation: it corrupts the *currently open* periodic-mode shared file, then immediately trips a
+roll-safety guard, then lets real wall-clock time cross the boundary for a natural recovery — proving
+neither failure mode corrupts the other's handling (the guard still throws, the timer job still
+re-enables, the shared handle survives, and the old corrupted file is simply superseded by a fresh
+periodic-mode filename rather than ever being reopened). Its own first draft chased a phantom bug that
+turned out to be in the test script itself (`di.tplog.replay` called against a glob that legitimately
+matched nothing) rather than in `segmentedtp` — see the design notes below for what that surfaced
+about `di.tplog`. `loadvolumescenario` drives 1500 messages across 30 period rolls (every other
+scenario here runs single-digit counts) and measures `/proc/self/fd` before and after, proving
+correctness and resource stability hold under real per-roll volume, not just repeated small rolls.
 
 Three more scenarios close out the last two items ever left open in this module's own review history —
 rapid successive rolls had never been stress-tested, and ``replayperiod:`period`` had never been

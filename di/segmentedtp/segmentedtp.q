@@ -162,7 +162,12 @@ openlog:{[tab;p]
   if[not notexists;
     checked:tplog[`check] lname;
     if[not checked~lname;
-      .z.m.logwarn[`openlog;"log ",(string lname)," was corrupt - repaired to ",string checked]];
+      .z.m.logwarn[`openlog;"log ",(string lname)," was corrupt - repaired to ",string checked];
+      / repair returns a NEW path (<name>.good) that an earlier table's openlog call may already have
+      / opened and registered under - re-run the same reuse check against the REPAIRED name before
+      / falling through to hopen, or a second independent handle gets opened onto the shared file
+      h0:exec first handle from `.currlog where logname=checked, not null handle;
+      if[not null h0;`.currlog upsert (tab;checked;h0); updatehandles[]; :h0]];
     lname:checked];
   if[notexists;.[lname;();:;()]];
   h:hopen lname;
@@ -228,8 +233,8 @@ rolllog:{[tabs;p]
   / roll a set of tables to a new logging period - stplog.q:169-178
   updmeta[.z.m.multilog][`close;tabs;p];
   closelog each tabs;
-  .z.m.i:@[.z.m.i;tabs;:;(count tabs)#0];
-  .z.m.j:@[.z.m.j;tabs;:;(count tabs)#0];
+  / i/j are NOT reset here - they accumulate for the whole trading day (dayrollover resets them),
+  / matching di.tickerplant's own i/j semantics. a period roll is not a day roll
   openlog[;.z.m.currperiod] each tabs;
   updmeta[.z.m.multilog][`open;tabs;.z.m.currperiod];
   setmeta[];
@@ -526,8 +531,18 @@ endofperiod:{[currentpd;nextpd;data;dorolllogs]
   .z.m.currperiod:nextpd;
   .z.m.nextperiod:.z.m.multilogperiod+.z.m.currperiod;
   if[(data`p)>.z.m.nextperiod;
-    .z.m.timer[`disable][];
+    / disablejobs, not disable - disable is a PROCESS-WIDE flag that would halt every other module's
+    / timer-driven work sharing this timer instance; this guard must only stop segmentedtp's own job
+    .z.m.timer[`disablejobs][enlist`segmentedtp];
     raiseerror[`endofperiod;"next period is in the past"]];
+  / re-enable on every SUCCESSFUL roll, not just after a prior trip (idempotent, harmless either way) -
+  / a guard trip only disables THIS module's own tick job (see the note above), but nothing previously
+  / re-enabled it once the underlying condition passed, even though upd's own inline checkends call
+  / already self-heals the roll state on the very next natural attempt. left as-is, defaultbatch's
+  / publish path - which runs ONLY via the timer's tick -> ztsfn -> pubclear, never inline in upd -
+  / stayed silently dead forever after a single transient clock/data glitch: confirmed directly, j kept
+  / climbing (messages still logging fine) while i stayed frozen, with no error anywhere pointing at why
+  .z.m.timer[`enablejobs][enlist`segmentedtp];
   getnextendutc[];
   if[dorolllogs;periodrollover[data]];
   .z.m.loginfo[`endofperiod;"end of period complete, current period ",string .z.m.currperiod];
@@ -541,8 +556,11 @@ dayrollover:{[data]
   / the same, generalised for STP's multi-log/per-table state, rather than recursing into init and
   / fighting its own fresh guard
   if[(data`p)>eodtime[`getroll][data`p];
-    .z.m.timer[`disable][];
+    / disablejobs, not disable - see endofperiod's identical note
+    .z.m.timer[`disablejobs][enlist`segmentedtp];
     raiseerror[`dayrollover;"next roll is in the past"]];
+  / re-enable on every SUCCESSFUL roll - see endofperiod's identical note
+  .z.m.timer[`enablejobs][enlist`segmentedtp];
   eodtime[`setd] eodtime[`getd][]+1;
   updmeta[.z.m.multilog][`close;.z.m.logtabs;(data`p)+eodtime[`getdailyadj][]];
   / persist the OLD day's final metatable to the OLD .z.m.dldir before wiping/switching - createdld
@@ -551,6 +569,14 @@ dayrollover:{[data]
   setmeta[];
   .z.m.metatable:0#metatableschema;
   closelog each .z.m.logtabs;
+  / the error log is NOT in .z.m.logtabs (init guarantees errorlogname never collides with a real
+  / captured table), so the loop above never closes it - without this, every day-roll's unconditional
+  / openlogerr[] call below opens a brand NEW os handle for the new day's file while the PREVIOUS
+  / day's handle is silently overwritten in .currlog and never closed: a real file-descriptor leak, one
+  / per day, for the lifetime of a long-running process. confirmed directly: 5 real day-rolls leaked
+  / exactly 5 fds before this fix (measured via /proc/self/fd), zero after. closelog is a safe no-op
+  / (logs info, does not throw) if errmode was off or no error log was ever actually opened
+  closelog .z.m.errorlogname;
   / data`p, not .z.p - dayrollover is driven by checkends' EVENT time (the x/x1 timestamp that
   / triggered the roll), which may not be bit-identical to "now" by the time this line executes.
   / using .z.p here would let the new day's first log file get named from a DIFFERENT timestamp than
@@ -597,7 +623,8 @@ checkends:{[x]
       not eodtime[`getnextroll][]<x]];
   if[eodtime[`getnextroll][]<x;
     if[eodtime[`getd][]<("d"$x)-1;
-      .z.m.timer[`disable][];
+      / disablejobs, not disable - see endofperiod's identical note
+      .z.m.timer[`disablejobs][enlist`segmentedtp];
       raiseerror[`checkends;"more than one day elapsed since the last check"]];
     endofday[eodtime[`getd][];enddata[],enlist[`p]!enlist x]];
   };
@@ -685,8 +712,10 @@ init:{[deps]
     '"di.segmentedtp: timer dict must expose deletejobs - teardown needs it"];
   if[not (type deps[`timer]`deletejobs) within 100 112h;
     '"di.segmentedtp: timer deletejobs must be a function [ids]"];
-  if[not `disable in key deps`timer;
-    '"di.segmentedtp: timer dict must expose disable - the roll-safety guards need it"];
+  if[not `disablejobs in key deps`timer;
+    '"di.segmentedtp: timer dict must expose disablejobs - the roll-safety guards need it"];
+  if[not `enablejobs in key deps`timer;
+    '"di.segmentedtp: timer dict must expose enablejobs - a successful roll after a guard trip needs it"];
   if[not `handlers in key deps;
     '"di.segmentedtp: handlers dependency is required; pass di.handlers's exports keyed on `handlers"];
   if[99h<>type deps`handlers;
@@ -699,6 +728,9 @@ init:{[deps]
     '"di.segmentedtp: schemas is required; pass a tablename!schema dict keyed on `schemas"];
   if[99h<>type deps`schemas;
     '"di.segmentedtp: schemas must be a dict of tablename!schema"];
+  badschemas:key[deps`schemas] where not 98h=type each value deps`schemas;
+  if[count badschemas;
+    '"di.segmentedtp: schemas value(s) for ",(", " sv string badschemas)," must be tables"];
   if[not `kdbtplog in key deps;
     '"di.segmentedtp: kdbtplog is required - base log directory, no default"];
 

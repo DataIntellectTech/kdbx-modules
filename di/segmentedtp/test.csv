@@ -22,12 +22,14 @@ fail,0,0,q,"stp.init[.t.basedeps,(enlist`timer)!enlist ""notadict""]",1,1,init r
 fail,0,0,q,"stp.init[.t.basedeps,(enlist`timer)!enlist ()!()]",1,1,init rejects a timer dict missing addjob
 fail,0,0,q,"stp.init[.t.basedeps,(enlist`timer)!enlist (enlist`addjob)!enlist ()!()]",1,1,init rejects a timer addjob missing the custom variant
 fail,0,0,q,"stp.init[.t.basedeps,enlist[`timer]!enlist (mocktimer,enlist[`deletejobs]!enlist `notafunction)]",1,1,init rejects a non-function timer deletejobs
-fail,0,0,q,"stp.init[.t.basedeps,enlist[`timer]!enlist (mocktimer _ `disable)]",1,1,init rejects a timer dict missing disable
+fail,0,0,q,"stp.init[.t.basedeps,enlist[`timer]!enlist (mocktimer _ `disablejobs)]",1,1,init rejects a timer dict missing disablejobs - the roll-safety guards need the per-job form, not the process-wide disable
+fail,0,0,q,"stp.init[.t.basedeps,enlist[`timer]!enlist (mocktimer _ `enablejobs)]",1,1,init rejects a timer dict missing enablejobs - a successful roll after a guard trip needs it to resume the disabled job
 fail,0,0,q,stp.init[.t.basedeps _ `handlers],1,1,init rejects deps missing handlers
 fail,0,0,q,"stp.init[.t.basedeps,(enlist`handlers)!enlist ""notadict""]",1,1,init rejects a non-dict handlers value
 fail,0,0,q,"stp.init[.t.basedeps,(enlist`handlers)!enlist (enlist`register)!enlist {[e;p;n;pr;f]:()}]",1,1,init rejects a handlers dict missing remove
 fail,0,0,q,stp.init[.t.basedeps _ `schemas],1,1,init rejects deps missing schemas
 fail,0,0,q,"stp.init[.t.basedeps,(enlist`schemas)!enlist ""notadict""]",1,1,init rejects a non-dict schemas value
+fail,0,0,q,"stp.init[.t.basedeps,(enlist`schemas)!enlist (enlist`trade)!enlist ""nota table""]",1,1,init rejects a schemas dict whose value is not actually a table
 fail,0,0,q,stp.init[.t.basedeps _ `kdbtplog],1,1,init rejects deps missing kdbtplog
 fail,0,0,q,"stp.init[.t.basedeps,(enlist`errorlogname)!enlist `trade]",1,1,init rejects errorlogname colliding with a real captured table name - currlog cannot distinguish the two by tbl key alone
 fail,0,0,q,"stp.init[.t.basedeps,(enlist`multilogperiod)!enlist 0D00:00:00]",1,1,init rejects a zero multilogperiod - gentimeformat of the resulting null currperiod is the empty string, which would collide every period's filename onto one name
@@ -92,7 +94,8 @@ true,0,0,q,.t.riR`jreg,1,1,a genuine re-init still re-schedules the timer job - 
 comment,,,,,,,subdetails after init - zero match and partial match, distinct from the before-init zero-throw
 comment,,,,,,,"captured in .t.preinit above. the module is still initialised here (teardown does not"
 comment,,,,,,,un-initialise it) so these exercise the real post-init subdetails code path
-true,0,0,q,"`THREW~.[stp.subdetails;(`nosuchtable;`);{[e]`THREW}]",1,1,subdetails still throws for a wholly nonexistent table once initialised - di.pubsub registered nothing, so failing leaves no half subscription
+true,0,0,q,"0<count (e:.[stp.subdetails;(`nosuchtable;`);{[e]e}]) ss ""no requested table is published""",1,1,subdetails throws the intended message for a wholly nonexistent table - not just any throw, matching di.tickerplant's testsubdetailsunknown pattern
+true,0,0,q,"0<count (e:.[stp.subdetails;(`nosuchtable;`);{[e]e}]) ss ""nosuchtable""",1,1,subdetails' error message names the actual offending table
 true,0,0,q,"`schemalist`logfilelist`rowcounts`date~key .[stp.subdetails;(`trade`nosuchtable;`);{[e]`THREW}]",1,1,subdetails with a partial match (one real table, one fake) still succeeds and returns data for the real one instead of failing the whole call
 comment,,,,,,,"errmode / badmsg - a malformed update must be caught and logged, not thrown, and must not"
 comment,,,,,,,"advance j (the write genuinely did not happen, the count must not claim otherwise). captured as"

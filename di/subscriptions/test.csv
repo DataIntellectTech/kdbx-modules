@@ -1,0 +1,779 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - fixtures are defined inline as before rows. k4unit runs every before row first and in file order so a fixture may call one defined above it
+before,0,0,q,sub:use`di.subscriptions,1,1,load di.subscriptions
+before,0,0,q,"tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i; };",1,1,"fixture: tmpdir - honours TMPDIR rather than assuming /tmp exists, and appends the pid so two runs on one machine cannot collide"
+before,0,0,q,"BASE:tmpdir""disubscriptionstest"";",1,1,fixture: BASE
+before,0,0,q,D:2026.08.06;,1,1,fixture: D
+before,0,0,q,caprows:([]lvl:`symbol$();ctx:`symbol$();msg:());,1,1,fixture: caprows
+before,0,0,q,resetcap:{[] `caprows set 0#caprows; };,1,1,fixture: resetcap
+before,0,0,q,caplog:`info`warn`error!( {[c;m] `caprows insert (`info;c;m)}; {[c;m] `caprows insert (`warn;c;m)}; {[c;m] `caprows insert (`error;c;m)});,1,1,fixture: caplog
+before,0,0,q,realhandlers:use`di.handlers;,1,1,fixture: realhandlers
+before,0,0,q,handlerdep:{[] :`register`remove!(realhandlers[`register];realhandlers[`remove]); };,1,1,fixture: handlerdep
+before,0,0,q,deps:{[] :`log`handlers!(caplog;handlerdep[]); };,1,1,fixture: deps
+before,0,0,q,realservers:use`di.servers;,1,1,fixture: realservers - di.servers is a HARD dependency (init.q `use`s it) so the suite drives the REAL module rather than a mock
+before,0,0,q,"srvseed:([]procname:`tp1`tp2`rdb1`dead1;proctype:`tickerplant`tickerplant`rdb`tickerplant;hpup:`::5010`::5011`::5012`::5013;w:3 4 5 0Ni;hits:4#0i;startp:4#.z.p;lastp:4#.z.p;endp:4#0Np);",1,1,fixture: srvseed - rows in di.servers' OWN SERVERS schema; dead1 carries a null handle and must never be returned
+before,0,0,q,seedservers:{[] `.m.di.0servers.SERVERS set srvseed; };,1,1,fixture: seedservers - populate di.servers' registry directly so the selection logic runs against the real getservers with no sockets and no mock
+before,0,0,q,markdeadfor:{[h] .z.pc h; };,1,1,fixture: markdeadfor
+before,0,0,q,mkreconnecttph:{[t;n;lf] :{[t;n;lf;msg] if[0b;()]; $[`tablelist~first msg;enlist t; `schemalist`logfilelist`rowcounts`date!(enlist(t;genschema[]);enlist(n;lf);(enlist t)!enlist n;D)]}[t;n;lf]; };,1,1,fixture: mkreconnecttph
+before,0,0,q,"throwingregdep:{[] :`register`remove!({[e;p;n;pr;f] '""register exploded""};realhandlers[`remove]); };",1,1,fixture: throwingregdep
+before,0,0,q,RELEASED:`nil;,1,1,fixture: RELEASED
+before,0,0,q,mkreleasingtph:{[inner] :{[inner;msg] $[`releaseme~first msg;[`RELEASED set msg 1;1b];inner msg]}[inner]; };,1,1,fixture: mkreleasingtph
+before,0,0,q,"logged:{[lv;s] :any {[s;m] 0<count m ss s}[s] each (),exec msg from caprows where lvl=lv; };",1,1,fixture: logged
+before,0,0,q,genschema:{[] :([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$()); };,1,1,fixture: genschema
+before,0,0,q,updcalls:0;,1,1,fixture: updcalls
+before,0,0,q,rootupd:{[t;x] `updcalls set updcalls+1; @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]; };,1,1,fixture: rootupd
+before,0,0,q,resetupd:{[] `updcalls set 0; `upd set rootupd; };,1,1,fixture: resetupd
+before,0,0,q,"colsfor:{[i] :(enlist 2026.08.06D10:00+`timespan$60000000000*i;enlist `$""S"",string i mod 4; enlist 1.0*i;enlist `int$10*i); };",1,1,fixture: colsfor
+before,0,0,q,msgfor:{[t;i] :(`upd;t;colsfor i); };,1,1,fixture: msgfor
+before,0,0,q,tabmsgfor:{[t;i] :(`upd;t;flip (cols genschema[])!colsfor i); };,1,1,fixture: tabmsgfor
+before,0,0,q,"logdir:{[nm] dir:BASE,""/"",nm; system ""mkdir -p "",dir; :dir; };",1,1,fixture: logdir
+before,0,0,q,"logpath:{[nm] :hsym`$(logdir nm),""/tp"",string D; };",1,1,fixture: logpath
+before,0,0,q,writelog:{[nm;msgs] lf:logpath nm; h:hopen lf set (); {[h;m] h enlist m}[h] each msgs; hclose h; :lf; };,1,1,fixture: writelog
+before,0,0,q,buildlog:{[nm;t;n] :writelog[nm;msgfor[t] each til n]; };,1,1,fixture: buildlog
+before,0,0,q,buildtablepayloadlog:{[nm;t;n] :writelog[nm;tabmsgfor[t] each til n]; };,1,1,fixture: buildtablepayloadlog
+before,0,0,q,buildmixedlog:{[nm;ta;tb;n] :writelog[nm;raze {[ta;tb;i] (msgfor[ta;i];msgfor[tb;i])}[ta;tb] each til n]; };,1,1,fixture: buildmixedlog
+before,0,0,q,"writelogas:{[nm;fname;msgs] lf:hsym`$(logdir nm),""/"",fname; h:hopen lf set (); {[h;m] h enlist m}[h] each msgs; hclose h; :lf; };",1,1,fixture: writelogas
+before,0,0,q,dictmsgfor:{[t;i] :(`upd;t;(cols genschema[])!colsfor i); };,1,1,fixture: dictmsgfor
+before,0,0,q,atommsgfor:{[t;i] :(`upd;t;first each colsfor i); };,1,1,fixture: atommsgfor
+before,0,0,q,builddictlog:{[nm;t;n] :writelog[nm;dictmsgfor[t] each til n]; };,1,1,fixture: builddictlog
+before,0,0,q,buildatomlog:{[nm;t;n] :writelog[nm;atommsgfor[t] each til n]; };,1,1,fixture: buildatomlog
+before,0,0,q,nosymschema:{[] :([]time:`timestamp$();val:`float$()); };,1,1,fixture: nosymschema
+before,0,0,q,nosymmsgfor:{[t;i] :(`upd;t;(enlist 2026.08.06D10:00+`timespan$60000000000*i;enlist 1.0*i)); };,1,1,fixture: nosymmsgfor
+before,0,0,q,buildnosymlog:{[nm;t;n] :writelog[nm;nosymmsgfor[t] each til n]; };,1,1,fixture: buildnosymlog
+before,0,0,q,truncatelog:{[lf;nbytes] raw:read1 lf; lf 1: (neg nbytes) _ raw; };,1,1,fixture: truncatelog
+before,0,0,q,goodmsgs:{[lf] i:-11!(-2;lf); :$[1<count i;first i;i]; };,1,1,fixture: goodmsgs
+before,0,0,q,subdetailsresponse:{[pairs;n;lf;msg] :`schemalist`logfilelist`rowcounts`date!( pairs; $[0=n;();enlist (n;lf)]; (pairs[;0])!(count pairs)#n; D); };,1,1,fixture: subdetailsresponse
+before,0,0,q,mktph:{[pairs;n;lf] :subdetailsresponse[pairs;n;lf]; };,1,1,fixture: mktph
+before,0,0,q,rawresponse:{[pairs;entries;counts;msg] :`schemalist`logfilelist`rowcounts`date!(pairs;entries;counts;D); };,1,1,fixture: rawresponse
+before,0,0,q,mkrawtph:{[pairs;entries;counts] :rawresponse[pairs;entries;counts]; };,1,1,fixture: mkrawtph
+before,0,0,q,CALLEDWITH:`;,1,1,fixture: CALLEDWITH
+before,0,0,q,namedcapture:{[inner;msg] `CALLEDWITH set first msg; :inner msg; };,1,1,fixture: namedcapture
+before,0,0,q,mknamedtph:{[inner] :namedcapture[inner]; };,1,1,fixture: mknamedtph
+before,0,0,q,buildsharedlog:{[nm;tabs] :writelog[nm;msgfor'[tabs;til count tabs]]; };,1,1,fixture: buildsharedlog
+before,0,0,q,ASKEDTABS:`;,1,1,fixture: ASKEDTABS
+before,0,0,q,listcapture:{[inner;offered;msg] if[`tablelist~first msg; :offered]; `ASKEDTABS set msg 1; :inner msg; };,1,1,fixture: listcapture
+before,0,0,q,mktphwithlist:{[inner;offered] :listcapture[inner;offered]; };,1,1,fixture: mktphwithlist
+before,0,0,q,ASKEDNAMES:();,1,1,fixture: ASKEDNAMES
+before,0,0,q,"allnamescapture:{[inner;msg] `ASKEDNAMES set ASKEDNAMES,first msg; :inner msg; };",1,1,fixture: allnamescapture
+before,0,0,q,mkallnamestph:{[inner] :allnamescapture[inner]; };,1,1,fixture: mkallnamestph
+before,0,0,q,"throwinglist:{[inner;msg] if[`tablelist~first msg; '""tablelist""]; `ASKEDTABS set msg 1; :inner msg; };",1,1,fixture: throwinglist
+before,0,0,q,mktphnolist:{[inner] :throwinglist[inner]; };,1,1,fixture: mktphnolist
+before,0,0,q,"faithfultph:{[publishes;n;lf;msg] if[`tablelist~first msg; :publishes]; tabs:(),msg 1; pairs:{[pub;t] :$[t in pub;(t;genschema[]); (t;""Table "",string[t],"" not in list of stp pub/sub tables"")]}[publishes] each tabs; :`schemalist`logfilelist`rowcounts`date!(pairs;$[0=n;();enlist (n;lf)];tabs!count[tabs]#n;D); };",1,1,fixture: faithfultph
+before,0,0,q,mkfaithfultph:{[publishes;n;lf] :faithfultph[publishes;n;lf]; };,1,1,fixture: mkfaithfultph
+before,0,0,q,tphfor:{[t;n;lf] :mktph[enlist (t;genschema[]);n;lf]; };,1,1,fixture: tphfor
+before,0,0,q,realpubsub:use`di.pubsub;,1,1,fixture: realpubsub - di.pubsub is a HARD dependency (init.q `use`s it) so the republish handoff is asserted against the REAL publisher
+before,0,0,q,pubtables:{[] :@[{.m.di.0pubsub.t};::;{[e] `symbol$()}]; };,1,1,fixture: pubtables - what the local publisher is currently serving; empty before di.pubsub has been initialised
+before,0,0,q,depsrepub:{[] :`log`handlers`republish!(caplog;handlerdep[];1b); };,1,1,fixture: depsrepub - deps with the chained/segmented tickerplant republish role switched on
+before,0,0,q,"mktphlogdir:{[t;n;lf] f:tphfor[t;n;lf]; :{[f;msg] :(f msg),enlist[`logdir]!enlist `$BASE; }[f]; };",1,1,fixture: mktphlogdir
+before,0,0,q,mocktphbadshape:{[msg] :42; };,1,1,fixture: mocktphbadshape
+before,0,0,q,mocktphmissingkeys:{[msg] :enlist[`schemalist]!enlist enlist (`nosuch;genschema[]); };,1,1,fixture: mocktphmissingkeys
+before,0,0,q,"mocktphthrows:{[msg] '""tickerplant exploded""; };",1,1,fixture: mocktphthrows
+before,0,0,q,mocktphnotables:{[msg] :`schemalist`logfilelist`rowcounts`date!((();());();()!();D); };,1,1,fixture: mocktphnotables
+before,0,0,q,"setupfixture:{[] system ""rm -rf "",BASE; system ""mkdir -p "",BASE; };",1,1,fixture: setupfixture
+before,0,0,q,"teardownfixture:{[] system ""rm -rf "",BASE; };",1,1,no peer in this suite - teardown only clears the temp log directory
+before,0,0,q,setupfixture[],1,1,create the temp log directory
+
+
+comment,,,,,,,every exported function except init must refuse to run before init - there is no default logger
+fail,0,0,q,sub.subscribed[],1,1,subscribed[] before init errors
+fail,0,0,q,sub.getsubscriptions[],1,1,getsubscriptions[] before init errors
+fail,0,0,q,sub.teardown[],1,1,teardown[] before init errors
+fail,0,0,q,sub.subscribe[tphfor[`x;0;`:/nosuch];`;`;1b;1b],1,1,subscribe before init errors
+fail,0,0,q,sub.unsubscribe[4i],1,1,unsubscribe before init errors
+
+comment,,,,,,,init dependency validation - log and handlers are both required and never defaulted
+fail,0,0,q,sub.init[(::)],1,1,init rejects a non-dict deps
+fail,0,0,q,sub.init[()!()],1,1,init rejects deps missing both keys
+fail,0,0,q,sub.init[enlist[`log]!enlist caplog],1,1,init rejects deps missing the handlers key
+fail,0,0,q,sub.init[enlist[`handlers]!enlist handlerdep[]],1,1,init rejects deps missing the log key
+fail,0,0,q,sub.init[`log`handlers!(42;handlerdep[])],1,1,init rejects a non-dict log value
+fail,0,0,q,"sub.init[`log`handlers!((enlist[`info]!enlist caplog`info);handlerdep[])]",1,1,init rejects a log dict missing warn and error
+fail,0,0,q,sub.init[`log`handlers!(caplog;42)],1,1,init rejects a non-dict handlers value
+fail,0,0,q,"sub.init[`log`handlers!(caplog;enlist[`register]!enlist handlerdep[]`register)]",1,1,init rejects a handlers dict missing remove
+fail,0,0,q,"sub.init[deps[],enlist[`subdetailsfunc]!enlist ""subdetails""]",1,1,init rejects a non-symbol subdetailsfunc
+run,0,0,q,"errstr:@[{sub.init[()!()]};(::);{[e] e}]",1,1,capture the error text from a bad init
+true,0,0,q,"0<count errstr ss ""di.subscriptions:""",1,1,init errors are prefixed with the module name
+true,0,0,q,"0<count errstr ss ""di.log""",1,1,the error names which module supplies the missing dependency
+true,0,0,q,"0<count errstr ss ""di.handlers""",1,1,the error names the handlers provider too
+
+comment,,,,,,,wire the real di.handlers (merged - #114) and init for real
+run,0,0,q,realhandlers[`init][enlist[`log]!enlist caplog],1,1,init the real di.handlers with the capturing logger
+run,0,0,q,sub.init[deps[]],1,1,init di.subscriptions with log and handlers
+comment,,,,,,,init arity - assert an OBSERVABLE EFFECT. a two-arg init would silently return a projection and register nothing while every test still passed
+true,0,0,q,`subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,init actually registered its .z.pc observer via di.handlers
+true,0,0,q,101h=type sub.init[deps[]],1,1,init returns a null (not a 104h projection - the two-arg-init failure mode)
+true,0,0,q,1=count select from realhandlers[`list][`.z.pc] where name=`subscriptions,1,1,re-init is idempotent - the registration is replaced not duplicated
+
+comment,,,,,,,module metadata - VERSION file and the exported version
+true,0,0,q,`version in key sub,1,1,version is still an export - di.depcheck reads it from there
+true,0,0,q,10h=type sub.version,1,1,version is a string
+true,0,0,q,3=count "." vs sub.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any sub.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+true,0,0,q,"sub.version~first read0 .Q.dd[hsym`$.Q.m.mp`di.subscriptions;`VERSION]",1,1,the exported version matches the VERSION file
+
+comment,,,,,,,api metadata
+true,0,0,q,"(asc (key sub) except `init`getapimeta)~asc exec name from sub.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,"not any `init`getapimeta in exec name from sub.getapimeta[]",1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols sub.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,all exec public from sub.getapimeta[],1,1,every callable export is public
+true,0,0,q,`teardown in exec name from sub.getapimeta[],1,1,teardown is documented - it is lifecycle not plumbing
+
+comment,,,,,,,subscribe all tables / all syms with replay (table alpha)
+run,0,0,q,resetupd[],1,1,define the root upd the replay drives - as di.rdb does
+run,0,0,q,"lfa:buildlog[""a"";`alpha;4]",1,1,build a real 4-message tp log
+run,0,0,q,ra:sub.subscribe[tphfor[`alpha;4;lfa];`;`;1b;1b],1,1,subscribe all/all with replay
+true,0,0,q,`alpha in tables[],1,1,the table was created at ROOT not in the module namespace
+true,0,0,q,4=count alpha,1,1,all four logged messages were replayed
+true,0,0,q,`g=attr alpha`sym,1,1,the schema's g# attribute on sym was preserved
+true,0,0,q,4=updcalls,1,1,the replay drove the ROOT upd exactly once per message
+true,0,0,q,(enlist`alpha)~ra`subtables,1,1,subtables names what was subscribed
+true,0,0,q,2026.08.06=ra`tplogdate,1,1,tplogdate was derived from the log file name
+true,0,0,q,4=(ra`rowcounts)`alpha,1,1,rowcounts is passed through for the chained-tp caller
+true,0,0,q,(ra`icounts)~ra`rowcounts,1,1,icounts is emitted alongside rowcounts - chainedtp.q:81-84 and sctp.q:22-25 read that name and read it through an if[key in r] guard so a missing one fails SILENTLY
+true,0,0,q,(ra`d)~ra`date,1,1,and d alongside date for the same reason
+true,0,0,q,"(`d in key ra) and `icounts in key ra",1,1,THE CONSUMER TEST - both guards a real chained tickerplant evaluates are satisfied
+true,0,0,q,"((enlist`alpha)!enlist enlist 4)~{[r;subto] $[0=count r`icounts;()!();subto!enlist[r`icounts]subto]}[ra;enlist`alpha]",1,1,chainedtp.q's own seeding expression run verbatim against our return seeds .u.icounts correctly - the enlisted value is legacy's own shape not ours
+true,0,0,q,"not `i in key ra",1,1,legacy i is deliberately not emitted - no shipped consumer reads it and legacy gives it two different meanings by tickerplant type
+true,0,0,q,sub.subscribed[],1,1,the subscription is recorded and live
+true,0,0,q,`handle`tabs`syms`subtime`active~cols sub.getsubscriptions[],1,1,the registry exposes the documented columns
+
+comment,,,,,,,sym-filtered replay - only matching rows reach the table (table beta)
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"lfb:buildlog[""b"";`beta;4]",1,1,build a 4-message log with syms S0..S3
+run,0,0,q,sub.subscribe[tphfor[`beta;4;lfb];enlist`beta;enlist`S1;1b;1b],1,1,subscribe filtered to a single sym
+true,0,0,q,1=count beta,1,1,replay was filtered to the one subscribed sym
+true,0,0,q,(enlist`S1)~exec sym from beta,1,1,the replayed row is the subscribed sym
+
+comment,,,,,,,a tickerplant that logs TABLES rather than columns - filtering must resolve columns by NAME
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"lfc:buildtablepayloadlog[""c"";`gamma;4]",1,1,build a log whose payloads are tables (98h)
+run,0,0,q,sub.subscribe[tphfor[`gamma;4;lfc];enlist`gamma;enlist`S2;1b;1b],1,1,subscribe filtered on a table-shaped payload
+true,0,0,q,1=count gamma,1,1,a table payload is filtered correctly (a position-based filter would not be)
+true,0,0,q,(enlist`S2)~exec sym from gamma,1,1,the right sym survived the filter
+
+comment,,,,,,,a log holding several tables - only the requested one is defined and replayed
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"lfd:buildmixedlog[""d"";`delta;`epsilon;3]",1,1,build an interleaved delta/epsilon log
+run,0,0,q,"rd:sub.subscribe[mktph[((`delta;genschema[]);(`epsilon;genschema[]));6;lfd];enlist`delta;`;1b;1b]",1,1,subscribe to delta only while the tp offers both
+true,0,0,q,3=count delta,1,1,delta was replayed
+true,0,0,q,not `epsilon in tables[],1,1,the unrequested table was neither defined nor replayed
+true,0,0,q,(enlist`delta)~rd`subtables,1,1,subtables reflects what was asked for, not what was offered
+true,0,0,q,"logged[`warn;""unrequested""]",1,1,the tickerplant offering an unrequested table is warned about
+
+comment,,,,,,,a requested table the tickerplant does not have - warn but still subscribe
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"lfe:buildlog[""e"";`zeta;2]",1,1,build a zeta log
+run,0,0,q,re:sub.subscribe[tphfor[`zeta;2;lfe];`zeta`absent;`;1b;1b],1,1,ask for zeta and a table the tp does not have
+true,0,0,q,(enlist`zeta)~re`subtables,1,1,subscribed to the table that does exist
+true,0,0,q,"logged[`warn;""did not return""]",1,1,the missing table was warned about
+
+comment,,,,,,,partial history is FATAL and must leave the process untouched
+run,0,0,q,"lff:buildlog[""f"";`eta;4]",1,1,build a 4-message log
+run,0,0,q,truncatelog[lff;6],1,1,truncate the tail so only 3 messages are readable
+true,0,0,q,3=goodmsgs lff,1,1,the truncated log really holds 3 good messages
+run,0,0,q,resetcap[],1,1,clear the captured log
+fail,0,0,q,sub.subscribe[tphfor[`eta;4;lff];enlist`eta;`;1b;1b],1,1,a tickerplant claiming 4 messages when 3 are readable is refused
+true,0,0,q,not `eta in tables[],1,1,the table was NOT created - the preflight runs before anything is defined
+true,0,0,q,"logged[`error;""partial history""]",1,1,the refusal was logged before it was signalled
+true,0,0,q,not `eta in raze exec tabs from sub.getsubscriptions[],1,1,no registry row was left behind
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[tphfor[`eta;3;lff];enlist`eta;`;1b;1b],1,1,claiming only the readable 3 succeeds
+true,0,0,q,3=count eta,1,1,the readable messages replayed
+
+comment,,,,,,,the double-subscribe guard - a live subscription is not silently redefined and re-replayed
+fail,0,0,q,sub.subscribe[tphfor[`alpha;4;lfa];enlist`alpha;`;1b;1b],1,1,re-subscribing a live table is refused
+fail,0,0,q,sub.subscribe[tphfor[`alpha;4;lfa];`;`;1b;1b],1,1,an all-tables subscribe is refused while tables are live
+true,0,0,q,4=count alpha,1,1,the refusal left the existing table untouched
+
+comment,,,,,,,unsubscribe - a deliberate release DELETES its rows; a .z.pc drop KEEPS them. that asymmetry is the decision, not an accident
+run,0,0,q,"lfz:buildlog[""sg"";`sigma;3]",1,1,build a real log for the unsubscribe scenario
+run,0,0,q,hz:tphfor[`sigma;3;lfz],1,1,keep the handle in a variable so it can be released by identity later
+run,0,0,q,nbefore:count sub.getsubscriptions[],1,1,record the registry size before subscribing
+run,0,0,q,sub.subscribe[hz;enlist`sigma;`;1b;0b],1,1,subscribe to sigma on that handle
+true,0,0,q,1=sum exec active from sub.getsubscriptions[] where handle~\:hz,1,1,the subscription is live
+true,0,0,q,(nbefore+1)=count sub.getsubscriptions[],1,1,the registry grew by exactly one row
+fail,0,0,q,sub.subscribe[hz;enlist`sigma;`;1b;0b],1,1,while it is live the duplicate guard refuses a second subscribe
+run,0,0,q,relz:sub.unsubscribe[hz],1,1,release the handle
+true,0,0,q,(enlist`sigma)~relz,1,1,unsubscribe returns the tables it released
+true,0,0,q,0=count select from sub.getsubscriptions[] where handle~\:hz,1,1,the released row was DELETED not flagged - a deliberate close leaves no residue
+true,0,0,q,nbefore=count sub.getsubscriptions[],1,1,the registry is back to the size it was before the subscribe
+run,0,0,q,resetcap[],1,1,clear the captured log before the idempotency check
+true,0,0,q,0=count sub.unsubscribe[hz],1,1,unsubscribe is idempotent - a second release finds nothing and returns an empty list
+true,0,0,q,"logged[`warn;""nothing to release""]",1,1,and says so at warn rather than throwing - a release path must be safe to call twice
+run,0,0,q,sub.subscribe[hz;enlist`sigma;`;1b;0b],1,1,after the release the same table can be subscribed again
+true,0,0,q,1=count select from sub.getsubscriptions[] where handle~\:hz,1,1,exactly one row for the handle - the released one really is gone not merely dead
+run,0,0,q,sub.unsubscribe[hz],1,1,release it again so this scenario does not hold sigma live for later ones
+
+comment,,,,,,,setschema 0b with replay 1b - the caller keeps its own schema so the table must ALREADY exist at root
+run,0,0,q,"lom:buildlog[""om"";`omega;3]",1,1,build a log for the setschema-0b replay scenario
+run,0,0,q,resetupd[],1,1,define the root upd the replay would drive
+fail,0,0,q,sub.subscribe[tphfor[`omega;3;lom];enlist`omega;`;0b;1b],1,1,replay with setschema 0b is refused when nothing is defined at root
+true,0,0,q,not `omega in tables[],1,1,and the refusal created nothing
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"@[{sub.subscribe[tphfor[`omega;3;lom];enlist`omega;`;0b;1b]};(::);{[e] e}]",1,1,trigger the refusal again to inspect the log
+true,0,0,q,"logged[`error;""setschema is 0b""]",1,1,the refusal was logged before it was signalled
+run,0,0,q,@[`.;`omega;:;genschema[]],1,1,now pre-load the schema ourselves as a subscriber that owns its schemas would
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[tphfor[`omega;3;lom];enlist`omega;`;0b;1b],1,1,and the same subscribe now succeeds through the NARROWED replay path
+true,0,0,q,3=count omega,1,1,the log replayed into the caller's own table
+true,0,0,q,3=updcalls,1,1,the root upd ran once per message
+run,0,0,q,"ltau:buildlog[""tau"";`tau;2]",1,1,build a log for the all-tables variant
+fail,0,0,q,sub.subscribe[tphfor[`tau;2;ltau];`;`;0b;1b],1,1,the guard covers the all-tables all-syms path too - it fails inside the caller's upd otherwise
+run,0,0,q,@[`.;`tau;:;genschema[]],1,1,pre-load that schema as well
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[tphfor[`tau;2;ltau];`;`;0b;1b],1,1,and it replays through replayall
+true,0,0,q,2=count tau,1,1,both messages landed in the caller's table
+true,0,0,q,2=updcalls,1,1,once per message on the all-syms path too
+run,0,0,q,"lfna:buildlog[""na"";`naa;2]",1,1,build a log for the early-check narrowing case
+run,0,0,q,@[`.;`naa;:;genschema[]],1,1,the caller owns this schema - naa exists at root
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,resetcap[],1,1,clear the captured log
+true,0,0,q,"not `nab in tables[]",1,1,nab is deliberately NOT defined at root - and the tickerplant does not publish it either
+run,0,0,q,"rna:sub.subscribe[faithfultph[enlist`naa;2;lfna];`naa`nab;`;0b;1b]",1,1,"THE EARLY-CHECK ASYMMETRY - setschema 0b with replay, asking for a table that is absent at root AND not published. narrowtabs drops it, so it was never going to be part of the subscription and must not be required at root"
+true,0,0,q,(enlist`naa)~rna`subtables,1,1,the subscription is the narrowed list
+true,0,0,q,"logged[`warn;""does not publish""]",1,1,nab was dropped with a warn rather than an early throw
+true,0,0,q,"not logged[`error;""setschema is 0b""]",1,1,and the tables-exist refusal did NOT fire for a table the request was never going to include
+true,0,0,q,2=count naa,1,1,the log replayed into the caller's own table
+fail,0,0,q,"sub.subscribe[faithfultph[`nac`nad;2;lfna];`nac`nad;`;0b;1b]",1,1,the guard still bites when the tickerplant DOES publish the table and it is genuinely missing at root - sendtabs keeps it
+
+comment,,,,,,,a malformed tickerplant response is rejected rather than half-applied
+fail,0,0,q,sub.subscribe[mocktphthrows;`;`;1b;1b],1,1,a tickerplant that throws is reported
+fail,0,0,q,sub.subscribe[mocktphbadshape;`;`;1b;1b],1,1,a non-dictionary response is rejected
+fail,0,0,q,sub.subscribe[mocktphmissingkeys;`;`;1b;1b],1,1,a response missing the required keys is rejected
+fail,0,0,q,sub.subscribe[mocktphnotables;`;`;1b;1b],1,1,a response carrying no schemas is rejected
+
+comment,,,,,,,the SCHEMA half of a schemalist entry must be a table - createtables plants any value at root, so this is the guard that stops a bad tickerplant doing it
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`schdict;`a`b!1 2);enlist(1;lfa);(enlist `schdict)!enlist 1];`;`;1b;0b]",1,1,a dict schema is rejected instead of being planted at root under the table name
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`schatom;42);enlist(1;lfa);(enlist `schatom)!enlist 1];`;`;1b;0b]",1,1,an atom schema is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`schnocol;([]));enlist(1;lfa);(enlist `schnocol)!enlist 1];`;`;1b;0b]",1,1,a column-less () is 99h not a table and is rejected - replaying into it could never work
+run,0,0,q,"sub.subscribe[mkrawtph[enlist(`schkeyed;([id:`long$()]v:`long$()));();(enlist `schkeyed)!enlist 0];`;`;1b;0b]",1,1,but a KEYED table IS accepted - .Q.qt was chosen over 98h=type which would have wrongly rejected it
+true,0,0,q,`schkeyed in tables[],1,1,and the keyed schema really was defined at root
+true,0,0,q,not `schdict in key `.,1,1,the rejected dict schema left nothing behind at root
+fail,0,0,q,"sub.subscribe[mkrawtph[((`duptab;genschema[]);(`duptab;genschema[]));enlist(1;lfa);(enlist `duptab)!enlist 1];`;`;1b;0b]",1,1,a schemalist naming a table twice is rejected - it would otherwise duplicate subtables and the registry tabs
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"@[{sub.subscribe[mkrawtph[enlist(`schdict2;`a`b!1 2);enlist(1;lfa);(enlist `schdict2)!enlist 1];`;`;1b;0b]};(::);{[e] e}]",1,1,trigger the non-table schema rejection
+true,0,0,q,"logged[`error;""table as the schema""]",1,1,the rejection was logged before it was signalled
+
+comment,,,,,,,logfilelist gets the same shape discipline schemalist already has - and a SIGN check a shape check cannot give
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);42;(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a non-list logfilelist is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);enlist enlist 1;(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a one-element entry is not a (count;logfile) pair
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);enlist(""x"";`:/tmp/x);(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a non-integer message count is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`lfltab;genschema[]);enlist(1;""notasym"");(enlist `lfltab)!enlist 1];`;`;1b;0b]",1,1,a non-symbol log file is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`negtab;genschema[]);enlist(-1;`:/tmp/neg);(enlist `negtab)!enlist 1];`;`;1b;1b]",1,1,a negative message count is malformed - not silently treated as nothing to replay
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`negtab;genschema[]);enlist(-1;`:/tmp/neg);(enlist `negtab)!enlist 1];`;`;1b;0b]",1,1,and rejected with replay 0b too - proving the guard sits in fetchdetails not behind the replay branch
+
+comment,,,,,,,rowcounts shape - a DICT and an EMPTY LIST are both real producer shapes. chainedtp builds its response dict as (`schema`icounts`i`logfile`d)!() which broadcasts () to every value and only overwrites icounts when its OWN subscribesyms is ` - so () is legitimate and TorQ's sctp.q guards for it
+run,0,0,q,"lfrc:buildlog[""rc"";`rcone;2]",1,1,build a log for the rowcounts cases
+run,0,0,q,"rrc:sub.subscribe[mkrawtph[enlist(`rcone;genschema[]);enlist(2;lfrc);()];enlist`rcone;`;1b;0b]",1,1,an EMPTY LIST rowcounts is accepted - the chained tickerplant shape
+true,0,0,q,()~rrc`rowcounts,1,1,and is passed through to the caller untouched
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`rctwo;genschema[]);enlist(2;lfrc);42];enlist`rctwo;`;1b;0b]",1,1,an ATOM rowcounts comes from no real producer and is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`rcthree;genschema[]);enlist(2;lfrc);([]a:())];enlist`rcthree;`;1b;0b]",1,1,a TABLE rowcounts is rejected - an empty table would slip past a bare count check
+
+comment,,,,,,,the 0W message count - a segmented tickerplant sets msgcount:0Wj for every CLOSED log under replayperiod `day (stplog.q getlogs[`day]). it means REPLAY EVERYTHING and must not read as a partial history
+run,0,0,q,"lfow:buildlog[""ow"";`omicron;4]",1,1,build a clean four message log
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"row:sub.subscribe[mkrawtph[enlist(`omicron;genschema[]);enlist(0Wj;lfow);(enlist `omicron)!enlist 0Wj];enlist`omicron;`;1b;1b]",1,1,subscribe to a tickerplant reporting 0W
+true,0,0,q,4=count omicron,1,1,0W replayed the whole log rather than being refused
+true,0,0,q,4=updcalls,1,1,and drove upd exactly once per logged message
+run,0,0,q,"lfowc:buildlog[""owc"";`omicronb;4]",1,1,build a second four message log
+run,0,0,q,truncatelog[lfowc;12],1,1,lop the tail so the last message is unreadable
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,resetupd[],1,1,reset the upd counter
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`omicronb;genschema[]);enlist(0Wj;lfowc);(enlist `omicronb)!enlist 0Wj];enlist`omicronb;`;1b;1b]",1,1,0W over a TRUNCATED log is refused - the whole log was asked for so a readable prefix would be a silently incomplete history
+true,0,0,q,"logged[`error;""incomplete history""]",1,1,and the refusal reached the log
+true,0,0,q,0=updcalls,1,1,nothing was replayed - the process is untouched exactly as the finite-count preflight promises
+true,0,0,q,not `omicronb in tables[`.],1,1,and no table was defined
+run,0,0,q,"row0:sub.subscribe[mkrawtph[enlist(`omicronc;genschema[]);enlist(0Wj;lfowc);(enlist `omicronc)!enlist 0Wj];enlist`omicronc;`;1b;0b]",1,1,the same truncated log with replay 0b is fine - preflight only runs on the replay path
+
+comment,,,,,,,a SHARED log - a segmented tickerplant in singular or periodic multilog mode writes every table to ONE file and reports it once PER TABLE with different counts. replaying it once per entry would re-apply the head of the file
+run,0,0,q,"lfsh:buildsharedlog[""sh"";`shalpha`shalpha`shalpha`shbeta`shalpha`shbeta]",1,1,one physical log holding four shalpha and two shbeta messages interleaved
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"rsh:sub.subscribe[mkrawtph[((`shalpha;genschema[]);(`shbeta;genschema[]));((4;lfsh);(2;lfsh));`shalpha`shbeta!4 2];`shalpha`shbeta;`;1b;1b]",1,1,subscribe to both tables of the shared log
+true,0,0,q,4=count shalpha,1,1,every shalpha message arrived - the old per-entry replay gave five
+true,0,0,q,2=count shbeta,1,1,every shbeta message arrived - the old per-entry replay gave one
+true,0,0,q,6=updcalls,1,1,the file was replayed ONCE in full rather than once per entry
+true,0,0,q,"logged[`warn;""more than once""]",1,1,and the shared-log tickerplant was reported at warn
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"lfun:buildlog[""un"";`shgamma;6]",1,1,build a log that is NOT shared
+run,0,0,q,"lfun2:buildlog[""un2"";`shdelta;3]",1,1,and a second distinct log
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"rsu:sub.subscribe[mkrawtph[((`shgamma;genschema[]);(`shdelta;genschema[]));((2;lfun);(3;lfun2));`shgamma`shdelta!2 3];`shgamma`shdelta;`;1b;1b]",1,1,two DISTINCT files in one response
+true,0,0,q,2=count shgamma,1,1,an unshared file keeps its own count rather than being replayed in full
+true,0,0,q,3=count shdelta,1,1,and so does the other
+true,0,0,q,"not logged[`warn;""more than once""]",1,1,no shared-log warn is raised when nothing is actually shared
+run,0,0,q,"lfsc:buildsharedlog[""sc"";`shepsilon`shepsilon`shepsilon`shzeta]",1,1,a shared log that is also truncated
+run,0,0,q,truncatelog[lfsc;12],1,1,lop the tail
+run,0,0,q,resetcap[],1,1,clear the captured log
+fail,0,0,q,"sub.subscribe[mkrawtph[((`shepsilon;genschema[]);(`shzeta;genschema[]));((3;lfsc);(1;lfsc));`shepsilon`shzeta!3 1];`shepsilon`shzeta;`;1b;1b]",1,1,a CORRUPT shared log is refused too - the collapse resolves to replay-everything so the corruption guard must cover it as well as the 0W sentinel
+true,0,0,q,"logged[`error;""incomplete history""]",1,1,and it fails with the same incomplete-history message
+run,0,0,q,resetcap[],1,1,clear the captured log
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(`sheta;genschema[]);((2;lfun);(2;lfun));(enlist `sheta)!enlist 2];enlist`sheta;`;1b;1b]",1,1,an EXACT duplicate entry cannot come from any shipped tickerplant - getlogs applies distinct itself - so it is rejected rather than collapsed
+true,0,0,q,"logged[`error;""repeats an identical""]",1,1,and the rejection reached the log
+
+comment,,,,,,,a WHOLE-FILE replay on the all-tables path is narrowed to the offered tables. a segmented tickerplant opens logs for tables[`.] except `currlog but publishes a strictly smaller set and .stpps.upd applies no membership check before logging - so one shared file can legitimately carry tables it declined to offer a schema for
+run,0,0,q,"lfnw:buildsharedlog[""nw"";`nwa`nwx`nwb`nwa`nwx`nwa]",1,1,one shared log carrying a third table nwx the tickerplant will NOT offer a schema for
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"rnw:sub.subscribe[mkrawtph[((`nwa;genschema[]);(`nwb;genschema[]));((3;lfnw);(1;lfnw));`nwa`nwb!3 1];`;`;1b;1b]",1,1,subscribe to ALL tables and ALL syms - the path that used to replay the raw file
+true,0,0,q,3=count nwa,1,1,every offered message still arrived
+true,0,0,q,1=count nwb,1,1,and so did the other table's
+true,0,0,q,not `nwx in tables[`.],1,1,THE REAL ASSERTION - the unoffered table was never driven into upd so it was never created at root
+true,0,0,q,4=updcalls,1,1,and only the four offered messages reached upd - the two nwx ones were filtered out
+true,0,0,q,(`nwa`nwb)~rnw`subtables,1,1,subtables is unchanged by the narrowing
+run,0,0,q,"lfnv:buildsharedlog[""nv"";`nva`nvy`nva]",1,1,the 0W day sentinel resolves to the same whole-file replay so it must be narrowed too
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"sub.subscribe[mkrawtph[enlist(`nva;genschema[]);enlist(0Wj;lfnv);(enlist `nva)!enlist 0Wj];`;`;1b;1b]",1,1,a single 0W entry over a log that also holds an unoffered table
+true,0,0,q,2=count nva,1,1,the whole file was read so both nva messages arrived
+true,0,0,q,not `nvy in tables[`.],1,1,and the unoffered table was filtered out of the whole-file replay
+true,0,0,q,2=updcalls,1,1,only the offered messages reached upd
+run,0,0,q,"lfnp:buildlog[""np"";`nwp;3]",1,1,a per-table log is NOT narrowed - the tickerplant returned that file BECAUSE it belongs to a table it offered
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"sub.subscribe[mkrawtph[enlist(`nwp;genschema[]);enlist(3;lfnp);(enlist `nwp)!enlist 3];`;`;1b;1b]",1,1,all tables and all syms over a finite per-table count
+true,0,0,q,3=count nwp,1,1,the unfiltered fast path still replays it in full
+true,0,0,q,3=updcalls,1,1,and drives upd once per message
+
+comment,,,,,,,a FAITHFUL tickerplant - subdetails is .ps.subscribe each-left and .u.sub answers an unpublished name with the pair (name;"Table ... not in list") rather than omitting it. one bad name would otherwise sink the whole call so the request is narrowed against tablelist first exactly as legacy reducesubs does
+run,0,0,q,"lffa:buildlog[""fa"";`fgood;2]",1,1,build a log for the faithful producer
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"rfa:sub.subscribe[mkfaithfultph[`fgood`fother;2;lffa];`fgood`ftypo;`;1b;1b]",1,1,ask for one published table and one the tickerplant does not publish
+true,0,0,q,(enlist`fgood)~rfa`subtables,1,1,the published table was subscribed - one bad name does not sink the whole call
+true,0,0,q,2=count fgood,1,1,and it was replayed normally
+true,0,0,q,not `ftypo in tables[`.],1,1,the unpublished table was never defined
+true,0,0,q,"logged[`warn;""does not publish""]",1,1,and the drop was reported with the real reason rather than as a missing schema
+true,0,0,q,"not logged[`error;""must give a""]",1,1,THE REGRESSION GUARD - the schema guard used to reject the error pair and fail the entire subscribe
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,`ASKEDNAMES set (),1,1,clear the captured remote function names
+fail,0,0,q,"sub.subscribe[mkallnamestph[mkfaithfultph[`fgood`fother;2;lffa]];`fnone1`fnone2;`;1b;1b]",1,1,a request the tickerplant publishes NONE of is refused
+true,0,0,q,"not `subdetails in ASKEDNAMES",1,1,and refused BEFORE subdetails ran so nothing was registered
+true,0,0,q,"logged[`error;""publishes none of the requested""]",1,1,with an error naming the real cause
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"lffb:buildlog[""fb"";`fall;3]",1,1,build a second log
+run,0,0,q,"rfb:sub.subscribe[mkfaithfultph[enlist`fall;3;lffb];`;`;1b;1b]",1,1,an all-tables subscribe against the faithful producer
+true,0,0,q,(enlist`fall)~rfb`subtables,1,1,the sentinel was resolved from tablelist and the concrete list sent onward
+true,0,0,q,3=count fall,1,1,and the replay ran normally
+true,0,0,q,"not logged[`warn;""does not publish""]",1,1,nothing is dropped when the request came from tablelist in the first place
+
+comment,,,,,,,guard ordering - asking a tickerplant for its schemas IS .u.sub so it REGISTERS the handle for live delivery and nothing in the protocol can undo that. every guard that does not need the reply therefore runs BEFORE the call
+run,0,0,q,"lfrg:buildlog[""rg"";`rho;2]",1,1,build a log for the ordering cases
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,RHOTPH:tphfor[`rho;2;lfrg],1,1,keep the handle so the subscription can be released again
+run,0,0,q,sub.subscribe[RHOTPH;enlist`rho;`;1b;0b],1,1,take a live subscription on rho
+true,0,0,q,`rho in raze exec tabs from sub.getsubscriptions[] where active,1,1,rho is genuinely held
+run,0,0,q,`ASKEDNAMES set (),1,1,clear the captured remote function names
+fail,0,0,q,"sub.subscribe[mkallnamestph[mktph[enlist(`rhoelse;genschema[]);2;lfrg]];enlist`rho;`;1b;0b]",1,1,a table already held is refused even when the tickerplant no longer offers it - the same caller mistake now gets the same error whatever the tickerplant serves this round
+true,0,0,q,"not `subdetails in ASKEDNAMES",1,1,THE REAL ASSERTION - subdetails was never called so the handle was never registered. tablelist may have been called and that is fine - it is pure
+true,0,0,q,"ASKEDNAMES in (();enlist `tablelist)",1,1,and the only thing asked for was the pure tablelist round trip
+run,0,0,q,`ASKEDNAMES set (),1,1,clear the captured remote function names
+fail,0,0,q,"sub.subscribe[mkallnamestph[mktph[enlist(`rhoelse;genschema[]);2;lfrg]];enlist`rhogone;`;0b;1b]",1,1,setschema 0b with the table undefined at root is refused up front - whether the tickerplant offers it is orthogonal to whether the caller lied about defining it
+true,0,0,q,"not `subdetails in ASKEDNAMES",1,1,and again nothing was registered
+run,0,0,q,`ASKEDNAMES set (),1,1,clear the captured remote function names
+run,0,0,q,"![`.;();0b;enlist`upd]",1,1,remove the root upd a replay drives - functional form of: delete upd from `.
+fail,0,0,q,"sub.subscribe[mkallnamestph[mktph[enlist(`rhoup;genschema[]);2;lfrg]];enlist`rhoup;`;1b;1b]",1,1,replay with no root upd is refused
+true,0,0,q,"not `subdetails in ASKEDNAMES",1,1,that check needs nothing from the reply either so it too runs first
+run,0,0,q,resetupd[],1,1,restore the root upd
+run,0,0,q,"lfov:buildlog[""ov"";`ova;2]",1,1,build a log for the over-offering tablelist case
+run,0,0,q,"@[`.;`ova;:;genschema[]]",1,1,define ova at root but deliberately NOT ovc
+run,0,0,q,"ovtph:{[lf;msg] $[`tablelist~first msg;`ova`ovc;`schemalist`logfilelist`rowcounts`date!(enlist(`ova;genschema[]);enlist(2;lf);(enlist`ova)!enlist 2;D)]}[lfov]",1,1,a tickerplant whose tablelist advertises ovc but whose schemalist declines it
+run,0,0,q,"rov:sub.subscribe[ovtph;`;`;0b;1b]",1,1,all tables with setschema 0b - the early tables-exist check must NOT run against the wider tablelist list here
+true,0,0,q,(enlist`ova)~rov`subtables,1,1,a table tablelist advertises but schemalist declines is not required at root - checking the wider list would refuse a valid subscribe
+true,0,0,q,2=count ova,1,1,and the replay still ran into the caller's own table
+run,0,0,q,`ASKEDNAMES set (),1,1,clear the captured remote function names
+fail,0,0,q,"sub.subscribe[mkallnamestph[mktphnolist[mktph[enlist(`rho;genschema[]);2;lfrg]]];`;`;1b;0b]",1,1,an all-tables subscribe to a tickerplant with NO tablelist cannot be resolved up front so the post-reply copy of the guard is the only one that can catch the duplicate
+true,0,0,q,`subdetails in ASKEDNAMES,1,1,and there the tickerplant HAS been asked - the one residual case the docs name for replay 0b
+true,0,0,q,(enlist`rho)~sub.unsubscribe[RHOTPH],1,1,release rho again so it does not leak into the later cases
+run,0,0,q,"lfrp:buildlog[""rp"";`rhopre;4]",1,1,build a 4-message log for the irreducible case
+run,0,0,q,truncatelog[lfrp;6],1,1,truncate the tail so the log is short
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,`ASKEDNAMES set (),1,1,clear the captured remote function names
+fail,0,0,q,"sub.subscribe[mkallnamestph[mktph[enlist(`rhopre;genschema[]);4;lfrp]];enlist`rhopre;`;1b;1b]",1,1,a short log is the ONE guard that cannot move - the file names only exist in the reply and integrity needs the file read
+true,0,0,q,`subdetails in ASKEDNAMES,1,1,so here the handle really had been registered before the throw
+true,0,0,q,"logged[`error;""already registered with the tickerplant""]",1,1,and the error says so rather than leaving the caller to infer it
+true,0,0,q,"logged[`error;""close the handle before retrying""]",1,1,and names the only remedy the protocol leaves
+
+comment,,,,,,,tablelist - a segmented tickerplant CANNOT be sent the ` all-sentinel (its subdetails hands tabs to .stplg.replaylog which ranks on an atom) so ` is resolved with a tablelist round trip first exactly as legacy does
+run,0,0,q,"lftl:buildlog[""tl"";`taulist;3]",1,1,build a log for the tablelist cases
+run,0,0,q,`ASKEDTABS set `nil,1,1,clear what subdetails was last asked for
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"rtl:sub.subscribe[mktphwithlist[mktph[enlist(`taulist;genschema[]);3;lftl];enlist`taulist];`;`;1b;1b]",1,1,subscribe to ALL tables against a tickerplant that serves tablelist
+true,0,0,q,(enlist`taulist)~ASKEDTABS,1,1,subdetails received the RESOLVED table list - not the bare ` a segmented tickerplant would rank on
+true,0,0,q,"logged[`info;""resolved ` to""]",1,1,and the resolution was logged
+true,0,0,q,3=count taulist,1,1,the replay still ran normally through the all-tables path
+true,0,0,q,(enlist`taulist)~rtl`subtables,1,1,and the returned subtables are unchanged by the resolution
+run,0,0,q,"lftm:buildlog[""tm"";`taumiss;3]",1,1,build a second log
+run,0,0,q,`ASKEDTABS set `nil,1,1,clear what subdetails was last asked for
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"rtm:sub.subscribe[mktphnolist[mktph[enlist(`taumiss;genschema[]);3;lftm]];`;`;1b;1b]",1,1,a tickerplant with NO tablelist - a chained one handles ` itself so this must fall back rather than fail
+true,0,0,q,`~ASKEDTABS,1,1,the ` sentinel was sent onward unchanged
+true,0,0,q,"logged[`warn;""call failed""]",1,1,and the fallback was reported at warn
+true,0,0,q,3=count taumiss,1,1,the subscription still succeeded
+fail,0,0,q,"sub.init[deps[],enlist[`tablelistfunc]!enlist ""tablelist""]",1,1,init rejects a tablelistfunc that is not a symbol
+run,0,0,q,"sub.init[deps[],enlist[`tablelistfunc]!enlist `mylist]",1,1,init accepts a configured tablelistfunc
+run,0,0,q,"lftc:buildlog[""tc"";`tauconf;2]",1,1,build a log for the configured entry point
+run,0,0,q,`ASKEDNAMES set (),1,1,clear the captured remote function names
+run,0,0,q,"rtc:sub.subscribe[mkallnamestph[mktph[enlist(`tauconf;genschema[]);2;lftc]];`;`;1b;1b]",1,1,subscribe with the configured tablelistfunc
+true,0,0,q,`mylist~first ASKEDNAMES,1,1,the CONFIGURED tablelist name was the FIRST thing asked for
+true,0,0,q,`subdetails~last ASKEDNAMES,1,1,and subdetails followed it - the resolution happens before the bundled call not instead of it
+run,0,0,q,sub.init[deps[]],1,1,restore the default configuration
+
+comment,,,,,,,setschema 0b must not touch an already-populated table
+run,0,0,q,"lfg:buildlog[""g"";`theta;3]",1,1,build a theta log
+run,0,0,q,"@[`.;`theta;:;([]time:enlist .z.p;sym:enlist`X;price:enlist 9.9;size:enlist 1i;note:enlist`preexisting)]",1,1,pre-define theta with an extra column and a row
+run,0,0,q,sub.subscribe[tphfor[`theta;3;lfg];enlist`theta;`;0b;0b],1,1,subscribe with setschema and replay both off
+true,0,0,q,`note in cols theta,1,1,the caller's own schema was left alone
+true,0,0,q,1=count theta,1,1,the caller's existing row was not discarded
+
+comment,,,,,,,a tickerplant with nothing logged yet
+run,0,0,q,"lfh:buildlog[""h"";`iota;0]",1,1,build an empty log
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[mktph[enlist(`iota;genschema[]);0;lfh];enlist`iota;`;1b;1b],1,1,subscribe when the tp has logged nothing
+true,0,0,q,0=count iota,1,1,the table was created empty
+true,0,0,q,0=updcalls,1,1,no replay was attempted
+
+comment,,,,,,,a segmented tickerplant also reports logdir
+run,0,0,q,"lfi:buildlog[""i"";`kappa;2]",1,1,build a kappa log
+run,0,0,q,rk:sub.subscribe[mktphlogdir[`kappa;2;lfi];enlist`kappa;`;1b;1b],1,1,subscribe to a tp that also reports logdir
+true,0,0,q,`logdir in key rk,1,1,logdir is passed through when the tickerplant supplies it
+
+comment,,,,,,,input validation - every public argument is checked and the error is logged before it is thrown
+fail,0,0,q,"sub.subscribe[""notahandle"";`;`;1b;1b]",1,1,subscribe rejects a handle that is neither an int nor a function
+fail,0,0,q,"sub.subscribe[tphfor[`x;0;lfa];""trade"";`;1b;1b]",1,1,subscribe rejects a non-symbol tabs
+fail,0,0,q,"sub.subscribe[tphfor[`x;0;lfa];`;""S1"";1b;1b]",1,1,subscribe rejects a non-symbol syms
+fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`;`;1;1b],1,1,subscribe rejects a non-boolean setschema
+fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`;`;1b;1],1,1,subscribe rejects a non-boolean replay
+fail,0,0,q,sub.unsubscribe[`notahandle],1,1,unsubscribe rejects a handle that is neither an int nor a function
+fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`$();`;1b;0b],1,1,an empty tabs vector is rejected rather than blamed on the tickerplant
+fail,0,0,q,sub.subscribe[tphfor[`x;0;lfa];`;`$();1b;0b],1,1,an empty syms vector is rejected - it would otherwise replay zero rows and report success
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"@[{sub.subscribe[tphfor[`x;0;lfa];`;`$();1b;0b]};(::);{[e] e}]",1,1,trigger the empty-syms rejection
+true,0,0,q,"logged[`error;""empty symbol vector""]",1,1,the empty-selector rejection was logged before it was signalled
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"@[{sub.subscribe[""notahandle"";`;`;1b;1b]};(::);{[e] e}]",1,1,trigger a validation failure
+true,0,0,q,"logged[`error;""tph must be""]",1,1,the validation failure was logged before it was signalled
+
+comment,,,,,,,payload shapes - a tickerplant may log a list of columns; a table; a dict; or a single atom row
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"lpd:builddictlog[""pd"";`dicttab;3]",1,1,build a log whose payloads are dicts (99h)
+run,0,0,q,sub.subscribe[tphfor[`dicttab;3;lpd];enlist`dicttab;enlist`S1;1b;1b],1,1,sym-filtered subscribe over a dict payload
+true,0,0,q,1=count dicttab,1,1,a dict payload is filtered by column name
+run,0,0,q,"lpa:buildatomlog[""pa"";`atomtab;3]",1,1,build a log whose payloads are single atom rows
+run,0,0,q,sub.subscribe[tphfor[`atomtab;3;lpa];enlist`atomtab;enlist`S1;1b;1b],1,1,sym-filtered subscribe over an atom-row payload
+true,0,0,q,1=count atomtab,1,1,a single atom row is normalised and filtered correctly
+run,0,0,q,"lpn:buildnosymlog[""pn"";`nosymtab;3]",1,1,build a log for a table that has no sym column
+run,0,0,q,sub.subscribe[mkrawtph[enlist(`nosymtab;nosymschema[]);enlist (3;lpn);(enlist `nosymtab)!enlist 3];enlist`nosymtab;enlist`S1;1b;1b],1,1,sym-filter a table with no sym column
+true,0,0,q,3=count nosymtab,1,1,a table with no sym column passes through unfiltered rather than erroring
+
+comment,,,,,,,several log files - a segmented tickerplant writes one log per table
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"lm1:buildlog[""m1"";`multia;3]",1,1,build the first table's log
+run,0,0,q,"lm2:buildlog[""m2"";`multib;2]",1,1,build the second table's log
+run,0,0,q,mt:mkrawtph[((`multia;genschema[]);(`multib;genschema[]));((3;lm1);(2;lm2));`multia`multib!(3;2)],1,1,a tickerplant reporting two separate log files
+run,0,0,q,rm:sub.subscribe[mt;`multia`multib;`;1b;1b],1,1,subscribe across both log files
+true,0,0,q,3=count multia,1,1,the first log replayed
+true,0,0,q,2=count multib,1,1,the second log replayed
+true,0,0,q,5=updcalls,1,1,every message from both logs reached the root upd exactly once
+true,0,0,q,`multia`multib~rm`subtables,1,1,both requested tables are reported as subscribed
+
+comment,,,,,,,subdetailsfunc - the tickerplant-side entry point name is configurable
+run,0,0,q,"lov:buildlog[""ov"";`ovtab;2]",1,1,build a log
+run,0,0,q,"sub.init[deps[],enlist[`subdetailsfunc]!enlist `mysubdetails]",1,1,re-init pointing at a differently named tickerplant function
+run,0,0,q,ntph:mknamedtph[tphfor[`ovtab;2;lov]],1,1,a responder that records which name it was asked for
+run,0,0,q,sub.subscribe[ntph;enlist`ovtab;`;1b;1b],1,1,subscribe
+true,0,0,q,`mysubdetails~CALLEDWITH,1,1,subscribe called the CONFIGURED remote function name not the default
+run,0,0,q,sub.init[deps[]],1,1,restore the default subdetailsfunc
+fail,0,0,q,"sub.init[deps[],enlist[`subdetailsfunc]!enlist ""nope""]",1,1,a non-symbol subdetailsfunc is rejected on RE-init as well as first init
+run,0,0,q,"lps:buildlog[""ps"";`pstab;2]",1,1,build a log
+run,0,0,q,sub.subscribe[tphfor[`pstab;2;lps];enlist`pstab;`;1b;1b],1,1,the rejected re-init left the working entry point intact - config is validated before any state is mutated
+
+comment,,,,,,,what the tickerplant reports about its logs - unreadable; absent; and empty
+fail,0,0,q,"sub.subscribe[tphfor[`ghosttab;3;hsym`$BASE,""/nosuchlog""];enlist`ghosttab;`;1b;1b]",1,1,a log file that cannot be read is reported rather than silently skipped
+fail,0,0,q,sub.subscribe[mkrawtph[enlist(`nulltab;genschema[]);enlist (3;`);(enlist `nulltab)!enlist 3];enlist`nulltab;`;1b;1b],1,1,a message count with no log file is rejected
+run,0,0,q,"lzl:buildlog[""zl"";`zerotab;0]",1,1,build an empty log file
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,sub.subscribe[mkrawtph[enlist(`zerotab;genschema[]);enlist (0;lzl);(enlist `zerotab)!enlist 0];enlist`zerotab;`;1b;1b],1,1,a zero message count alongside a real log file
+true,0,0,q,0=updcalls,1,1,nothing was replayed
+run,0,0,q,"lnd:writelogas[""nd"";""plainlog"";msgfor[`ndtab] each til 2]",1,1,build a log whose file name carries no date
+run,0,0,q,rnd:sub.subscribe[mkrawtph[enlist(`ndtab;genschema[]);enlist (2;lnd);(enlist `ndtab)!enlist 2];enlist`ndtab;`;1b;1b],1,1,subscribe against it
+true,0,0,q,2026.08.06=rnd`tplogdate,1,1,tplogdate falls back to the date the tickerplant reported when the file name carries none
+
+comment,,,,,,,all tables with a narrowed sym list - and the guard is table-precise not blanket
+run,0,0,q,"lan:buildlog[""an"";`alltab;4]",1,1,build a 4-sym log
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,ran:sub.subscribe[tphfor[`alltab;4;lan];`;enlist`S2;1b;1b],1,1,subscribe to ALL tables but a single sym while other subscriptions are live
+true,0,0,q,1=count alltab,1,1,the sym filter applies when all tables are subscribed
+true,0,0,q,(enlist`alltab)~ran`subtables,1,1,an all-tables subscribe resolves to what this tickerplant offers
+
+comment,,,,,,,a bare symbol atom names one table or sym - legacy accepted it and so does this
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"lat:buildlog[""at"";`atomsel;4]",1,1,build a 4-sym log
+run,0,0,q,rat:sub.subscribe[tphfor[`atomsel;4;lat];`atomsel;`;1b;1b],1,1,pass tabs as a symbol ATOM rather than a one-element vector
+true,0,0,q,4=count atomsel,1,1,an atom table selector is normalised rather than throwing a bare type error
+true,0,0,q,(enlist`atomsel)~rat`subtables,1,1,subtables is still a list
+run,0,0,q,"las:buildlog[""as"";`atomsymsel;4]",1,1,build another 4-sym log
+run,0,0,q,sub.subscribe[tphfor[`atomsymsel;4;las];`atomsymsel;`S1;1b;1b],1,1,pass syms as a symbol ATOM
+true,0,0,q,1=count atomsymsel,1,1,an atom sym selector filters correctly
+true,0,0,q,(enlist`S1)~last exec syms from sub.getsubscriptions[],1,1,the registry stores the normalised list
+
+comment,,,,,,,a replay drives the ROOT upd - without one every message would be silently discarded
+run,0,0,q,"lnu:buildlog[""nu"";`noupdtab;2]",1,1,build a log
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,![`.;();0b;enlist`upd],1,1,remove the root upd entirely
+fail,0,0,q,sub.subscribe[tphfor[`noupdtab;2;lnu];enlist`noupdtab;enlist`S1;1b;1b],1,1,replay with no root upd is refused rather than silently discarding every message
+true,0,0,q,not `noupdtab in tables[],1,1,nothing was defined before the refusal
+true,0,0,q,not `upd in key `.,1,1,and no no-op upd was left behind at root for the live feed to vanish into
+true,0,0,q,"logged[`error;""no upd is defined at root""]",1,1,the refusal was logged before it was signalled
+run,0,0,q,sub.subscribe[tphfor[`noupdtab;2;lnu];enlist`noupdtab;`;1b;0b],1,1,subscribing WITHOUT replay needs no root upd
+run,0,0,q,resetupd[],1,1,restore the root upd
+
+comment,,,,,,,a malformed schemalist is rejected cleanly instead of surfacing as a bare rank error
+run,0,0,q,"lbp:buildlog[""bp"";`badpairtab;1]",1,1,build a log
+fail,0,0,q,sub.subscribe[mkrawtph[enlist(`badpairtab;genschema[];`extra);enlist (1;lbp);(enlist `badpairtab)!enlist 1];enlist`badpairtab;`;1b;0b],1,1,a three element schemalist entry is rejected
+fail,0,0,q,"sub.subscribe[mkrawtph[enlist(""notasym"";genschema[]);enlist (1;lbp);(enlist `badpairtab)!enlist 1];enlist`badpairtab;`;1b;0b]",1,1,a non-symbol table name is rejected
+fail,0,0,q,sub.subscribe[mkrawtph[42;enlist (1;lbp);(enlist `badpairtab)!enlist 1];enlist`badpairtab;`;1b;0b],1,1,a schemalist that is not a list is rejected
+run,0,0,q,sub.subscribe[mkrawtph[((`okpairtab;genschema[]);());enlist (1;lbp);(enlist `okpairtab)!enlist 1];enlist`okpairtab;`;1b;0b],1,1,an EMPTY schemalist entry is still tolerated as legacy does
+true,0,0,q,`okpairtab in tables[],1,1,the valid entry alongside the empty one was still defined
+
+comment,,,,,,,lifecycle abuse - teardown/re-init cycles must leave the module usable and the registry intact
+run,0,0,q,nlife:count sub.getsubscriptions[],1,1,record the registry size before the cycle
+run,0,0,q,sub.teardown[],1,1,tear down
+run,0,0,q,sub.teardown[],1,1,and again - a release path must be safe to call twice
+true,0,0,q,not `subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,the observer really is gone
+run,0,0,q,"llife:buildlog[""life"";`lifetab;2]",1,1,build a log for the post-teardown subscribe
+run,0,0,q,resetcap[],1,1,clear the captured log
+fail,0,0,q,sub.subscribe[tphfor[`lifetab;2;llife];enlist`lifetab;`;1b;0b],1,1,a NEW subscription after teardown is REFUSED - with no .z.pc observer a dead tickerplant would report live until kdb+ reissued the handle number and for ever after that
+true,0,0,q,"logged[`error;""call init again""]",1,1,and the error names the recovery rather than degrading silently
+true,0,0,q,nlife=count sub.getsubscriptions[],1,1,nothing was recorded
+run,0,0,q,sub.getsubscriptions[],1,1,READING the registry still works - a shutdown path needs it
+run,0,0,q,sub.unsubscribe[4i],1,1,and so does releasing - only taking NEW subscriptions is withdrawn
+run,0,0,q,sub.init[deps[]],1,1,re-init after teardown
+true,0,0,q,`subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,re-init reinstalled the observer
+comment,,,,,,,an init that dies at the registration must not leave a module that LOOKS initialised and subscribable - .z.m.subscriptions is assigned before the register call so initialised[] already reports true by then
+run,0,0,q,resetcap[],1,1,clear the captured log
+fail,0,0,q,"sub.init[`log`handlers!(caplog;throwingregdep[])]",1,1,init surfaces a register failure rather than swallowing it
+run,0,0,q,"lffi:buildlog[""fi"";`fitab;2]",1,1,build a log for the failed-init case
+fail,0,0,q,sub.subscribe[tphfor[`fitab;2;lffi];enlist`fitab;`;1b;0b],1,1,and subscribing is then refused - the observing flag is cleared BEFORE the register attempt so a failure leaves it false rather than unset or stale
+true,0,0,q,"logged[`error;""observer is not installed""]",1,1,with a di.subscriptions message that reached the log - reading an unset flag would have died with a bare q error that bypasses raiseerror entirely
+run,0,0,q,sub.init[deps[]],1,1,a good init recovers
+true,0,0,q,`subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,and reinstalls the observer
+run,0,0,q,sub.subscribe[tphfor[`lifetab;2;llife];enlist`lifetab;`;1b;0b],1,1,and subscribing works again
+true,0,0,q,1=(count sub.getsubscriptions[])-nlife,1,1,the subscription was recorded and the registry survived the cycle rather than being cleared
+run,0,0,q,"sub.init[deps[],enlist[`subdetailsfunc]!enlist `otherentry]",1,1,re-init with a different tickerplant entry point
+run,0,0,q,sub.init[deps[]],1,1,and back to the default
+true,0,0,q,0=count sub.unsubscribe[{[m] m}],1,1,unsubscribe on a handle never subscribed returns empty rather than throwing
+
+
+comment,,,,,,,unsubscribe releases at the TICKERPLANT when a release verb is configured. without one it can only drop local rows and the tickerplant keeps publishing everything the connection ever asked for - measured against a live segmented tickerplant
+run,0,0,q,"lfur:buildlog[""ur"";`urtab;2]",1,1,build a log for the release cases
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"sub.init[deps[],enlist[`unsubscribefunc]!enlist `releaseme]",1,1,init with a release verb configured
+run,0,0,q,`RELEASED set `nil,1,1,clear what the tickerplant was asked to release
+run,0,0,q,"urtph:mkreleasingtph[tphfor[`urtab;2;lfur]]",1,1,a tickerplant that answers the release verb
+run,0,0,q,sub.subscribe[urtph;enlist`urtab;`;1b;0b],1,1,subscribe
+true,0,0,q,(enlist`urtab)~sub.unsubscribe[urtph],1,1,unsubscribe returns the released table
+true,0,0,q,(enlist`urtab)~RELEASED,1,1,THE FIX - the tickerplant was actually asked to release it rather than only local rows being dropped
+true,0,0,q,"logged[`info;""tickerplant released""]",1,1,and the real release was logged
+true,0,0,q,"not logged[`warn;""released locally only""]",1,1,so the local-only warning is NOT emitted
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,sub.subscribe[urtph;enlist`urtab;`;1b;0b],1,1,re-subscribe on the same handle
+fail,0,0,q,"sub.init[deps[],enlist[`unsubscribefunc]!enlist ""releaseme""]",1,1,a non-symbol unsubscribefunc is rejected
+run,0,0,q,sub.unsubscribe[urtph],1,1,release again
+run,0,0,q,sub.init[deps[]],1,1,back to the default - no release verb
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,sub.subscribe[urtph;enlist`urtab;`;1b;0b],1,1,subscribe with no release verb configured
+run,0,0,q,sub.unsubscribe[urtph],1,1,unsubscribe
+true,0,0,q,"logged[`warn;""released locally only""]",1,1,now it says plainly that only local rows were dropped
+true,0,0,q,"logged[`warn;""no unsubscribefunc configured""]",1,1,and names the reason
+
+comment,,,,,,,resubscribe - legacy retrysubscription (subscriptions.q:155) ported to this module's shape. the module keeps what was subscribed. the caller supplies the new handle. setschema 0b and replay 0b exactly as legacy does so a reconnect does not double-apply history
+run,0,0,q,"lfrs:buildlog[""rs"";`rstab;2]",1,1,build a log for the reconnect cases
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,rsold:tphfor[`rstab;2;lfrs],1,1,the original tickerplant handle
+run,0,0,q,sub.subscribe[rsold;enlist`rstab;`;1b;1b],1,1,subscribe and replay
+true,0,0,q,2=count rstab,1,1,history replayed once
+run,0,0,q,markdeadfor[rsold],1,1,the tickerplant drops - drive the real .z.pc chain di.handlers installed
+true,0,0,q,"not any exec active from sub.getsubscriptions[] where handle~\:rsold",1,1,that handle's subscription reports dead
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"rsnew:mkreconnecttph[`rstab;2;lfrs]",1,1,a NEW handle to the same tickerplant
+true,0,0,q,"`rstab in sub.resubscribe[rsnew]",1,1,resubscribe re-establishes the dropped subscription
+true,0,0,q,sub.subscribed[],1,1,and it reports live again
+true,0,0,q,2=count rstab,1,1,THE KEY ASSERTION - it did NOT replay the history a second time
+true,0,0,q,"logged[`info;""re-established""]",1,1,and the reconnect was logged
+true,0,0,q,"not `rstab in sub.resubscribe[rsnew]",1,1,a second call does not re-establish it again - it is live now
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,sub.resubscribe[rsnew],1,1,and a third call on a timer-driven reconnect path
+true,0,0,q,"0=count select from caprows where lvl=`warn",1,1,is SILENT - the replaced dead row was pruned and rows this tickerplant cannot serve are skipped rather than retried and warned about every call
+fail,0,0,q,sub.resubscribe[`nope],1,1,resubscribe validates its handle - a symbol is not one
+true,0,0,q,"`resubscribe in exec name from sub.getapimeta[]",1,1,resubscribe is declared in the api metadata
+
+comment,,,,,,,resubscribe with a PARTIAL narrow - the tickerplant has retired one table of a multi-table subscription. subscribe then SUCCEEDS having re-established only the rest so the row must keep the table that did not come back rather than being reported wholly done and deleted
+run,0,0,q,"pnboth:faithfultph[`pna`pnb;0;`]",1,1,a tickerplant publishing both tables
+run,0,0,q,"sub.subscribe[pnboth;`pna`pnb;`;1b;0b]",1,1,subscribe to both
+run,0,0,q,markdeadfor[pnboth],1,1,the tickerplant drops
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"pnonly:faithfultph[enlist`pna;0;`]",1,1,a NEW handle - but pnb has since been retired at the tickerplant
+run,0,0,q,rpn:sub.resubscribe[pnonly],1,1,re-establish over the new handle
+true,0,0,q,(enlist`pna)~rpn,1,1,only pna came back - resubscribe reports what subscribe ACTUALLY established and not what the row asked for
+true,0,0,q,"logged[`warn;""does not publish""]",1,1,and narrowtabs warned that pnb was dropped
+true,0,0,q,"(enlist`pnb)~raze exec tabs from sub.getsubscriptions[] where not active, handle~\:pnboth",1,1,"THE KEY ASSERTION - the dead row SURVIVES carrying only the table that did not come back. reporting the row's own request as the outcome would have marked it done and deleted it, losing pnb with nothing left to retry"
+true,0,0,q,"any exec active from sub.getsubscriptions[] where handle~\:pnonly",1,1,and pna is live again on the new handle
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,sub.resubscribe[pnonly],1,1,a second call on the timer-driven reconnect path
+true,0,0,q,"0=count select from caprows where lvl=`warn",1,1,is SILENT - the surviving row now holds only pnb which this tickerplant does not publish so it is skipped rather than retried and warned about on every call
+run,0,0,q,"pnback:faithfultph[`pna`pnb;0;`]",1,1,the tickerplant starts publishing pnb again
+true,0,0,q,"`pnb in sub.resubscribe[pnback]",1,1,the table that was kept is retried and re-established once it is available again
+true,0,0,q,"0=count select from sub.getsubscriptions[] where not active, handle~\:pnboth",1,1,"and only NOW is the dead row gone - narrowed to empty and dropped. NB scoped to the dead row: pnback is a structurally identical projection to pnboth so handle~\: alone would match the LIVE row this call just created"
+true,0,0,q,"any exec active from sub.getsubscriptions[] where tabs~\:enlist`pnb",1,1,and pnb is live again on its own row
+
+comment,,,,,,,syms may be a FILTER DICT - TorQ's own shape. rdb.q loads .sub.filterparams from a csv and passes the keyed table straight through as instruments. .u.sub dispatches on its type and legacy replayupd treats it as all-syms for the replay
+run,0,0,q,"lffd:buildlog[""fd"";`fdtab;2]",1,1,build a log for the dict-syms case
+run,0,0,q,resetupd[],1,1,reset the upd counter
+run,0,0,q,"fdsyms:([table:enlist`fdtab] filters:enlist """"; columns:enlist """")",1,1,a filter dict in rdb.q's shape
+run,0,0,q,"rfd:sub.subscribe[tphfor[`fdtab;2;lffd];enlist`fdtab;fdsyms;1b;1b]",1,1,subscribe with a dict rather than a symbol list
+true,0,0,q,(enlist`fdtab)~rfd`subtables,1,1,the dict form is accepted rather than rejected as a bad sym selector
+true,0,0,q,2=count fdtab,1,1,and the replay runs UNFILTERED as legacy replayupd does - the dict is a tickerplant-side filter the log replay cannot evaluate
+
+comment,,,,,,,getsubscriptionhandles - resolve live tickerplant handles by proctype and/or procname. ported from TorQ .sub.getsubscriptionhandles (code/common/subscriptions.q:11)
+comment,,,,,,,di.servers is a HARD dependency reached through init.q's `use`, so there is nothing to inject and no absent-dependency case to test. seeding its registry exercises the REAL getservers
+comment,,,,,,,"BEFORE di.servers is initialised: getsubscriptionhandles must fail with THIS module context and"
+comment,,,,,,,"reach this module log, not propagate a bare di.servers signal past both. these rows must stay"
+comment,,,,,,,above the init row below - once di.servers is initialised the path cannot be reached again
+run,0,0,q,resetcap[],1,1,clear the log capture
+run,0,0,q,"esrv:@[{sub[`getsubscriptionhandles][`;`]};::;{[e] e}]",1,1,call getsubscriptionhandles while di.servers is still uninitialised
+true,0,0,q,"0<count esrv ss ""di.subscriptions: getsubscriptionhandles:""",1,1,the failure carries this module context rather than surfacing as a bare di.servers error
+true,0,0,q,"0<count esrv ss ""di.servers must be initialised""",1,1,and names the module that actually needs wiring
+true,0,0,q,"0<count select from caprows where lvl=`error,ctx=`getsubscriptionhandles",1,1,and it was logged here rather than bypassing this module log
+comment,,,,,,,"di.servers refuses every accessor until its own init has run, so the suite must init it before"
+comment,,,,,,,"driving getservers. it is then TORN DOWN immediately: init registers a .z.pc observer and a"
+comment,,,,,,,"serversretry timer job, and this suite fires .z.pc by hand (markdeadfor) against handles that"
+comment,,,,,,,"overlap the seeded SERVERS rows - di.servers own observer would null them out mid-suite."
+comment,,,,,,,"teardown releases both registrations while leaving the module initialised and its accessors"
+comment,,,,,,,"callable, which is exactly what di.servers separate registered/initialised flags are for"
+run,0,0,q,"realservers[`init][`log`timer`handlers`proctype`procname!(caplog;use`di.timer;handlerdep[];`subtest;`subtest1)]",1,1,init di.servers so its accessors are usable
+run,0,0,q,realservers[`teardown][],1,1,release its .z.pc observer and retry job - the accessors stay callable
+true,0,0,q,"not `servers in exec name from realhandlers[`list][`.z.pc]",1,1,di.servers own .z.pc observer is gone so it cannot interfere with this suite markdeadfor calls
+run,0,0,q,seedservers[],1,1,populate di.servers with four processes - three live, one with a null handle
+true,0,0,q,4=count .m.di.0servers.SERVERS,1,1,the seed landed in di.servers' own state
+true,0,0,q,3=count realservers.getservers[`],1,1,and the real getservers sees three live rows through it
+
+comment,,,,,,,the two call shapes the four shipped TorQ processes actually use
+true,0,0,q,(`tp1`tp2)~exec procname from sub.getsubscriptionhandles[`tickerplant;()],1,1,rdb.q:163 and wdb.q:540 shape - a proctype with () for procname returns the tickerplants
+true,0,0,q,(enlist`tp2)~exec procname from sub.getsubscriptionhandles[`;`tp2],1,1,chainedtp.q:71 and sctp.q:15 shape - ` for proctype with a named process returns just that process
+
+comment,,,,,,,` matches every row and () matches none - and () additionally flips the combine from intersection to union
+true,0,0,q,(`tp1`tp2`rdb1)~exec procname from sub.getsubscriptionhandles[`;`],1,1,both arguments ` returns every live row
+true,0,0,q,0=count sub.getsubscriptionhandles[();()],1,1,both arguments () is a union of nothing with nothing
+true,0,0,q,(enlist`rdb1)~exec procname from sub.getsubscriptionhandles[`rdb;()],1,1,union mode - the proctype match alone
+true,0,0,q,(enlist`tp1)~exec procname from sub.getsubscriptionhandles[();`tp1],1,1,union mode - the procname match alone
+true,0,0,q,(enlist`tp1)~exec procname from sub.getsubscriptionhandles[`tickerplant;`tp1],1,1,intersection mode - both arguments agree on one row
+true,0,0,q,0=count sub.getsubscriptionhandles[`rdb;`tp1],1,1,intersection mode - the arguments disagree so nothing matches
+true,0,0,q,(`tp1`tp2`rdb1)~exec procname from sub.getsubscriptionhandles[`tickerplant`rdb;()],1,1,a proctype LIST matches any of the listed types
+true,0,0,q,(`tp1`rdb1)~exec procname from sub.getsubscriptionhandles[`;`tp1`rdb1],1,1,a procname LIST matches any of the listed names
+true,0,0,q,0=count sub.getsubscriptionhandles[`nosuch;()],1,1,an unmatched proctype returns an empty table rather than signalling
+
+comment,,,,,,,result shape and hygiene
+true,0,0,q,`procname`proctype`w~cols sub.getsubscriptionhandles[`;`],1,1,the result is projected to the three columns a subscribe caller needs
+true,0,0,q,98h=type sub.getsubscriptionhandles[`;`],1,1,the result is a table
+true,0,0,q,not `dead1 in exec procname from sub.getsubscriptionhandles[`;`],1,1,a null handle is never returned - di.servers yields live rows only
+true,0,0,q,"(count distinct r)=count r:sub.getsubscriptionhandles[`tickerplant;`tp1]",1,1,combining the two lookups leaves no duplicate rows
+
+comment,,,,,,,argument validation
+fail,0,0,q,sub.getsubscriptionhandles[42;()],1,1,a non-symbolic proctype is refused
+fail,0,0,q,sub.getsubscriptionhandles[`;42],1,1,a non-symbolic procname is refused
+fail,0,0,q,"sub.getsubscriptionhandles[(1;`a);()]",1,1,a NON-EMPTY general list is refused - only () is meaningful as a general list here
+
+comment,,,,,,,api registration
+true,0,0,q,`getsubscriptionhandles in exec name from sub.getapimeta[],1,1,getsubscriptionhandles is documented in the api metadata
+
+comment,,,,,,,the hard dependency survives a re-init - there is no wiring to lose
+run,0,0,q,sub.init[deps[]],1,1,re-init
+true,0,0,q,(`tp1`tp2)~exec procname from sub.getsubscriptionhandles[`tickerplant;()],1,1,still resolves after a re-init - a module import is not per-init state
+
+
+comment,,,,,,,republish - the di.pubsub half of the FRAMEWORK tier edge. a chained or segmented tickerplant subscribes upstream and serves the SAME tables downstream (TorQ chainedtp.q:71-82 and sctp.q:15-25)
+comment,,,,,,,OFF by default - a plain rdb or wdb subscriber consumes a feed and must not silently start publishing one
+run,0,0,q,sub.init[deps[]],1,1,init with republish left at its default
+run,0,0,q,"lrpa:buildlog[""rpa"";`rpa;2]",1,1,build a log for the default-off case
+run,0,0,q,"sub.subscribe[tphfor[`rpa;2;lrpa];enlist`rpa;`;1b;1b]",1,1,subscribe normally
+true,0,0,q,not `rpa in pubtables[],1,1,the local publisher was NOT told about the table - republish is off
+
+comment,,,,,,,switched on - the tables subscribe defines at root are handed to the local di.pubsub
+run,0,0,q,sub.init[depsrepub[]],1,1,re-init with republish on
+run,0,0,q,"lrpb:buildlog[""rpb"";`rpb;2]",1,1,build a log
+run,0,0,q,"sub.subscribe[tphfor[`rpb;2;lrpb];enlist`rpb;`;1b;1b]",1,1,subscribe with republish on
+true,0,0,q,`rpb in pubtables[],1,1,di.pubsub is now serving the subscribed table downstream
+true,0,0,q,"`time`sym`price`size~cols (.m.di.0pubsub.schemas)`rpb",1,1,and di.pubsub extracted its schema from the table defined at root - the handoff is real, not just a name in a list
+
+comment,,,,,,,di.pubsub setsubtables REPLACES its table list (pubsub.q:119) so the handoff must pass the accumulated union - a per-call list would silently drop earlier subscriptions
+run,0,0,q,"lrpc:buildlog[""rpc"";`rpc;2]",1,1,build a second log
+run,0,0,q,"sub.subscribe[tphfor[`rpc;2;lrpc];enlist`rpc;`;1b;1b]",1,1,subscribe to a SECOND table
+true,0,0,q,`rpc in pubtables[],1,1,the new table is served
+true,0,0,q,`rpb in pubtables[],1,1,AND the first one still is - the second subscribe did not replace it
+
+comment,,,,,,,ADDITIVE - the handoff unions with what the publisher already serves. a registry-only union would drop a table at the next UNRELATED subscribe, because unsubscribe deletes its registry rows. and shrinking toward empty is worse than useless: setsubtables with an empty list makes di.pubsub fall back to publishing EVERY table at root (pubsub.q:125)
+run,0,0,q,"lrpu:buildlog[""rpu"";`rpu;2]",1,1,build a log for the table that will be unsubscribed
+run,0,0,q,rpuh:tphfor[`rpu;2;lrpu],1,1,a tickerplant stand-in
+run,0,0,q,sub.subscribe[rpuh;enlist`rpu;`;1b;1b],1,1,subscribe to it with republish on
+true,0,0,q,`rpu in pubtables[],1,1,it is served
+run,0,0,q,sub.unsubscribe[rpuh],1,1,unsubscribe - this deletes the registry row
+true,0,0,q,`rpu in pubtables[],1,1,unsubscribe alone leaves the publisher untouched
+run,0,0,q,"lrpv:buildlog[""rpv"";`rpv;2]",1,1,build a log for an UNRELATED table
+run,0,0,q,sub.subscribe[tphfor[`rpv;2;lrpv];enlist`rpv;`;1b;1b],1,1,subscribe to something else entirely
+true,0,0,q,`rpv in pubtables[],1,1,the new table is served
+true,0,0,q,`rpu in pubtables[],1,1,"THE REGRESSION - the unsubscribed table SURVIVES. a registry-only union dropped it here, silently stopping republishing at a moment unconnected to the unsubscribe that caused it"
+
+comment,,,,,,,a table that is not defined at root must not be handed over - di.pubsub.init calls value on each name (pubsub.q:84) and would throw
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"lrpd:buildlog[""rpd"";`rpd;2]",1,1,build a log
+run,0,0,q,"sub.subscribe[tphfor[`rpd;2;lrpd];enlist`rpd;`;1b;1b]",1,1,a normal subscribe still succeeds with the guard in place
+true,0,0,q,0=count select from caprows where lvl=`error,1,1,the handoff logged no error - every table it passed on was resolvable at root
+
+comment,,,,,,,init validates the key
+fail,0,0,q,"sub.init[`log`handlers`republish!(caplog;handlerdep[];`yes)]",1,1,a non-boolean republish is rejected
+
+comment,,,,,,,REGRESSION - di.pubsub assigns .z.pc at load. it now chains rather than replacing, but importing it must never cost this module its observer. asserted through the STORED flag, since di.handlers list was MEASURED to keep reporting registrations that no longer fire
+run,0,0,q,sub.init[deps[]],1,1,re-init to reinstall the observer
+run,0,0,q,"lrpe:buildlog[""rpe"";`rpe;2]",1,1,build a log
+run,0,0,q,"rpeh:tphfor[`rpe;2;lrpe]",1,1,a tickerplant stand-in to subscribe over
+run,0,0,q,"sub.subscribe[rpeh;enlist`rpe;`;1b;0b]",1,1,subscribe
+true,0,0,q,"any exec active from sub.getsubscriptions[] where handle~\:rpeh",1,1,the subscription is live
+run,0,0,q,markdeadfor[rpeh],1,1,fire .z.pc for that handle - this only works if our observer is genuinely still wired
+true,0,0,q,"not any exec active from sub.getsubscriptions[] where handle~\:rpeh",1,1,the observer fired and marked it dead - importing di.pubsub did not silently unhook us
+
+
+comment,,,,,,,the handoff's FAILURE path. no natural trigger exists - every table is filtered to ones defined at root before di.pubsub sees them - so it is reached by replacing the module handle init.q captured. without this the branch would ship never having executed
+comment,,,,,,,it must WARN and let the subscribe stand. by the time the handoff runs the subscribe has fully succeeded - schemas defined, replay done, registry committed - so throwing would discard completed work over an optional secondary step, and telling the caller to close the handle would be wrong advice: a retry would hit guardduplicate against the row this call just committed
+run,0,0,q,sub.init[depsrepub[]],1,1,republish on
+run,0,0,q,savedpubsub:.m.di.0subscriptions.pubsub,1,1,keep the real handle
+run,0,0,q,"`.m.di.0subscriptions.pubsub set `setsubtables`init`getsubtables!({[x] '""publisher exploded""};{[] };{[] `symbol$()})",1,1,swap in a publisher whose setsubtables throws
+run,0,0,q,resetcap[],1,1,clear the captured log
+run,0,0,q,"lhx:buildlog[""hx"";`hx;2]",1,1,build a log
+run,0,0,q,rhx:sub.subscribe[tphfor[`hx;2;lhx];enlist`hx;`;1b;1b],1,1,the subscribe RETURNS - a failing handoff no longer signals
+true,0,0,q,99h=type rhx,1,1,"and returns the normal buildreturn dict, not some degraded value"
+true,0,0,q,(enlist`hx)~rhx`subtables,1,1,reporting the table it actually subscribed to
+true,0,0,q,2=count hx,1,1,the replay really happened - the work the throw would have discarded
+true,0,0,q,1=count select from sub.getsubscriptions[] where tabs~\:enlist`hx,1,1,and the registry row is committed and usable
+true,0,0,q,`handoffpublisher in exec ctx from caprows where lvl=`warn,1,1,the failure was logged as a WARN under the handoffpublisher context
+true,0,0,q,"logged[`warn;""publisher exploded""]",1,1,carrying the underlying reason
+true,0,0,q,"logged[`warn;""subscribe itself succeeded""]",1,1,and saying plainly that the subscribe stands
+true,0,0,q,0=count select from caprows where lvl=`error,1,1,"THE DISCRIMINATING ASSERTION - nothing was logged at error level. this is what separates the new behaviour from the old, where raiseerror logged an error and threw"
+true,0,0,q,"not logged[`warn;""already registered""]",1,1,and registerednote is NOT applied - its remedy (close the handle) describes a different failure and would be wrong here
+run,0,0,q,`.m.di.0subscriptions.pubsub set savedpubsub,1,1,restore the real publisher
+run,0,0,q,sub.unsubscribe[tphfor[`hx;2;lhx]],1,1,"release the subscription, which is live and healthy"
+
+comment,,,,,,,resubscribe does NOT re-run the handoff - it re-establishes existing subscriptions over a new handle and never changes the table set, and the handoff is additive so the publisher already has them
+run,0,0,q,sub.init[depsrepub[]],1,1,republish on
+run,0,0,q,"lry:buildlog[""ry"";`ry;2]",1,1,build a log
+run,0,0,q,ryh:tphfor[`ry;2;lry],1,1,a tickerplant stand-in
+run,0,0,q,sub.subscribe[ryh;enlist`ry;`;1b;1b],1,1,subscribe
+true,0,0,q,`ry in pubtables[],1,1,the publisher is serving it
+run,0,0,q,markdeadfor[ryh],1,1,drop the connection
+run,0,0,q,sub.resubscribe[tphfor[`ry;2;lry]],1,1,re-establish over a new handle
+true,0,0,q,`ry in pubtables[],1,1,the publisher still serves it after a resubscribe - nothing was lost by not re-running the handoff
+comment,,,,,,,teardown releases the process-global registration init installed
+run,0,0,q,sub.teardown[],1,1,tear down
+true,0,0,q,not `subscriptions in exec name from realhandlers[`list][`.z.pc],1,1,the .z.pc registration was removed
+
+after,0,0,q,teardownfixture[],1,1,remove the temp log directory

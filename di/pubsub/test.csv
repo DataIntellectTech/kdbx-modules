@@ -1,16 +1,23 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 comment,,,,,,,Setup for server and client testing
 comment,,,,,,,Replace $QHOME (defaults to $HOME) to avoid hard-coding
-run,0,0,q,system"q -p 5010 -q &",1,,start server in background
+comment,,,,,,,NO PORT NUMBER APPEARS ANYWHERE. the server is started with -p 0W so the OS assigns a free port, and it writes that port to a file the suite reads back
+comment,,,,,,,a hardcoded port makes the suite unportable and fails in the worst way - it connects to whatever else is on that port and rows fail with errors that say nothing about pub/sub. scanning from a fixed base is no better: it still races, and a port held by a blocked or non-q process reads as free
+run,0,0,q,"tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i; }",1,1,"honours TMPDIR rather than assuming /tmp exists, and appends the pid so two runs on one machine cannot collide"
+run,0,0,q,"PSDIR:tmpdir""dipubsubtest""; system""rm -rf "",PSDIR; system""mkdir -p "",PSDIR",1,1,private directory for the server script and its port file
+run,0,0,q,"(`$"":"",PSDIR,""/srv.q"") 0: enlist ""(`$\"":"",PSDIR,""/port\"") 0: enlist string system\""p\"";""",1,1,the server's whole job at startup: report the port the OS gave it
+run,0,0,q,"system (getenv[`QHOME]),""/bin/q "",PSDIR,""/srv.q -p 0W -q </dev/null >/dev/null 2>&1 &""",1,1,"start it with an OS-assigned port, using the SAME q this suite runs under"
+run,0,0,q,"PSPORT:{[f] i:0; p:0N; while[(i<200) and null p; if[count key hsym`$f;p:""J""$first read0 hsym`$f]; if[null p;system""sleep 0.05""]; i+:1]; :p}[PSDIR,""/port""]",1,1,"read the port back, waiting for the server to come up"
+true,0,0,q,not null PSPORT,1,1,"the server started and reported its port - if this fails every row below would be testing nothing, so read it first"
 run,0,0,q,system"sleep 1",1,,wait for server to initialize
-run,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
+run,0,0,q,"h:hopen (`$"":localhost:"",string PSPORT;3000)",1,1,open handle h on client for testing
 run,0,0,q,h"pubsub:use`di.pubsub",,initialize pubsub module
 true,0,0,q,h>0,1,,verify client connected to server
 run,0,0,q,h"trade:([]time:\"p\"$();`g#sym:`$();price:\"f\"$();tsize:\"i\"$());",1,,define trade table on server
 run,0,0,q,h"quote:([]time:\"p\"$();`g#sym:`$();bid:\"f\"$();bidsize:\"i\"$();ask:\"f\"$();asksize:\"i\"$());",1,,define quote table on server
 run,0,0,q,h".m.di.0pubsub.init[]",,
 true,0,0,q,1b~h".m.di.0pubsub.initialized",1,,confirm server initialized with necessary data
-run,0,0,q,clt:first h"key[.z.W]",1,,get client handle on server
+run,0,0,q,"clt:h"".z.w""",1,1,"our own handle AS THE SERVER SEES IT. first key .z.W is nondeterministic - any second connection (a port probe, a leftover client) makes it pick the wrong handle, which showed up as 12 intermittent failures in rows that had nothing to do with what they were testing"
 run,0,0,q,upd:insert,1,,define local upd function
 
 run,0,0,q,res:h(`.m.di.0pubsub.suball;`quote),1,,test subscribe to quote for all symbols
@@ -51,9 +58,53 @@ run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table in `trade`q
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(in;`sym;enlist `IBM`NVO),1,, test symbols are listed under filters
 
+
+comment,,,,,,,.z.pc CHAINS onto whatever already owns it rather than replacing it. a bare assignment silently destroyed observers another module had already registered - the registration stopped firing while di.handlers went on listing it as live
+comment,,,,,,,only observable in a SEPARATE process: the ordering under test is a handler installed BEFORE this module loads, and by the time these rows run it is long loaded
+run,0,0,q,"chaindir:tmpdir""dipubsubchain""; system ""rm -rf "",chaindir; system ""mkdir -p "",chaindir",1,1,temp dir for the child probe
+run,0,0,q,"(`$"":"",chaindir,""/probe.q"") 0: (""PRIOR:0b;"";"".z.pc:{[w] `PRIOR set 1b};"";""p:use`di.pubsub;"";"".z.pc 99i;"";""-1 string PRIOR;"";""exit 0"")",1,1,"a child that installs .z.pc FIRST and only then loads di.pubsub - the order that used to lose the handler. it prints string PRIOR, so 1 means the pre-existing handler still fired and 0 means it was lost"
+run,0,0,q,"chainres:system (getenv[`QHOME]),""/bin/q "",chaindir,""/probe.q -q""",1,1,run it in a genuinely separate process
+true,0,0,q,"(enlist ""1"")~first chainres",1,1,"THE ASSERTION - the handler installed before the load still fired (string 1b is a one-char STRING, not a char atom). a replacing assignment prints 0, and the loss is invisible from any registry"
+run,0,0,q,"system ""rm -rf "",chaindir",1,1,clean up
+
+comment,,,,,,,init's OPTIONAL handlers dep additionally registers closesub with di.handlers itself - the actual
+comment,,,,,,,gap the raw .z.pc chaining above works around but does not close: di.handlers.list[`.z.pc] could
+comment,,,,,,,not see pubsub's own hook. only observable in a SEPARATE process (a fresh module load)
+run,0,0,q,"regdir:tmpdir""dipubsubreg""; system ""rm -rf "",regdir; system ""mkdir -p "",regdir",1,1,temp dir for the registration probe
+run,0,0,q,"(`$"":"",regdir,""/probe2.q"") 0: (""trade:([]time:`timestamp$();sym:`symbol$();price:`float$());"";""handlers:use`di.handlers;"";""mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]});"";""handlers.init[enlist[`log]!enlist mocklog];"";""pubsub:use`di.pubsub;"";""pubsub.setsubtables[enlist`trade];"";""pubsub.init[enlist[`handlers]!enlist handlers];"";""VISIBLE:0<count select from handlers.list[`.z.pc] where name=`pubsub;"";""pubsub.subscribe[`trade;`];"";""h:.z.w;"";""BEFORE:h in .m.di.0pubsub.reqalldict[`trade];"";"".z.pc h;"";""AFTER1:h in .m.di.0pubsub.reqalldict[`trade];"";"".z.pc h;"";""AFTER2:`trade in key .m.di.0pubsub.reqalldict;"";""-1 \"" \"" sv string each (VISIBLE;BEFORE;AFTER1;AFTER2);"";""exit 0"")",1,1,"a child that inits di.handlers, then inits di.pubsub WITH a handlers dep: VISIBLE checks di.handlers.list[`.z.pc] now names pubsub, BEFORE/AFTER1 check closesub still runs when .z.pc fires (subscribed through the PUBLIC subscribe entry point - using .z.w as the real handle, not a fabricated one poked into reqalldict - so this exercises the actual observable connection lifecycle, not an internal namespace), AFTER2 checks firing .z.pc a second time does not error (closesub is idempotent, not a double-registration bug). a single space-joined RESULT line, not per-flag one-char strings - q's parser silently collapses a parenthesized list of same-length 1-char strings into a flat char vector, so a naive (""1"";""1"";""0"";""0"") literal type-mismatches system's genuine list-of-strings result and can never match"
+run,0,0,q,"regres:system (getenv[`QHOME]),""/bin/q "",regdir,""/probe2.q -q""",1,1,run it in a genuinely separate process
+true,0,0,q,"(first regres)~""1 1 0 0""",1,1,"THE ASSERTION - visible=1 (registered in di.handlers), before=1/after1=0 (closesub ran on the real .z.pc fire), after2=0 (firing it twice stayed harmless)"
+run,0,0,q,"system ""rm -rf "",regdir",1,1,clean up
+
+comment,,,,,,,init must re-register with handlers on EVERY call that supplies it, not just the first - a
+comment,,,,,,,one-shot latch would silently swallow a later init call's registration attempt (e.g. one
+comment,,,,,,,meaning to re-point pubsub at a different handlers instance) with no error at all. a SEPARATE
+comment,,,,,,,di.pubsub instance loaded directly in this runner process (not the spawned server's copy),
+comment,,,,,,,so re-initialising it here cannot disturb any row above or below
+run,0,0,q,localps:use`di.pubsub,1,1,a local di.pubsub instance for testing init's re-registration behaviour in isolation
+true,0,0,q,"cnt:0; mockh:enlist[`register]!enlist {[e;p;n;pri;f] cnt+:1;}; localps.init[enlist[`handlers]!enlist mockh]; localps.init[enlist[`handlers]!enlist mockh]; cnt~2",1,1,"register is invoked on BOTH init calls, not just the first - di.handlers.register is itself idempotent under a repeat call with the same name, so there is no reason to latch this locally"
+
+comment,,,,,,,the STRING entry points must SIGNAL when a subscribe matched nothing. they exist for non-kdb+ clients which cannot inspect a q result shape, so an error has to arrive as an error
+comment,,,,,,,the guard that used to do this could never fire: errmsg is built with `$ so it is a symbol, and last of either success shape is the schema list - never the 10h string it tested for
+fail,0,0,q,"h(`pubsub.subscribestr;""nosuchtable"";"""")",1,1,subscribestr signals on a table that does not exist
+fail,0,0,q,"h(`pubsub.subscribestrfilter;""nosuchtable"";"""";"""")",1,1,subscribestrfilter signals too
+true,0,0,q,"not 10h~type h"".m.di.0pubsub.suball[`nosuchtable]""",1,1,"and the reason the old guard failed: the errmsg is a symbol, not a string"
+run,0,0,q,"res:h(`pubsub.subscribestr;""trade"";"""")",1,1,a VALID subscribe still returns rather than signalling
+true,0,0,q,(enlist`trade)~first res,1,1,with the confirmed table
+true,0,0,q,98h~type res[1;0],1,1,and its schema
+
+comment,,,,,,,getsubtables - the read counterpart to setsubtables, which REPLACES the list. without it a consumer that needs to ADD to the publish set has to reach into module state. driven on the SERVER over h, like every other row here
+true,0,0,q,"(asc h"".m.di.0pubsub.t"")~asc h"".m.di.0pubsub.getsubtables[]""",1,1,getsubtables reports exactly the tables being published
+true,0,0,q,"11h=type h"".m.di.0pubsub.getsubtables[]""",1,1,it is a symbol list
+true,0,0,q,"all `trade`quote in h"".m.di.0pubsub.getsubtables[]""",1,1,and it names the tables this suite set up
+
+comment,,,,,,,VERSION file and exported version - di.depcheck resolves a dependency minimum from the export dict and fails any module that omits it
+true,0,0,q,"`version in key .m.di.0pubsub",1,1,version is reachable as a module name
+true,0,0,q,"3=count ""."" vs .m.di.0pubsub.version",1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any .m.di.0pubsub.version in ""\n\r""",1,1,no stray newline came through from the file
 run,0,0,q,hclose h,1,,test closesub function-handles are removed after connection close
-run,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
-run,0,0,q,clt:first h"key[.z.W]",1,,get client handle on server
+run,0,0,q,"h:hopen (`$"":localhost:"",string PSPORT;3000)",1,1,open handle h on client for testing
+run,0,0,q,"clt:h"".z.w""",1,1,"our own handle AS THE SERVER SEES IT. first key .z.W is nondeterministic - any second connection (a port probe, a leftover client) makes it pick the wrong handle, which showed up as 12 intermittent failures in rows that had nothing to do with what they were testing"
 true,0,0,q,(`$())~h"key .m.di.0pubsub.reqalldict",1,,handle not in reqalldict since previous handle removed and new subscription not made
 true,0,0,q,not clt in(h".m.di.0pubsub.reqfilteredtbl")`handle,1,,handle not in reqfilteredtbl
 
@@ -113,5 +164,22 @@ run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters
 
+comment,,,,,,,"callendofperiod is TERNARY, matching TorQ's producer: code/common/pubsub.q:19 sends"
+comment,,,,,,,"(`endofperiod;x;y;z) and both subscribers (code/rdb/endofperiod.q, code/wdb/writedown.q:52)"
+comment,,,,,,,"are {[currp;nextp;data]}. it was unary - a 3-arg call threw 'rank, and the 1-arg form left a"
+comment,,,,,,,ternary subscriber as a PROJECTION: the body never ran and nothing threw or logged
+run,0,0,q,.test.EOPRAN:0b,1,1,did the subscriber body actually run
+run,0,0,q,.test.EOPGOT:`seeded,1,1,and what did it receive
+run,0,0,q,endofperiod:{[c;n;dat] .test.EOPRAN:1b; .test.EOPGOT:(c;n;dat); },1,1,a TERNARY subscriber - the shape TorQ's rdb and wdb both use
+run,0,0,q,h(`.m.di.0pubsub.callendofperiod;09:30:00;10:00:00;`a`b!1 2),1,1,broadcast a period roll from the server
+run,0,0,q,h"1+1",1,1,round trip so the async broadcast is processed before we assert
+true,0,0,q,.test.EOPRAN,1,1,the subscriber BODY ran - this is the assertion that fails on the unary version
+true,0,0,q,.test.EOPGOT~(09:30:00;10:00:00;`a`b!1 2),1,1,all three arguments arrived intact
+run,0,0,q,.test.EOPRAN:0b,1,1,reset before the one-argument case
+run,0,0,q,h(`.m.di.0pubsub.callendofperiod;09:30:00),1,1,the old one-argument calling shape
+run,0,0,q,h"1+1",1,1,round trip
+true,0,0,q,not .test.EOPRAN,1,1,a one-argument call is a projection server side and broadcasts nothing so no malformed endofperiod reaches subscribers
+
 run,0,0,q,neg[h](exit;0);neg[h](::),1,,close background process and flush
 run,0,0,q,hclose h,1,,close handle
+run,0,0,q,"system""rm -rf "",PSDIR",1,1,remove the server directory

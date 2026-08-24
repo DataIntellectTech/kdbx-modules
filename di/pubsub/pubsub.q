@@ -71,14 +71,36 @@ closesub:{[h]
   delete from .z.M.reqfilteredtbl where handle=h;
   };
 
-/ define .z.pc, add bespoke actions as needed
-.z.pc:{closesub[x]};
+/ define .z.pc, add bespoke actions as needed.
+/ CHAINS onto whatever already owns .z.pc rather than replacing it. a bare .z.pc:{closesub[x]} here
+/ silently destroyed every observer another module had already registered - measured: with a
+/ di.handlers registration in place first, loading this module stopped it firing while di.handlers
+/ went on listing it as registered, so the failure was invisible from the registry.
+/ this stays a raw assignment (not a di.handlers registration) at LOAD time, because di.pubsub is
+/ STANDALONE - it takes no REQUIRED injected dependency, and this code runs before init is ever
+/ called, so it cannot depend on anything init might later receive. it remains active even when a
+/ caller does pass a handlers dep to init (see init, below) - it is di.pubsub's own always-on safety
+/ net, chaining correctly either way
+priorpc:@[value;`.z.pc;{[e] (::)}];
+.z.pc:{[w]
+  closesub[w];
+  if[not (::)~priorpc;priorpc w];
+  };
 
 / broadcast to all subscribers upon end of day, client needs to define endofday function
 callendofday:{[d](neg getallhandles[])@\:(`endofday;d)};
 
-/ broadcast to all subscribers upon end of period, client needs to define endofperiod function
-callendofperiod:{(neg getallhandles[])@\:(`endofperiod;x)};
+/ broadcast to all subscribers upon end of period, client needs to define endofperiod function.
+/ TERNARY, matching legacy: TorQ's code/common/pubsub.q:19 broadcasts (`endofperiod;x;y;z) and both
+/ of its subscribers (code/rdb/endofperiod.q, code/wdb/writedown.q:52) are {[currp;nextp;data]}.
+/ it was unary, which failed two ways at once (both measured): callendofperiod[c;n;d] threw 'rank, so
+/ a caller following that contract could not call it at all, and the one-argument form left a ternary
+/ subscriber as a PROJECTION - the body never ran, and nothing threw, logged or was returned to say so.
+/ same defect class as the callendofday bug PR #118 fixed.
+/ NB callendofday stays UNARY on purpose. TorQ's producer sends (`endofday;x;y), but its second
+/ argument is processdata, which legacy's own rdb never reads and the shipped .u.end alias passes
+/ ()!() for - di.rdb's endofday is unary to match. Do not "fix" that one for symmetry with this
+callendofperiod:{[currentperiod;nextperiod;data](neg getallhandles[])@\:(`endofperiod;currentperiod;nextperiod;data)};
 
 / get table schema
 extractschema:{[table]0#value table};
@@ -103,25 +125,85 @@ pubclear:{[t]
   @[`.;;0#] each t;
   };
 
+raisenosub:{[res]
+  / internal - signal when a subscribe matched NOTHING, for the string entry points below.
+  / subscribe returns one of three shapes: (tables;schemas) when every requested table exists,
+  / (errmsg;(tables;schemas)) when only some do, or a bare errmsg SYMBOL when none do. the string
+  / entry points exist for non-kdb+ clients, which cannot inspect a q result shape - so a request
+  / that subscribed to nothing has to arrive as an error, not as a value that merely reads like one.
+  / the partial case deliberately still RETURNS: those tables really were subscribed, and signalling
+  / would tell the caller it failed while leaving it registered.
+  / NB this replaces a guard (10h~type last res) that could never fire - errmsg is built with `$ so it
+  / is a symbol, and `last` of either success shape is the schema list, never a 10h string
+  if[-11h=type res;'string res];
+  :res;
+  };
+
 subscribestr:{[table;syms]
   / allow non-kdb+ process to subscribe to tables with/without symbols
   res:subscribe[`$table;$[count syms;`$vs[csv;syms];`]];
-  :$[10h~type last res;'last res;res];
+  :raisenosub res;
   };
 
 subscribestrfilter:{[table;filters;columns]
   / allow non-kdb+ process to subscribe to tables with custom conditions
   res:subscribe[`$table;1!enlist `table`filts`columns!(`$table;filters;columns)];
-  :$[10h~type last res;'last res;res];
+  :raisenosub res;
   };
 
 / create a list of tables for subscription, allow users to set subtables, otherwise set to null
 setsubtables:{.z.m.subtables:$[x~`;0#x;x]};
+
+getsubtables:{[]
+  / the tables currently available for subscription. the read counterpart to setsubtables, which
+  / REPLACES the list - a consumer that needs to ADD to the publish set has no other way to learn the
+  / current one, and reaching into module state from outside is not an interface.
+  / empty until init has run, rather than signalling on an unset name
+  / read .z.m.t EXPLICITLY - a bare t would resolve to the same module state, but the explicit form is
+  / the one qlint accepts and matches how every other module reads its own state
+  :@[{[] .z.m.t};::;{[e] `symbol$()}];
+  };
 setsubtables`;
 
 initialized:0b;
 
-init:{
+iscallable:{[x]
+  / internal - is x a genuinely callable value? 100 112h spans every callable form, but 101h - the
+  / generic null :: - sits INSIDE that range while being callable in no useful sense, and :: is
+  / exactly what a dep dict hands back for a missing key. see di.servers' identical helper
+  t:type x;
+  (t within 100 112h) and 101h<>t
+  };
+
+init:{[deps]
+  / deps: OPTIONAL - unlike every DI'd module's init, di.pubsub has no REQUIRED injected dependency,
+  / so pubsub[`init][] (the original, still-supported call shape) keeps working: a unary function
+  / called with no args binds deps to the generic null ::, same as always.
+  / .
+  / an OPTIONAL `handlers` key (di.handlers' register dict) ADDITIONALLY registers closesub as a
+  / named observer on .z.pc, so di.handlers.list[`.z.pc] lists `pubsub explicitly - closing the
+  / actual gap the raw .z.pc block (above) used to leave: a di.handlers registration made elsewhere
+  / stayed correctly chained, but pubsub's own hook stayed invisible to the registry itself.
+  / the raw chaining block keeps running regardless of whether handlers is passed here - it fires at
+  / module LOAD time, before init is ever called, so it cannot be conditionally skipped from inside
+  / init. that is harmless, not a double-registration bug: closesub is idempotent under a repeat call
+  / (delhandle/delhandlef are both remove-if-present), so a disconnect invoking it via both the raw
+  / chain and a handlers dispatch in the same tick is a no-op on the second call.
+  / .
+  / re-registers on EVERY init call that supplies handlers, not just the first - there is no one-shot
+  / latch here. di.handlers.register is itself idempotent under a repeat call with the same name
+  / (registersimple's upsertphase deletes then re-adds by name, see di.handlers), so calling it again
+  / on a re-init costs nothing; a one-shot latch, by contrast, would silently swallow a LATER init
+  / call's registration attempt - including one meaning to re-point pubsub at a genuinely different
+  / handlers instance - with no error and no way to tell it never took effect. omitting `handlers on a
+  / later call leaves any earlier registration exactly as it was; di.pubsub never infers a
+  / deregistration from a bare re-init, the same as every other injected dep here
+  if[not (::)~deps;
+    if[99h<>type deps;'"di.pubsub: deps, if given, must be a dict"];
+    if[`handlers in key deps;
+      if[not iscallable deps[`handlers]`register;
+        '"di.pubsub: handlers`register must be a function [event;phase;name;priority;func] - see di.handlers"];
+      (deps[`handlers][`register])[`.z.pc;`;`pubsub;0j;closesub]]];
   .z.m.t:$[count subtables;subtables;tables[]except`reqfilteredtbl];
   .z.m.schemas:t!extractschema each t;
   .z.m.tabcols:t!cols each t;

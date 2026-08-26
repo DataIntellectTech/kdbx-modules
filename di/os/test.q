@@ -7,6 +7,11 @@
 .testos.canchown:$[.m.di.0os.iswindows;1b;"root"in" "vs first system"groups"];
 .testos.warnings:(); / start off optimistic
 
+/ $HOME with duplicate/trailing separators normalised, to compare against abspath's output.
+/ the .testos.root prefix is required: the count>0 filter drops the LEADING empty segment as well as
+/ the trailing one, so joining alone would yield a relative "home/user" and never match an abspath
+.testos.home:.testos.root,.testos.sep sv {x where 0<count each x}.testos.sep vs getenv`HOME;
+
 / returns all path variations: "path" -> ("path";":path";`path;`:path)
 .testos.pathvars:{[path]
   (path;":",path;`$path;hsym`$path)

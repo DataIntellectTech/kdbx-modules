@@ -17,6 +17,14 @@ Returns `1b` if the current platform is Windows (`w32` or `w64`), otherwise `0b`
 os.iswindows
 ```
 
+### `os.version`
+The module version as a string, read from the `VERSION` file at load time. `di.depcheck` resolves it from the export dictionary when another module declares `di.os` as a dependency.
+
+```q
+q)os.version
+"0.1.0"
+```
+
 ---
 
 ## :file_folder: Path Utilities
@@ -34,11 +42,17 @@ q)os.topath `:some/relative/path // on Unix...
 ### `os.abspath[path]`
 Returns the **absolute path** to a file/directory **without resolving symlinks** (does not check that the path exists).
 
+`.`, `..` and duplicate separators are resolved lexically, without touching the filesystem, so a `..` segment is *not* interpreted relative to a symlink's target. A `..` at the root stays at the root. A trailing separator is removed. A leading `~` is expanded against `$HOME`. An empty path is rejected with an error rather than silently resolving to the working directory.
+
+On Unix no shell is involved, so spaces, glob characters and shell metacharacters in the path are treated literally.
+
 ```q
 q)os.abspath "../file.txt" // on Windows...
-"C:\\path\\to\\file.txt
-q)os.topath "../file.txt" // on Unix...
+"C:\\path\\to\\file.txt"
+q)os.abspath "../file.txt" // on Unix...
 "/path/to/file.txt"
+q)os.abspath "/tmp/with space/./sub/../file.txt" // spaces are safe, . and .. collapse
+"/tmp/with space/file.txt"
 ```
 
 ### `os.realpath[path]`

@@ -2,6 +2,10 @@ action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,os:use`di.os,1,,Initialize module
 before,0,0,q,"system ""l "", os.abspath[""di/os/test.q""]",1,1,load additional testing functions / dependencies
 true,0,0,q,-1h=type .m.di.0os.iswindows,1,1,
+true,0,0,q,`version in key os,1,1,version is still an export - di.depcheck resolves it from the export dict
+true,0,0,q,3=count "." vs os.version,1,1,VERSION holds a parseable major.minor.patch string
+true,0,0,q,"not any os.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+true,0,0,q,not any `mktempwinname`mktempwin`mktempdirwin in key os,1,1,windows-only / internal temp helpers are not exported
 
 run,0,0,q,k4unit.mock[`.m.di.0os.iswindows;0b],1,1,
 true,0,0,q,enlist["path"]~distinct os.topath each .testos.pathvars"path",1,1,
@@ -26,7 +30,14 @@ true,0,0,q,"enlist[.testos.sep sv({neg[min(1;count x)]_x}.testos.sep vs .testos.
 true,0,0,q,"enlist[.testos.root,.testos.sep sv(""foo"";""other-path"";enlist""x"")]~distinct os.abspath each .testos.pathvars""/foo/bar/blah/../../path/../other-path/./x""",1,1,
 true,0,0,q,"enlist[.testos.root,.testos.sep sv(""foo"";""bar"")]~distinct os.abspath each .testos.pathvars""/../foo/bar""",1,1,
 true,0,0,q,"enlist[.testos.root,""foo""]~distinct os.abspath each .testos.pathvars raze[(1+count .testos.sep vs .testos.cwd)#enlist""../""],""foo""",1,1,
-fail,0,0,q,enlist[.testos.sep sv(.testos.osdir;"init.q")]~disctinct os.abspath each .testos.pathvars"/"sv(.testos.osdir;"init.q/"),1,1,
+true,0,0,q,enlist[.testos.sep sv(.testos.osdir;"init.q")]~distinct os.abspath each .testos.pathvars"/"sv(.testos.osdir;"init.q/"),1,1,a trailing slash is stripped
+true,0,0,q,"enlist[.testos.sep sv(.testos.cwd;""with space"";""foo bar.txt"")]~distinct os.abspath each .testos.pathvars""with space/foo bar.txt""",1,1,a relative path containing spaces is not truncated at the first space
+true,0,0,q,"enlist[.testos.root,.testos.sep sv(""tmp"";""with space"";""hdb"")]~distinct os.abspath each .testos.pathvars""/tmp/with space/x/../hdb""",1,1,an absolute path with a space and a .. segment
+true,0,0,q,"enlist[.testos.root,.testos.sep sv(""no"";""such"";enlist""x"")]~distinct os.abspath each .testos.pathvars""/no/such/thing/../x""",1,1,a path that does not exist still resolves
+true,0,0,q,"enlist[.testos.sep sv(.testos.cwd;""foo;bar"")]~distinct os.abspath each .testos.pathvars""foo;bar""",1,1,shell metacharacters are literal - no subshell is invoked
+true,0,0,q,.testos.nowin"enlist[.testos.home]~distinct os.abspath each .testos.pathvars enlist\"~\"",1,1,a bare ~ expands to $HOME rather than resolving against the working directory
+true,0,0,q,"enlist[.testos.sep sv({neg[min(1;count x)]_x}.testos.sep vs .testos.cwd),(""foo"";""bar"")]~distinct os.abspath each .testos.pathvars""../foo/./bar""",1,1,a mid-string . segment is collapsed
+fail,0,0,q,"os.abspath""""",1,1,an empty path is rejected rather than silently resolving to the working directory
 
 true,0,0,q,.testos.nyiwin"enlist[.testos.sep sv(.testos.osdir;\"foo\")]~distinct os.realpath each .testos.pathvars\"/\"sv(.testos.osdirstd;\"/foo\")",1,1,
 true,0,0,q,".testos.nyiwin""enlist[.testos.sep sv(-1_.testos.sep vs .testos.osdir),enlist\""foo\""]~distinct os.realpath each .testos.pathvars\""/\""sv(.testos.osdir;\""/../foo\"")""",1,1,

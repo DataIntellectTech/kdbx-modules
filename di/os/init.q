@@ -11,9 +11,25 @@ topath:{[path]
   };
 
 / get the absolute path of a file/directory without resolving symlinks
+/ the posix branch is pure q - no shell is involved, so a space, a glob or a shell metacharacter in
+/ the path is treated literally, and there is no dependency on gnu realpath's -m/-s flags, which
+/ bsd/macos realpath does not accept. windows keeps its cmd expansion, which was already quoted
 abspath:{[path]
-  res:trim first syscall$[iswindows;"for %F in (\"",topath[path],"\") do @echo %~fF";"realpath -ms ",topath path];
-  $[iswindows;neg["\\"=last res]_;]res / remove (possible) trailing slash in windows for consistency
+  p:topath path;
+  if[0=count p;'"di.os: abspath: path cannot be empty"];
+  if[iswindows;
+    res:trim first syscall"for %F in (\"",p,"\") do @echo %~fF";
+    :neg["\\"=last res]_res];  // remove (possible) trailing slash in windows for consistency
+  / expand a leading ~ against $HOME, which the shell did for us before the shell-out was removed.
+  / the enlist is load-bearing: topath always returns a char VECTOR, a single-char literal like "~"
+  / is a char ATOM, and ~ requires exact type equality - so a bare "~" would never match. likewise
+  / for the "." segment filter below, where each segment is a vector
+  p:$[p~enlist"~";getenv`HOME;p like "~/*";(getenv`HOME),1_p;p];
+  / pin a relative path to the working directory, then resolve . and .. segments lexically
+  if[not "/"=first p;p:pwd[],"/",p];
+  segs:"/" vs p;
+  segs:segs where not segs in ("";enlist".");
+  :"/","/" sv {$[y~"..";$[count x;-1_x;x];x,enlist y]}/[();segs];
   };
 
 / get the absolute path of a file/directory resolving symlinks
@@ -166,4 +182,18 @@ setdrysyscalls:{[on]
 
 cleardrysyscalls[]
 
-export:`syscall`drysyscall _ .z.m
+/ module version, read from the VERSION file rather than hardcoded, so a release bump touches one
+/ plain-text file. read module-relative (`:::` resolves to di/os) and BEFORE the export line, since
+/ export subtracts from .z.m and so only picks up names defined above it.
+/ NB `version` must STAY exported: di.depcheck resolves a dependency's version from the export dict
+/ (checkdepversion) and classes a missing one as a FAILURE, which makes di.depcheck.init throw for
+/ any process loading a module that declares this one as a hard dependency.
+/ trim, and fail LOUD on a missing/unreadable/empty VERSION rather than a bare `first read0`: read0
+/ strips the line terminator but not trailing spaces, and depcheck compares versions as STRINGS, so
+/ a padded value silently fails every dependent module's check
+version:@[{trim first read0 x};`:::VERSION;{'"di.os: VERSION file missing or unreadable"}];
+if[0=count version;'"di.os: VERSION file is empty"];
+
+/ mktempwinname/mktempwin/mktempdirwin are the windows-only internals behind mktemp/mktempdir and are
+/ marked / internal at their definitions - they are reached by module-local read, never by consumers
+export:`syscall`drysyscall`mktempwinname`mktempwin`mktempdirwin _ .z.m

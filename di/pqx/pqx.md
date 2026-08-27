@@ -65,6 +65,7 @@ omitted from `o` fall back to the default shown below.
 | `maxfactor` | `1.5` | float | Hard cap on file size, expressed as a multiple of `targetsize` |
 | `splitoversized` | `1b` | boolean | Split any single instrument larger than the cap across multiple files |
 | `calibrate` | `1b` | boolean | Run a trial write to measure the raw-to-parquet size ratio instead of using `compressionratio` |
+| `onesymperfile` | `0b` | boolean | Write exactly one file per instrument, ignoring the target-size bucketing/packing logic. Forces `splitoversized` off (see below) |
 | `compressionratio` | `0.30` | float | Raw-to-parquet size ratio used for size estimation when `calibrate` is `0b` |
 | `symcol` | `` `sym `` | symbol | Instrument column |
 | `timecol` | `` `time `` | symbol | Time column |
@@ -78,10 +79,17 @@ omitted from `o` fall back to the default shown below.
 | `filestub` | `"part"` | string | File name stub; files are written as `<filestub>-NNNNN.parquet` |
 
 Output files are written to `<outdir>/<tname>/date=<dt>/<filestub>-NNNNN.parquet`. `extract` throws
-(`` `di.pqx: no symcol found in table `` / `` `di.pqx: no timecol found in table ``) if the merged
-`symcol`/`timecol` is not a column of the input table — this check runs unconditionally, regardless
-of `presort`. It also throws (`` `di.pqx: cannot extract from empty table ``) if `t` has zero rows,
-regardless of `calibrate` — this check runs first, before any other validation.
+(`` `di.pqx: input keys not recognised - ... ``) if `o` contains any key not present in the module's
+`default` dict — this is the very first check `extract` performs, before the empty-table check. It
+also throws (`` `di.pqx: no symcol found in table `` / `` `di.pqx: no timecol found in table ``) if
+the merged `symcol`/`timecol` is not a column of the input table — this check runs unconditionally,
+regardless of `presort`. It also throws (`` `di.pqx: cannot extract from empty table ``) if `t` has
+zero rows, regardless of `calibrate` — this check runs before the column checks but after the input
+key check.
+
+When `onesymperfile` is `1b`, each instrument is written to its own file regardless of `targetsize`
+bucketing, and `splitoversized` is forced to `0b` for that call (an oversized single instrument is
+still written to one file, not split, even if `splitoversized:1b` is also passed in `o`).
 
 ---
 
@@ -104,6 +112,15 @@ shape, scoped to only the file(s) written by that call.
 | `bytes` | long | Actual on-disk size |
 | `split` | boolean | `1b` if this file is a chunk of a split oversized instrument |
 | `status` | symbol | `` `ok `` or `` `error `` |
+
+In addition to the in-memory `manifest`, each `extract` call writes this same per-call stats table
+to a `manifest` sidecar file directly under the partition directory (i.e.
+`<outdir>/<tname>/date=<dt>/manifest`), serialized with `set`/readable back with `get`. A repeat
+`extract` call into the same partition overwrites the sidecar with just that call's rows, rather
+than accumulating across calls — the sidecar mirrors `extract`'s return value, not `getmanifest[]`.
+Writing the sidecar is best-effort: if it fails (for example a permissions issue, or something else
+already occupying that path) a warning is logged but `extract` still returns normally and still
+updates the in-memory `manifest`.
 
 ---
 

@@ -78,4 +78,33 @@ run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.25;`outdir`codec`calibrate`comp
 true,0,0,q,`error~first exec status from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file is recorded with status=`error instead of aborting extract
 true,0,0,q,0~first exec bytes from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file has zero on-disk bytes recorded
 
-after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5",1,,Remove parquet output directories written by tests
+run,0,0,q,pqxret10:pqx.extract[pqxbasic;`pqxtrade;2025.07.26;enlist[`outdir]!enlist `:pqxout10/],1,,Extract a table to exercise the on-disk manifest sidecar
+true,0,0,q,"not ()~key hsym `$""pqxout10/pqxtrade/date=2025.07.26/manifest""",1,,extract writes a manifest sidecar file into the partition directory
+true,0,0,q,"pqxret10~get hsym `$""pqxout10/pqxtrade/date=2025.07.26/manifest""",1,,The on-disk manifest sidecar matches extract's returned per-call stats table
+
+run,0,0,q,pqxret11a:pqx.extract[pqxbasic;`pqxtrade;2025.07.27;enlist[`outdir]!enlist `:pqxout11/],1,,First extract call into a partition that will be written to twice
+run,0,0,q,pqxret11b:pqx.extract[pqxsingle;`pqxtrade;2025.07.27;enlist[`outdir]!enlist `:pqxout11/],1,,Second extract call into the same partition with different data
+true,0,0,q,"pqxret11b~get hsym `$""pqxout11/pqxtrade/date=2025.07.27/manifest""",1,,The manifest sidecar reflects only the most recent call's stats
+true,0,0,q,"not pqxret11a~get hsym `$""pqxout11/pqxtrade/date=2025.07.27/manifest""",1,,Repeat extract calls into the same partition overwrite the sidecar rather than appending to it
+
+run,0,0,q,system "mkdir -p pqxoutf6/pqxtrade/date=2025.07.28/manifest",1,,Pre-create a directory at the manifest sidecar's path so the sidecar write itself fails
+run,0,0,q,manifestcountbeforef6:count pqx.getmanifest[],1,,Snapshot the accumulated manifest row count before the manifest-write-failure case
+run,0,0,q,pqxretf6:pqx.extract[pqxbasic;`pqxtrade;2025.07.28;enlist[`outdir]!enlist `:pqxoutf6/],1,,Extract still succeeds even though writing its manifest sidecar fails
+true,0,0,q,9~exec sum rows from pqxretf6,1,,extract still returns full per-file stats despite the sidecar write failure
+true,0,0,q,all `ok=exec status from pqxretf6,1,,Every data file write still succeeds despite the later sidecar write failure
+true,0,0,q,(count pqx.getmanifest[])>manifestcountbeforef6,1,,extract still appends to the accumulated in-memory manifest despite the sidecar write failure
+
+run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.29;`outdir`onesymperfile!(`:pqxout12/;1b)],1,,Extract a multi-sym table with onesymperfile on
+true,0,0,q,3~count select from pqx.getmanifest[] where file like "*pqxout12*",1,,onesymperfile produces one file per instrument instead of bucketing them together
+true,0,0,q,all 1=exec nsyms from pqx.getmanifest[] where file like "*pqxout12*",1,,Every file written under onesymperfile contains exactly one instrument
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout12*",1,,All input rows are still accounted for across the per-instrument files
+true,0,0,q,not any exec split from pqx.getmanifest[] where file like "*pqxout12*",1,,Files are not flagged as split when written one instrument per file
+
+run,0,0,q,pqx.extract[pqxoversized;`pqxtrade;2025.07.30;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized`onesymperfile!(1000;1.1;0b;0.30;`:pqxout13/;1b;1b)],1,,onesymperfile takes priority over splitoversized for an oversized single instrument
+true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout13*",1,,onesymperfile forces splitoversized off, so the oversized instrument is written to a single file
+true,0,0,q,20000~first exec rows from pqx.getmanifest[] where file like "*pqxout13*",1,,The single file still contains every row of the oversized instrument
+true,0,0,q,not first exec split from pqx.getmanifest[] where file like "*pqxout13*",1,,The single file is not flagged as split, since splitting was suppressed by onesymperfile
+
+fail,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.31;`outdir`badoption!(`:pqxoutf7/;1)],1,,Extract fails when passed an option key that isn't recognised
+
+after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7",1,,Remove parquet output directories written by tests

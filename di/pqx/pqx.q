@@ -1,6 +1,6 @@
 / define default config
 default:(
-  `targetsize`maxfactor`splitoversized`calibrate`compressionratio,
+  `targetsize`maxfactor`splitoversized`calibrate`onesymperfile`compressionratio,
   `symcol`timecol`presort`rowgroupbytes`codec`complevel`dictcols,
   `parallel`outdir`filestub
   )!(
@@ -8,6 +8,7 @@ default:(
   1.5;                           / hard cap = target * maxfactor
   1b;                            / split instruments larger than the cap
   1b;                            / run a calibration write to set the ratio
+  0b;                            / enforce a single instrument per file
   0.30;                          / raw->parquet ratio if not calibrating
   `sym;                          / instrument column
   `time;                         / time column
@@ -98,50 +99,59 @@ calibrateratio:{[t;o;writeopt]
  };
 
 calcsize:{[tbl;symcol;syms;seqno]
-  / find the estimated size in bytes for each instrument per file to be saved down
-  / in the case of a larger instrument being split, return count[seqno] number of instances of estbytes
+  / find the estimated size in bytes for file to be saved down by querying symstats
   .z.m.loginfo[`pqx;"Getting estimated bytes for planned files"];
-  :"j"$count[seqno]#%[sum[?[tbl;enlist(in;symcol;enlist syms);0b;()]`estbyt];count seqno]
+  :sum[?[tbl;enlist(in;symcol;enlist syms);0b;()]`estbyt]
  };
 
 plan:{[t;o;maxsize]
   / planning function to bucket instruments based on next-fit packing
+  / if one sym per file, just output individual buckets for each sym
+  / else
   / if an instrument can be added to a bucket without that bucket exceeding the target size, it will be added to that bucket
   / else a new bucket is created
   / large instruments are also split into multiple files if splitoversized flag is true
   symstats:t;
   plans:();
 
-  / if split oversized is required, check against maxsize and return a plan entry for each required file
-  if[o`splitoversized;
-    .z.m.loginfo[`pqx;"Splitting large instruments"];
-    t:update islargerthantargetsize:estbyt>maxsize from t;
-    oversized:select from t where islargerthantargetsize;
-    t:t except oversized;
-    oversized:update numfiles:ceiling[estbyt%maxsize] from oversized;
-    plans,:enlist each raze {[t;c] t[`numfiles]#enlist t[c]}[;o`symcol] each oversized
+  / if one sym per file, enlist each sym to assign to individual buckets
+  / else move to oversized and packing logic
+  $[o`onesymperfile;
+    [.z.m.loginfo[`pqx;"Enforcing one sym per file"];
+    plans,:enlist each t[o[`symcol]]
+    ];
+    / if split oversized is required, check against maxsize and return a plan entry for each required file
+    [if[o`splitoversized;
+      .z.m.loginfo[`pqx;"Splitting large instruments"];
+      t:update islargerthantargetsize:estbyt>maxsize from t;
+      oversized:select from t where islargerthantargetsize;
+      t:t except oversized;
+      oversized:update numfiles:ceiling[estbyt%maxsize] from oversized;
+      plans,:enlist each raze {[t;c] t[`numfiles]#enlist t[c]}[;o`symcol] each oversized
+    ];
+
+    / next fit function for packing instruments into buckets if they conform to the max size
+    if[count t;
+      .z.m.loginfo[`pqx;"Bucketing small instruments"];
+      tabs:t[o[`symcol]];
+      sizes:t`estbyt;
+      n:count tabs;
+
+      step:{[maxsize;sizes;state;i]
+        sz:sizes i;
+        tot:state 1;
+        $[(tot+sz)>maxsize; (1+state 0; sz); (state 0; tot+sz)]
+      }[maxsize;sizes];
+      bins: (step\[(0;0);til n])[;0];
+
+      plans,:value[tabs @ group bins]
+      ]
+    ]
   ];
+  plans:flip `seqno`syms!((1 + til count plans);plans);
 
-  / next fit function for packing instruments into buckets if they conform to the max size
-  if[count t;
-    .z.m.loginfo[`pqx;"Bucketing small instruments"];
-    tabs:t[o[`symcol]];
-    sizes:t`estbyt;
-    n:count tabs;
-
-    step:{[maxsize;sizes;state;i]
-      sz:sizes i;
-      tot:state 1;
-      $[(tot+sz)>maxsize; (1+state 0; sz); (state 0; tot+sz)]
-    }[maxsize;sizes];
-    bins: (step\[(0;0);til n])[;0];
-
-    plans,:value[tabs @ group bins]
-  ];
-  plans:(1 + til count plans)!plans;
-
-  / attach estbytes to plan's output
-  :update estbytes:.z.m.calcsize[symstats;o`symcol;;]'[syms;seqno] from {`syms`seqno!/: flip (key[x];value[x])} group plans
+  / attach estbytes by file to plan's output
+  :0!`syms xgroup update estbytes:"j"$.z.m.calcsize[symstats;o`symcol;;]'[syms;seqno]%count seqno by syms from plans
  };
 
 datalookup:{[t;symcol;syms;cnt]
@@ -161,35 +171,35 @@ datalookuponesym:{[t;symcol;sym;cnt]
 writefile:{[t;o;writeopt;writedir;map]
   / writes data to disk in Parquet format
   / returns stats to be inserted into the manifest
-  syms:map[`syms];
-  seqno:map[`seqno];
-  estbytes:map[`estbytes];
+  
+  syms:map`syms;
+  map:flip `syms _ map;
 
   / build paths for each seqno
-  paths:writedir,/:o[`filestub],/:"-",/:("0"^-5$string[seqno]),\:".parquet";
-
+  paths:writedir,/:o[`filestub],/:"-",/:("0"^-5$string[map`seqno]),\:".parquet";
+  
   / data to write, iterated by file
-  res:raze {[t;o;writeopt;split;path;seqno;estbytes;i]
-    .z.m.loginfo[`pqx;"Writing seqNo ",string[seqno],", path - ",path];
+  res:raze {[t;o;writeopt;split;syms;map;path;i]
+    .z.m.loginfo[`pqx;"Writing seqNo ",string[map`seqno],", path - ",path];
     res:.z.m.tryfn[`.m.di.0pqx.arrow.pq.writeParquetFromTable;(path;.z.m.checkandconvertcols t[i];writeopt)];
     $[first res;
-      .z.m.loginfo[`pqx;"seqNo ",string[seqno]," write successful"];
-      .z.m.logwarn[`pqx;"seqNo ",string[seqno]," write unsuccessful. Error - ",last res]
+      .z.m.loginfo[`pqx;"seqNo ",string[map`seqno]," write successful"];
+      .z.m.logwarn[`pqx;"seqNo ",string[map`seqno]," write unsuccessful. Error - ",last res]
     ];
     :`file`seq`syms`nsyms`rows`mintime`maxtime`estbytes`bytes`split`status!/: flip (
       hsym `$path;
-      seqno;
-      enlist distinct[t[i][o`symcol]];
-      count[distinct[t[i][o`symcol]]];
+      map`seqno;
+      enlist[syms];
+      count[syms];
       count[i];
       ?[t[i];();();(min;o`timecol)];
       ?[t[i];();();(max;o`timecol)];
-      estbytes;
+      map`estbytes;
       @[hcount;hsym `$path;0];
       split;
       `error`ok[first res]
     )
-  }[t;o;writeopt;1<count seqno;;;]'[paths;seqno;estbytes;.z.m.datalookup[t;o`symcol;syms;count seqno]];
+  }[t;o;writeopt;1<count map;syms;;;]'[map;paths;.z.m.datalookup[t;o`symcol;syms;count map]];
 
   :res
  };
@@ -202,9 +212,24 @@ tryfn:{[f;x]
 extract:{[t;tname;dt;o]
   / main data extract function
   / takes a kdb+ table of data, its name, the date and any option overrides and saves down to parquet format
-  .z.m.loginfo[`pqx;"Extracting ",string[tname]," data for ",string dt];
+
+  / check for bad input keys
+  if[any not key[o] in key[default];
+    .z.m.logerr[`pqx;err:"di.pqx: input keys not recognised - ", "," sv string key[o] where not key[o] in key default];
+    'err 
+  ];
+
+  .z.m.loginfo[`pqx;"Extracting table: ",string[tname]," data for date: ",string dt];
   / override default opts with o where applicable
   opts:default,o;
+
+  / if one sym per file requested, turn off splitoversized
+  if[`onesymperfile in key o;
+    if[o`onesymperfile;
+      .z.m.loginfo[`pqx;"onesymperfile requested, turning off splitoversized"];
+      opts[`splitoversized]:0b
+    ]
+  ];
 
   / check for count in tables, error out if not
   if[not count[t];
@@ -247,7 +272,7 @@ extract:{[t;tname;dt;o]
 
   / use symstats to find oversized instruments
   maxsize:opts[`targetsize] * opts[`maxfactor];
-  .z.m.loginfo[`pqx;"Creating plans for ",string[tname],"; Date - ",string dt];
+  .z.m.loginfo[`pqx;"Creating plans for ",string[tname],"; date: ",string dt];
   plans:.z.m.plan[symstats;opts;maxsize];
 
   / check parallel flag to pick iterator function
@@ -256,6 +281,13 @@ extract:{[t;tname;dt;o]
   .z.m.loginfo[`pqx;"Writing down ",string[tname]," Parquet files to disk for ",string dt];
   res:raze parallelfn [.z.m.writefile[t;opts;writeopt;writedir]; plans];
   .Q.gc[];
+
+  / write down manifest to partition - best-effort, does not abort the extract call if it fails
+  .z.m.loginfo[`pqx;"Writing down manifest file for table: ",string[tname],"; date: ",string dt];
+  manwrite:.z.m.tryfn[set;(hsym `$writedir,"manifest";res)];
+  if[not first manwrite;
+    .z.m.logwarn[`pqx;"di.pqx: error writing manifest to disk: ",last manwrite]
+  ];
 
   / attach to global manifest and return stats for this extract
   manifest,:res;

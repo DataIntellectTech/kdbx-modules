@@ -15,6 +15,7 @@ oversized instrument across multiple files where required. A manifest recording 
 - Optionally splits any oversized single instrument across multiple files
 - Optionally calibrates the raw-to-parquet size ratio with a trial write, or uses a fixed ratio
 - Optionally pre-sorts input data by instrument/time before writing
+- Optionally partitions output into Hive-style `<col>=<value>/` subdirectories via `dictcols`, one file per combination, ahead of the size-based bucketing above - the partitioned columns are dropped from the on-disk data and can be reconstructed from the path with `readfile`
 - Writes files sequentially or in parallel (`peach`)
 - Accumulates a manifest of every file written, including row counts, instrument lists, time bounds and on-disk size
 
@@ -73,7 +74,7 @@ omitted from `o` fall back to the default shown below.
 | `rowgroupbytes` | `128*1024*1024` | long | Reserved for future use — not currently read by the write path |
 | `codec` | `` `zstd `` | symbol | Compression codec, upper-cased and applied to the writer's `` `COMPRESSION `` option |
 | `complevel` | `3` | long | Reserved for future use — not currently read by the write path |
-| `dictcols` | `` `sym`exchange `` | symbol list | Reserved for future use — not currently read by the write path |
+| `dictcols` | `` `symbol$() `` | symbol list | Virtual, path-only partition columns. When non-empty, takes precedence over `onesymperfile`/`splitoversized`: one file is written per distinct combination of these columns' values, forcing both of those off for the call |
 | `parallel` | `0b` | boolean | Write files with `peach` instead of `each` |
 | `outdir` | `` `:. `` | symbol | Root output directory |
 | `filestub` | `"part"` | string | File name stub; files are written as `<filestub>-NNNNN.parquet` |
@@ -90,6 +91,18 @@ key check.
 When `onesymperfile` is `1b`, each instrument is written to its own file regardless of `targetsize`
 bucketing, and `splitoversized` is forced to `0b` for that call (an oversized single instrument is
 still written to one file, not split, even if `splitoversized:1b` is also passed in `o`).
+
+When `dictcols` is non-empty, it takes precedence over both `onesymperfile` and `splitoversized`
+(both are forced to `0b` for that call, regardless of what was passed in `o`), and `targetsize`/
+`maxfactor` bucketing does not apply: every distinct combination of the `dictcols` columns' values
+becomes exactly one output file, however large. `extract` throws (`` `di.pqx: not all dictcols
+found in table ``) if any `dictcols` column is not present in the input table. Output paths gain one
+`<col>=<value>/` segment per `dictcols` column, Hive-style, e.g.
+`<outdir>/<tname>/date=<dt>/exchange=NASDAQ/<filestub>-NNNNN.parquet` — this path is the only place
+a file's combination is recorded; the manifest schema itself is unchanged. The `dictcols` columns
+themselves are dropped from the on-disk data before writing (their value is already fixed by the
+path, so keeping them in every row would just be redundant storage) — use `readfile` (see below) to
+read a file back with its `dictcols` values (and the `date` partition) reattached as columns.
 
 ---
 
@@ -146,6 +159,7 @@ pqx.init[enlist[`log]!enlist logdep]
 | `init[deps]` | Wire the injected `log` dependency. Call once before the first `extract`. |
 | `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns that same per-file stats table, scoped to this call. |
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
+| `readfile[path;readopt]` | Read a single file back, reattaching its `dictcols`/`date` values reconstructed from its path (see Options). |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn` — are
 internal pipeline steps of `extract`, exposed only so `k4unit` can exercise them directly. Call
@@ -178,6 +192,28 @@ size-estimation/calibration step, so a fresh `outdir` works with the default `ca
 ```q
 pqx.extract[trade;`trade;2025.07.15;`targetsize`codec!(256*1024*1024;`gzip)]
 ```
+
+### `readfile[path;readopt]`
+Read a single parquet file back via `` .m.di.0pqx.arrow.pq.readParquetToTable ``, then reattach any
+values that `extract` stripped from the on-disk data and encoded only in the file's path — the
+`date=<dt>` partition segment (reconstructed as a date) and any `dictcols` combination segments
+(each reconstructed as a symbol). Every `col=value` segment found in `path` becomes a column in the
+returned table, broadcast as a constant across every row. `path` may be a plain string or an hsym,
+with or without a leading colon; `readopt` is passed straight through to the underlying reader (e.g.
+`` (0#`)!() `` to read every column).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `path` | string or symbol | Path to a single file, as recorded in a manifest `file` value |
+| `readopt` | dict | Options passed through to `` .m.di.0pqx.arrow.pq.readParquetToTable `` |
+
+```q
+f:1_string first exec file from pqx.getmanifest[] where file like "*exchange=NASDAQ*"
+pqx.readfile[f;(0#`)!()]
+```
+
+Only useful for a file written with `dictcols` set, or to recover the `date` — a file written without
+`dictcols` has nothing to reconstruct beyond `date`, since no other columns were stripped from it.
 
 ---
 
@@ -225,9 +261,11 @@ zero-row table and a table missing `symcol`/`timecol` (both fail outright), and 
 
 ## Notes
 
-- `rowgroupbytes`, `complevel`, and `dictcols` are accepted in `default` and any `o` override, but
-  nothing in the current write path reads them — only `` `PARQUET_VERSION `` (fixed at
-  `` `V2.LATEST ``) and `` `COMPRESSION `` (from `codec`) are passed to the writer.
+- `rowgroupbytes` and `complevel` are accepted in `default` and any `o` override, but nothing in the
+  current write path reads them — only `` `PARQUET_VERSION `` (fixed at `` `V2.LATEST ``) and
+  `` `COMPRESSION `` (from `codec`) are passed to the writer. `dictcols` (see Options) is read by
+  `plan`/`estimate`/`writefile` for file planning and output paths, but has no relation to Parquet
+  dictionary encoding despite the name.
 - `symcol`/`timecol` presence is validated unconditionally on every `extract` call, even when
   `presort` is `0b`. A zero-row input table is rejected outright, before that check, regardless of
   `calibrate`.

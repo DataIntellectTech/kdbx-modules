@@ -16,7 +16,7 @@ default:(
   128*1024*1024;                 / ~128 MB row groups
   `zstd;                         / codec
   3;                             / compression level
-  `sym`exchange;                 / dictionary-encode these columns
+  `symbol$();                    / virtual (path-only) partition columns, taking precedence over onesymperfile/splitoversized
   0b;                            / write files via peach
   `:.;                           / output directory
   "part"                         / file name stub
@@ -50,9 +50,12 @@ estimate:{[t;o;writeopt]
   / for a partition of data, estimates the size of the tables to be saved to disk
   / if calibrate flag is true in o, a test write is carried out
   / returns a table of storage stats for all instruments and the compression ratio, which may have changed depending on calibration
-  cnts:`rowcnt xasc 0!?[t;();enlist[o[`symcol]]!enlist[o[`symcol]];enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by sym from t, using appropriate substitutions for time and sym cols
+  / group by dictcols as well as symcol, so a sym occurring under multiple dictcols combinations gets its own row
+  gcols:distinct o[`dictcols],o[`symcol];
+  cnts:`rowcnt xasc 0!?[t;();gcols!gcols;enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by gcols from t, using appropriate substitutions for time and sym/dictcols
   medsym:cnts @ first where abs[cnt-med[cnt]]=min[abs[cnt-med[cnt:cnts`rowcnt]]];
-  bytesperrow:%[-22!t:.z.m.checkandconvertcols t[where t[o[`symcol]]=medsym[o[`symcol]]];medsym`rowcnt];
+  mask:min each flip {[t;medsym;x] t[x]=medsym[x]}[t;medsym] each gcols; / row matches medsym's full (dictcols,symcol) combination, not just its sym
+  bytesperrow:%[-22!t:.z.m.checkandconvertcols t[where mask];medsym`rowcnt];
 
   / calibrate compression ratio if option is enabled
   if[o`calibrate;
@@ -112,6 +115,17 @@ plan:{[t;o;maxsize]
   / else a new bucket is created
   / large instruments are also split into multiple files if splitoversized flag is true
   symstats:t;
+
+  / dictcols take precedence over everything else - one file per distinct combination.
+  / computed directly here (rather than through the shared bucket-then-recompute tail below) because
+  / symstats can carry multiple rows per sym once dictcols grouping is active (see estimate), and the
+  / tail's calcsize call would double count a sym's bytes across its different dictcols combinations
+  if[count o`dictcols;
+    .z.m.loginfo[`pqx;"Enforcing one file per dictcols combination"];
+    grp:0!?[t;();(o`dictcols)!o`dictcols;`syms`estbytes!((o`symcol);(sum;`estbyt))];
+    :update seqno:enlist each 1+til count grp, estbytes:enlist each "j"$estbytes from grp
+  ];
+
   plans:();
 
   / if one sym per file, enlist each sym to assign to individual buckets
@@ -154,18 +168,19 @@ plan:{[t;o;maxsize]
   :0!`syms xgroup update estbytes:"j"$.z.m.calcsize[symstats;o`symcol;;]'[syms;seqno]%count seqno by syms from plans
  };
 
-datalookup:{[t;symcol;syms;cnt]
+datalookup:{[t;symcol;syms;cnt;mask]
   / get lists of indices by file
   / a pass with multiple instruments is assumed to be one file only, hence the return is flattened into one list
+  / mask restricts to rows belonging to this file's dictcols combination (all 1b when dictcols is unset)
   $[1<count syms;
-    :enlist[raze/[.z.m.datalookuponesym[t;symcol;;cnt] each syms]];
-    :.z.m.datalookuponesym[t;symcol;first[syms];cnt]
+    :enlist[raze/[.z.m.datalookuponesym[t;symcol;;cnt;mask] each syms]];
+    :.z.m.datalookuponesym[t;symcol;first[syms];cnt;mask]
   ]
  };
 
-datalookuponesym:{[t;symcol;sym;cnt]
-  / finds indices where instrument occurs in table partition, and cuts into lists if the result set is to be split
-  :ceiling [%[count[where t[symcol] in sym];cnt]] cut where t[symcol] in sym
+datalookuponesym:{[t;symcol;sym;cnt;mask]
+  / finds indices where instrument occurs in table partition (and matches the dictcols mask), and cuts into lists if the result set is to be split
+  :ceiling [%[count[where mask&t[symcol] in sym];cnt]] cut where mask&t[symcol] in sym
  };
 
 writefile:{[t;o;writeopt;writedir;map]
@@ -173,11 +188,32 @@ writefile:{[t;o;writeopt;writedir;map]
   / returns stats to be inserted into the manifest
   
   syms:map`syms;
-  map:flip `syms _ map;
+
+  / if dictcols are set, this file's combination becomes a Hive-style `col=value` subdirectory under writedir,
+  / and rows must be restricted to this combination - the same sym can occur under other combinations too.
+  / the subdirectory itself is created up front by extract, on the main thread - writefile runs under peach
+  / when parallel is on, and forking via system from a secondary thread is unsafe and throws 'sys
+  combo:o[`dictcols]#map;
+  segs:{string[x],"=",string y}'[key combo;value combo];
+  writedir:writedir,$[count segs;("/" sv segs),"/";""];
+  combomask:$[count segs;min each flip {[t;x;y] t[x]=y}[t]'[key combo;value combo];count[t]#1b];
+
+  / compute row indices against the original t - datalookup needs t[symcol], and symcol may itself be one
+  / of the dictcols columns - then apply those same indices to a separately-stripped table for the write.
+  / dictcols values are fixed for the whole file (per combomask above) and encoded in its path already, so
+  / they are dropped once, up front, rather than duplicated into every row of the on-disk data; dropping
+  / columns from an already row-indexed slice instead breaks the arrow write whenever a file holds more
+  / than one instrument (datalookup's index shape for >1 sym doesn't survive a second functional amend).
+  / guarded on count: a functional delete of an EMPTY column list against a `p#-attributed symcol (set by
+  / presort, on by default) silently returns a zero-row table instead of being the no-op it should be
+  t:$[count o`dictcols;![t;();0b;o`dictcols];t];
+
+  map:flip (`syms,o[`dictcols]) _ map;
+  idx:.z.m.datalookup[t;o`symcol;syms;count map;combomask];
 
   / build paths for each seqno
   paths:writedir,/:o[`filestub],/:"-",/:("0"^-5$string[map`seqno]),\:".parquet";
-  
+
   / data to write, iterated by file
   res:raze {[t;o;writeopt;split;syms;map;path;i]
     .z.m.loginfo[`pqx;"Writing seqNo ",string[map`seqno],", path - ",path];
@@ -199,9 +235,26 @@ writefile:{[t;o;writeopt;writedir;map]
       split;
       `error`ok[first res]
     )
-  }[t;o;writeopt;1<count map;syms;;;]'[map;paths;.z.m.datalookup[t;o`symcol;syms;count map]];
+  }[tw;o;writeopt;1<count map;syms;;;]'[map;paths;idx];
 
   :res
+ };
+
+readfile:{[path;readopt]
+  / reads back a single file written by extract, reconstructing any values that were stripped from the
+  / on-disk data and encoded only in its path - the date partition and any dictcols combination (see writefile).
+  / dictcols values are reconstructed as symbols; the date segment is reconstructed as an actual date.
+  / path may be an hsym or a plain string, with or without a leading colon
+  p:$[-11h=type path;string path;path];
+  p:$[":"=first p;1_p;p];
+  parts:"/" vs p;
+  segs:parts where parts like "*=*";
+  ks:`$first each "=" vs/: segs;
+  vals:last each "=" vs/: segs;
+  vals:{[k;v] $[k=`date;"D"$v;`$v]}'[ks;vals];
+  t:.m.di.0pqx.arrow.pq.readParquetToTable[path;readopt];
+  / each value is enlisted - a bare symbol atom in a functional update is read as a column reference, not a literal
+  :![t;();0b;ks!enlist each vals]
  };
 
 tryfn:{[f;x]
@@ -248,6 +301,17 @@ extract:{[t;tname;dt;o]
     'err
   ];
 
+  / dictcols take precedence over onesymperfile/splitoversized - one file per combination
+  if[count opts`dictcols;
+    if[not all opts[`dictcols] in cols[t];
+      .z.m.logerr[`pqx;err:"di.pqx: not all dictcols found in table"];
+      'err
+    ];
+    .z.m.loginfo[`pqx;"dictcols requested, turning off onesymperfile and splitoversized"];
+    opts[`onesymperfile]:0b;
+    opts[`splitoversized]:0b
+  ];
+
   / if presort, sort by sym then time
   / apply parted attribute on symcol
   if[opts`presort;
@@ -274,6 +338,17 @@ extract:{[t;tname;dt;o]
   maxsize:opts[`targetsize] * opts[`maxfactor];
   .z.m.loginfo[`pqx;"Creating plans for ",string[tname],"; date: ",string dt];
   plans:.z.m.plan[symstats;opts;maxsize];
+
+  / pre-create every dictcols combination's output subdirectory here, on the main thread - writefile runs
+  / under peach when parallel is on, and forking via system from a secondary thread is unsafe (throws 'sys)
+  if[count opts`dictcols;
+    {[writedir;combo]
+      d:writedir,("/" sv {string[x],"=",string y}'[key combo;value combo]),"/";
+      if[not count key hsym `$d;
+        system "mkdir -p \"",d,"\"";
+      ]
+    }[writedir] each distinct opts[`dictcols]#plans;
+  ];
 
   / check parallel flag to pick iterator function
   parallelfn:(each;peach)[opts[`parallel]];

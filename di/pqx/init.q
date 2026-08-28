@@ -4,4 +4,4 @@ arrow:use`kx.arrow
 
 \l ::pqx.q
 
-export:([init;extract;getmanifest;checkandconvertcols;estimate;plan;writefile;tryfn])
+export:([init;extract;getmanifest;readfile;checkandconvertcols;estimate;plan;writefile;tryfn])

@@ -261,7 +261,7 @@ buildvirtualtable:{[hdbdir;tname;datecol;dictcols]
   / of their data - partition values (the date segment and any dictcols segments) are reconstructed from
   / each file's hive-style path, mirroring how writefile strips those same columns from the on-disk data
   path:` sv hdbdir,tname;
-  files:([] file:system"find \"",(1 _ string path),"\" -name \"*.parquet\"");
+  files:([] file:system"find \"",(1 _ string path),"\" -name \"*.parquet\" | sort");
   files:update split:"/" vs/:file from files;
   lv:1+count where "/"=string path;
   levels:(),datecol,dictcols;
@@ -324,14 +324,17 @@ extract:{[t;tname;dt;o]
   ];
 
   / dictcols take precedence over onesymperfile/splitoversized - one file per combination
-  if[count opts`dictcols;
+  if[count opts[`dictcols];
     if[not all opts[`dictcols] in cols[t];
       .z.m.logerr[`pqx;err:"di.pqx: not all dictcols found in table"];
       'err
     ];
     .z.m.loginfo[`pqx;"dictcols requested, turning off onesymperfile and splitoversized"];
     opts[`onesymperfile]:0b;
-    opts[`splitoversized]:0b
+    opts[`splitoversized]:0b;
+    if[-11h=type opts`dictcols;
+      opts[`dictcols]:enlist opts`dictcols
+    ]
   ];
 
   / if presort, sort by sym then time

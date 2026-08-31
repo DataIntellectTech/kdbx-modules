@@ -6,4 +6,4 @@ pqt:use`kx.pq.t
 
 \l ::pqx.q
 
-export:([init;extract;getmanifest;checkandconvertcols;estimate;plan;writefile;tryfn;buildvirtualtable;castvirtualcol])
+export:([init;extract;getmanifest;checkandconvertcols;estimate;plan;writefile;readfile;tryfn;buildvirtualtable;castvirtualcol])

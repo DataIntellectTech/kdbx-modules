@@ -198,18 +198,17 @@ writefile:{[t;o;writeopt;writedir;map]
   writedir:writedir,$[count segs;("/" sv segs),"/";""];
   combomask:$[count segs;min each flip {[t;x;y] t[x]=y}[t]'[key combo;value combo];count[t]#1b];
 
-  / compute row indices against the original t - datalookup needs t[symcol], and symcol may itself be one
-  / of the dictcols columns - then apply those same indices to a separately-stripped table for the write.
-  / dictcols values are fixed for the whole file (per combomask above) and encoded in its path already, so
-  / they are dropped once, up front, rather than duplicated into every row of the on-disk data; dropping
-  / columns from an already row-indexed slice instead breaks the arrow write whenever a file holds more
-  / than one instrument (datalookup's index shape for >1 sym doesn't survive a second functional amend).
-  / guarded on count: a functional delete of an EMPTY column list against a `p#-attributed symcol (set by
-  / presort, on by default) silently returns a zero-row table instead of being the no-op it should be
-  t:$[count o`dictcols;![t;();0b;o`dictcols];t];
-
   map:flip (`syms,o[`dictcols]) _ map;
+
+  / row indices must be found before dictcols columns are dropped - datalookup needs t[symcol], and symcol
+  / may itself be one of the dictcols columns. dictcols values are fixed for the whole file (per combomask
+  / above) and encoded in its path already, so t is stripped of them in place afterwards - once here, not
+  / duplicated into every row of the on-disk data, and not dropped later from an already row-indexed slice
+  / (which breaks the arrow write whenever a file holds more than one instrument). guarded on count: a
+  / functional delete of an EMPTY column list against a `p#-attributed symcol (set by presort, on by
+  / default) silently returns a zero-row table instead of being the no-op it should be
   idx:.z.m.datalookup[t;o`symcol;syms;count map;combomask];
+  t:$[count o`dictcols;![t;();0b;o`dictcols];t];
 
   / build paths for each seqno
   paths:writedir,/:o[`filestub],/:"-",/:("0"^-5$string[map`seqno]),\:".parquet";
@@ -235,7 +234,7 @@ writefile:{[t;o;writeopt;writedir;map]
       split;
       `error`ok[first res]
     )
-  }[tw;o;writeopt;1<count map;syms;;;]'[map;paths;idx];
+  }[t;o;writeopt;1<count map;syms;;;]'[map;paths;idx];
 
   :res
  };
@@ -255,6 +254,29 @@ readfile:{[path;readopt]
   t:.m.di.0pqx.arrow.pq.readParquetToTable[path;readopt];
   / each value is enlisted - a bare symbol atom in a functional update is read as a column reference, not a literal
   :![t;();0b;ks!enlist each vals]
+ };
+
+buildvirtualtable:{[hdbdir;tname;datecol;dictcols]
+  / builds a queryable virtual table over parquet files scattered under hdbdir/tname, without reading any
+  / of their data - partition values (the date segment and any dictcols segments) are reconstructed from
+  / each file's hive-style path, mirroring how writefile strips those same columns from the on-disk data
+  path:` sv hdbdir,tname;
+  files:([] file:system"find \"",(1 _ string path),"\" -name \"*.parquet\"");
+  files:update split:"/" vs/:file from files;
+  lv:1+count where "/"=string path;
+  levels:(),datecol,dictcols;
+  levelcols:{[datecol;x] (castvirtualcol[datecol;x;];`split)}[datecol] each lv+til count levels;
+  files:![files;();0b;(`file,levels)!enlist[({hsym `$x};`file)],levelcols];
+  pqt.mkP (levels#files)!pq.pq each exec file from files
+ };
+
+castvirtualcol:{[datecol;x;y]
+  / casts the xth hive-style path segment (a "key=value" string) of every row in y's split column to its
+  / reconstructed value - a date if it's the datecol level, else a symbol
+  :$[datecol = first `$distinct first each "=" vs' v:y[;x];
+    "D"$last each "=" vs' v;
+    `$last each "=" vs' v
+  ]
  };
 
 tryfn:{[f;x]

@@ -18,6 +18,7 @@ oversized instrument across multiple files where required. A manifest recording 
 - Optionally partitions output into Hive-style `<col>=<value>/` subdirectories via `dictcols`, one file per combination, ahead of the size-based bucketing above - the partitioned columns are dropped from the on-disk data and can be reconstructed from the path with `readfile`
 - Writes files sequentially or in parallel (`peach`)
 - Accumulates a manifest of every file written, including row counts, instrument lists, time bounds and on-disk size
+- Builds a queryable virtual table over a directory of previously-written `.parquet` files, without reading any of their data up front - `date`/`dictcols` values are reconstructed straight from each file's path
 
 ---
 
@@ -27,15 +28,22 @@ oversized instrument across multiple files where required. A manifest recording 
 |---|---|---|---|
 | logger | `` `log `` | yes | dict with `info`, `warn`, and `error`, each binary `{[c;m]}` where `c` is a symbol context and `m` is a string |
 
-**Hard dependency:** `kx.arrow` — loaded automatically (via `use`) when `di.pqx` is imported, before
-`pqx.q` itself is loaded. `extract` calls `` .m.di.0pqx.arrow.pq.writeParquetFromTable `` to perform
-every write.
+**Hard dependencies:** `kx.arrow` and `kx.pq` — both loaded automatically (via `use`) when `di.pqx`
+is imported, before `pqx.q` itself is loaded. `extract`/`readfile` call
+`` .m.di.0pqx.arrow.pq.writeParquetFromTable ``/`` .m.di.0pqx.arrow.pq.readParquetToTable `` to
+perform every write/read; `buildvirtualtable` calls `` .m.di.0pqx.pq.pq `` (per-file virtual table)
+and `` .m.di.0pqx.pqt.mkP `` (from `` kx.pq.t ``, loaded separately as `pqt`) to compose the
+multi-file view.
 
-`kx.arrow` must be resolvable on the process's module search path at that point. Where it's
+Both modules must be resolvable on the process's module search path at that point. Where either is
 installed as a conda package (e.g. under a `kx.qmamba`-managed root such as
 `~/.kx/root/lib/q/mod`), that location needs to already be on `QPATH` — `di.pqx` does not load
-`kx.qmamba` itself to arrange this. Confirm `kx.arrow` loads standalone (`` use`kx.arrow ``) in the
-target environment before relying on `di.pqx` there.
+`kx.qmamba` itself to arrange this. Confirm `kx.arrow`, `kx.pq`, and `kx.pq.t` each load standalone
+(`` use`kx.arrow ``, `` use`kx.pq ``, `` use`kx.pq.t ``) in the target environment before relying on
+`di.pqx` there. `kx.arrow`'s bundled `libcurl` may also need a newer OpenSSL than the system default
+on the `LD_LIBRARY_PATH` — if `use\`kx.arrow` fails with an `OPENSSL_*` symbol-version error, point
+`LD_LIBRARY_PATH` at the `lib` directory the conda-installed `kx.arrow`/`kx.pq` packages ship
+alongside it.
 
 The `log` dependency must be passed to `init` inside a dict keyed on `` `log ``. `init` throws
 immediately if `log` is absent, is not a dict, or is missing any of `info`/`warn`/`error`. The value
@@ -137,6 +145,53 @@ updates the in-memory `manifest`.
 
 ---
 
+## Virtual Tables
+
+`buildvirtualtable` opens every `.parquet` file under `<hdbdir>/<tname>/` as a single queryable
+table, without reading any row data up front - it's the read-side counterpart to `extract`'s output
+layout. Each file's `date=<dt>/` segment (and any `<col>=<value>/` `dictcols` segments) is
+reconstructed from its path into a virtual column, exactly mirroring what `extract`/`writefile`
+stripped from the on-disk data on the way in. Filtering on those virtual columns (e.g.
+`` select from vt where date=2025.07.15,exch=`NASDAQ `` ) prunes to just the matching files rather
+than scanning everything.
+
+The returned value is not a regular in-memory kdb+ table - it's a functional/composed object from
+`kx.pq.t`'s `mkP`. `select` works on it directly; `exec`/`meta`/`cols` do not work applied directly
+to it, only to a `select` (or `meta`) result taken from it first (e.g.
+`` exec c from meta vt `` to list columns, `` exec count i from select from vt `` to count rows,
+not `` count vt `` or `` cols vt ``).
+
+Genuine on-disk columns keep whatever type they were written with - notably, character/symbol
+columns come back as **strings**, not symbols, since Parquet has no native symbol type (see
+`checkandconvertcols`). Only the path-reconstructed `date`/`dictcols` columns come back typed as a
+real date/symbol.
+
+### `buildvirtualtable[hdbdir;tname;datecol;dictcols]`
+Find every `.parquet` file under `<hdbdir>/<tname>/` and compose them into one virtual table,
+partitioned by the `date=<dt>/` segment and any `dictcols` segments found in each file's path.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `hdbdir` | symbol (hsym) | Root directory - matches `extract`'s `outdir` |
+| `tname` | symbol | Table name - matches `extract`'s `tname` |
+| `datecol` | symbol | Name to give the reconstructed date partition column (need not be literally `` `date `` ) |
+| `dictcols` | symbol list | Names of any `dictcols` path segments to reconstruct, in path order - matches `extract`'s `dictcols`. Pass `` `symbol$() `` if the data was written without `dictcols` |
+
+```q
+vt:pqx.buildvirtualtable[`:./;`trade;`date;enlist`exchange]
+select from vt where date=2025.07.15,exchange=`NASDAQ
+```
+
+Building the table succeeds even if no files match (an empty view); querying that empty view then
+fails, rather than silently returning zero rows. `dictcols` here does not need to match a prior
+`extract` call exactly - it only needs to match the path segments actually present under
+`hdbdir/tname/date=.../`. Passing a `dictcols` name that collides with a genuine on-disk column
+(rather than one `extract` actually stripped to the path) produces unreliable results — the two
+columns are not distinguished internally, unlike on the write side where `writefile` always strips
+the real column first.
+
+---
+
 ## Initialisation
 
 `init[deps]` wires the injected `log` dependency and must be called before the first `extract`. It
@@ -160,10 +215,11 @@ pqx.init[enlist[`log]!enlist logdep]
 | `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns that same per-file stats table, scoped to this call. |
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
 | `readfile[path;readopt]` | Read a single file back, reattaching its `dictcols`/`date` values reconstructed from its path (see Options). |
+| `buildvirtualtable[hdbdir;tname;datecol;dictcols]` | Compose every file under `hdbdir/tname/` into one queryable virtual table, with `date`/`dictcols` reconstructed from each file's path (see Virtual Tables). |
 
-The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn` — are
-internal pipeline steps of `extract`, exposed only so `k4unit` can exercise them directly. Call
-`extract` for normal use.
+The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn`,
+`castvirtualcol` — are internal pipeline steps of `extract`/`buildvirtualtable`, exposed only so
+`k4unit` can exercise them directly. Call `extract`/`buildvirtualtable` for normal use.
 
 ### `init[deps]`
 Validate the required `log` dependency and store it for use by every other function.
@@ -257,6 +313,13 @@ custom `filestub`/non-default codec — then asserts on the resulting `getmanife
 zero-row table and a table missing `symcol`/`timecol` (both fail outright), and an invalid `codec`
 (degrades gracefully — see Manifest Schema's `status` column).
 
+It also builds `buildvirtualtable` views over several of those same `extract` outputs — no
+`dictcols`, a single `dictcols` level, and two `dictcols` levels (one overlapping `symcol` itself) —
+asserting row counts, virtual-column types, and that filtering on a virtual column prunes to the
+right file(s). `castvirtualcol` is exercised directly for both the datecol and non-datecol cases,
+including a datecol not literally named `` `date `` . A directory with no matching files is covered
+too: building the view over it succeeds, but querying it then fails.
+
 ---
 
 ## Notes
@@ -272,3 +335,6 @@ zero-row table and a table missing `symcol`/`timecol` (both fail outright), and 
 - A per-file write failure (e.g. an invalid `codec`) is caught and logged at `warn`, and that file
   is recorded with `` status=`error `` (and `bytes:0`) in the manifest — it does not abort the rest of
   `extract`.
+- `buildvirtualtable` has only been tested pointed at a single `date=` partition at a time; pointing
+  it at `hdbdir/tname/` directories that span multiple dates is expected to work (the `date` segment
+  is reconstructed the same way as any other level) but isn't covered by `test.csv` yet.

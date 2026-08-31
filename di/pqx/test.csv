@@ -143,4 +143,40 @@ run,0,0,q,pqxreconstructed16:pqx.readfile[pqxfile16;(0#`)!()],1,,Reconstruct the
 true,0,0,q,all pqxreconstructed16[`sym]=`AAPL,1,,readfile reconstructs sym from the path even though sym is also symcol
 true,0,0,q,all pqxreconstructed16[`exch]=`N,1,,readfile reconstructs exch from the path alongside sym
 
-after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8",1,,Remove parquet output directories written by tests
+run,0,0,q,pqxvt1:pqx.buildvirtualtable[`:pqxout1/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a single-file no-dictcols partition
+run,0,0,q,pqxvt12:pqx.buildvirtualtable[`:pqxout12/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a multi-file no-dictcols partition (onesymperfile)
+run,0,0,q,pqxvt14:pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;enlist`exch],1,,Build a virtual table over a single dictcols level
+run,0,0,q,pqxvt16:pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;`sym`exch],1,,Build a virtual table over two dictcols levels, one overlapping symcol
+
+true,0,0,q,`buildvirtualtable in key pqx,1,,buildvirtualtable is exported from the module
+true,0,0,q,`castvirtualcol in key pqx,1,,castvirtualcol is exported from the module
+
+true,0,0,q,9~exec count i from select from pqxvt1,1,,Virtual table over a single-file partition reports every row
+true,0,0,q,-14h~type first exec date from select date from pqxvt1,1,,The reconstructed date column carries the real kdb+ date type, not a string
+true,0,0,q,enlist[2025.07.15]~exec distinct date from select date from pqxvt1,1,,The reconstructed date matches the extract's own partition date
+true,0,0,q,not `exch in exec c from meta pqxvt1,1,,No virtual dictcols column appears when the extract had none
+
+true,0,0,q,9~exec count i from select from pqxvt12,1,,Virtual table sums rows correctly across multiple files written at the same partition level
+true,0,0,q,3 3 3~asc value exec count i by sym from select sym from pqxvt12,1,,Every instrument's file is discovered and its rows counted, even though sym stays a real on-disk column here
+
+true,0,0,q,9~exec count i from select from pqxvt14,1,,Virtual table over dictcols-partitioned files reports every row across both files
+true,0,0,q,-11h~type first exec exch from select exch from pqxvt14,1,,The reconstructed dictcols column carries the symbol type
+true,0,0,q,6~exec count i from select from pqxvt14 where exch=`N,1,,Filtering on the reconstructed dictcols column prunes to just the exch=N file's rows
+true,0,0,q,3~exec count i from select from pqxvt14 where exch=`O,1,,Filtering on the reconstructed dictcols column prunes to just the exch=O file's rows
+true,0,0,q,`N`O~asc exec distinct exch from select exch from pqxvt14,1,,Both dictcols combinations are discovered from their subdirectories
+
+true,0,0,q,9~exec count i from select from pqxvt16,1,,Virtual table over two dictcols levels still reports every row across all six files
+true,0,0,q,"2~exec count i from select from pqxvt16 where sym=`AAPL,exch=`N",1,,Filtering on both reconstructed dictcols columns together prunes to the matching combination's file
+true,0,0,q,-11h~type first exec sym from select sym from pqxvt16,1,,sym is reconstructed as a real symbol on the virtual table even though it was stripped from the on-disk data as a dictcols column
+true,0,0,q,all `sym`exch in exec c from meta pqxvt16,1,,Both dictcols columns are present as virtual columns even though one shares its name with symcol
+
+true,0,0,q,2025.08.01~first pqx.castvirtualcol[`date;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,castvirtualcol reconstructs the datecol level of a path segment as a date
+true,0,0,q,`N~first pqx.castvirtualcol[`date;1;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,castvirtualcol reconstructs a non-datecol level of a path segment as a symbol
+true,0,0,q,2025.01.01~first pqx.castvirtualcol[`asOf;0;enlist enlist "asOf=2025.01.01"],1,,castvirtualcol works for any datecol name, not just a column literally named `date
+true,0,0,q,2025.08.01 2025.08.02~pqx.castvirtualcol[`date;0;(enlist "date=2025.08.01";enlist "date=2025.08.02")],1,,castvirtualcol casts every row's segment when given multiple rows at once
+
+run,0,0,q,system "mkdir -p pqxoutf9/pqxempty/date=2025.08.05",1,,Create a table directory containing no parquet files
+run,0,0,q,pqxvtempty:pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;`date;`symbol$()],1,,Building a virtual table succeeds even when no parquet files are found under the directory
+fail,0,0,q,select from pqxvtempty,1,,Querying a virtual table built over zero files fails rather than silently returning an empty result
+
+after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8 pqxoutf9",1,,Remove parquet output directories written by tests

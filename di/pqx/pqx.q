@@ -24,17 +24,18 @@ default:(
 
 / define empty schema for manifest
 manifest:([]
-  file     :`symbol$();    / path written
-  seq      :`long$();      / sequence number within the partition
-  syms     :();            / list of instruments in the file
-  nsyms    :`long$();      / count of instruments
-  rows     :`long$();      / row count
-  mintime  :`timestamp$(); / min time across the file (for pruning)
-  maxtime  :`timestamp$(); / max time across the file
-  estbytes :`long$();      / estimated size at plan time
-  bytes    :`long$();      / actual on-disk size
-  split    :`boolean$();   / true if this file is a chunk of a split oversized instrument
-  status   :`symbol$()     / `ok | `error
+  file        :`symbol$();    / path written
+  seq         :`long$();      / sequence number within the partition
+  virtualcols :();            / list of virtual columns
+  syms        :();            / list of instruments in the file
+  nsyms       :`long$();      / count of instruments
+  rows        :`long$();      / row count
+  mintime     :`timestamp$(); / min time across the file (for pruning)
+  maxtime     :`timestamp$(); / max time across the file
+  estbytes    :`long$();      / estimated size at plan time
+  bytes       :`long$();      / actual on-disk size
+  split       :`boolean$();   / true if this file is a chunk of a split oversized instrument
+  status      :`symbol$()     / `ok | `error
   );
 
 checkandconvertcols:{[t]
@@ -221,9 +222,10 @@ writefile:{[t;o;writeopt;writedir;map]
       .z.m.loginfo[`pqx;"seqNo ",string[map`seqno]," write successful"];
       .z.m.logwarn[`pqx;"seqNo ",string[map`seqno]," write unsuccessful. Error - ",last res]
     ];
-    :`file`seq`syms`nsyms`rows`mintime`maxtime`estbytes`bytes`split`status!/: flip (
+    :`file`seq`virtualcols`syms`nsyms`rows`mintime`maxtime`estbytes`bytes`split`status!/: flip (
       hsym `$path;
       map`seqno;
+      enlist o`virtualcols;
       enlist[syms];
       count[syms];
       count[i];
@@ -382,10 +384,12 @@ extract:{[t;tname;dt;o]
 
   / write down manifest to partition - best-effort, does not abort the extract call if it fails
   .z.m.loginfo[`pqx;"Writing down manifest file for table: ",string[tname],"; date: ",string dt];
-  manwrite:.z.m.tryfn[set;(hsym `$writedir,"manifest";res)];
+  manwrite:.z.m.tryfn[0:;(hsym `$writedir,"manifest.json";enlist .j.j res)];
   if[not first manwrite;
     .z.m.logwarn[`pqx;"di.pqx: error writing manifest to disk: ",last manwrite]
   ];
+
+  .z.m.loginfo[`pqx;"Extract complete table: ",string[tname]," data for date: ",string dt];
 
   / attach to global manifest and return stats for this extract
   manifest,:res;

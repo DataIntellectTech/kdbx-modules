@@ -10,7 +10,7 @@ before,0,0,q,pqxoversized:([]sym:20000#`AAPL;time:2025.07.15D00:00:00.000000000+
 before,0,0,q,pqxnotime:([]sym:5#`AAPL;price:1.0 2.0 3.0 4.0 5.0),1,,Table missing the time column
 before,0,0,q,pqxaltsym:([]sym:`B`A`B`A`A;alt:`X`Y`X`Y`Y;time:2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000004 2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000001;price:1.0 2.0 3.0 4.0 5.0),1,,Table with a second candidate instrument column to probe the symcol option
 before,0,0,q,pqxsingle:([]sym:enlist`AAPL;time:enlist 2025.07.15D09:30:00.000000000;price:enlist 123.45),1,,Single-row table edge case
-before,0,0,q,pqxdict:([]sym:`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG;exch:`N`N`N`O`O`O`N`N`N;time:2025.07.15D09:30:00.000000000+1000000000*til 9;price:100.0 200.0 300.0 101.0 201.0 301.0 102.0 202.0 302.0;size:10 20 30 40 50 60 70 80 90),1,,Table with an exchange column where every instrument trades on both exchanges - probes dictcols row-filtering correctness
+before,0,0,q,pqxdict:([]sym:`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG;exch:`N`N`N`O`O`O`N`N`N;time:2025.07.15D09:30:00.000000000+1000000000*til 9;price:100.0 200.0 300.0 101.0 201.0 301.0 102.0 202.0 302.0;size:10 20 30 40 50 60 70 80 90),1,,Table with an exchange column where every instrument trades on both exchanges - probes virtualcols row-filtering correctness
 
 true,0,0,q,98h~type pqx.getmanifest[],1,,Manifest is a table before anything is written
 
@@ -108,45 +108,45 @@ true,0,0,q,not first exec split from pqx.getmanifest[] where file like "*pqxout1
 
 fail,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.31;`outdir`badoption!(`:pqxoutf7/;1)],1,,Extract fails when passed an option key that isn't recognised
 
-run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.01;`outdir`dictcols!(`:pqxout14/;enlist`exch)],1,,Extract with dictcols set to exch - one file per exchange combination
-true,0,0,q,2~count select from pqx.getmanifest[] where file like "*pqxout14*",1,,dictcols produces exactly one file per distinct exch value
-true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout14*",1,,All input rows are accounted for exactly once across the dictcols files - no row is duplicated across combinations
+run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.01;`outdir`virtualcols!(`:pqxout14/;enlist`exch)],1,,Extract with virtualcols set to exch - one file per exchange combination
+true,0,0,q,2~count select from pqx.getmanifest[] where file like "*pqxout14*",1,,virtualcols produces exactly one file per distinct exch value
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout14*",1,,All input rows are accounted for exactly once across the virtualcols files - no row is duplicated across combinations
 true,0,0,q,all 3=exec nsyms from pqx.getmanifest[] where file like "*pqxout14*",1,,Every instrument trades on both exchanges, so both files see all three instruments
 true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=N*"")",1,,Output path is partitioned into a Hive-style exch=N subdirectory
 true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=O*"")",1,,Output path is partitioned into a Hive-style exch=O subdirectory
 true,0,0,q,"6~first exec rows from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=N*"")",1,,The exch=N file contains only the 6 rows that actually belong to exch=N - not every row for its instruments
 true,0,0,q,"3~first exec rows from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=O*"")",1,,The exch=O file contains only the 3 rows that actually belong to exch=O - not every row for its instruments
 
-run,0,0,q,"pqxfile14n:1_string first exec file from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=N*"")",1,,Resolve the path written for the exch=N dictcols file
+run,0,0,q,"pqxfile14n:1_string first exec file from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=N*"")",1,,Resolve the path written for the exch=N virtualcols file
 run,0,0,q,pqxraw14n:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile14n;(0#`)!()],1,,Read the raw on-disk data directly, bypassing readfile's reconstruction
-true,0,0,q,not `exch in cols pqxraw14n,1,,The dictcols column (exch) is stripped from the on-disk data rather than duplicated into every row
-true,0,0,q,`sym in cols pqxraw14n,1,,Non-dictcols columns are still written to disk as normal
+true,0,0,q,not `exch in cols pqxraw14n,1,,The virtualcols column (exch) is stripped from the on-disk data rather than duplicated into every row
+true,0,0,q,`sym in cols pqxraw14n,1,,Non-virtualcols columns are still written to disk as normal
 run,0,0,q,pqxreconstructed14n:pqx.readfile[pqxfile14n;(0#`)!()],1,,Read the same file back through readfile, which reconstructs values encoded in the path
 true,0,0,q,all pqxreconstructed14n[`exch]=`N,1,,readfile reconstructs the exch column as `N for every row, from the exch=N path segment
 true,0,0,q,all pqxreconstructed14n[`date]=2025.08.01,1,,readfile also reconstructs the date partition segment as an actual date
 true,0,0,q,(cols pqxraw14n)~cols[pqxreconstructed14n] except `date`exch,1,,readfile only adds the reconstructed columns - the rest of the schema is untouched
 
-run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.02;`outdir`dictcols`onesymperfile`splitoversized!(`:pqxout15/;enlist`exch;1b;1b)],1,,dictcols takes priority over onesymperfile and splitoversized even when both are explicitly requested
+run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.02;`outdir`virtualcols`onesymperfile`splitoversized!(`:pqxout15/;enlist`exch;1b;1b)],1,,virtualcols takes priority over onesymperfile and splitoversized even when both are explicitly requested
 true,0,0,q,2~count select from pqx.getmanifest[] where file like "*pqxout15*",1,,Still exactly one file per exch combination, not one per instrument
-true,0,0,q,not any 1=exec nsyms from pqx.getmanifest[] where file like "*pqxout15*",1,,Files are not split down to one instrument each, confirming onesymperfile was overridden by dictcols
+true,0,0,q,not any 1=exec nsyms from pqx.getmanifest[] where file like "*pqxout15*",1,,Files are not split down to one instrument each, confirming onesymperfile was overridden by virtualcols
 
-fail,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.03;`outdir`dictcols!(`:pqxoutf8/;enlist`nosuchcol)],1,,Extract fails when a dictcols column is not present in the table
+fail,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.03;`outdir`virtualcols!(`:pqxoutf8/;enlist`nosuchcol)],1,,Extract fails when a virtualcols column is not present in the table
 
-run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.04;`outdir`dictcols!(`:pqxout16/;`sym`exch)],1,,Extract with dictcols including symcol itself - the same column drives row selection and path partitioning
+run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.04;`outdir`virtualcols!(`:pqxout16/;`sym`exch)],1,,Extract with virtualcols including symcol itself - the same column drives row selection and path partitioning
 true,0,0,q,6~count select from pqx.getmanifest[] where file like "*pqxout16*",1,,One file per distinct (sym,exch) combination
-true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout16*",1,,All input rows are accounted for exactly once even when symcol overlaps dictcols
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout16*",1,,All input rows are accounted for exactly once even when symcol overlaps virtualcols
 run,0,0,q,"pqxfile16:1_string first exec file from pqx.getmanifest[] where (file like ""*pqxout16*""),(file like ""*sym=AAPL*""),(file like ""*exch=N*"")",1,,Resolve the path for the sym=AAPL/exch=N combination
 run,0,0,q,pqxraw16:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile16;(0#`)!()],1,,Read the raw on-disk data for that combination
-true,0,0,q,not `sym in cols pqxraw16,1,,symcol itself is stripped from the on-disk data when it is also a dictcols column
+true,0,0,q,not `sym in cols pqxraw16,1,,symcol itself is stripped from the on-disk data when it is also a virtualcols column
 true,0,0,q,2~count pqxraw16,1,,The sym=AAPL/exch=N file contains exactly its own 2 rows - not every AAPL or every exch=N row
 run,0,0,q,pqxreconstructed16:pqx.readfile[pqxfile16;(0#`)!()],1,,Reconstruct the values stripped from the path
 true,0,0,q,all pqxreconstructed16[`sym]=`AAPL,1,,readfile reconstructs sym from the path even though sym is also symcol
 true,0,0,q,all pqxreconstructed16[`exch]=`N,1,,readfile reconstructs exch from the path alongside sym
 
-run,0,0,q,pqxvt1:pqx.buildvirtualtable[`:pqxout1/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a single-file no-dictcols partition
-run,0,0,q,pqxvt12:pqx.buildvirtualtable[`:pqxout12/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a multi-file no-dictcols partition (onesymperfile)
-run,0,0,q,pqxvt14:pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;enlist`exch],1,,Build a virtual table over a single dictcols level
-run,0,0,q,pqxvt16:pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;`sym`exch],1,,Build a virtual table over two dictcols levels, one overlapping symcol
+run,0,0,q,pqxvt1:pqx.buildvirtualtable[`:pqxout1/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a single-file no-virtualcols partition
+run,0,0,q,pqxvt12:pqx.buildvirtualtable[`:pqxout12/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a multi-file no-virtualcols partition (onesymperfile)
+run,0,0,q,pqxvt14:pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;enlist`exch],1,,Build a virtual table over a single virtualcols level
+run,0,0,q,pqxvt16:pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;`sym`exch],1,,Build a virtual table over two virtualcols levels, one overlapping symcol
 
 true,0,0,q,`buildvirtualtable in key pqx,1,,buildvirtualtable is exported from the module
 true,0,0,q,`castvirtualcol in key pqx,1,,castvirtualcol is exported from the module
@@ -154,21 +154,21 @@ true,0,0,q,`castvirtualcol in key pqx,1,,castvirtualcol is exported from the mod
 true,0,0,q,9~exec count i from select from pqxvt1,1,,Virtual table over a single-file partition reports every row
 true,0,0,q,-14h~type first exec date from select date from pqxvt1,1,,The reconstructed date column carries the real kdb+ date type, not a string
 true,0,0,q,enlist[2025.07.15]~exec distinct date from select date from pqxvt1,1,,The reconstructed date matches the extract's own partition date
-true,0,0,q,not `exch in exec c from meta pqxvt1,1,,No virtual dictcols column appears when the extract had none
+true,0,0,q,not `exch in exec c from meta pqxvt1,1,,No virtualcols column appears when the extract had none
 
 true,0,0,q,9~exec count i from select from pqxvt12,1,,Virtual table sums rows correctly across multiple files written at the same partition level
 true,0,0,q,3 3 3~asc value exec count i by sym from select sym from pqxvt12,1,,Every instrument's file is discovered and its rows counted, even though sym stays a real on-disk column here
 
-true,0,0,q,9~exec count i from select from pqxvt14,1,,Virtual table over dictcols-partitioned files reports every row across both files
-true,0,0,q,-11h~type first exec exch from select exch from pqxvt14,1,,The reconstructed dictcols column carries the symbol type
-true,0,0,q,6~exec count i from select from pqxvt14 where exch=`N,1,,Filtering on the reconstructed dictcols column prunes to just the exch=N file's rows
-true,0,0,q,3~exec count i from select from pqxvt14 where exch=`O,1,,Filtering on the reconstructed dictcols column prunes to just the exch=O file's rows
-true,0,0,q,`N`O~asc exec distinct exch from select exch from pqxvt14,1,,Both dictcols combinations are discovered from their subdirectories
+true,0,0,q,9~exec count i from select from pqxvt14,1,,Virtual table over virtualcols-partitioned files reports every row across both files
+true,0,0,q,-11h~type first exec exch from select exch from pqxvt14,1,,The reconstructed virtualcols column carries the symbol type
+true,0,0,q,6~exec count i from select from pqxvt14 where exch=`N,1,,Filtering on the reconstructed virtualcols column prunes to just the exch=N file's rows
+true,0,0,q,3~exec count i from select from pqxvt14 where exch=`O,1,,Filtering on the reconstructed virtualcols column prunes to just the exch=O file's rows
+true,0,0,q,`N`O~asc exec distinct exch from select exch from pqxvt14,1,,Both virtualcols combinations are discovered from their subdirectories
 
-true,0,0,q,9~exec count i from select from pqxvt16,1,,Virtual table over two dictcols levels still reports every row across all six files
-true,0,0,q,"2~exec count i from select from pqxvt16 where sym=`AAPL,exch=`N",1,,Filtering on both reconstructed dictcols columns together prunes to the matching combination's file
-true,0,0,q,-11h~type first exec sym from select sym from pqxvt16,1,,sym is reconstructed as a real symbol on the virtual table even though it was stripped from the on-disk data as a dictcols column
-true,0,0,q,all `sym`exch in exec c from meta pqxvt16,1,,Both dictcols columns are present as virtual columns even though one shares its name with symcol
+true,0,0,q,9~exec count i from select from pqxvt16,1,,Virtual table over two virtualcols levels still reports every row across all six files
+true,0,0,q,"2~exec count i from select from pqxvt16 where sym=`AAPL,exch=`N",1,,Filtering on both reconstructed virtualcols columns together prunes to the matching combination's file
+true,0,0,q,-11h~type first exec sym from select sym from pqxvt16,1,,sym is reconstructed as a real symbol on the virtual table even though it was stripped from the on-disk data as a virtualcols column
+true,0,0,q,all `sym`exch in exec c from meta pqxvt16,1,,Both virtualcols columns are present as virtual columns even though one shares its name with symcol
 
 true,0,0,q,2025.08.01~first pqx.castvirtualcol[`date;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,castvirtualcol reconstructs the datecol level of a path segment as a date
 true,0,0,q,`N~first pqx.castvirtualcol[`date;1;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,castvirtualcol reconstructs a non-datecol level of a path segment as a symbol

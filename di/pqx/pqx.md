@@ -15,10 +15,10 @@ oversized instrument across multiple files where required. A manifest recording 
 - Optionally splits any oversized single instrument across multiple files
 - Optionally calibrates the raw-to-parquet size ratio with a trial write, or uses a fixed ratio
 - Optionally pre-sorts input data by instrument/time before writing
-- Optionally partitions output into Hive-style `<col>=<value>/` subdirectories via `dictcols`, one file per combination, ahead of the size-based bucketing above - the partitioned columns are dropped from the on-disk data and can be reconstructed from the path with `readfile`
+- Optionally partitions output into Hive-style `<col>=<value>/` subdirectories via `virtualcols`, one file per combination, ahead of the size-based bucketing above - the partitioned columns are dropped from the on-disk data and can be reconstructed from the path with `readfile`
 - Writes files sequentially or in parallel (`peach`)
 - Accumulates a manifest of every file written, including row counts, instrument lists, time bounds and on-disk size
-- Builds a queryable virtual table over a directory of previously-written `.parquet` files, without reading any of their data up front - `date`/`dictcols` values are reconstructed straight from each file's path
+- Builds a queryable virtual table over a directory of previously-written `.parquet` files, without reading any of their data up front - `date`/`virtualcols` values are reconstructed straight from each file's path
 
 ---
 
@@ -82,7 +82,7 @@ omitted from `o` fall back to the default shown below.
 | `rowgroupbytes` | `128*1024*1024` | long | Reserved for future use — not currently read by the write path |
 | `codec` | `` `zstd `` | symbol | Compression codec, upper-cased and applied to the writer's `` `COMPRESSION `` option |
 | `complevel` | `3` | long | Reserved for future use — not currently read by the write path |
-| `dictcols` | `` `symbol$() `` | symbol list | Virtual, path-only partition columns. When non-empty, takes precedence over `onesymperfile`/`splitoversized`: one file is written per distinct combination of these columns' values, forcing both of those off for the call |
+| `virtualcols` | `` `symbol$() `` | symbol list | Virtual, path-only partition columns. When non-empty, takes precedence over `onesymperfile`/`splitoversized`: one file is written per distinct combination of these columns' values, forcing both of those off for the call |
 | `parallel` | `0b` | boolean | Write files with `peach` instead of `each` |
 | `outdir` | `` `:. `` | symbol | Root output directory |
 | `filestub` | `"part"` | string | File name stub; files are written as `<filestub>-NNNNN.parquet` |
@@ -100,17 +100,17 @@ When `onesymperfile` is `1b`, each instrument is written to its own file regardl
 bucketing, and `splitoversized` is forced to `0b` for that call (an oversized single instrument is
 still written to one file, not split, even if `splitoversized:1b` is also passed in `o`).
 
-When `dictcols` is non-empty, it takes precedence over both `onesymperfile` and `splitoversized`
+When `virtualcols` is non-empty, it takes precedence over both `onesymperfile` and `splitoversized`
 (both are forced to `0b` for that call, regardless of what was passed in `o`), and `targetsize`/
-`maxfactor` bucketing does not apply: every distinct combination of the `dictcols` columns' values
-becomes exactly one output file, however large. `extract` throws (`` `di.pqx: not all dictcols
-found in table ``) if any `dictcols` column is not present in the input table. Output paths gain one
-`<col>=<value>/` segment per `dictcols` column, Hive-style, e.g.
+`maxfactor` bucketing does not apply: every distinct combination of the `virtualcols` columns' values
+becomes exactly one output file, however large. `extract` throws (`` `di.pqx: not all virtualcols
+found in table ``) if any `virtualcols` column is not present in the input table. Output paths gain one
+`<col>=<value>/` segment per `virtualcols` column, Hive-style, e.g.
 `<outdir>/<tname>/date=<dt>/exchange=NASDAQ/<filestub>-NNNNN.parquet` — this path is the only place
-a file's combination is recorded; the manifest schema itself is unchanged. The `dictcols` columns
+a file's combination is recorded; the manifest schema itself is unchanged. The `virtualcols` columns
 themselves are dropped from the on-disk data before writing (their value is already fixed by the
 path, so keeping them in every row would just be redundant storage) — use `readfile` (see below) to
-read a file back with its `dictcols` values (and the `date` partition) reattached as columns.
+read a file back with its `virtualcols` values (and the `date` partition) reattached as columns.
 
 ---
 
@@ -149,7 +149,7 @@ updates the in-memory `manifest`.
 
 `buildvirtualtable` opens every `.parquet` file under `<hdbdir>/<tname>/` as a single queryable
 table, without reading any row data up front - it's the read-side counterpart to `extract`'s output
-layout. Each file's `date=<dt>/` segment (and any `<col>=<value>/` `dictcols` segments) is
+layout. Each file's `date=<dt>/` segment (and any `<col>=<value>/` `virtualcols` segments) is
 reconstructed from its path into a virtual column, exactly mirroring what `extract`/`writefile`
 stripped from the on-disk data on the way in. Filtering on those virtual columns (e.g.
 `` select from vt where date=2025.07.15,exch=`NASDAQ `` ) prunes to just the matching files rather
@@ -163,19 +163,19 @@ not `` count vt `` or `` cols vt ``).
 
 Genuine on-disk columns keep whatever type they were written with - notably, character/symbol
 columns come back as **strings**, not symbols, since Parquet has no native symbol type (see
-`checkandconvertcols`). Only the path-reconstructed `date`/`dictcols` columns come back typed as a
+`checkandconvertcols`). Only the path-reconstructed `date`/`virtualcols` columns come back typed as a
 real date/symbol.
 
-### `buildvirtualtable[hdbdir;tname;datecol;dictcols]`
+### `buildvirtualtable[hdbdir;tname;datecol;virtualcols]`
 Find every `.parquet` file under `<hdbdir>/<tname>/` and compose them into one virtual table,
-partitioned by the `date=<dt>/` segment and any `dictcols` segments found in each file's path.
+partitioned by the `date=<dt>/` segment and any `virtualcols` segments found in each file's path.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `hdbdir` | symbol (hsym) | Root directory - matches `extract`'s `outdir` |
 | `tname` | symbol | Table name - matches `extract`'s `tname` |
 | `datecol` | symbol | Name to give the reconstructed date partition column (need not be literally `` `date `` ) |
-| `dictcols` | symbol list | Names of any `dictcols` path segments to reconstruct, in path order - matches `extract`'s `dictcols`. Pass `` `symbol$() `` if the data was written without `dictcols` |
+| `virtualcols` | symbol list | Names of any `virtualcols` path segments to reconstruct, in path order - matches `extract`'s `virtualcols`. Pass `` `symbol$() `` if the data was written without `virtualcols` |
 
 ```q
 vt:pqx.buildvirtualtable[`:./;`trade;`date;enlist`exchange]
@@ -183,9 +183,9 @@ select from vt where date=2025.07.15,exchange=`NASDAQ
 ```
 
 Building the table succeeds even if no files match (an empty view); querying that empty view then
-fails, rather than silently returning zero rows. `dictcols` here does not need to match a prior
+fails, rather than silently returning zero rows. `virtualcols` here does not need to match a prior
 `extract` call exactly - it only needs to match the path segments actually present under
-`hdbdir/tname/date=.../`. Passing a `dictcols` name that collides with a genuine on-disk column
+`hdbdir/tname/date=.../`. Passing a `virtualcols` name that collides with a genuine on-disk column
 (rather than one `extract` actually stripped to the path) produces unreliable results — the two
 columns are not distinguished internally, unlike on the write side where `writefile` always strips
 the real column first.
@@ -214,8 +214,8 @@ pqx.init[enlist[`log]!enlist logdep]
 | `init[deps]` | Wire the injected `log` dependency. Call once before the first `extract`. |
 | `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns that same per-file stats table, scoped to this call. |
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
-| `readfile[path;readopt]` | Read a single file back, reattaching its `dictcols`/`date` values reconstructed from its path (see Options). |
-| `buildvirtualtable[hdbdir;tname;datecol;dictcols]` | Compose every file under `hdbdir/tname/` into one queryable virtual table, with `date`/`dictcols` reconstructed from each file's path (see Virtual Tables). |
+| `readfile[path;readopt]` | Read a single file back, reattaching its `virtualcols`/`date` values reconstructed from its path (see Options). |
+| `buildvirtualtable[hdbdir;tname;datecol;virtualcols]` | Compose every file under `hdbdir/tname/` into one queryable virtual table, with `date`/`virtualcols` reconstructed from each file's path (see Virtual Tables). |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn`,
 `castvirtualcol` — are internal pipeline steps of `extract`/`buildvirtualtable`, exposed only so
@@ -252,7 +252,7 @@ pqx.extract[trade;`trade;2025.07.15;`targetsize`codec!(256*1024*1024;`gzip)]
 ### `readfile[path;readopt]`
 Read a single parquet file back via `` .m.di.0pqx.arrow.pq.readParquetToTable ``, then reattach any
 values that `extract` stripped from the on-disk data and encoded only in the file's path — the
-`date=<dt>` partition segment (reconstructed as a date) and any `dictcols` combination segments
+`date=<dt>` partition segment (reconstructed as a date) and any `virtualcols` combination segments
 (each reconstructed as a symbol). Every `col=value` segment found in `path` becomes a column in the
 returned table, broadcast as a constant across every row. `path` may be a plain string or an hsym,
 with or without a leading colon; `readopt` is passed straight through to the underlying reader (e.g.
@@ -268,8 +268,8 @@ f:1_string first exec file from pqx.getmanifest[] where file like "*exchange=NAS
 pqx.readfile[f;(0#`)!()]
 ```
 
-Only useful for a file written with `dictcols` set, or to recover the `date` — a file written without
-`dictcols` has nothing to reconstruct beyond `date`, since no other columns were stripped from it.
+Only useful for a file written with `virtualcols` set, or to recover the `date` — a file written without
+`virtualcols` has nothing to reconstruct beyond `date`, since no other columns were stripped from it.
 
 ---
 
@@ -314,7 +314,7 @@ zero-row table and a table missing `symcol`/`timecol` (both fail outright), and 
 (degrades gracefully — see Manifest Schema's `status` column).
 
 It also builds `buildvirtualtable` views over several of those same `extract` outputs — no
-`dictcols`, a single `dictcols` level, and two `dictcols` levels (one overlapping `symcol` itself) —
+`virtualcols`, a single `virtualcols` level, and two `virtualcols` levels (one overlapping `symcol` itself) —
 asserting row counts, virtual-column types, and that filtering on a virtual column prunes to the
 right file(s). `castvirtualcol` is exercised directly for both the datecol and non-datecol cases,
 including a datecol not literally named `` `date `` . A directory with no matching files is covered
@@ -326,9 +326,8 @@ too: building the view over it succeeds, but querying it then fails.
 
 - `rowgroupbytes` and `complevel` are accepted in `default` and any `o` override, but nothing in the
   current write path reads them — only `` `PARQUET_VERSION `` (fixed at `` `V2.LATEST ``) and
-  `` `COMPRESSION `` (from `codec`) are passed to the writer. `dictcols` (see Options) is read by
-  `plan`/`estimate`/`writefile` for file planning and output paths, but has no relation to Parquet
-  dictionary encoding despite the name.
+  `` `COMPRESSION `` (from `codec`) are passed to the writer. `virtualcols` (see Options) is read by
+  `plan`/`estimate`/`writefile` for file planning and output paths only.
 - `symcol`/`timecol` presence is validated unconditionally on every `extract` call, even when
   `presort` is `0b`. A zero-row input table is rejected outright, before that check, regardless of
   `calibrate`.

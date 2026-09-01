@@ -1,7 +1,7 @@
 / define default config
 default:(
   `targetsize`maxfactor`splitoversized`calibrate`onesymperfile`compressionratio,
-  `symcol`timecol`presort`rowgroupbytes`codec`complevel`dictcols,
+  `symcol`timecol`presort`rowgroupbytes`codec`complevel`virtualcols,
   `parallel`outdir`filestub
   )!(
   512*1024*1024;                 / ~512 MB target file size
@@ -50,11 +50,11 @@ estimate:{[t;o;writeopt]
   / for a partition of data, estimates the size of the tables to be saved to disk
   / if calibrate flag is true in o, a test write is carried out
   / returns a table of storage stats for all instruments and the compression ratio, which may have changed depending on calibration
-  / group by dictcols as well as symcol, so a sym occurring under multiple dictcols combinations gets its own row
-  gcols:distinct o[`dictcols],o[`symcol];
-  cnts:`rowcnt xasc 0!?[t;();gcols!gcols;enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by gcols from t, using appropriate substitutions for time and sym/dictcols
+  / group by virtualcols as well as symcol, so a sym occurring under multiple virtualcols combinations gets its own row
+  gcols:distinct o[`virtualcols],o[`symcol];
+  cnts:`rowcnt xasc 0!?[t;();gcols!gcols;enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by gcols from t, using appropriate substitutions for time and sym/virtualcols
   medsym:cnts @ first where abs[cnt-med[cnt]]=min[abs[cnt-med[cnt:cnts`rowcnt]]];
-  mask:min each flip {[t;medsym;x] t[x]=medsym[x]}[t;medsym] each gcols; / row matches medsym's full (dictcols,symcol) combination, not just its sym
+  mask:min each flip {[t;medsym;x] t[x]=medsym[x]}[t;medsym] each gcols; / row matches medsym's full (virtualcols,symcol) combination, not just its sym
   bytesperrow:%[-22!t:.z.m.checkandconvertcols t[where mask];medsym`rowcnt];
 
   / calibrate compression ratio if option is enabled
@@ -116,13 +116,13 @@ plan:{[t;o;maxsize]
   / large instruments are also split into multiple files if splitoversized flag is true
   symstats:t;
 
-  / dictcols take precedence over everything else - one file per distinct combination.
+  / virtualcols take precedence over everything else - one file per distinct combination.
   / computed directly here (rather than through the shared bucket-then-recompute tail below) because
-  / symstats can carry multiple rows per sym once dictcols grouping is active (see estimate), and the
-  / tail's calcsize call would double count a sym's bytes across its different dictcols combinations
-  if[count o`dictcols;
-    .z.m.loginfo[`pqx;"Enforcing one file per dictcols combination"];
-    grp:0!?[t;();(o`dictcols)!o`dictcols;`syms`estbytes!((o`symcol);(sum;`estbyt))];
+  / symstats can carry multiple rows per sym once virtualcols grouping is active (see estimate), and the
+  / tail's calcsize call would double count a sym's bytes across its different virtualcols combinations
+  if[count o`virtualcols;
+    .z.m.loginfo[`pqx;"Enforcing one file per virtualcols combination"];
+    grp:0!?[t;();(o`virtualcols)!o`virtualcols;`syms`estbytes!((o`symcol);(sum;`estbyt))];
     :update seqno:enlist each 1+til count grp, estbytes:enlist each "j"$estbytes from grp
   ];
 
@@ -171,7 +171,7 @@ plan:{[t;o;maxsize]
 datalookup:{[t;symcol;syms;cnt;mask]
   / get lists of indices by file
   / a pass with multiple instruments is assumed to be one file only, hence the return is flattened into one list
-  / mask restricts to rows belonging to this file's dictcols combination (all 1b when dictcols is unset)
+  / mask restricts to rows belonging to this file's virtualcols combination (all 1b when virtualcols is unset)
   $[1<count syms;
     :enlist[raze/[.z.m.datalookuponesym[t;symcol;;cnt;mask] each syms]];
     :.z.m.datalookuponesym[t;symcol;first[syms];cnt;mask]
@@ -179,7 +179,7 @@ datalookup:{[t;symcol;syms;cnt;mask]
  };
 
 datalookuponesym:{[t;symcol;sym;cnt;mask]
-  / finds indices where instrument occurs in table partition (and matches the dictcols mask), and cuts into lists if the result set is to be split
+  / finds indices where instrument occurs in table partition (and matches the virtualcols mask), and cuts into lists if the result set is to be split
   :ceiling [%[count[where mask&t[symcol] in sym];cnt]] cut where mask&t[symcol] in sym
  };
 
@@ -189,26 +189,26 @@ writefile:{[t;o;writeopt;writedir;map]
   
   syms:map`syms;
 
-  / if dictcols are set, this file's combination becomes a Hive-style `col=value` subdirectory under writedir,
+  / if virtualcols are set, this file's combination becomes a Hive-style `col=value` subdirectory under writedir,
   / and rows must be restricted to this combination - the same sym can occur under other combinations too.
   / the subdirectory itself is created up front by extract, on the main thread - writefile runs under peach
   / when parallel is on, and forking via system from a secondary thread is unsafe and throws 'sys
-  combo:o[`dictcols]#map;
+  combo:o[`virtualcols]#map;
   segs:{string[x],"=",string y}'[key combo;value combo];
   writedir:writedir,$[count segs;("/" sv segs),"/";""];
   combomask:$[count segs;min each flip {[t;x;y] t[x]=y}[t]'[key combo;value combo];count[t]#1b];
 
-  map:flip (`syms,o[`dictcols]) _ map;
+  map:flip (`syms,o[`virtualcols]) _ map;
 
-  / row indices must be found before dictcols columns are dropped - datalookup needs t[symcol], and symcol
-  / may itself be one of the dictcols columns. dictcols values are fixed for the whole file (per combomask
+  / row indices must be found before virtualcols columns are dropped - datalookup needs t[symcol], and symcol
+  / may itself be one of the virtualcols columns. virtualcols values are fixed for the whole file (per combomask
   / above) and encoded in its path already, so t is stripped of them in place afterwards - once here, not
   / duplicated into every row of the on-disk data, and not dropped later from an already row-indexed slice
   / (which breaks the arrow write whenever a file holds more than one instrument). guarded on count: a
   / functional delete of an EMPTY column list against a `p#-attributed symcol (set by presort, on by
   / default) silently returns a zero-row table instead of being the no-op it should be
   idx:.z.m.datalookup[t;o`symcol;syms;count map;combomask];
-  t:$[count o`dictcols;![t;();0b;o`dictcols];t];
+  t:$[count o`virtualcols;![t;();0b;o`virtualcols];t];
 
   / build paths for each seqno
   paths:writedir,/:o[`filestub],/:"-",/:("0"^-5$string[map`seqno]),\:".parquet";
@@ -241,8 +241,8 @@ writefile:{[t;o;writeopt;writedir;map]
 
 readfile:{[path;readopt]
   / reads back a single file written by extract, reconstructing any values that were stripped from the
-  / on-disk data and encoded only in its path - the date partition and any dictcols combination (see writefile).
-  / dictcols values are reconstructed as symbols; the date segment is reconstructed as an actual date.
+  / on-disk data and encoded only in its path - the date partition and any virtualcols combination (see writefile).
+  / virtualcols values are reconstructed as symbols; the date segment is reconstructed as an actual date.
   / path may be an hsym or a plain string, with or without a leading colon
   p:$[-11h=type path;string path;path];
   p:$[":"=first p;1_p;p];
@@ -256,15 +256,15 @@ readfile:{[path;readopt]
   :![t;();0b;ks!enlist each vals]
  };
 
-buildvirtualtable:{[hdbdir;tname;datecol;dictcols]
+buildvirtualtable:{[hdbdir;tname;datecol;virtualcols]
   / builds a queryable virtual table over parquet files scattered under hdbdir/tname, without reading any
-  / of their data - partition values (the date segment and any dictcols segments) are reconstructed from
+  / of their data - partition values (the date segment and any virtualcols segments) are reconstructed from
   / each file's hive-style path, mirroring how writefile strips those same columns from the on-disk data
   path:` sv hdbdir,tname;
   files:([] file:system"find \"",(1 _ string path),"\" -name \"*.parquet\" | sort");
   files:update split:"/" vs/:file from files;
   lv:1+count where "/"=string path;
-  levels:(),datecol,dictcols;
+  levels:(),datecol,virtualcols;
   levelcols:{[datecol;x] (castvirtualcol[datecol;x;];`split)}[datecol] each lv+til count levels;
   files:![files;();0b;(`file,levels)!enlist[({hsym `$x};`file)],levelcols];
   pqt.mkP (levels#files)!pq.pq each exec file from files
@@ -321,17 +321,17 @@ extract:{[t;tname;dt;o]
     'err
   ];
 
-  / dictcols take precedence over onesymperfile/splitoversized - one file per combination
-  if[count opts[`dictcols];
-    if[not all opts[`dictcols] in cols[t];
-      .z.m.logerr[`pqx;err:"di.pqx: not all dictcols found in table"];
+  / virtualcols take precedence over onesymperfile/splitoversized - one file per combination
+  if[count opts[`virtualcols];
+    if[not all opts[`virtualcols] in cols[t];
+      .z.m.logerr[`pqx;err:"di.pqx: not all virtualcols found in table"];
       'err
     ];
-    .z.m.loginfo[`pqx;"dictcols requested, turning off onesymperfile and splitoversized"];
+    .z.m.loginfo[`pqx;"virtualcols requested, turning off onesymperfile and splitoversized"];
     opts[`onesymperfile]:0b;
     opts[`splitoversized]:0b;
-    if[-11h=type opts`dictcols;
-      opts[`dictcols]:enlist opts`dictcols
+    if[-11h=type opts`virtualcols;
+      opts[`virtualcols]:enlist opts`virtualcols
     ]
   ];
 
@@ -362,15 +362,15 @@ extract:{[t;tname;dt;o]
   .z.m.loginfo[`pqx;"Creating plans for ",string[tname],"; date: ",string dt];
   plans:.z.m.plan[symstats;opts;maxsize];
 
-  / pre-create every dictcols combination's output subdirectory here, on the main thread - writefile runs
+  / pre-create every virtualcols combination's output subdirectory here, on the main thread - writefile runs
   / under peach when parallel is on, and forking via system from a secondary thread is unsafe (throws 'sys)
-  if[count opts`dictcols;
+  if[count opts`virtualcols;
     {[writedir;combo]
       d:writedir,("/" sv {string[x],"=",string y}'[key combo;value combo]),"/";
       if[not count key hsym `$d;
         system "mkdir -p \"",d,"\"";
       ]
-    }[writedir] each distinct opts[`dictcols]#plans;
+    }[writedir] each distinct opts[`virtualcols]#plans;
   ];
 
   / check parallel flag to pick iterator function

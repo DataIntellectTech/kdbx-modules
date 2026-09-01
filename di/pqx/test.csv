@@ -90,7 +90,7 @@ true,0,0,q,("j"$exec bytes from pqxsidecar10)~exec bytes from pqxret10,1,,bytes 
 true,0,0,q,(exec split from pqxsidecar10)~exec split from pqxret10,1,,split is a native JSON boolean and round-trips without casting
 true,0,0,q,(`$exec status from pqxsidecar10)~exec status from pqxret10,1,,status round-trips through JSON once cast back from string to symbol
 true,0,0,q,(`$exec file from pqxsidecar10)~exec file from pqxret10,1,,file round-trips through JSON once cast back from string to symbol
-true,0,0,q,(`$first exec syms from pqxsidecar10)~first exec syms from pqxret10,1,,syms round-trips through JSON once each instrument name is cast back from string to symbol
+true,0,0,q,(`$first exec syms from pqxsidecar10)~first exec syms from pqxret10,1,,syms round-trips through JSON once each instrument name is cast back from string to symbol (single row case)
 true,0,0,q,0=count first exec virtualcols from pqxsidecar10,1,,virtualcols is empty in the sidecar for a call made without virtualcols set
 
 run,0,0,q,pqxret11a:pqx.extract[pqxbasic;`pqxtrade;2025.07.27;enlist[`outdir]!enlist `:pqxout11/],1,,First extract call into a partition that will be written to twice

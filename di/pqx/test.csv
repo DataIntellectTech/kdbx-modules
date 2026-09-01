@@ -99,6 +99,16 @@ run,0,0,q,pqxsidecar11:.j.k first read0 hsym `$"pqxout11/pqxtrade/date=2025.07.2
 true,0,0,q,("j"$exec rows from pqxsidecar11)~exec rows from pqxret11b,1,,The manifest.json sidecar reflects only the most recent call's stats
 true,0,0,q,not ("j"$exec rows from pqxsidecar11)~exec rows from pqxret11a,1,,Repeat extract calls into the same partition overwrite the sidecar rather than appending to it
 
+run,0,0,q,pqxret17:pqx.extract[pqxoversized;`pqxtrade;2025.08.06;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized!(1000;1.1;0b;0.30;`:pqxout17/;1b)],1,,Extract an oversized instrument split across multiple files to exercise a multi-row manifest sidecar
+true,0,0,q,1<count pqxret17,1,,Sanity check - the split instrument is written to more than one file
+run,0,0,q,pqxsidecar17:.j.k first read0 hsym `$"pqxout17/pqxtrade/date=2025.08.06/manifest.json",1,,Parse back the JSON manifest sidecar for the multi-file call
+true,0,0,q,(count pqxret17)~count pqxsidecar17,1,,The sidecar has one entry per file actually written, not just the first
+true,0,0,q,("j"$exec seq from pqxsidecar17)~exec seq from pqxret17,1,,seq round-trips for every row in order, not only the first
+true,0,0,q,("j"$exec rows from pqxsidecar17)~exec rows from pqxret17,1,,rows round-trips for every row, confirming no chunk's stats were dropped or reordered
+true,0,0,q,20000~sum "j"$exec rows from pqxsidecar17,1,,The sidecar's rows sum to the full input row count across every split chunk
+true,0,0,q,(exec split from pqxsidecar17)~exec split from pqxret17,1,,split round-trips for every row - every chunk of the split instrument is flagged, not just the first
+true,0,0,q,(`$exec file from pqxsidecar17)~exec file from pqxret17,1,,file round-trips for every row, confirming each chunk's path is present in the sidecar and in order
+
 run,0,0,q,system "mkdir -p pqxoutf6/pqxtrade/date=2025.07.28/manifest.json",1,,Pre-create a directory at the manifest.json sidecar's path so the sidecar write itself fails
 run,0,0,q,manifestcountbeforef6:count pqx.getmanifest[],1,,Snapshot the accumulated manifest row count before the manifest-write-failure case
 run,0,0,q,pqxretf6:pqx.extract[pqxbasic;`pqxtrade;2025.07.28;enlist[`outdir]!enlist `:pqxoutf6/],1,,Extract still succeeds even though writing its manifest.json sidecar fails
@@ -190,4 +200,4 @@ run,0,0,q,system "mkdir -p pqxoutf9/pqxempty/date=2025.08.05",1,,Create a table 
 run,0,0,q,pqxvtempty:pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;`date;`symbol$()],1,,Building a virtual table succeeds even when no parquet files are found under the directory
 fail,0,0,q,select from pqxvtempty,1,,Querying a virtual table built over zero files fails rather than silently returning an empty result
 
-after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8 pqxoutf9",1,,Remove parquet output directories written by tests
+after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxout17 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8 pqxoutf9",1,,Remove parquet output directories written by tests

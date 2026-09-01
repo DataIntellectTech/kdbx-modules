@@ -299,11 +299,9 @@ extract:{[t;tname;dt;o]
   opts:default,o;
 
   / if one sym per file requested, turn off splitoversized
-  if[`onesymperfile in key o;
-    if[o`onesymperfile;
-      .z.m.loginfo[`pqx;"onesymperfile requested, turning off splitoversized"];
-      opts[`splitoversized]:0b
-    ]
+  if[o`onesymperfile;
+    .z.m.loginfo[`pqx;"onesymperfile requested, turning off splitoversized"];
+    opts[`splitoversized]:0b
   ];
 
   / check for count in tables, error out if not

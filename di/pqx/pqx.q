@@ -301,7 +301,9 @@ extract:{[t;tname;dt;o]
   opts:default,o;
 
   / if one sym per file requested, turn off splitoversized
-  if[o`onesymperfile;
+  / read from opts (always has the key, via default), not o - indexing a missing key on o throws
+  / or is spuriously truthy depending on the types of whatever other keys the caller did pass
+  if[opts`onesymperfile;
     .z.m.loginfo[`pqx;"onesymperfile requested, turning off splitoversized"];
     opts[`splitoversized]:0b
   ];

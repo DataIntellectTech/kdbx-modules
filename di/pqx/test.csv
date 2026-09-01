@@ -80,17 +80,28 @@ true,0,0,q,`error~first exec status from pqx.getmanifest[] where file like "*pqx
 true,0,0,q,0~first exec bytes from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file has zero on-disk bytes recorded
 
 run,0,0,q,pqxret10:pqx.extract[pqxbasic;`pqxtrade;2025.07.26;enlist[`outdir]!enlist `:pqxout10/],1,,Extract a table to exercise the on-disk manifest sidecar
-true,0,0,q,"not ()~key hsym `$""pqxout10/pqxtrade/date=2025.07.26/manifest""",1,,extract writes a manifest sidecar file into the partition directory
-true,0,0,q,"pqxret10~get hsym `$""pqxout10/pqxtrade/date=2025.07.26/manifest""",1,,The on-disk manifest sidecar matches extract's returned per-call stats table
+true,0,0,q,"not ()~key hsym `$""pqxout10/pqxtrade/date=2025.07.26/manifest.json""",1,,extract writes a manifest.json sidecar file into the partition directory
+run,0,0,q,pqxsidecar10:.j.k first read0 hsym `$"pqxout10/pqxtrade/date=2025.07.26/manifest.json",1,,Parse back the JSON manifest sidecar - numeric columns come back as floats and symbol/date/timestamp columns as strings
+true,0,0,q,1~count pqxsidecar10,1,,The sidecar has the same row count as extract's returned per-call stats table
+true,0,0,q,("j"$exec seq from pqxsidecar10)~exec seq from pqxret10,1,,seq round-trips through JSON once cast back from float to long
+true,0,0,q,("j"$exec nsyms from pqxsidecar10)~exec nsyms from pqxret10,1,,nsyms round-trips through JSON once cast back from float to long
+true,0,0,q,("j"$exec rows from pqxsidecar10)~exec rows from pqxret10,1,,rows round-trips through JSON once cast back from float to long
+true,0,0,q,("j"$exec bytes from pqxsidecar10)~exec bytes from pqxret10,1,,bytes round-trips through JSON once cast back from float to long
+true,0,0,q,(exec split from pqxsidecar10)~exec split from pqxret10,1,,split is a native JSON boolean and round-trips without casting
+true,0,0,q,(`$exec status from pqxsidecar10)~exec status from pqxret10,1,,status round-trips through JSON once cast back from string to symbol
+true,0,0,q,(`$exec file from pqxsidecar10)~exec file from pqxret10,1,,file round-trips through JSON once cast back from string to symbol
+true,0,0,q,(`$first exec syms from pqxsidecar10)~first exec syms from pqxret10,1,,syms round-trips through JSON once each instrument name is cast back from string to symbol
+true,0,0,q,0=count first exec virtualcols from pqxsidecar10,1,,virtualcols is empty in the sidecar for a call made without virtualcols set
 
 run,0,0,q,pqxret11a:pqx.extract[pqxbasic;`pqxtrade;2025.07.27;enlist[`outdir]!enlist `:pqxout11/],1,,First extract call into a partition that will be written to twice
 run,0,0,q,pqxret11b:pqx.extract[pqxsingle;`pqxtrade;2025.07.27;enlist[`outdir]!enlist `:pqxout11/],1,,Second extract call into the same partition with different data
-true,0,0,q,"pqxret11b~get hsym `$""pqxout11/pqxtrade/date=2025.07.27/manifest""",1,,The manifest sidecar reflects only the most recent call's stats
-true,0,0,q,"not pqxret11a~get hsym `$""pqxout11/pqxtrade/date=2025.07.27/manifest""",1,,Repeat extract calls into the same partition overwrite the sidecar rather than appending to it
+run,0,0,q,pqxsidecar11:.j.k first read0 hsym `$"pqxout11/pqxtrade/date=2025.07.27/manifest.json",1,,Parse back the JSON manifest sidecar after the second call into the same partition
+true,0,0,q,("j"$exec rows from pqxsidecar11)~exec rows from pqxret11b,1,,The manifest.json sidecar reflects only the most recent call's stats
+true,0,0,q,not ("j"$exec rows from pqxsidecar11)~exec rows from pqxret11a,1,,Repeat extract calls into the same partition overwrite the sidecar rather than appending to it
 
-run,0,0,q,system "mkdir -p pqxoutf6/pqxtrade/date=2025.07.28/manifest",1,,Pre-create a directory at the manifest sidecar's path so the sidecar write itself fails
+run,0,0,q,system "mkdir -p pqxoutf6/pqxtrade/date=2025.07.28/manifest.json",1,,Pre-create a directory at the manifest.json sidecar's path so the sidecar write itself fails
 run,0,0,q,manifestcountbeforef6:count pqx.getmanifest[],1,,Snapshot the accumulated manifest row count before the manifest-write-failure case
-run,0,0,q,pqxretf6:pqx.extract[pqxbasic;`pqxtrade;2025.07.28;enlist[`outdir]!enlist `:pqxoutf6/],1,,Extract still succeeds even though writing its manifest sidecar fails
+run,0,0,q,pqxretf6:pqx.extract[pqxbasic;`pqxtrade;2025.07.28;enlist[`outdir]!enlist `:pqxoutf6/],1,,Extract still succeeds even though writing its manifest.json sidecar fails
 true,0,0,q,9~exec sum rows from pqxretf6,1,,extract still returns full per-file stats despite the sidecar write failure
 true,0,0,q,all `ok=exec status from pqxretf6,1,,Every data file write still succeeds despite the later sidecar write failure
 true,0,0,q,(count pqx.getmanifest[])>manifestcountbeforef6,1,,extract still appends to the accumulated in-memory manifest despite the sidecar write failure

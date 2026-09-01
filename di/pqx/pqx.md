@@ -106,9 +106,9 @@ When `virtualcols` is non-empty, it takes precedence over both `onesymperfile` a
 becomes exactly one output file, however large. `extract` throws (`` `di.pqx: not all virtualcols
 found in table ``) if any `virtualcols` column is not present in the input table. Output paths gain one
 `<col>=<value>/` segment per `virtualcols` column, Hive-style, e.g.
-`<outdir>/<tname>/date=<dt>/exchange=NASDAQ/<filestub>-NNNNN.parquet` — this path is the only place
-a file's combination is recorded; the manifest schema itself is unchanged. The `virtualcols` columns
-themselves are dropped from the on-disk data before writing (their value is already fixed by the
+`<outdir>/<tname>/date=<dt>/exchange=NASDAQ/<filestub>-NNNNN.parquet` — the file's combination is also
+recorded directly in the manifest's `virtualcols` column (see Manifest Schema below). The `virtualcols`
+columns themselves are dropped from the on-disk data before writing (their value is already fixed by the
 path, so keeping them in every row would just be redundant storage) — use `readfile` (see below) to
 read a file back with its `virtualcols` values (and the `date` partition) reattached as columns.
 
@@ -124,6 +124,7 @@ shape, scoped to only the file(s) written by that call.
 |---|---|---|
 | `file` | symbol | Path written |
 | `seq` | long | Sequence number within the partition |
+| `virtualcols` | symbol list | The `virtualcols` option value in effect for this call - the list of columns partitioned into this file's path, not the combination's values themselves (see Options) |
 | `syms` | symbol list | Instruments contained in the file |
 | `nsyms` | long | Count of instruments in the file |
 | `rows` | long | Row count |
@@ -135,13 +136,20 @@ shape, scoped to only the file(s) written by that call.
 | `status` | symbol | `` `ok `` or `` `error `` |
 
 In addition to the in-memory `manifest`, each `extract` call writes this same per-call stats table
-to a `manifest` sidecar file directly under the partition directory (i.e.
-`<outdir>/<tname>/date=<dt>/manifest`), serialized with `set`/readable back with `get`. A repeat
-`extract` call into the same partition overwrites the sidecar with just that call's rows, rather
-than accumulating across calls — the sidecar mirrors `extract`'s return value, not `getmanifest[]`.
-Writing the sidecar is best-effort: if it fails (for example a permissions issue, or something else
-already occupying that path) a warning is logged but `extract` still returns normally and still
-updates the in-memory `manifest`.
+to a `manifest.json` sidecar file directly under the partition directory (i.e.
+`<outdir>/<tname>/date=<dt>/manifest.json`), serialized to a single line of JSON with `.j.j` and
+written with `0:`. A repeat `extract` call into the same partition overwrites the sidecar with just
+that call's rows, rather than accumulating across calls — the sidecar mirrors `extract`'s return
+value, not `getmanifest[]`. Writing the sidecar is best-effort: if it fails (for example a
+permissions issue, or something else already occupying that path) a warning is logged but `extract`
+still returns normally and still updates the in-memory `manifest`.
+
+Read it back with `` .j.k first read0 hsym `$"<outdir>/<tname>/date=<dt>/manifest.json" ``. JSON has
+no native date/timestamp/symbol type, so the round trip is not type-preserving: `file`, `syms`,
+`status` and `virtualcols` come back as plain strings (cast back with `` `$ ``) and `mintime`/`maxtime`
+come back as ISO-8601 strings rather than timestamps; numeric columns (`seq`, `nsyms`, `rows`,
+`estbytes`, `bytes`) come back as floats rather than longs (cast back with `` "j"$ ``) and `split`
+comes back as a native JSON boolean unchanged.
 
 ---
 
@@ -289,9 +297,9 @@ res:pqx.extract[trade;`trade;2025.07.15;`targetsize`codec!(256*1024*1024;`gzip)]
 // res holds only the row(s) written by this call
 res
 
-file                                      seq syms       nsyms rows  mintime                       maxtime                       estbytes bytes   split status
---------------------------------------------------------------------------------------------------------------------------------------------------------------
-:./trade/date=2025.07.15/part-00001.parquet 1  `AAPL`MSFT 2     50000 2025.07.15D00:00:00.000000000 2025.07.15D23:59:59.000000000 1153433  1048576 0b    ok
+file                                      seq virtualcols syms       nsyms rows  mintime                       maxtime                       estbytes bytes   split status
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+:./trade/date=2025.07.15/part-00001.parquet 1  `symbol$()  `AAPL`MSFT 2     50000 2025.07.15D00:00:00.000000000 2025.07.15D23:59:59.000000000 1153433  1048576 0b    ok
 
 // getmanifest[] returns the full accumulated table across every extract call so far
 pqx.getmanifest[]
@@ -319,6 +327,12 @@ asserting row counts, virtual-column types, and that filtering on a virtual colu
 right file(s). `castvirtualcol` is exercised directly for both the datecol and non-datecol cases,
 including a datecol not literally named `` `date `` . A directory with no matching files is covered
 too: building the view over it succeeds, but querying it then fails.
+
+It also covers the `manifest.json` sidecar directly — parsing it back with `.j.k`/`read0` and casting
+its columns against `extract`'s returned per-call stats table (see Manifest Schema), that a repeat
+`extract` call into the same partition overwrites rather than accumulates the sidecar, and that a
+sidecar write failure (something else already occupying that path) still lets `extract` return
+normally and update the in-memory `manifest`.
 
 ---
 

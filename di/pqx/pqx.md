@@ -114,6 +114,27 @@ read a file back with its `virtualcols` values (and the `date` partition) reatta
 
 ---
 
+## Compression codecs
+
+For the codec option, the supported compression codec values are:
+
+| Codec | Notes |
+|---|---|
+| UNCOMPRESSED | no compression (default) |
+| SNAPPY | fast, moderate compression; widely compatible, common default choice in the Arrow/Parquet ecosystem |
+| GZIP | slower but generally better compression ratio than Snappy |
+| BROTLI | tends to give strong compression ratios, more CPU-intensive |
+| ZSTD | good balance of speed and compression ratio, popular modern choice |
+| LZ4 | very fast, lower compression ratio |
+| LZ4_RAW | raw LZ4 frame variant (no LZ4 frame header/checksum overhead) |
+| LZ4_HADOOP | LZ4 variant compatible with the Hadoop ecosystem's framing |
+| LZO | fast compression, less common ratio-wise |
+| BZ2 | higher compression ratio, slower, less commonly used with Parquet |
+
+Availability depends on how the underlying libarrow build was compiled — arrowkdb's docs note that "the libarrow build being used must include the corresponding libraries" for a given codec, so not every codec is guaranteed to work in every environment.
+
+---
+
 ## Manifest Schema
 
 The module's `manifest` table accumulates one row per file written across all `extract` calls; call

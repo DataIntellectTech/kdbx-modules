@@ -120,11 +120,11 @@ For the codec option, the supported compression codec values are:
 
 | Codec | Notes |
 |---|---|
-| UNCOMPRESSED | no compression (default) |
+| UNCOMPRESSED | no compression |
 | SNAPPY | fast, moderate compression; widely compatible, common default choice in the Arrow/Parquet ecosystem |
 | GZIP | slower but generally better compression ratio than Snappy |
 | BROTLI | tends to give strong compression ratios, more CPU-intensive |
-| ZSTD | good balance of speed and compression ratio, popular modern choice |
+| ZSTD | good balance of speed and compression ratio, popular modern choice; `di.pqx`'s own default (see Options) |
 | LZ4 | very fast, lower compression ratio |
 | LZ4_RAW | raw LZ4 frame variant (no LZ4 frame header/checksum overhead) |
 | LZ4_HADOOP | LZ4 variant compatible with the Hadoop ecosystem's framing |

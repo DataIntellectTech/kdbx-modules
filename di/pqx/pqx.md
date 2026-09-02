@@ -224,6 +224,7 @@ pqx.init[enlist[`log]!enlist logdep]
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
 | `readfile[path;readopt]` | Read a single file back, reattaching its `virtualcols`/`date` values reconstructed from its path (see Options). |
 | `buildvirtualtable[hdbdir;tname;datecol;virtualcols]` | Compose every file under `hdbdir/tname/` into one queryable virtual table, with `date`/`virtualcols` reconstructed from each file's path (see Virtual Tables). |
+| `version` | The module version string, read from the `VERSION` file at load time. Consumed by `di.depcheck`. |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn`,
 `castvirtualcol` — are internal pipeline steps of `extract`/`buildvirtualtable`, exposed only so
@@ -238,6 +239,13 @@ Validate the required `log` dependency and store it for use by every other funct
 
 Throws (prefixed `di.pqx:`) if `deps` is not a dict, `log` is missing, or the log dict lacks any
 required key.
+
+### `version`
+The module version string, read from the `VERSION` file at load time (fails loudly if that file
+is missing, unreadable, or empty). Consumed by `di.depcheck`.
+```q
+pqx.version   / "0.1.0"
+```
 
 ### `extract[t;tname;dt;o]`
 Write table `t` out to one or more parquet files under `<outdir>/<tname>/date=<dt>/`, appending one

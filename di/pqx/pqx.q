@@ -267,9 +267,30 @@ buildvirtualtable:{[hdbdir;tname;datecol;virtualcols]
   files:update split:"/" vs/:file from files;
   lv:1+count where "/"=string path;
   levels:(),datecol,virtualcols;
+  if[count files; checkvirtuallevels[levels;lv;exec split from files]];
   levelcols:{[datecol;x] (castvirtualcol[datecol;x;];`split)}[datecol] each lv+til count levels;
   files:![files;();0b;(`file,levels)!enlist[({hsym `$x};`file)],levelcols];
   pqt.mkP (levels#files)!pq.pq each exec file from files
+ };
+
+checkvirtuallevels:{[levels;lv;splits]
+  / validates that datecol/virtualcols (levels) match, in both count and name, the hive-style
+  / key=value directory segments actually present under every discovered file's path - so a
+  / declared datecol/virtualcols combination that doesn't match what's really on disk (e.g. a
+  / datecol directory that exists but wasn't declared, a missing/extra virtualcols level, or the
+  / wrong order) fails loudly here rather than silently mislabeling or dropping partition columns
+  depths:count each splits;
+  if[1<count distinct depths;
+    '"di.pqx: inconsistent partition depth across files under this path"];
+  depth:(first[depths]-1)-lv;
+  if[depth<>count levels;
+    '"di.pqx: expected ",string[count levels]," partition level(s) ",.Q.s1[levels],", found ",string[depth]," on disk"];
+  idx:lv+til count levels;
+  onDiskKeys:distinct {[idx;x] `$first each "=" vs' x idx}[idx] each splits;
+  if[1<count onDiskKeys;
+    '"di.pqx: partition key names are inconsistent across files"];
+  if[not levels~first onDiskKeys;
+    '"di.pqx: datecol/virtualcols ",.Q.s1[levels]," don't match on-disk keys ",.Q.s1 first onDiskKeys];
  };
 
 castvirtualcol:{[datecol;x;y]

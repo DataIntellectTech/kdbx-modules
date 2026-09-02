@@ -17,4 +17,4 @@ pqt:use`kx.pq.t
 version:@[{trim first read0 x};`:::VERSION;{'"di.pqx: VERSION file missing or unreadable"}];
 if[0=count version;'"di.pqx: VERSION file is empty"];
 
-export:([init;extract;getmanifest;checkandconvertcols;estimate;plan;writefile;readfile;tryfn;buildvirtualtable;castvirtualcol;version])
+export:([init;extract;getmanifest;checkandconvertcols;estimate;plan;writefile;readfile;tryfn;buildvirtualtable;castvirtualcol;checkvirtuallevels;version])

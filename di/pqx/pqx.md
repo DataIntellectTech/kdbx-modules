@@ -214,10 +214,14 @@ select from vt where date=2025.07.15,exchange=`NASDAQ
 Building the table succeeds even if no files match (an empty view); querying that empty view then
 fails, rather than silently returning zero rows. `virtualcols` here does not need to match a prior
 `extract` call exactly - it only needs to match the path segments actually present under
-`hdbdir/tname/date=.../`. Passing a `virtualcols` name that collides with a genuine on-disk column
-(rather than one `extract` actually stripped to the path) produces unreliable results — the two
-columns are not distinguished internally, unlike on the write side where `writefile` always strips
-the real column first.
+`hdbdir/tname/date=.../`. When files do exist, `datecol`/`virtualcols` are checked (via
+`checkvirtuallevels`) against the hive-style `key=value` directory levels actually found on disk,
+both in count and in name/order - a declared `datecol`/`virtualcols` combination that's missing a
+level, has an extra one, misnames one, or gets the order wrong fails loudly here instead of silently
+mislabeling columns or dropping partition levels from the resulting table. Passing a `virtualcols`
+name that collides with a genuine on-disk column (rather than one `extract` actually stripped to the
+path) still produces unreliable results — the two columns are not distinguished internally, unlike on
+the write side where `writefile` always strips the real column first.
 
 ---
 
@@ -248,8 +252,9 @@ pqx.init[enlist[`log]!enlist logdep]
 | `version` | The module version string, read from the `VERSION` file at load time. Consumed by `di.depcheck`. |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn`,
-`castvirtualcol` — are internal pipeline steps of `extract`/`buildvirtualtable`, exposed only so
-`k4unit` can exercise them directly. Call `extract`/`buildvirtualtable` for normal use.
+`castvirtualcol`, `checkvirtuallevels` — are internal pipeline steps of `extract`/`buildvirtualtable`,
+exposed only so `k4unit` can exercise them directly. Call `extract`/`buildvirtualtable` for normal
+use.
 
 ### `init[deps]`
 Validate the required `log` dependency and store it for use by every other function.
@@ -356,6 +361,12 @@ asserting row counts, virtual-column types, and that filtering on a virtual colu
 right file(s). `castvirtualcol` is exercised directly for both the datecol and non-datecol cases,
 including a datecol not literally named `` `date `` . A directory with no matching files is covered
 too: building the view over it succeeds, but querying it then fails.
+
+`checkvirtuallevels` - the validation `buildvirtualtable` runs against every discovered file's path -
+is covered both indirectly, via `buildvirtualtable` calls that omit a real on-disk level, misname
+one, or supply `virtualcols` in the wrong order (all expected to fail), and directly, asserting it
+passes a matching `datecol`/`virtualcols` combination and fails one with too few declared levels, a
+misnamed level, or files that disagree with each other on partition depth.
 
 It also covers the `manifest.json` sidecar directly — parsing it back with `.j.k`/`read0` and casting
 its columns against `extract`'s returned per-call stats table (see Manifest Schema), that a repeat

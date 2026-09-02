@@ -286,11 +286,11 @@ checkvirtuallevels:{[levels;lv;splits]
   if[depth<>count levels;
     '"di.pqx: expected ",string[count levels]," partition level(s) ",.Q.s1[levels],", found ",string[depth]," on disk"];
   idx:lv+til count levels;
-  onDiskKeys:distinct {[idx;x] `$first each "=" vs' x idx}[idx] each splits;
-  if[1<count onDiskKeys;
+  hivecols:distinct {[idx;x] `$first each "=" vs' x idx}[idx] each splits;
+  if[1<count hivecols;
     '"di.pqx: partition key names are inconsistent across files"];
-  if[not levels~first onDiskKeys;
-    '"di.pqx: datecol/virtualcols ",.Q.s1[levels]," don't match on-disk keys ",.Q.s1 first onDiskKeys];
+  if[not levels~first hivecols;
+    '"di.pqx: datecol/virtualcols ",.Q.s1[levels]," don't match on-disk keys ",.Q.s1 first hivecols];
  };
 
 castvirtualcol:{[datecol;x;y]

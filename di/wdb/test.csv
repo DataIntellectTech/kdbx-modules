@@ -54,6 +54,7 @@ fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`numrows]!enlist `notanumber]]",1,1,init r
 fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`tickerplanttypes]!enlist `$()]]",1,1,init rejects an empty tickerplanttypes - it resolves to ` which matches every process
 fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`upd]!enlist 42]]",1,1,init rejects a non-callable upd
 fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist 42]]",1,1,init rejects a non-dictionary savedownmanipulation
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`mode]!enlist ()!()]]",1,1,"init rejects a dict where a symbol/string config value is required - assym no longer passes one through unnamed"
 comment,,,,,,,"S2 - mode and writedownmode are VALIDATED, not silently accepted"
 comment,,,,,,,"mode:`save is not a trivial variant - it selects the deferred separate-sort-process"
 comment,,,,,,,"architecture (wdb.q:93-94 sortenabled:0b, then wdb.q:221 dispatches to informsortandreload)."
@@ -137,8 +138,9 @@ before,0,0,q,".t.S12B:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.
 true,0,0,q,0=.t.S12B`rows,1,1,replayupd flushes to disk once the replay row limit is passed
 true,0,0,q,3=.t.S12B`disk,1,1,"the replay flush reached the working partition - without it a whole day lands in memory at once"
 comment,,,,,,,S13 - teardown withdraws exactly what init and start installed
-before,0,0,q,".t.S13:{[] .t.clearroot[]; .t.jobrows::0#.t.jobrows; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.starttimer[]; booked:exec id from .t.jobrows; wdb.teardown[]; :`booked`roots`uend`jobs!(booked; any (`upd`endofday`endofperiod`wdbreloadhandler) in key `.; `end in key `.u; exec id from .t.jobrows)}[]",1,1,scenario: init then starttimer then teardown
+before,0,0,q,".t.S13:{[] .t.clearroot[]; .t.jobrows::0#.t.jobrows; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.starttimer[]; booked:exec id from .t.jobrows; period:exec first period from .t.jobrows where id=`wdbsavetodisk; wdb.teardown[]; :`booked`period`roots`uend`jobs!(booked; period; any (`upd`endofday`endofperiod`wdbreloadhandler) in key `.; `end in key `.u; exec id from .t.jobrows)}[]",1,1,scenario: init then starttimer then teardown
 true,0,0,q,(.t.S13`booked)~enlist`wdbsavetodisk,1,1,starttimer books the periodic write-down job on the injected timer
+true,0,0,q,10=.t.S13`period,1,1,"the booked period is a raw COUNT OF SECONDS for the default 0D00:00:10.000 settimer - di.timer's addjob.custom casts it `int$ and later multiplies by 0D00:00:01, so a timespan here would be silently read as nanoseconds instead"
 true,0,0,q,not .t.S13`roots,1,1,teardown withdraws every root entry point it installed
 true,0,0,q,not .t.S13`uend,1,1,teardown withdraws the .u.end alias
 true,0,0,q,0=count .t.S13`jobs,1,1,teardown deletes the timer jobs - a non-callable deletejobs would silently delete nothing here
@@ -269,3 +271,29 @@ comment,,,,,,,level on every clean no-data roll is the noise that teaches an ope
 before,0,0,q,".t.S28:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.reloadsymfile[.Q.dd[.m.di.0wdb.hdbdir;`sym]]; :`errs`noted!(count select from .t.caprows where lvl=`error; .t.logged[`info;""nothing to reload""])}[]",1,1,scenario: reload a sym file that does not exist yet
 true,0,0,q,"0=.t.S28`errs",1,1,a missing sym file logs no error
 true,0,0,q,".t.S28`noted",1,1,it is noted at info level instead
+comment,,,,,,,"S29 - teardown withdraws a root upd left on replayupd by a start that never reached the swap-back"
+comment,,,,,,,"regression for a fix: uninstallroot used to compare root's upd against the LIVE .z.m.upd only, so"
+comment,,,,,,,"a start that throws between the two swaps left replayupd stuck at root and teardown silently could"
+comment,,,,,,,"not recognise it as ours. the swap now also updates rootinstalled, the single thing dropifours checks"
+before,0,0,q,".t.S29:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[`tpcheckcycles`tpconnsleepintv!(1;1)]]; .m.di.0wdb.started:0b; @[{wdb.start[]};::;{[e]}]; stuck:(`. `upd)~.m.di.0wdb.replayupd; wdb.teardown[]; :`stuck`roots!(stuck; (`upd`endofday`endofperiod`wdbreloadhandler) in key `.)}[]",1,1,scenario: teardown called after a start that got stuck on the replay upd
+true,0,0,q,.t.S29`stuck,1,1,confirms the precondition also proved by S19 - the failed start left replayupd bound at root
+true,0,0,q,not any .t.S29`roots,1,1,teardown withdraws upd along with the other three root entry points - the regression this fix closes
+comment,,,,,,,S30 - a foreign binding already at a root entry point before a FRESH init is replaced with a warning
+comment,,,,,,,"not a silent skip. on the very first install, rootinstalled reads as an EMPTY dict - this exercises"
+comment,,,,,,,the missing-key lookup publishroot's guard depends on staying safe rather than throwing
+before,0,0,q,".t.S30:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; {![`.;();0b;enlist x]} each (`upd`endofday`endofperiod`wdbreloadhandler) inter key `.; foreign:{[t;x] `foreign}; @[`.;`endofday;:;foreign]; wdb.init[.t.mkdeps[()!()]]; :`warned`replaced!(.t.logged[`warn;""was already bound""]; (`. `endofday)~endofday)}[]",1,1,scenario: something other than di.wdb owns endofday before init runs for it
+true,0,0,q,.t.S30`warned,1,1,publishroot warns rather than silently overwriting a binding it does not recognise
+true,0,0,q,.t.S30`replaced,1,1,and still installs its own function - a later caller can rely on endofday actually being di.wdb's
+comment,,,,,,,S31 - fixpartition on a genuinely fresh start: nothing was ever written under the ORIGINAL partition
+comment,,,,,,,"the only case tested until now (S18) writes data under orig FIRST, which never exercises this early"
+comment,,,,,,,"return - arguably the more common real case, since this runs before the replay has written anything"
+before,0,0,q,".t.S31:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; orig:.m.di.0wdb.getpartition[]; tgt:orig-1; r:@[{.m.di.0wdb.fixpartition[enlist[`tplogdate]!enlist x];`ok};tgt;{[e] `$""err: "",e}]; :`out`tracked`moved`origexists!(r; tgt=.m.di.0wdb.getpartition[]; .t.logged[`info;""moving data""]; .t.ondisk .t.BASE,""/wdbhdb/"",string orig)}[]",1,1,scenario: the tp log date differs but nothing was ever written under the original date
+true,0,0,q,"`ok~.t.S31`out",1,1,fixpartition does not throw when there is nothing to move
+true,0,0,q,.t.S31`tracked,1,1,the current partition still tracks the tickerplant log date even with nothing to move
+true,0,0,q,not .t.S31`moved,1,1,fixpartition does not attempt - and therefore does not log - a move when the source partition never existed on disk
+true,0,0,q,0=count .t.S31`origexists,1,1,and no directory was ever created for the never-written original partition either
+comment,,,,,,,"S32 - if the eod release job cannot be scheduled, it is released immediately instead of hanging"
+comment,,,,,,,every process waiting on the roll forever with no other trigger and no visibility on the wdb side
+before,0,0,q,".t.S32:{[] .t.clearroot[]; .t.resetcap[]; failtimer:`addjob`deletejobs!((enlist[`custom]!enlist {[id;f;p;per;md;o] '""boom""});{[ids] }); wdb.init[.t.mkdeps[enlist[`timer]!enlist failtimer]]; .m.di.0wdb.reloadcomplete:0b; .m.di.0wdb.reloadsummary:0#.m.di.0wdb.reloadsummary; .m.di.0wdb.scheduleflushend[]; :`complete`logged!(.m.di.0wdb.reloadcomplete; .t.logged[`error;""could not schedule""])}[]",1,1,scenario: the eod release job's addjob throws
+true,0,0,q,.t.S32`complete,1,1,a scheduling failure still releases the waiting processes immediately rather than leaving them blocked on a timeout that will never fire
+true,0,0,q,.t.S32`logged,1,1,the scheduling failure is logged at error level rather than warn - it is no longer a fire-and-forget concern

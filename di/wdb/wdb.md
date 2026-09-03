@@ -329,6 +329,72 @@ is logged; `teardown` will not give the previous binding back.
     failure at **error** level on every clean no-data roll — precisely the noise that teaches an
     operator to stop reading the log.
 
+21. **`teardown` reclaims a root `upd` left on `replayupd`, not only the live one.** `start[]` swaps
+    root `upd` to `replayupd` for the duration of the log replay and back to `.z.m.upd` once it
+    finishes — deliberately bypassing `publishroot`, since it is a temporary swap, not a fresh
+    install. A `start` that throws between the two swaps (di.servers unreachable, subscribe failing,
+    …) leaves `replayupd` stuck at root. `dropifours` originally compared root's current `upd` binding
+    against a **fixed** `.z.m.upd` — the live configured function, which never itself becomes
+    `replayupd` — so it could never recognise the stuck state as ours and `teardown` silently left it
+    behind while still logging that root entry points had been removed. `dropifours` now compares
+    against `.z.m.rootinstalled`, the same single source of truth `publishroot` already used, and
+    `start`'s swap keeps `rootinstalled[`upd]` in lockstep with whichever function is actually at root
+    at every point — including mid-replay. `test.csv`'s S19 already proved the stuck state is real
+    (asserting root `upd` **is** `replayupd` after a `start` that fails to reach di.servers); it just
+    never called `teardown` afterward to check whether the stuck state could be recovered. S29 does.
+
+22. **`starttimer`'s `settimer%0D00:00:01` conversion is correct, verified against `di.timer`'s own
+    source, not assumed.** `di.timer`'s `addjob.custom` casts its `period` argument with `` `int$ ``
+    and later computes `nextstart` as `(0D00:00:01*period)+…` — so `period` is a **raw count of
+    seconds**, not a timespan. Passing a timespan directly (rather than dividing by one second first)
+    would have it silently reinterpreted as a count of *nanoseconds*, making the periodic save-to-disk
+    job fire continuously instead of every `settimer`. `starttimer`'s conversion was already correct;
+    this was previously unverified against `di.timer`'s actual contract and untested — `test.csv`'s
+    S13 now asserts the exact booked value (`10` for the default `` 0D00:00:10.000 `` `settimer`, not
+    `10000000000`), which would have caught the nanoseconds misinterpretation directly.
+
+23. **`assym` names the config key on rejection, and no longer passes a dict through unexplained.**
+    Every other coercion helper in this module (`ashsym`, `asbool`, `aslong`, `astabdict`,
+    `astimespan`) is binary — `{[k;x] …}` — precisely so a rejection can name the key that failed.
+    `assym` was unary, and its one non-symbol/non-string branch returned a **dict unchanged**, with no
+    comment addressing why. None of `assym`'s real callers (`mode`, `writedownmode`,
+    `tickerplanttypes`, `subtabs`/`subsyms`, `hdbtypes`/`rdbtypes`/`gatewaytypes`/`ignorelist`/
+    `reloadorder`) could sensibly receive a dict from a real config source, so the practical risk was
+    low — but a dict slipping through `mode`/`writedownmode` would have failed later inside
+    `requiremode`'s own `` string[m] `` error construction with a bare `'type`, not with the clear,
+    key-naming message every other bad config value gets. `assym` is now binary like its siblings and
+    explicitly rejects a dict or table with a message naming the key.
+
+24. **`publishroot`'s "is this a foreign binding?" check does not throw on the very first install —
+    verified directly, not assumed.** On a fresh `init`, `.z.m.rootinstalled` is still the empty typed
+    dict `init` seeds it to, and `publishroot` indexes it by name (`.z.m.rootinstalled nm`) as part of
+    deciding whether to warn about a pre-existing foreign binding. Applying an **empty** dict to a
+    missing key returns the generic empty list `()`, not a `'domain`/`'length` throw — confirmed with
+    a direct probe on this build, both for an empty typed dict and for the exact expression
+    `publishroot` evaluates — so the guard degrades safely to "definitely not ours" and still warns
+    correctly rather than dying before the warning can fire. This path had **zero** test coverage
+    either way (nothing in `test.csv` seeded a foreign binding before `init`); S30 closes that gap by
+    asserting the warn fires and the foreign function is still replaced, not just left in place.
+
+25. **`scheduleflushend` releases immediately if it cannot schedule its own release job, and
+    `doreload`'s `countreload` is deduplicated by handle.** Two related hardening fixes on the
+    end-of-day reload wait: (a) if `di.timer`'s `addjob` throws while booking the one-shot
+    `` `wdbeodflush `` job, nothing else would ever call `flushend` for that roll — every process that
+    already replied, and every one still waiting, would sit blocked with no recovery path and no
+    visibility into why on the wdb side. The failure now logs at **error** (not `warn`) and calls
+    `flushend[]` directly as a fallback, matching this module's existing stance elsewhere (informing a
+    gateway, or the eodwaittime dispatch itself) that a failure which *can* be made non-fatal to the
+    roll should be. (b) `` count raze `` over each `reloadorder` proctype's live handles does not
+    de-duplicate, but `reloadsummary` is **keyed by handle** and only ever accumulates one row per
+    reply — so a handle registered under more than one proctype (or a `reloadorder` with a duplicate
+    entry) would make `countreload=count reloadsummary` unsatisfiable even once everyone has replied,
+    silently downgrading the fast release path into always waiting the full `eodwaittime`. `countreload`
+    is now `count distinct` of the same handles. Whether `di.servers` can actually register one handle
+    under two proctypes could not be verified from this repo — `di.servers` lives on its own unmerged
+    `feature-server` branch — so this is a correctness fix applied defensively rather than one pinned
+    by a reproduction of the overlap; it is a no-op change in the (normal, currently tested) case where
+    handles don't overlap.
+
 ## Usage example
 
 ```q

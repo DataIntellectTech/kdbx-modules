@@ -44,10 +44,17 @@ defaultselection:`any;
 / internal helpers - config coercion
 / ============================================================
 
-assym:{[x]
+assym:{[k;x]
   / config values arrive as symbols from a .q settings file or as strings from a .toml one. `$ throws
-  / 'type on a symbol, so it is NOT idempotent - hence the type checks rather than a blanket cast
-  :$[99h=type x;x;11h=abs type x;x;`$x];
+  / 'type on a symbol, so it is NOT idempotent - hence the type check rather than a blanket cast.
+  / BINARY like every other coercion helper here, naming the offending key: a dict or table used to
+  / pass through this UNCHANGED with no comment explaining why, which is not a shape any real caller
+  / (mode, writedownmode, tickerplanttypes, subtabs/subsyms, hdbtypes/rdbtypes/gatewaytypes/ignorelist/
+  / reloadorder) could sensibly hand it - and for mode/writedownmode specifically it would have failed
+  / later inside requiremode's own `string[m]` error construction rather than with this clear message
+  if[(99h=type x) or 98h=type x;
+    '"di.wdb: ",string[k]," must be a symbol or a string naming one; got: ",.Q.s1 x];
+  :$[11h=abs type x;x;`$x];
   };
 
 aslist:{[x]
@@ -196,14 +203,6 @@ requireinit:{[ctx]
     '"di.wdb: ",string[ctx],": init must be called before any other function"];
   };
 
-requirestart:{[ctx]
-  / start[] is what establishes the subscription and the partition. anything depending on live state
-  / must not silently operate on an empty one
-  requireinit[ctx];
-  if[not .z.m.started;
-    raiseerror[ctx;"start must be called before this function - no subscription has been established"]];
-  };
-
 iscallable:{[x]
   / internal - is x a genuinely callable value? 100 112h spans every callable form (lambda, primitive,
   / operator, iterator, projection, composition), but 101h - the UNARY PRIMITIVE class, which the
@@ -254,6 +253,11 @@ publishroot:{[nm;f]
   / silently is that same asymmetry in reverse, and it is how a co-hosted process loses its own upd
   / without a word. comparing against rootinstalled as well as against f keeps a legitimate re-init
   / QUIET when the `upd config key itself changed - root then holds the previous OURS, not a stranger's
+  / NB .z.m.rootinstalled nm is a dict application that may miss - on the very first install ever,
+  / .z.m.rootinstalled is still the empty typed dict init seeds it to. that does NOT throw: applying
+  / an EMPTY dict to any key returns the generic empty list (), not a 'domain/'length error - verified
+  / directly, since a wrong guess here would make this guard fail exactly when a foreign binding is
+  / genuinely present, which is the one case it exists to catch
   if[nm in key `.;
     cur:`. nm;
     if[not any (f;.z.m.rootinstalled nm)~\:cur;
@@ -287,21 +291,26 @@ installroot:{[]
   .z.m.rootinstalled:nms!fs;
   };
 
-dropifours:{[nm;f]
-  / internal - delete a root name only if it still holds the function we installed there
+dropifours:{[nm]
+  / internal - delete a root name only if it still holds what .z.m.rootinstalled says WE most recently
+  / put there - the same source of truth publishroot compares against, rather than a separately passed
+  / "the function we believe is ours". that distinction matters for `upd specifically: start[] swaps
+  / root upd to replayupd for the duration of the log replay and keeps rootinstalled in step with it
+  / (see start), so a start that throws mid-replay leaves rootinstalled correctly pointing at replayupd
+  / and this still reclaims it. comparing against a fixed .z.m.upd here (the earlier shape) could not:
+  / .z.m.upd never changes during that window, so it would never match root's actual replayupd binding
+  / and teardown would silently leave replayupd stuck at root forever - see wdb.md design decision 21
   if[not nm in key `.;:()];
-  if[not f~`. nm;:()];
+  if[not (`. nm)~.z.m.rootinstalled nm;:()];
   ![`.;();0b;enlist nm];
   };
 
 uninstallroot:{[]
-  / internal - give back exactly what installroot published. only the names still bound to THIS
-  / module's functions are removed: a later module that has taken over one of these root names owns it
-  / now, and silently deleting its binding would be a worse outcome than leaving ours behind
-  dropifours[`upd;.z.m.upd];
-  dropifours[`endofday;endofday];
-  dropifours[`endofperiod;endofperiod];
-  dropifours[`wdbreloadhandler;handler];
+  / internal - give back exactly what installroot (or start's temporary replay swap) most recently
+  / published. only names still bound to what rootinstalled says THIS module put there are removed: a
+  / later module that has taken over one of these root names owns it now, and silently deleting its
+  / binding would be a worse outcome than leaving ours behind
+  dropifours each `upd`endofday`endofperiod`wdbreloadhandler;
   / .u.end is read through a PROTECTED value, not as a bare .u.end. a shutdown path may call teardown
   / twice, and the second call would otherwise die on an unlogged '.u.end reading the name the first
   / call deleted
@@ -370,10 +379,10 @@ init:{[deps]
   / rejected re-init cannot leave the module half-configured
   d:configdefaults[];
   c:cfg[deps;d];
-  m:assym c`mode;
-  w:assym c`writedownmode;
+  m:assym[`mode;c`mode];
+  w:assym[`writedownmode;c`writedownmode];
   requiremode[m;w];
-  tptypes:aslist assym c`tickerplanttypes;
+  tptypes:aslist assym[`tickerplanttypes;c`tickerplanttypes];
   if[0=count tptypes;
     '"di.wdb: tickerplanttypes must name at least one proctype - an empty list resolves to `, ",
       "which di.servers matches against every connected process"];
@@ -385,7 +394,7 @@ init:{[deps]
   / their only definition anywhere in the codebase - which is an inconsistency, not a design
   rnr:$[`replaynumrows in key deps;aslong[`replaynumrows;deps`replaynumrows];nr];
   rnt:$[`replaynumtab in key deps;astabdict[`replaynumtab;deps`replaynumtab];nt];
-  ptype:assym c`partitiontype;
+  ptype:assym[`partitiontype;c`partitiontype];
   updf:c`upd;
   if[not iscallable updf;
     '"di.wdb: upd must be a binary function taking (tablename;data), and not null"];
@@ -393,11 +402,11 @@ init:{[deps]
     '"di.wdb: savedownmanipulation must be a dict of tablename!function"];
   if[not iscallable c`postreplay;
     '"di.wdb: postreplay must be a binary function taking (hdbdir;partition)"];
-  hdbtypes:aslist assym c`hdbtypes;
-  rdbtypes:aslist assym c`rdbtypes;
-  gwtypes:aslist assym c`gatewaytypes;
-  ignore:aslist assym c`ignorelist;
-  rorder:aslist assym c`reloadorder;
+  hdbtypes:aslist assym[`hdbtypes;c`hdbtypes];
+  rdbtypes:aslist assym[`rdbtypes;c`rdbtypes];
+  gwtypes:aslist assym[`gatewaytypes;c`gatewaytypes];
+  ignore:aslist assym[`ignorelist;c`ignorelist];
+  rorder:aslist assym[`reloadorder;c`reloadorder];
   savedir:normpath ashsym[`savedir;c`savedir];
   hdbroot:normpath ashsym[`hdbdir;c`hdbdir];
   / the working directory must NOT be the hdb root. it is never a valid configuration - the whole
@@ -445,8 +454,8 @@ init:{[deps]
   .z.m.rdbtypes:rdbtypes;
   .z.m.gatewaytypes:gwtypes;
   .z.m.ignorelist:ignore;
-  .z.m.subtabs:assym c`subtabs;
-  .z.m.subsyms:assym c`subsyms;
+  .z.m.subtabs:assym[`subtabs;c`subtabs];
+  .z.m.subsyms:assym[`subsyms;c`subsyms];
   .z.m.schema:sch;
   .z.m.replay:rep;
   .z.m.savedir:savedir;
@@ -611,6 +620,11 @@ starttimer:{[]
   / start, which is what .timer.repeat did.
   / disableonfail 0b: a write-down job that switches itself off after one bad cycle would silently
   / stop persisting data for the rest of the day, which is the failure this process exists to prevent
+  / NB period is a RAW COUNT OF SECONDS, not a timespan - verified against di.timer's own addjob.custom
+  / (`int$period on the way in, then nextstart:(0D00:00:01*period)+... in upd.start/nextstart[1h]), so
+  / dividing settimer by one second here is the correct conversion, not an approximation. a timespan
+  / passed instead of that raw count would be silently reinterpreted as a count of NANOSECONDS - see
+  / wdb.md design decision 22
   p:`long$.z.m.settimer%0D00:00:01;
   if[0>=p;
     raiseerror[`starttimer;"settimer must be a positive interval; got: ",string .z.m.settimer]];
@@ -782,14 +796,19 @@ start:{[]
   / clear any stale data in the working partition BEFORE the replay - TorQ wdb.q:674
   clearwdbdata[];
   / the replay drives the ROOT upd, so it must be the flushing one before subscribe runs - TorQ
-  / wdb.q:672 sets root upd to replayupd, then origstartup.q:25 swaps it back after
+  / wdb.q:672 sets root upd to replayupd, then origstartup.q:25 swaps it back after.
+  / NB rootinstalled is updated in lockstep with EACH swap, not just at installroot - dropifours reads
+  / rootinstalled as the single source of truth for "what did we put at this name", so if anything
+  / below throws before the swap-back, teardown must see replayupd there, not the pre-replay value
   @[`.;`upd;:;replayupd];
+  .z.m.rootinstalled[`upd]:replayupd;
   servers.startup[];
   subscribe[];
   initmissingtables[getpartition[]];
   replaysweep[];
   / swap the root upd back to the live one now the replay is done - origstartup.q:25
   @[`.;`upd;:;.z.m.upd];
+  .z.m.rootinstalled[`upd]:.z.m.upd;
   starttimer[];
   / started is set LAST: everything above can throw, and setting it early would leave a half-started
   / wdb that status[] reported as healthy
@@ -1068,12 +1087,24 @@ scheduleflushend:{[]
   / book the one-shot job that releases the waiting processes when the eodwaittime deadline passes -
   / TorQ wdb.q:277 (.timer.one) on the injected timer.
   / the job id is DELETED first: di.timer's addjob throws on a duplicate id, so without this the
-  / second day's roll would fail to schedule its release and the reload would hang
+  / second day's roll would fail to schedule its release and the reload would hang.
+  / NB period is a dummy 1 here, not the settimer-derived seconds count starttimer computes - with
+  / startattime set, di.timer's addjob.custom takes nextstart directly from startattime on the FIRST
+  / (only) run, and maxruns:1 disables the job in upd.status before a second run could ever consult
+  / period - see di.timer addjob.custom/upd.start/upd.status. verified against di.timer's own source
   .z.m.timeouttime:.z.m.cp[]+.z.m.eodwaittime;
   @[.z.m.timer[`deletejobs];`wdbeodflush;{[e] :()}];
+  / if scheduling the release itself fails, nothing else will ever call flushend for this roll - every
+  / process in reloadorder that already replied, and every one still waiting, would otherwise sit
+  / blocked forever with no visibility into why on the wdb side. releasing immediately here is the
+  / same tradeoff getprocs/informgateway already make elsewhere in this file: a failure that CAN be
+  / made non-fatal to the roll is, rather than leaving callers hanging on a job that will never fire
   @[{.z.m.timer[`addjob][`custom][`wdbeodflush;flushend;();1;1;`startattime`maxruns!(x;1i)]};
     .z.m.timeouttime;
-    {[e] .z.m.logwarn[`doreload;"could not schedule the eod release job: ",e]}];
+    {[e] .z.m.logerr[`scheduleflushend;"could not schedule the eod release job: ",e,
+      " - releasing waiting processes immediately rather than leaving them blocked on a timeout ",
+      "that will never fire"];
+     flushend[]}];
   };
 
 doreload:{[pt]
@@ -1085,7 +1116,12 @@ doreload:{[pt]
   live:@[{[] :exec distinct proctype from servers.getservers[`]};::;
          {[e] .z.m.logwarn[`doreload;"could not read the server list: ",e];:`$()}];
   types:.z.m.reloadorder inter live;
-  .z.m.countreload:count raze @[{[ts] :{[t] exec w from servers.getservers[t]} each ts};types;{[e] :()}];
+  / NB distinct, not a bare count raze: reloadsummary is keyed by handle, so a handle that di.servers
+  / registers under more than one proctype - or a reloadorder with a duplicate entry - would still only
+  / ever accumulate ONE row per reply. counting the raw (possibly duplicated) handle list here would
+  / then make countreload=count reloadsummary unsatisfiable even once every process has replied,
+  / silently downgrading the fast release path into always waiting the full eodwaittime
+  .z.m.countreload:count distinct raze @[{[ts] :{[t] exec w from servers.getservers[t]} each ts};types;{[e] :()}];
   getprocs[;pt] each types;
   $[.z.m.eodwaittime>0;scheduleflushend[];flushend[]];
   };

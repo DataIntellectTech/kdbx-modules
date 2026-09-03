@@ -18,8 +18,19 @@
 / management from the hard dependency tree by design. di.handlers is not a dependency: v1 assigns no
 / .z.* handler (legacy's two .dotz.set calls are .z.pd sort-worker discovery and .z.zd compression,
 / both out of scope).
-/ NB di.dbwrite exports `version` in the aggregate module dir but NOT on main/feature-wdb - that
-/ export landed on feature-rdb. di.depcheck sorts a missing version into `failures`, not `warnings`,
-/ and its init THROWS on any failure, so this pin passes in testing and would abort startup on main
-/ as it stands. resolves itself once feature-rdb merges; verify before opening the PR.
+/ NB one of these pins still fails di.depcheck on main as it stands - checked directly against the
+/ git history, not just the aggregate module dir this file was first drafted against:
+/   di.dbwrite - has NO VERSION file/export on main. a fix (VERSION + the export line) exists but is
+/               sitting UNMERGED on feature-rdb (di.rdb pins the same dependency). resolves itself once
+/               feature-rdb merges - verify before opening this PR.
+/   di.os      - was in the same state (no VERSION/version anywhere) until this same branch fixed it -
+/               see the abspath portability/quoting commit earlier on feature-wdb, which added
+/               VERSION/version alongside the bug fix. that pin is real now; nothing further to do
+/ di.depcheck sorts a missing version into `failures`, not `warnings`, and its init THROWS on any
+/ failure, so the di.dbwrite pin passes in testing (di.depcheck isn't wired to anything yet - di.torq,
+/ the only thing that would call it against this manifest, doesn't exist in this repo yet either) and
+/ would abort startup the moment something does call di.depcheck against di.wdb on main as it stands
+/ today. this module cannot fix that gap itself - di.dbwrite is someone else's module; resolves once
+/ feature-rdb merges. surfaced here rather than silently patched; see the PR description for the same
+/ note directed at reviewers.
 deps:`di.servers`di.subscriptions`di.dbwrite`di.os`di.merge!("0.1.0";"0.1.0";"0.1.0";"0.1.0";"0.1.0");

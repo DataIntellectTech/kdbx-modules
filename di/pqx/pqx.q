@@ -286,8 +286,7 @@ checkvirtualtypes:{[types]
     .z.m.logerr[`pqx;err:"di.pqx: unsupported partition level type(s) ",.Q.s1[bad],", expected one of ",.Q.s1 valid];
     'err
   ];
-  :(::)
-
+  :(::);
  };
 
 checkvirtuallevels:{[levels;lv;splits]

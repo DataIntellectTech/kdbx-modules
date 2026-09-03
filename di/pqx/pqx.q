@@ -258,27 +258,42 @@ readfile:{[path;readopt]
   :![t;();0b;ks!enlist each vals]
  };
 
-buildvirtualtable:{[hdbdir;tname;datecol;virtualcols]
+buildvirtualtable:{[hdbdir;tname;levels]
   / builds a queryable virtual table over parquet files scattered under hdbdir/tname, without reading any
-  / of their data - partition values (the date segment and any virtualcols segments) are reconstructed from
-  / each file's hive-style path, mirroring how writefile strips those same columns from the on-disk data
+  / of their data - partition values (the hive-style path segments) are reconstructed from each file's
+  / path, mirroring how writefile strips those same columns from the on-disk data. levels is a
+  / colname!typechar dict, in on-disk path order, declaring how to reconstruct each partition segment -
+  / e.g. `date`sym!"DS" for a date/symbol partitioned table, or `sym`src!"SS" for one with no date level
+  names:key levels;
+  types:value levels;
+  checkvirtualtypes[types];
   path:` sv hdbdir,tname;
   files:([] file:system"find \"",(1 _ string path),"\" -name \"*.parquet\" | sort");
   files:update split:"/" vs/:file from files;
   lv:1+count where "/"=string path;
-  levels:(),datecol,virtualcols;
-  if[count files; checkvirtuallevels[levels;lv;exec split from files]];
-  levelcols:{[datecol;x] (castvirtualcol[datecol;x;];`split)}[datecol] each lv+til count levels;
-  files:![files;();0b;(`file,levels)!enlist[({hsym `$x};`file)],levelcols];
-  pqt.mkP (levels#files)!pq.pq each exec file from files
+  if[count files; checkvirtuallevels[names;lv;exec split from files]];
+  levelcols:{[typ;x] (castvirtuallevel[typ;x;];`split)} .' flip (types;lv+til count names);
+  files:![files;();0b;(`file,names)!enlist[({hsym `$x};`file)],levelcols];
+  pqt.mkP (names#files)!pq.pq each exec file from files
+ };
+
+checkvirtualtypes:{[types]
+  / validates that every value in the caller-supplied levels dict is one of the uppercase kdb+
+  / parse-cast type chars (see castvirtuallevel) - almost all of the lowercase equivalents are
+  / also "valid" to kdb+, but as raw byte/reinterpret casts rather than string parses, so passing
+  / one wouldn't error, it would just silently corrupt the reconstructed partition values
+  valid:"BGXHIJEFCSPMDZNUVT";
+  bad:distinct types where not types in valid;
+  if[count bad;
+    '"di.pqx: unsupported partition level type(s) ",.Q.s1[bad],", expected one of ",.Q.s1 valid];
  };
 
 checkvirtuallevels:{[levels;lv;splits]
-  / validates that datecol/virtualcols (levels) match, in both count and name, the hive-style
-  / key=value directory segments actually present under every discovered file's path - so a
-  / declared datecol/virtualcols combination that doesn't match what's really on disk (e.g. a
-  / datecol directory that exists but wasn't declared, a missing/extra virtualcols level, or the
-  / wrong order) fails loudly here rather than silently mislabeling or dropping partition columns
+  / validates that the declared partition level names (levels) match, in both count and name, the
+  / hive-style key=value directory segments actually present under every discovered file's path - so
+  / a declared levels dict that doesn't match what's really on disk (e.g. a partition directory that
+  / exists but wasn't declared, a missing/extra level, or the wrong order) fails loudly here rather
+  / than silently mislabeling or dropping partition columns
   depths:count each splits;
   if[1<count distinct depths;
     '"di.pqx: inconsistent partition depth across files under this path"];
@@ -290,16 +305,13 @@ checkvirtuallevels:{[levels;lv;splits]
   if[1<count hivecols;
     '"di.pqx: partition key names are inconsistent across files"];
   if[not levels~first hivecols;
-    '"di.pqx: datecol/virtualcols ",.Q.s1[levels]," don't match on-disk keys ",.Q.s1 first hivecols];
+    '"di.pqx: partition levels ",.Q.s1[levels]," don't match on-disk keys ",.Q.s1 first hivecols];
  };
 
-castvirtualcol:{[datecol;x;y]
-  / casts the xth hive-style path segment (a "key=value" string) of every row in y's split column to its
-  / reconstructed value - a date if it's the datecol level, else a symbol
-  :$[datecol = first `$distinct first each "=" vs' v:y[;x];
-    "D"$last each "=" vs' v;
-    `$last each "=" vs' v
-  ]
+castvirtuallevel:{[typ;x;y]
+  / casts the xth hive-style path segment (a "key=value" string) of every row in y's split column by
+  / parsing it via the declared typ
+  :typ$last each "=" vs' y[;x]
  };
 
 tryfn:{[f;x]

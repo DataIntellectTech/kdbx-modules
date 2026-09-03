@@ -178,11 +178,11 @@ comes back as a native JSON boolean unchanged.
 
 `buildvirtualtable` opens every `.parquet` file under `<hdbdir>/<tname>/` as a single queryable
 table, without reading any row data up front - it's the read-side counterpart to `extract`'s output
-layout. Each file's `date=<dt>/` segment (and any `<col>=<value>/` `virtualcols` segments) is
-reconstructed from its path into a virtual column, exactly mirroring what `extract`/`writefile`
-stripped from the on-disk data on the way in. Filtering on those virtual columns (e.g.
-`` select from vt where date=2025.07.15,exch=`NASDAQ `` ) prunes to just the matching files rather
-than scanning everything.
+layout. Each file's `<col>=<value>/` hive-style path segments (the date partition, if any, and any
+`virtualcols` segments) are reconstructed from its path into virtual columns, exactly mirroring what
+`extract`/`writefile` stripped from the on-disk data on the way in. Filtering on those virtual
+columns (e.g. `` select from vt where date=2025.07.15,exch=`NASDAQ `` ) prunes to just the matching
+files rather than scanning everything.
 
 The returned value is not a regular in-memory kdb+ table - it's a functional/composed object from
 `kx.pq.t`'s `mkP`. `select` works on it directly; `exec`/`meta`/`cols` do not work applied directly
@@ -192,36 +192,40 @@ not `` count vt `` or `` cols vt ``).
 
 Genuine on-disk columns keep whatever type they were written with - notably, character/symbol
 columns come back as **strings**, not symbols, since Parquet has no native symbol type (see
-`checkandconvertcols`). Only the path-reconstructed `date`/`virtualcols` columns come back typed as a
-real date/symbol.
+`checkandconvertcols`). Only the path-reconstructed partition columns come back typed per the
+declared `levels`.
 
-### `buildvirtualtable[hdbdir;tname;datecol;virtualcols]`
+### `buildvirtualtable[hdbdir;tname;levels]`
 Find every `.parquet` file under `<hdbdir>/<tname>/` and compose them into one virtual table,
-partitioned by the `date=<dt>/` segment and any `virtualcols` segments found in each file's path.
+partitioned by whatever hive-style `key=value` segments are found in each file's path.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `hdbdir` | symbol (hsym) | Root directory - matches `extract`'s `outdir` |
 | `tname` | symbol | Table name - matches `extract`'s `tname` |
-| `datecol` | symbol | Name to give the reconstructed date partition column (need not be literally `` `date `` ) |
-| `virtualcols` | symbol list | Names of any `virtualcols` path segments to reconstruct, in path order - matches `extract`'s `virtualcols`. Pass `` `symbol$() `` if the data was written without `virtualcols` |
+| `levels` | dict, symbol!char | `colname!typechar`, one entry per hive-style path segment, **in on-disk path order** (outermost first). `typechar` is an uppercase kdb+ parse-cast char (e.g. `` "D" `` date, `` "S" `` symbol, `` "I" `` int, `` "P" `` timestamp - see `checkvirtualtypes`) driving how that segment's `key=value` strings are reconstructed. Pass an empty dict (`` 0#`u!"" ``) for a table with no hive-style partitioning at all |
 
 ```q
-vt:pqx.buildvirtualtable[`:./;`trade;`date;enlist`exchange]
+vt:pqx.buildvirtualtable[`:./;`trade;`date`exchange!"DS"]
 select from vt where date=2025.07.15,exchange=`NASDAQ
 ```
 
 Building the table succeeds even if no files match (an empty view); querying that empty view then
-fails, rather than silently returning zero rows. `virtualcols` here does not need to match a prior
+fails, rather than silently returning zero rows. `levels` here does not need to match a prior
 `extract` call exactly - it only needs to match the path segments actually present under
-`hdbdir/tname/date=.../`. When files do exist, `datecol`/`virtualcols` are checked (via
-`checkvirtuallevels`) against the hive-style `key=value` directory levels actually found on disk,
-both in count and in name/order - a declared `datecol`/`virtualcols` combination that's missing a
-level, has an extra one, misnames one, or gets the order wrong fails loudly here instead of silently
-mislabeling columns or dropping partition levels from the resulting table. Passing a `virtualcols`
-name that collides with a genuine on-disk column (rather than one `extract` actually stripped to the
-path) still produces unreliable results — the two columns are not distinguished internally, unlike on
-the write side where `writefile` always strips the real column first.
+`hdbdir/tname/`, in the same order, which is why it also works ad hoc against parquet data that
+wasn't written by `extract` at all (with or without a date partition). When files do exist, the
+declared level names are checked (via `checkvirtuallevels`) against the hive-style `key=value`
+directory levels actually found on disk, both in count and in name/order - a `levels` dict that's
+missing a level, has an extra one, misnames one, or gets the order wrong fails loudly here instead of
+silently mislabeling columns or dropping partition levels from the resulting table. The declared
+types are always checked up front (via `checkvirtualtypes`), regardless of whether any files exist -
+an unsupported `typechar` (including a lowercase reinterpret-cast char, which kdb+ itself would
+accept without error but which would silently corrupt the reconstructed values) is rejected before
+any file globbing happens. Passing a level name that collides with a genuine on-disk column (rather
+than one `extract` actually stripped to the path) still produces unreliable results — the two columns
+are not distinguished internally, unlike on the write side where `writefile` always strips the real
+column first.
 
 ---
 
@@ -248,13 +252,13 @@ pqx.init[enlist[`log]!enlist logdep]
 | `extract[t;tname;dt;o]` | Write a table out to one or more parquet files, appending one row per file to the module's `manifest`. Returns that same per-file stats table, scoped to this call. |
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
 | `readfile[path;readopt]` | Read a single file back, reattaching its `virtualcols`/`date` values reconstructed from its path (see Options). |
-| `buildvirtualtable[hdbdir;tname;datecol;virtualcols]` | Compose every file under `hdbdir/tname/` into one queryable virtual table, with `date`/`virtualcols` reconstructed from each file's path (see Virtual Tables). |
+| `buildvirtualtable[hdbdir;tname;levels]` | Compose every file under `hdbdir/tname/` into one queryable virtual table, with each hive-style path segment in `levels` reconstructed and typed per its declared type char (see Virtual Tables). |
 | `version` | The module version string, read from the `VERSION` file at load time. Consumed by `di.depcheck`. |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn`,
-`castvirtualcol`, `checkvirtuallevels` — are internal pipeline steps of `extract`/`buildvirtualtable`,
-exposed only so `k4unit` can exercise them directly. Call `extract`/`buildvirtualtable` for normal
-use.
+`checkvirtuallevels`, `checkvirtualtypes` — are internal pipeline steps of
+`extract`/`buildvirtualtable`, exposed only so `k4unit` can exercise them directly. Call
+`extract`/`buildvirtualtable` for normal use.
 
 ### `init[deps]`
 Validate the required `log` dependency and store it for use by every other function.
@@ -355,18 +359,26 @@ custom `filestub`/non-default codec — then asserts on the resulting `getmanife
 zero-row table and a table missing `symcol`/`timecol` (both fail outright), and an invalid `codec`
 (degrades gracefully — see Manifest Schema's `status` column).
 
-It also builds `buildvirtualtable` views over several of those same `extract` outputs — no
-`virtualcols`, a single `virtualcols` level, and two `virtualcols` levels (one overlapping `symcol` itself) —
-asserting row counts, virtual-column types, and that filtering on a virtual column prunes to the
-right file(s). `castvirtualcol` is exercised directly for both the datecol and non-datecol cases,
-including a datecol not literally named `` `date `` . A directory with no matching files is covered
-too: building the view over it succeeds, but querying it then fails.
+It also builds `buildvirtualtable` views over several of those same `extract` outputs — a `levels`
+dict with just the date level, one with a single additional partition level, and one with two
+additional levels (one overlapping `symcol` itself) — asserting row counts, virtual-column types, and
+that filtering on a virtual column prunes to the right file(s). `castvirtuallevel` itself isn't
+exercised directly - it's only covered indirectly through these `buildvirtualtable` calls. A
+directory with no matching files is covered too: building the view over it succeeds, but querying it
+then fails.
 
-`checkvirtuallevels` - the validation `buildvirtualtable` runs against every discovered file's path -
-is covered both indirectly, via `buildvirtualtable` calls that omit a real on-disk level, misname
-one, or supply `virtualcols` in the wrong order (all expected to fail), and directly, asserting it
-passes a matching `datecol`/`virtualcols` combination and fails one with too few declared levels, a
-misnamed level, or files that disagree with each other on partition depth.
+`checkvirtuallevels` - the level-name validation `buildvirtualtable` runs against every discovered
+file's path - is covered both indirectly, via `buildvirtualtable` calls that omit a real on-disk
+level, misname one, or supply `levels` in the wrong order (all expected to fail), and directly,
+asserting it passes a matching `levels` name set and fails one with too few declared levels, a
+misnamed level, or files that disagree with each other on partition depth. It's also asserted
+directly against a synthetic on-disk path with no date segment at all, confirming the check treats
+every level name the same rather than special-casing `` `date `` .
+
+`checkvirtualtypes` - the type-char validation `buildvirtualtable` runs on `levels`' values,
+regardless of whether any files exist - is covered directly: it passes the supported uppercase type
+chars and rejects an unsupported one, including a lowercase reinterpret-cast char that kdb+'s own
+`$` would otherwise accept silently.
 
 It also covers the `manifest.json` sidecar directly — parsing it back with `.j.k`/`read0` and casting
 its columns against `extract`'s returned per-call stats table (see Manifest Schema), that a repeat
@@ -389,5 +401,10 @@ normally and update the in-memory `manifest`.
   is recorded with `` status=`error `` (and `bytes:0`) in the manifest — it does not abort the rest of
   `extract`.
 - `buildvirtualtable` has only been tested pointed at a single `date=` partition at a time; pointing
-  it at `hdbdir/tname/` directories that span multiple dates is expected to work (the `date` segment
-  is reconstructed the same way as any other level) but isn't covered by `test.csv` yet.
+  it at `hdbdir/tname/` directories that span multiple dates is expected to work (the date segment is
+  reconstructed the same way as any other level) but isn't covered by `test.csv` yet.
+- `buildvirtualtable`'s `levels` no longer distinguishes a "date" level from any other - any level can
+  be declared with any supported type char (see `checkvirtualtypes`), including tables with no date
+  level at all or ones written outside `extract` entirely. This has only been exercised so far against
+  `extract`-shaped output (a date level plus zero or more symbol-typed `virtualcols` levels); other
+  type-char combinations (e.g. an int- or timestamp-typed level) aren't covered by `test.csv` yet.

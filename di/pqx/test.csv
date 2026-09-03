@@ -164,13 +164,14 @@ run,0,0,q,pqxreconstructed16:pqx.readfile[pqxfile16;(0#`)!()],1,,Reconstruct the
 true,0,0,q,all pqxreconstructed16[`sym]=`AAPL,1,,readfile reconstructs sym from the path even though sym is also symcol
 true,0,0,q,all pqxreconstructed16[`exch]=`N,1,,readfile reconstructs exch from the path alongside sym
 
-run,0,0,q,pqxvt1:pqx.buildvirtualtable[`:pqxout1/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a single-file no-virtualcols partition
-run,0,0,q,pqxvt12:pqx.buildvirtualtable[`:pqxout12/;`pqxtrade;`date;`symbol$()],1,,Build a virtual table over a multi-file no-virtualcols partition (onesymperfile)
-run,0,0,q,pqxvt14:pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;enlist`exch],1,,Build a virtual table over a single virtualcols level
-run,0,0,q,pqxvt16:pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;`sym`exch],1,,Build a virtual table over two virtualcols levels, one overlapping symcol
+run,0,0,q,pqxvt1:pqx.buildvirtualtable[`:pqxout1/;`pqxtrade;enlist[`date]!enlist"D"],1,,Build a virtual table over a single-file no-virtualcols partition
+run,0,0,q,pqxvt12:pqx.buildvirtualtable[`:pqxout12/;`pqxtrade;enlist[`date]!enlist"D"],1,,Build a virtual table over a multi-file no-virtualcols partition (onesymperfile)
+run,0,0,q,pqxvt14:pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`exch!"DS"],1,,Build a virtual table over a single virtualcols level
+run,0,0,q,pqxvt16:pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date`sym`exch!"DSS"],1,,Build a virtual table over two virtualcols levels, one overlapping symcol
 
 true,0,0,q,`buildvirtualtable in key pqx,1,,buildvirtualtable is exported from the module
 true,0,0,q,`checkvirtuallevels in key pqx,1,,checkvirtuallevels is exported from the module
+true,0,0,q,`checkvirtualtypes in key pqx,1,,checkvirtualtypes is exported from the module
 
 true,0,0,q,9~exec count i from select from pqxvt1,1,,Virtual table over a single-file partition reports every row
 true,0,0,q,-14h~type first exec date from select date from pqxvt1,1,,The reconstructed date column carries the real kdb+ date type, not a string
@@ -191,18 +192,26 @@ true,0,0,q,"2~exec count i from select from pqxvt16 where sym=`AAPL,exch=`N",1,,
 true,0,0,q,-11h~type first exec sym from select sym from pqxvt16,1,,sym is reconstructed as a real symbol on the virtual table even though it was stripped from the on-disk data as a virtualcols column
 true,0,0,q,all `sym`exch in exec c from meta pqxvt16,1,,Both virtualcols columns are present as virtual columns even though one shares its name with symcol
 
-fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;`symbol$()],1,,buildvirtualtable fails when a declared datecol/virtualcols combination omits an exch level that really exists on disk
-fail,0,0,q,pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;enlist`sym],1,,buildvirtualtable fails when virtualcols omits one of two levels that really exist on disk
-fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;enlist`wrongname],1,,buildvirtualtable fails when a virtualcols name doesn't match the on-disk key at that level, even though the level count is right
-fail,0,0,q,pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;`exch`sym],1,,buildvirtualtable fails when virtualcols are given in the wrong order relative to the on-disk levels
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;enlist[`date]!enlist"D"],1,,buildvirtualtable fails when a declared levels dict omits an exch level that really exists on disk
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date`sym!"DS"],1,,buildvirtualtable fails when levels omits one of the three levels that really exist on disk
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`wrongname!"DS"],1,,buildvirtualtable fails when a levels name doesn't match the on-disk key at that level, even though the level count is right
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date`exch`sym!"DSS"],1,,buildvirtualtable fails when levels are given in the wrong order relative to the on-disk levels
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`exch!"ds"],1,,buildvirtualtable fails when a declared type char is lowercase - a silent reinterpret-cast, not a string parse - rather than reconstructing corrupted values
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`exch!"DQ"],1,,buildvirtualtable fails when a declared type char isn't a supported kdb+ parse-cast char at all
 
-run,0,0,q,pqx.checkvirtuallevels[`date`exch;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,checkvirtuallevels succeeds when datecol/virtualcols match the on-disk levels in count and name
+run,0,0,q,pqx.checkvirtuallevels[`date`exch;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,checkvirtuallevels succeeds when declared levels match the on-disk levels in count and name
 fail,0,0,q,pqx.checkvirtuallevels[enlist`date;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,checkvirtuallevels fails when fewer levels are declared than are actually present on disk
 fail,0,0,q,pqx.checkvirtuallevels[`date`wrongname;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,checkvirtuallevels fails when a declared name doesn't match the on-disk key at that position
 fail,0,0,q,pqx.checkvirtuallevels[`date`exch;0;(("date=2025.08.01";"exch=N";"f.parquet");("date=2025.08.02";"f2.parquet"))],1,,checkvirtuallevels fails when files under the same path disagree on partition depth
+run,0,0,q,pqx.checkvirtuallevels[enlist`exch;0;enlist ("exch=N";"f.parquet")],1,,checkvirtuallevels succeeds against an on-disk path with no date segment at all, treating every level name the same
+
+run,0,0,q,pqx.checkvirtualtypes["DS"],1,,checkvirtualtypes succeeds when every declared type char is a supported uppercase parse-cast char
+fail,0,0,q,pqx.checkvirtualtypes["Ds"],1,,checkvirtualtypes fails when a declared type char is lowercase
+fail,0,0,q,pqx.checkvirtualtypes["DQ"],1,,checkvirtualtypes fails when a declared type char isn't a recognised kdb+ type char at all
 
 run,0,0,q,system "mkdir -p pqxoutf9/pqxempty/date=2025.08.05",1,,Create a table directory containing no parquet files
-run,0,0,q,pqxvtempty:pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;`date;`symbol$()],1,,Building a virtual table succeeds even when no parquet files are found under the directory
+run,0,0,q,pqxvtempty:pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;enlist[`date]!enlist"D"],1,,Building a virtual table succeeds even when no parquet files are found under the directory
 fail,0,0,q,select from pqxvtempty,1,,Querying a virtual table built over zero files fails rather than silently returning an empty result
+fail,0,0,q,pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;enlist[`date]!enlist"d"],1,,buildvirtualtable rejects an unsupported type char up front even when no files exist to check level names against
 
 after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxout17 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8 pqxoutf9",1,,Remove parquet output directories written by tests

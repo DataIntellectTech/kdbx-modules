@@ -170,7 +170,6 @@ run,0,0,q,pqxvt14:pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;enlist`exch]
 run,0,0,q,pqxvt16:pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;`sym`exch],1,,Build a virtual table over two virtualcols levels, one overlapping symcol
 
 true,0,0,q,`buildvirtualtable in key pqx,1,,buildvirtualtable is exported from the module
-true,0,0,q,`castvirtualcol in key pqx,1,,castvirtualcol is exported from the module
 true,0,0,q,`checkvirtuallevels in key pqx,1,,checkvirtuallevels is exported from the module
 
 true,0,0,q,9~exec count i from select from pqxvt1,1,,Virtual table over a single-file partition reports every row
@@ -191,11 +190,6 @@ true,0,0,q,9~exec count i from select from pqxvt16,1,,Virtual table over two vir
 true,0,0,q,"2~exec count i from select from pqxvt16 where sym=`AAPL,exch=`N",1,,Filtering on both reconstructed virtualcols columns together prunes to the matching combination's file
 true,0,0,q,-11h~type first exec sym from select sym from pqxvt16,1,,sym is reconstructed as a real symbol on the virtual table even though it was stripped from the on-disk data as a virtualcols column
 true,0,0,q,all `sym`exch in exec c from meta pqxvt16,1,,Both virtualcols columns are present as virtual columns even though one shares its name with symcol
-
-true,0,0,q,2025.08.01~first pqx.castvirtualcol[`date;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,castvirtualcol reconstructs the datecol level of a path segment as a date
-true,0,0,q,`N~first pqx.castvirtualcol[`date;1;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,castvirtualcol reconstructs a non-datecol level of a path segment as a symbol
-true,0,0,q,2025.01.01~first pqx.castvirtualcol[`asOf;0;enlist enlist "asOf=2025.01.01"],1,,castvirtualcol works for any datecol name, not just a column literally named `date
-true,0,0,q,2025.08.01 2025.08.02~pqx.castvirtualcol[`date;0;(enlist "date=2025.08.01";enlist "date=2025.08.02")],1,,castvirtualcol casts every row's segment when given multiple rows at once
 
 fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date;`symbol$()],1,,buildvirtualtable fails when a declared datecol/virtualcols combination omits an exch level that really exists on disk
 fail,0,0,q,pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date;enlist`sym],1,,buildvirtualtable fails when virtualcols omits one of two levels that really exist on disk

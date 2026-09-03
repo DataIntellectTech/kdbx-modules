@@ -1,0 +1,217 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,pqx:use`di.pqx,1,,Load module
+before,0,0,q,logdep:`info`warn`error!(3#{[c;m] }),1,,No-op log dependency for tests
+before,0,0,q,pqx.init[enlist[`log]!enlist logdep],1,,Wire the required log dependency
+
+before,0,0,q,pqxbasic:([]sym:`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG;time:2025.07.15D09:30:00.000000000+1000000000*til 9;price:100.0 200.0 300.0 101.0 201.0 301.0 102.0 202.0 302.0;size:10 20 30 40 50 60 70 80 90),1,,Deterministic multi-sym table for general checks
+before,0,0,q,pqxunsorted:([]sym:`B`A`B`A`A;time:2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000004 2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000001;price:1.0 2.0 3.0 4.0 5.0),1,,Two-sym table with times out of order for presort checks
+before,0,0,q,pqxempty:0#pqxbasic,1,,Zero-row table for the empty-table edge case
+before,0,0,q,pqxoversized:([]sym:20000#`AAPL;time:2025.07.15D00:00:00.000000000+til 20000;price:20000?100.0),1,,Single-instrument table sized to exceed a small target file size
+before,0,0,q,pqxnotime:([]sym:5#`AAPL;price:1.0 2.0 3.0 4.0 5.0),1,,Table missing the time column
+before,0,0,q,pqxaltsym:([]sym:`B`A`B`A`A;alt:`X`Y`X`Y`Y;time:2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000004 2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000001;price:1.0 2.0 3.0 4.0 5.0),1,,Table with a second candidate instrument column to probe the symcol option
+before,0,0,q,pqxsingle:([]sym:enlist`AAPL;time:enlist 2025.07.15D09:30:00.000000000;price:enlist 123.45),1,,Single-row table edge case
+before,0,0,q,pqxdict:([]sym:`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG;exch:`N`N`N`O`O`O`N`N`N;time:2025.07.15D09:30:00.000000000+1000000000*til 9;price:100.0 200.0 300.0 101.0 201.0 301.0 102.0 202.0 302.0;size:10 20 30 40 50 60 70 80 90),1,,Table with an exchange column where every instrument trades on both exchanges - probes virtualcols row-filtering correctness
+
+true,0,0,q,98h~type pqx.getmanifest[],1,,Manifest is a table before anything is written
+
+fail,0,0,q,pqx.init[()],1,,init fails when deps is not a dict
+fail,0,0,q,pqx.init[enlist[`nolog]!enlist logdep],1,,init fails when deps has no log key
+fail,0,0,q,pqx.init[enlist[`log]!enlist 5],1,,init fails when the log value is not a dict
+fail,0,0,q,pqx.init[enlist[`log]!enlist (enlist`info)!enlist {[c;m] }],1,,init fails when the log dict is missing required warn/error keys
+
+run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.15;enlist[`outdir]!enlist `:pqxout1/],1,,Extract a multi-sym table with default options
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout1*",1,,All input rows are accounted for across written files
+true,0,0,q,3~exec sum nsyms from pqx.getmanifest[] where file like "*pqxout1*",1,,All three instruments are accounted for
+true,0,0,q,all `ok=exec status from pqx.getmanifest[] where file like "*pqxout1*",1,,Every written file reports ok status
+true,0,0,q,all 0<exec bytes from pqx.getmanifest[] where file like "*pqxout1*",1,,Every written file has a positive on-disk size
+true,0,0,q,all (exec mintime from pqx.getmanifest[] where file like "*pqxout1*")=min pqxbasic`time,1,,mintime matches the earliest business timestamp in the input data
+true,0,0,q,all (exec maxtime from pqx.getmanifest[] where file like "*pqxout1*")=max pqxbasic`time,1,,maxtime matches the latest business timestamp in the input data
+
+run,0,0,q,manifestcountbefore:count pqx.getmanifest[],1,,Snapshot manifest row count before capturing extract's return value
+run,0,0,q,pqxret1:pqx.extract[pqxbasic;`pqxtrade;2025.07.20;enlist[`outdir]!enlist `:pqxout1b/],1,,Capture extract's return value directly for a fresh extract call
+true,0,0,q,9~exec sum rows from pqxret1,1,,extract's return value carries exactly this call's written-file stats
+true,0,0,q,1~count pqxret1,1,,extract's return value has exactly one row - all three instruments fit in a single file at default target size
+true,0,0,q,manifestcountbefore>0,1,,Sanity check - manifest already held rows from an earlier extract before this call
+true,0,0,q,not pqxret1~pqx.getmanifest[],1,,extract's return value is scoped to this call, not the entire accumulated manifest
+true,0,0,q,(count pqxret1)<count pqx.getmanifest[],1,,extract's return value is smaller than the full manifest once prior calls have run
+
+run,0,0,q,pqx.extract[pqxunsorted;`pqxtrade;2025.07.15;enlist[`outdir]!enlist `:pqxout2/],1,,Extract with default presort on
+run,0,0,q,pqxfile2:1_string first exec file from pqx.getmanifest[] where file like "*pqxout2*",1,,Resolve the path written for the presorted extract
+run,0,0,q,pqxread2:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile2;(0#`)!()],1,,Read the written file back for verification
+true,0,0,q,`B`B`A`A`A~`$pqxread2`sym,1,,Rows are still packed one instrument at a time regardless of presort
+true,0,0,q,2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000001 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000004~pqxread2`time,1,,Rows are ordered by time within each instrument when presort is on
+
+run,0,0,q,pqx.extract[pqxunsorted;`pqxtrade;2025.07.15;`outdir`presort!(`:pqxout3/;0b)],1,,Extract the same table with presort off
+run,0,0,q,pqxfile3:1_string first exec file from pqx.getmanifest[] where file like "*pqxout3*",1,,Resolve the path written for the unsorted extract
+run,0,0,q,pqxread3:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile3;(0#`)!()],1,,Read the written file back for verification
+true,0,0,q,`B`B`A`A`A~`$pqxread3`sym,1,,Rows are still packed one instrument at a time when presort is off
+true,0,0,q,2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000004 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000001~pqxread3`time,1,,Rows keep their original per-instrument order (not time-sorted) when presort is off
+
+run,0,0,q,pqx.extract[pqxoversized;`pqxtrade;2025.07.15;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized!(1000;1.1;0b;0.30;`:pqxout4/;1b)],1,,Extract an oversized single instrument with splitoversized on
+true,0,0,q,1<count select from pqx.getmanifest[] where file like "*pqxout4*",1,,Oversized instrument is split across more than one file
+true,0,0,q,20000~exec sum rows from pqx.getmanifest[] where file like "*pqxout4*",1,,No rows are lost or duplicated across the split files
+true,0,0,q,all exec split from pqx.getmanifest[] where file like "*pqxout4*",1,,Every chunk of the split instrument is flagged as split
+
+run,0,0,q,pqx.extract[pqxoversized;`pqxtrade2;2025.07.16;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized!(1000;1.1;0b;0.30;`:pqxout5/;0b)],1,,Extract the same oversized instrument with splitoversized off
+true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout5*",1,,A single oversized instrument still produces exactly one file when splitting is disabled
+true,0,0,q,20000~first exec rows from pqx.getmanifest[] where file like "*pqxout5*",1,,The single file contains every row despite exceeding the target size
+true,0,0,q,not first exec split from pqx.getmanifest[] where file like "*pqxout5*",1,,The single oversized file is not flagged as split
+
+run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.17;`outdir`filestub`codec!(`:pqxout6/;"foo";`gzip)],1,,Extract with a custom filestub and a non-default (but valid) codec
+true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout6*""),(file like ""*foo-00001.parquet*"")",1,,Custom filestub is used to name the written file and the write succeeds with a valid non-default codec
+
+run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.18;`outdir`parallel!(`:pqxout7/;1b)],1,,Extract with files written via peach instead of each
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout7*",1,,Parallel write produces the same row coverage as the sequential path
+
+run,0,0,q,pqx.extract[pqxaltsym;`pqxtrade;2025.07.19;`outdir`presort`symcol!(`:pqxout8/;0b;`alt)],1,,Extract with symcol pointed at a column other than sym
+true,0,0,q,`X`Y~first exec syms from pqx.getmanifest[] where file like "*pqxout8*",1,,Manifest syms reflects the overridden symcol column, not the sym column
+
+run,0,0,q,pqx.extract[pqxsingle;`pqxtrade;2025.07.24;enlist[`outdir]!enlist `:pqxout9/],1,,Extract a single-row table
+true,0,0,q,1~exec first rows from pqx.getmanifest[] where file like "*pqxout9*",1,,Single-row table produces a single-row file
+true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout9*",1,,Single-row table produces exactly one file
+
+fail,0,0,q,pqx.extract[pqxempty;`pqxtrade;2025.07.21;enlist[`outdir]!enlist `:pqxoutf1/],1,,Extract fails on a zero-row table - explicit empty-table guard rejects it outright
+fail,0,0,q,pqx.extract[pqxempty;`pqxtrade;2025.07.21;`outdir`calibrate`compressionratio!(`:pqxoutf1b/;0b;0.3)],1,,Extract fails on a zero-row table even with calibrate off - the empty-table check is unconditional
+fail,0,0,q,pqx.extract[pqxnotime;`pqxtrade;2025.07.22;enlist[`outdir]!enlist `:pqxoutf2/],1,,Extract fails on a missing time column with presort on (the default)
+fail,0,0,q,pqx.extract[pqxnotime;`pqxtrade;2025.07.22;`outdir`presort!(`:pqxoutf3/;0b)],1,,Extract fails on a missing time column even with presort off - the column check is unconditional
+fail,0,0,q,pqx.extract[([]price:1.0 2.0 3.0);`pqxtrade;2025.07.23;enlist[`outdir]!enlist `:pqxoutf4/],1,,Extract fails when the table has no sym column at all
+run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.25;`outdir`codec`calibrate`compressionratio!(`:pqxoutf5/;`bogus;0b;0.3)],1,,Extract degrades gracefully on an invalid codec rather than throwing
+true,0,0,q,`error~first exec status from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file is recorded with status=`error instead of aborting extract
+true,0,0,q,0~first exec bytes from pqx.getmanifest[] where file like "*pqxoutf5*",1,,The failed file has zero on-disk bytes recorded
+
+run,0,0,q,pqxret10:pqx.extract[pqxbasic;`pqxtrade;2025.07.26;enlist[`outdir]!enlist `:pqxout10/],1,,Extract a table to exercise the on-disk manifest sidecar
+true,0,0,q,"not ()~key hsym `$""pqxout10/pqxtrade/date=2025.07.26/manifest.json""",1,,extract writes a manifest.json sidecar file into the partition directory
+run,0,0,q,pqxsidecar10:.j.k first read0 hsym `$"pqxout10/pqxtrade/date=2025.07.26/manifest.json",1,,Parse back the JSON manifest sidecar - numeric columns come back as floats and symbol/date/timestamp columns as strings
+true,0,0,q,1~count pqxsidecar10,1,,The sidecar has the same row count as extract's returned per-call stats table
+true,0,0,q,("j"$exec seq from pqxsidecar10)~exec seq from pqxret10,1,,seq round-trips through JSON once cast back from float to long
+true,0,0,q,("j"$exec nsyms from pqxsidecar10)~exec nsyms from pqxret10,1,,nsyms round-trips through JSON once cast back from float to long
+true,0,0,q,("j"$exec rows from pqxsidecar10)~exec rows from pqxret10,1,,rows round-trips through JSON once cast back from float to long
+true,0,0,q,("j"$exec bytes from pqxsidecar10)~exec bytes from pqxret10,1,,bytes round-trips through JSON once cast back from float to long
+true,0,0,q,(exec split from pqxsidecar10)~exec split from pqxret10,1,,split is a native JSON boolean and round-trips without casting
+true,0,0,q,(`$exec status from pqxsidecar10)~exec status from pqxret10,1,,status round-trips through JSON once cast back from string to symbol
+true,0,0,q,(`$exec file from pqxsidecar10)~exec file from pqxret10,1,,file round-trips through JSON once cast back from string to symbol
+true,0,0,q,(`$first exec syms from pqxsidecar10)~first exec syms from pqxret10,1,,syms round-trips through JSON once each instrument name is cast back from string to symbol (single row case)
+true,0,0,q,0=count first exec virtualcols from pqxsidecar10,1,,virtualcols is empty in the sidecar for a call made without virtualcols set
+
+run,0,0,q,pqxret11a:pqx.extract[pqxbasic;`pqxtrade;2025.07.27;enlist[`outdir]!enlist `:pqxout11/],1,,First extract call into a partition that will be written to twice
+run,0,0,q,pqxret11b:pqx.extract[pqxsingle;`pqxtrade;2025.07.27;enlist[`outdir]!enlist `:pqxout11/],1,,Second extract call into the same partition with different data
+run,0,0,q,pqxsidecar11:.j.k first read0 hsym `$"pqxout11/pqxtrade/date=2025.07.27/manifest.json",1,,Parse back the JSON manifest sidecar after the second call into the same partition
+true,0,0,q,("j"$exec rows from pqxsidecar11)~exec rows from pqxret11b,1,,The manifest.json sidecar reflects only the most recent call's stats
+true,0,0,q,not ("j"$exec rows from pqxsidecar11)~exec rows from pqxret11a,1,,Repeat extract calls into the same partition overwrite the sidecar rather than appending to it
+
+run,0,0,q,pqxret17:pqx.extract[pqxoversized;`pqxtrade;2025.08.06;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized!(1000;1.1;0b;0.30;`:pqxout17/;1b)],1,,Extract an oversized instrument split across multiple files to exercise a multi-row manifest sidecar
+true,0,0,q,1<count pqxret17,1,,Sanity check - the split instrument is written to more than one file
+run,0,0,q,pqxsidecar17:.j.k first read0 hsym `$"pqxout17/pqxtrade/date=2025.08.06/manifest.json",1,,Parse back the JSON manifest sidecar for the multi-file call
+true,0,0,q,(count pqxret17)~count pqxsidecar17,1,,The sidecar has one entry per file actually written, not just the first
+true,0,0,q,("j"$exec seq from pqxsidecar17)~exec seq from pqxret17,1,,seq round-trips for every row in order, not only the first
+true,0,0,q,("j"$exec rows from pqxsidecar17)~exec rows from pqxret17,1,,rows round-trips for every row, confirming no chunk's stats were dropped or reordered
+true,0,0,q,20000~sum "j"$exec rows from pqxsidecar17,1,,The sidecar's rows sum to the full input row count across every split chunk
+true,0,0,q,(exec split from pqxsidecar17)~exec split from pqxret17,1,,split round-trips for every row - every chunk of the split instrument is flagged, not just the first
+true,0,0,q,(`$exec file from pqxsidecar17)~exec file from pqxret17,1,,file round-trips for every row, confirming each chunk's path is present in the sidecar and in order
+
+run,0,0,q,system "mkdir -p pqxoutf6/pqxtrade/date=2025.07.28/manifest.json",1,,Pre-create a directory at the manifest.json sidecar's path so the sidecar write itself fails
+run,0,0,q,manifestcountbeforef6:count pqx.getmanifest[],1,,Snapshot the accumulated manifest row count before the manifest-write-failure case
+run,0,0,q,pqxretf6:pqx.extract[pqxbasic;`pqxtrade;2025.07.28;enlist[`outdir]!enlist `:pqxoutf6/],1,,Extract still succeeds even though writing its manifest.json sidecar fails
+true,0,0,q,9~exec sum rows from pqxretf6,1,,extract still returns full per-file stats despite the sidecar write failure
+true,0,0,q,all `ok=exec status from pqxretf6,1,,Every data file write still succeeds despite the later sidecar write failure
+true,0,0,q,(count pqx.getmanifest[])>manifestcountbeforef6,1,,extract still appends to the accumulated in-memory manifest despite the sidecar write failure
+
+run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.29;`outdir`onesymperfile!(`:pqxout12/;1b)],1,,Extract a multi-sym table with onesymperfile on
+true,0,0,q,3~count select from pqx.getmanifest[] where file like "*pqxout12*",1,,onesymperfile produces one file per instrument instead of bucketing them together
+true,0,0,q,all 1=exec nsyms from pqx.getmanifest[] where file like "*pqxout12*",1,,Every file written under onesymperfile contains exactly one instrument
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout12*",1,,All input rows are still accounted for across the per-instrument files
+true,0,0,q,not any exec split from pqx.getmanifest[] where file like "*pqxout12*",1,,Files are not flagged as split when written one instrument per file
+
+run,0,0,q,pqx.extract[pqxoversized;`pqxtrade;2025.07.30;`targetsize`maxfactor`calibrate`compressionratio`outdir`splitoversized`onesymperfile!(1000;1.1;0b;0.30;`:pqxout13/;1b;1b)],1,,onesymperfile takes priority over splitoversized for an oversized single instrument
+true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout13*",1,,onesymperfile forces splitoversized off, so the oversized instrument is written to a single file
+true,0,0,q,20000~first exec rows from pqx.getmanifest[] where file like "*pqxout13*",1,,The single file still contains every row of the oversized instrument
+true,0,0,q,not first exec split from pqx.getmanifest[] where file like "*pqxout13*",1,,The single file is not flagged as split, since splitting was suppressed by onesymperfile
+
+fail,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.31;`outdir`badoption!(`:pqxoutf7/;1)],1,,Extract fails when passed an option key that isn't recognised
+
+run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.01;`outdir`virtualcols!(`:pqxout14/;enlist`exch)],1,,Extract with virtualcols set to exch - one file per exchange combination
+true,0,0,q,2~count select from pqx.getmanifest[] where file like "*pqxout14*",1,,virtualcols produces exactly one file per distinct exch value
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout14*",1,,All input rows are accounted for exactly once across the virtualcols files - no row is duplicated across combinations
+true,0,0,q,all 3=exec nsyms from pqx.getmanifest[] where file like "*pqxout14*",1,,Every instrument trades on both exchanges, so both files see all three instruments
+true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=N*"")",1,,Output path is partitioned into a Hive-style exch=N subdirectory
+true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=O*"")",1,,Output path is partitioned into a Hive-style exch=O subdirectory
+true,0,0,q,"6~first exec rows from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=N*"")",1,,The exch=N file contains only the 6 rows that actually belong to exch=N - not every row for its instruments
+true,0,0,q,"3~first exec rows from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=O*"")",1,,The exch=O file contains only the 3 rows that actually belong to exch=O - not every row for its instruments
+
+run,0,0,q,"pqxfile14n:1_string first exec file from pqx.getmanifest[] where (file like ""*pqxout14*""),(file like ""*exch=N*"")",1,,Resolve the path written for the exch=N virtualcols file
+run,0,0,q,pqxraw14n:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile14n;(0#`)!()],1,,Read the raw on-disk data directly, bypassing readfile's reconstruction
+true,0,0,q,not `exch in cols pqxraw14n,1,,The virtualcols column (exch) is stripped from the on-disk data rather than duplicated into every row
+true,0,0,q,`sym in cols pqxraw14n,1,,Non-virtualcols columns are still written to disk as normal
+run,0,0,q,pqxreconstructed14n:pqx.readfile[pqxfile14n;(0#`)!()],1,,Read the same file back through readfile, which reconstructs values encoded in the path
+true,0,0,q,all pqxreconstructed14n[`exch]=`N,1,,readfile reconstructs the exch column as `N for every row, from the exch=N path segment
+true,0,0,q,all pqxreconstructed14n[`date]=2025.08.01,1,,readfile also reconstructs the date partition segment as an actual date
+true,0,0,q,(cols pqxraw14n)~cols[pqxreconstructed14n] except `date`exch,1,,readfile only adds the reconstructed columns - the rest of the schema is untouched
+
+run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.02;`outdir`virtualcols`onesymperfile`splitoversized!(`:pqxout15/;enlist`exch;1b;1b)],1,,virtualcols takes priority over onesymperfile and splitoversized even when both are explicitly requested
+true,0,0,q,2~count select from pqx.getmanifest[] where file like "*pqxout15*",1,,Still exactly one file per exch combination, not one per instrument
+true,0,0,q,not any 1=exec nsyms from pqx.getmanifest[] where file like "*pqxout15*",1,,Files are not split down to one instrument each, confirming onesymperfile was overridden by virtualcols
+
+fail,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.03;`outdir`virtualcols!(`:pqxoutf8/;enlist`nosuchcol)],1,,Extract fails when a virtualcols column is not present in the table
+
+run,0,0,q,pqx.extract[pqxdict;`pqxtrade;2025.08.04;`outdir`virtualcols!(`:pqxout16/;`sym`exch)],1,,Extract with virtualcols including symcol itself - the same column drives row selection and path partitioning
+true,0,0,q,6~count select from pqx.getmanifest[] where file like "*pqxout16*",1,,One file per distinct (sym,exch) combination
+true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout16*",1,,All input rows are accounted for exactly once even when symcol overlaps virtualcols
+run,0,0,q,"pqxfile16:1_string first exec file from pqx.getmanifest[] where (file like ""*pqxout16*""),(file like ""*sym=AAPL*""),(file like ""*exch=N*"")",1,,Resolve the path for the sym=AAPL/exch=N combination
+run,0,0,q,pqxraw16:.m.di.0pqx.arrow.pq.readParquetToTable[pqxfile16;(0#`)!()],1,,Read the raw on-disk data for that combination
+true,0,0,q,not `sym in cols pqxraw16,1,,symcol itself is stripped from the on-disk data when it is also a virtualcols column
+true,0,0,q,2~count pqxraw16,1,,The sym=AAPL/exch=N file contains exactly its own 2 rows - not every AAPL or every exch=N row
+run,0,0,q,pqxreconstructed16:pqx.readfile[pqxfile16;(0#`)!()],1,,Reconstruct the values stripped from the path
+true,0,0,q,all pqxreconstructed16[`sym]=`AAPL,1,,readfile reconstructs sym from the path even though sym is also symcol
+true,0,0,q,all pqxreconstructed16[`exch]=`N,1,,readfile reconstructs exch from the path alongside sym
+
+run,0,0,q,pqxvt1:pqx.buildvirtualtable[`:pqxout1/;`pqxtrade;enlist[`date]!enlist"D"],1,,Build a virtual table over a single-file no-virtualcols partition
+run,0,0,q,pqxvt12:pqx.buildvirtualtable[`:pqxout12/;`pqxtrade;enlist[`date]!enlist"D"],1,,Build a virtual table over a multi-file no-virtualcols partition (onesymperfile)
+run,0,0,q,pqxvt14:pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`exch!"DS"],1,,Build a virtual table over a single virtualcols level
+run,0,0,q,pqxvt16:pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date`sym`exch!"DSS"],1,,Build a virtual table over two virtualcols levels, one overlapping symcol
+
+true,0,0,q,`buildvirtualtable in key pqx,1,,buildvirtualtable is exported from the module
+true,0,0,q,`checkvirtuallevels in key pqx,1,,checkvirtuallevels is exported from the module
+true,0,0,q,`checkvirtualtypes in key pqx,1,,checkvirtualtypes is exported from the module
+
+true,0,0,q,9~exec count i from select from pqxvt1,1,,Virtual table over a single-file partition reports every row
+true,0,0,q,-14h~type first exec date from select date from pqxvt1,1,,The reconstructed date column carries the real kdb+ date type, not a string
+true,0,0,q,enlist[2025.07.15]~exec distinct date from select date from pqxvt1,1,,The reconstructed date matches the extract's own partition date
+true,0,0,q,not `exch in exec c from meta pqxvt1,1,,No virtualcols column appears when the extract had none
+
+true,0,0,q,9~exec count i from select from pqxvt12,1,,Virtual table sums rows correctly across multiple files written at the same partition level
+true,0,0,q,3 3 3~asc value exec count i by sym from select sym from pqxvt12,1,,Every instrument's file is discovered and its rows counted, even though sym stays a real on-disk column here
+
+true,0,0,q,9~exec count i from select from pqxvt14,1,,Virtual table over virtualcols-partitioned files reports every row across both files
+true,0,0,q,-11h~type first exec exch from select exch from pqxvt14,1,,The reconstructed virtualcols column carries the symbol type
+true,0,0,q,6~exec count i from select from pqxvt14 where exch=`N,1,,Filtering on the reconstructed virtualcols column prunes to just the exch=N file's rows
+true,0,0,q,3~exec count i from select from pqxvt14 where exch=`O,1,,Filtering on the reconstructed virtualcols column prunes to just the exch=O file's rows
+true,0,0,q,`N`O~asc exec distinct exch from select exch from pqxvt14,1,,Both virtualcols combinations are discovered from their subdirectories
+
+true,0,0,q,9~exec count i from select from pqxvt16,1,,Virtual table over two virtualcols levels still reports every row across all six files
+true,0,0,q,"2~exec count i from select from pqxvt16 where sym=`AAPL,exch=`N",1,,Filtering on both reconstructed virtualcols columns together prunes to the matching combination's file
+true,0,0,q,-11h~type first exec sym from select sym from pqxvt16,1,,sym is reconstructed as a real symbol on the virtual table even though it was stripped from the on-disk data as a virtualcols column
+true,0,0,q,all `sym`exch in exec c from meta pqxvt16,1,,Both virtualcols columns are present as virtual columns even though one shares its name with symcol
+
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;enlist[`date]!enlist"D"],1,,buildvirtualtable fails when a declared levels dict omits an exch level that really exists on disk
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date`sym!"DS"],1,,buildvirtualtable fails when levels omits one of the three levels that really exist on disk
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`wrongname!"DS"],1,,buildvirtualtable fails when a levels name doesn't match the on-disk key at that level, even though the level count is right
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout16/;`pqxtrade;`date`exch`sym!"DSS"],1,,buildvirtualtable fails when levels are given in the wrong order relative to the on-disk levels
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`exch!"ds"],1,,buildvirtualtable fails when a declared type char is lowercase - a silent reinterpret-cast, not a string parse - rather than reconstructing corrupted values
+fail,0,0,q,pqx.buildvirtualtable[`:pqxout14/;`pqxtrade;`date`exch!"DQ"],1,,buildvirtualtable fails when a declared type char isn't a supported kdb+ parse-cast char at all
+
+run,0,0,q,pqx.checkvirtuallevels[`date`exch;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,checkvirtuallevels succeeds when declared levels match the on-disk levels in count and name
+fail,0,0,q,pqx.checkvirtuallevels[enlist`date;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,checkvirtuallevels fails when fewer levels are declared than are actually present on disk
+fail,0,0,q,pqx.checkvirtuallevels[`date`wrongname;0;enlist ("date=2025.08.01";"exch=N";"f.parquet")],1,,checkvirtuallevels fails when a declared name doesn't match the on-disk key at that position
+fail,0,0,q,pqx.checkvirtuallevels[`date`exch;0;(("date=2025.08.01";"exch=N";"f.parquet");("date=2025.08.02";"f2.parquet"))],1,,checkvirtuallevels fails when files under the same path disagree on partition depth
+run,0,0,q,pqx.checkvirtuallevels[enlist`exch;0;enlist ("exch=N";"f.parquet")],1,,checkvirtuallevels succeeds against an on-disk path with no date segment at all, treating every level name the same
+
+run,0,0,q,pqx.checkvirtualtypes["DS"],1,,checkvirtualtypes succeeds when every declared type char is a supported uppercase parse-cast char
+fail,0,0,q,pqx.checkvirtualtypes["Ds"],1,,checkvirtualtypes fails when a declared type char is lowercase
+fail,0,0,q,pqx.checkvirtualtypes["DQ"],1,,checkvirtualtypes fails when a declared type char isn't a recognised kdb+ type char at all
+
+run,0,0,q,system "mkdir -p pqxoutf9/pqxempty/date=2025.08.05",1,,Create a table directory containing no parquet files
+run,0,0,q,pqxvtempty:pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;enlist[`date]!enlist"D"],1,,Building a virtual table succeeds even when no parquet files are found under the directory
+fail,0,0,q,select from pqxvtempty,1,,Querying a virtual table built over zero files fails rather than silently returning an empty result
+fail,0,0,q,pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;enlist[`date]!enlist"d"],1,,buildvirtualtable rejects an unsupported type char up front even when no files exist to check level names against
+
+after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxout17 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8 pqxoutf9",1,,Remove parquet output directories written by tests

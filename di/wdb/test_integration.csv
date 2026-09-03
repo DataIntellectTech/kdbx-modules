@@ -1,0 +1,56 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration suite - the end of day reload round trip against a REAL second q process
+comment,,,,,,,"kept separate because moduletest only ever loads test.csv (di/k4unit/init.q), so leaving these"
+comment,,,,,,,rows there would make every unit run spawn a process and bind a port.
+comment,,,,,,,RUN IT IN A FRESH q SESSION: after moduletest the unit rows are still loaded and KUrt would
+comment,,,,,,,"re-run them against dirty module state, reporting phantom failures."
+comment,,,,,,,needs a q binary reachable via QHOME - the peer is launched with $QHOME/bin/q
+comment,,,,,,,why this cannot be a loopback row in test.csv: kdb+ resolves a connection to your OWN listening
+comment,,,,,,,"port to the self-handle 0, which evaluates a sent message LOCALLY. that exercises the message"
+comment,,,,,,,shape but cannot distinguish work done on the remote from work done here - which is exactly what
+comment,,,,,,,the async reload path turns on. only a genuine socket to a separate process can.
+comment,,,,,,,fixtures
+before,0,0,q,"wdb:use`di.wdb",1,1,the module under test
+before,0,0,q,"dbw:use`di.dbwrite",1,1,"hard dep - the CALLER inits it, di.wdb never does"
+before,0,0,q,"logging:use`di.log",1,1,"a real logger, the shape di.torq wires"
+before,0,0,q,"timer:use`di.timer",1,1,a real timer
+before,0,0,q,".t.BASE:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i}""diwdbintegration""",1,1,fixture: BASE
+before,0,0,q,"system""rm -rf "",.t.BASE",1,1,clean slate
+before,0,0,q,"system""mkdir -p "",.t.BASE,""/hdb""",1,1,create the hdb root
+before,0,0,q,".t.MARK:.t.BASE,""/remote.mark""",1,1,fixture: MARK - the file the REMOTE writes when its reload really runs
+before,0,0,q,".t.PEER:.t.BASE,""/hdb.q""",1,1,fixture: PEER - the file the stand-in hdb is launched from
+before,0,0,q,".t.readport:{[fl;timeoutms] deadline:.z.p+`timespan$1000000*timeoutms; p:0N; while[(.z.p<deadline) and null p; if[count key hsym`$fl;p:""J""$first read0 hsym`$fl]; if[null p;system""sleep 0.05""]]; :p}",1,1,poll for the port the peer publishes
+comment,,,,,,,spawn the stand-in hdb - a bare process whose ROOT reload records that it genuinely ran
+before,0,0,q,"(hsym`$.t.PEER) 0: ((""(hsym`$\"""",.t.BASE,""/hdbport\"") 0: enlist string system\""p\"";"");(""@[`.;`reload;:;{[d] (hsym`$\"""",.t.MARK,""\"") 0: enlist \""RELOADED \"",string d; `reloaded}];""))",1,1,write the peer SOURCE - it publishes its own port then defines a root reload
+before,0,0,q,".t.HDBPORT:{[fl] system (getenv[`QHOME]),""/bin/q "",fl,"" -p 0W -q </dev/null >/dev/null 2>&1 &""; :.t.readport[.t.BASE,""/hdbport"";8000]}[.t.PEER]",1,1,launch the peer on an OS-assigned port and read that port back
+comment,,,,,,,wire di.wdb exactly as di.torq would
+before,0,0,q,"timer.init[()!()]",1,1,the caller inits di.timer
+before,0,0,q,"dbw.init[logging`logdict]",1,1,the caller inits di.dbwrite
+before,0,0,q,".t.timerdep:`addjob`deletejobs!(timer`addjob;timer`deletejobs)",1,1,a timer dep from di.timer's own exports - it carries no cp key
+before,0,0,q,"wdb.init[(logging`logdict),`timer`hdbdir`savedir!(.t.timerdep;hsym`$.t.BASE,""/hdb"";hsym`$.t.BASE,""/wdbhdb"")]",1,1,init off di.log's real logdict
+comment,,,,,,,a LOCAL root reload as a tripwire - if the module runs the work in THIS process rather than
+comment,,,,,,,"sending it to the peer, this fires and the remote marker never appears"
+before,0,0,q,"@[`.;`localreload;:;()]",1,1,tripwire accumulator
+before,0,0,q,"@[`.;`reload;:;{[d] @[`.;`localreload;,;d]; `localreloaded}]",1,1,tripwire: our own root reload
+before,0,0,q,".t.H:hopen `$"":localhost:"",string .t.HDBPORT",1,1,a genuine socket to the peer
+comment,,,,,,,drive the async reload path and let the peer answer
+before,0,0,q,".m.di.0wdb.countreload:1",1,1,expect exactly one reply
+before,0,0,q,".m.di.0wdb.timeouttime:0Wp",1,1,no deadline - release only when the reply lands
+before,0,0,q,".m.di.0wdb.asyncreload[.t.H;2026.01.05;`hdb]",1,1,send the reload
+before,0,0,q,"neg[.t.H][]",1,1,flush the outgoing queue to the peer
+before,0,0,q,".t.H""""",1,1,round trip so the peer processes it
+before,0,0,q,"system""sleep 0.3""",1,1,let the peer write its marker and reply
+before,0,0,q,".t.H""""",1,1,round trip again so the reply lands here
+before,0,0,q,".t.SOCKET:0<.t.H",1,1,was this a real socket rather than the self-handle?
+before,0,0,q,".t.REMOTERAN:not ()~key hsym`$.t.MARK",1,1,did the peer actually reload?
+before,0,0,q,".t.MARKTXT:$[.t.REMOTERAN;first read0 hsym`$.t.MARK;""""]",1,1,what the peer recorded
+before,0,0,q,".t.LOCALRAN:0<count localreload",1,1,did the work leak into this process?
+comment,,,,,,,assertions
+true,0,0,q,".t.SOCKET",1,1,the handle is a real socket - a self-handle would make this test meaningless
+true,0,0,q,".t.REMOTERAN",1,1,the reload was SENT to the peer and executed there
+true,0,0,q,"""RELOADED 2026.01.05""~.t.MARKTXT",1,1,the peer reloaded the partition date it was given
+true,0,0,q,"not .t.LOCALRAN",1,1,"the reload did NOT leak into this process - the triple is sent, not called"
+comment,,,,,,,teardown
+before,0,0,q,"@[hclose;.t.H;{[e] }]",1,1,close the peer handle
+before,0,0,q,"@[system;""pkill -f "",.t.PEER;{[e] }]",1,1,"kill the spawned peer - pkill exits non-zero when nothing matched, which system signals as 'os"
+before,0,0,q,"system""rm -rf "",.t.BASE",1,1,remove the working directory

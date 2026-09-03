@@ -1,0 +1,271 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,"fixtures - k4unit runs EVERY before row before ANY assert, so each scenario runs"
+comment,,,,,,,here and captures its outcome into a .t.S* dict; the asserts only read those dicts
+comment,,,,,,,"EVERY fixture lives under .t deliberately: endofday walks tables[`.], so a root-level"
+comment,,,,,,,fixture table would be written into the hdb and then fail to sort for want of a time column
+before,0,0,q,wdb:use`di.wdb,1,1,load the module under test
+before,0,0,q,dbw:use`di.dbwrite,1,1,"di.dbwrite - a hard dep the CALLER owns, so the harness inits it"
+before,0,0,q,.t.caprows:([]lvl:`symbol$();ctx:`symbol$();msg:()),1,1,fixture: capturing log sink
+before,0,0,q,".t.caplog:`info`warn`error!({[c;m] `.t.caprows insert (`info;c;m)};{[c;m] `.t.caprows insert (`warn;c;m)};{[c;m] `.t.caprows insert (`error;c;m)})",1,1,"fixture: caplog - the binary {[c;m]} log dep contract, capturing rather than discarding"
+before,0,0,q,.t.jobrows:([]id:`symbol$();period:();mode:();opts:()),1,1,fixture: sink for the jobs the mock timer is asked to schedule
+before,0,0,q,".t.mtimer:`addjob`deletejobs!((enlist[`custom]!enlist {[id;f;p;per;md;o] `.t.jobrows insert (id;per;md;enlist o)});{[ids] xs:(),ids; .t.jobrows::delete from .t.jobrows where id in xs})",1,1,"fixture: mock timer exposing addjob.custom and deletejobs, the two di.wdb calls"
+before,0,0,q,".t.tmpdir:{[nm] b:getenv`TMPDIR; if[0=count b;b:""/tmp""]; :b,""/"",nm,string .z.i}",1,1,fixture: tmpdir - honours TMPDIR and appends the pid so two runs cannot collide
+before,0,0,q,".t.BASE:.t.tmpdir""diwdbtest""",1,1,fixture: BASE
+before,0,0,q,".t.HD:hsym`$.t.BASE,""/hdb""",1,1,fixture: HD - the hdb root the day is moved into
+before,0,0,q,".t.SD:hsym`$.t.BASE,""/wdbhdb""",1,1,fixture: SD - the working directory data is flushed to
+before,0,0,q,".t.setupfixture:{[] system""rm -rf "",.t.BASE; system""mkdir -p "",.t.BASE,""/hdb""; }",1,1,fixture: setupfixture - a clean hdb root and working dir per scenario
+before,0,0,q,.t.clearroot:{[] {![`.;();0b;enlist x]} each tables[`.]; },1,1,fixture: clearroot - drop every ROOT table so each scenario controls exactly what endofday sees
+before,0,0,q,.t.resetcap:{[] .t.caprows::0#.t.caprows; },1,1,fixture: resetcap
+before,0,0,q,".t.logged:{[lv;s] :any {[s;m] 0<count m ss s}[s] each (),exec msg from .t.caprows where lvl=lv}",1,1,"fixture: logged - substring search via ss, NOT like: a multi-wildcard like throws 'nyi"
+before,0,0,q,".t.mkdeps:{[extra] :(`log`timer`hdbdir`savedir!(.t.caplog;.t.mtimer;.t.HD;.t.SD)),extra}",1,1,"fixture: mkdeps - the ONE flat dict init takes, with per-scenario overrides joined on"
+before,0,0,q,".t.mktrade:{[] @[`.;`trade;:;([]time:`timestamp$();sym:`g#`symbol$();price:`float$())]; }",1,1,"fixture: mktrade - a root table carrying a g# attribute, so attribute handling is exercised"
+before,0,0,q,".t.mkhb:{[] @[`.;`heartbeat;:;([]time:`timestamp$();proc:`symbol$())]; }",1,1,fixture: mkhb - a table on the default ignorelist
+before,0,0,q,".t.ondisk:{[p] :(),@[{key hsym`$x};p;{[e] :`symbol$()}]}",1,1,fixture: ondisk - list a directory or an empty symbol list
+before,0,0,q,".t.rows:{[p] :@[{count get hsym`$x};p;{[e] :-1}]}",1,1,fixture: rows - count an on-disk table or -1
+before,0,0,q,dbw.init[enlist[`log]!enlist .t.caplog],1,1,the caller inits di.dbwrite - di.wdb never does
+comment,,,,,,,S1 - init wires config and publishes the root entry points
+before,0,0,q,".t.S1:{[] .t.setupfixture[]; .t.clearroot[]; wdb.init[.t.mkdeps[()!()]]; :`roots`uend`dflts`status!((`upd`endofday`endofperiod`wdbreloadhandler) in key `.; `end in key `.u; all (key .m.di.0wdb.configdefaults[]) in key `.m.di.0wdb; wdb.status[])}[]",1,1,scenario: default init
+true,0,0,q,all .t.S1`roots,1,1,init publishes upd endofday endofperiod and wdbreloadhandler at root
+true,0,0,q,.t.S1`uend,1,1,init publishes .u.end as the endofday alias
+true,0,0,q,.t.S1`dflts,1,1,every configdefaults key reached module state - catches a forgotten write in init
+true,0,0,q,`saveandsort=(.t.S1`status)`mode,1,1,mode defaults to saveandsort - the code default not the config file's save
+true,0,0,q,`default=(.t.S1`status)`writedownmode,1,1,writedownmode defaults to default
+true,0,0,q,not (.t.S1`status)`started,1,1,init alone does not mark the module started
+true,0,0,q,not (.t.S1`status)`subscribed,1,1,init alone establishes no subscription
+comment,,,,,,,"S1 asserts an OBSERVABLE effect, never ""init did not throw"" - that passes under a broken two-arg init"
+true,0,0,q,.t.S1[`status][`savedir]~.t.SD,1,1,the savedir config key reached module state as an hsym
+true,0,0,q,.t.S1[`status][`hdbdir]~.t.HD,1,1,the hdbdir config key reached module state as an hsym
+comment,,,,,,,init validation - every guard gets a fail row
+fail,0,0,q,wdb.init[(::)],1,1,init rejects a non-dictionary deps
+fail,0,0,q,wdb.init[()!()],1,1,init rejects a deps dict with no log or timer
+fail,0,0,q,wdb.init[enlist[`log]!enlist .t.caplog],1,1,init rejects deps carrying log but no timer
+fail,0,0,q,"wdb.init[`log`timer!(42;.t.mtimer)]",1,1,init rejects a non-dictionary log value
+fail,0,0,q,"wdb.init[`log`timer!(enlist[`info]!enlist {[c;m] };.t.mtimer)]",1,1,init rejects a log dict missing warn and error
+fail,0,0,q,"wdb.init[`log`timer!(.t.caplog;42)]",1,1,init rejects a non-dictionary timer value
+fail,0,0,q,"wdb.init[`log`timer!(.t.caplog;enlist[`deletejobs]!enlist {[ids] })]",1,1,init rejects a timer dict with no addjob
+fail,0,0,q,"wdb.init[`log`timer!(.t.caplog;`addjob`deletejobs!((enlist[`default]!enlist {[a;b;c;d;e;f] });{[ids] }))]",1,1,init rejects a timer addjob with no custom variant
+fail,0,0,q,"wdb.init[`log`timer!(.t.caplog;enlist[`addjob]!enlist (enlist[`custom]!enlist {[a;b;c;d;e;f] }))]",1,1,init rejects a timer dict with no deletejobs - a missing one fails SILENTLY at teardown
+comment,,,,,,,"deletejobs presence is not enough - a NON-CALLABLE one lands in the same silent amend trap"
+fail,0,0,q,"wdb.init[`log`timer!(.t.caplog;`addjob`deletejobs!((enlist[`custom]!enlist {[a;b;c;d;e;f] });42))]",1,1,init rejects a non-callable deletejobs
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`savedir]!enlist 42]]",1,1,init rejects a numeric savedir rather than silently writing to a directory named 42
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`hdbdir]!enlist """"]]",1,1,init rejects an empty hdbdir rather than resolving it to the working directory
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`gc]!enlist `notabool]]",1,1,init rejects a non-boolean gc
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`numrows]!enlist `notanumber]]",1,1,init rejects a non-numeric numrows
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`tickerplanttypes]!enlist `$()]]",1,1,init rejects an empty tickerplanttypes - it resolves to ` which matches every process
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`upd]!enlist 42]]",1,1,init rejects a non-callable upd
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist 42]]",1,1,init rejects a non-dictionary savedownmanipulation
+comment,,,,,,,"S2 - mode and writedownmode are VALIDATED, not silently accepted"
+comment,,,,,,,"mode:`save is not a trivial variant - it selects the deferred separate-sort-process"
+comment,,,,,,,"architecture (wdb.q:93-94 sortenabled:0b, then wdb.q:221 dispatches to informsortandreload)."
+comment,,,,,,,"accepting it would sort in-process work the operator delegated elsewhere, double-sorting"
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`mode]!enlist `save]]",1,1,init rejects mode save - the deferred sort-worker split
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`mode]!enlist `sort]]",1,1,init rejects mode sort - the deferred sort-worker split
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`writedownmode]!enlist `partbyattr]]",1,1,init rejects writedownmode partbyattr - a deferred parted mode
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`writedownmode]!enlist `partbyenum]]",1,1,init rejects writedownmode partbyenum - a deferred parted mode
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`writedownmode]!enlist `partbyfirstchar]]",1,1,init rejects writedownmode partbyfirstchar - a deferred parted mode
+before,0,0,q,".t.S2:{[] .t.clearroot[]; :@[{wdb.init[.t.mkdeps[enlist[`mode]!enlist `save]];""NOTHROWN""};::;{[e] e}]}[]",1,1,scenario: capture the mode rejection message
+true,0,0,q,"0<count .t.S2 ss ""saveandsort""",1,1,the mode rejection names the mode that IS supported
+true,0,0,q,"0<count .t.S2 ss ""deferred""",1,1,the mode rejection says the alternative is deferred rather than unknown
+comment,,,,,,,S3 - the root upd accepts every payload shape and preserves column attributes
+before,0,0,q,".t.S3:{[] .t.clearroot[]; wdb.init[.t.mkdeps[()!()]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; upd[`trade;(enlist .z.p;enlist`c;enlist 3.0)]; upd[`trade;`time`sym`price!(enlist .z.p;enlist`d;enlist 4.0)]; :`rows`att`syms!(count trade; exec first a from meta trade where c=`sym; exec sym from trade)}[]",1,1,"scenario: a table payload (live feed), a list of columns (log replay) and a column dict"
+true,0,0,q,4=.t.S3`rows,1,1,all three upd payload shapes appended
+true,0,0,q,`g=.t.S3`att,1,1,"the g# attribute survives every upd - the four-argument amend maintains it, a rebuild would not"
+true,0,0,q,(.t.S3`syms)~`a`b`c`d,1,1,upd appends in order rather than upserting by key
+comment,,,,,,,S4 - the intraday write-down respects maxrows and the immediate override
+before,0,0,q,".t.S4:{[] .t.setupfixture[]; .t.clearroot[]; wdb.init[.t.mkdeps[`numrows`numtab!(5;()!())]]; .t.mktrade[]; upd[`trade;([]time:3#.z.p;sym:`a`b`c;price:1 2 3.0)]; belowlim:.m.di.0wdb.savetables[.t.SD;2026.01.05;0b;`trade]; upd[`trade;([]time:4#.z.p;sym:`d`e`f`g;price:4 5 6 7.0)]; abovelim:.m.di.0wdb.savetables[.t.SD;2026.01.05;0b;`trade]; :`belowlim`abovelim`rows`disk!(belowlim;abovelim;count trade;.t.rows .t.BASE,""/wdbhdb/2026.01.05/trade"")}[]",1,1,scenario: three rows under a limit of five then seven rows over it
+true,0,0,q,not .t.S4`belowlim,1,1,savetables returns 0b and writes nothing while the table is under maxrows
+true,0,0,q,.t.S4`abovelim,1,1,savetables returns 1b once the table passes maxrows
+true,0,0,q,0=.t.S4`rows,1,1,a successful save clears the in-memory table
+true,0,0,q,7=.t.S4`disk,1,1,all seven rows reached the working partition
+before,0,0,q,".t.S4B:{[] .t.setupfixture[]; .t.clearroot[]; wdb.init[.t.mkdeps[`numrows`numtab`immediate!(0W;()!();1b)]]; .t.mktrade[]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; .m.di.0wdb.savetodisk[]; :`rows`disk!(count trade;.t.rows .t.BASE,""/wdbhdb/"",(string .m.di.0wdb.getpartition[]),""/trade"")}[]",1,1,scenario: immediate 1b flushes regardless of the row count
+true,0,0,q,0=.t.S4B`rows,1,1,immediate 1b writes down even one row against an infinite maxrows
+true,0,0,q,1=.t.S4B`disk,1,1,the immediate flush reached the working partition
+comment,,,,,,,S5 - savedownmanipulation applies on success and passes the ORIGINAL data through on failure
+comment,,,,,,,"the failure path is the point, not an oversight: a hook that throws must not lose the day's data"
+before,0,0,q,".t.S5:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist enlist[`trade]!enlist {[t] update price:price*2 from t}]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; .m.di.0wdb.savetables[.t.SD;2026.01.05;1b;`trade]; :exec price from get hsym`$.t.BASE,""/wdbhdb/2026.01.05/trade""}[]",1,1,scenario: a working manipulation doubles the price column
+true,0,0,q,(.t.S5)~2 4.0,1,1,the registered manipulation was applied before the data was written
+before,0,0,q,".t.S5B:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist enlist[`trade]!enlist {[t] '""boom""}]]; .t.mktrade[]; upd[`trade;([]time:2#.z.p;sym:`a`b;price:1 2.0)]; .m.di.0wdb.savetables[.t.SD;2026.01.05;1b;`trade]; :`price`logged!(exec price from get hsym`$.t.BASE,""/wdbhdb/2026.01.05/trade""; .t.logged[`error;""save down manipulation failed""])}[]",1,1,scenario: a manipulation that throws
+true,0,0,q,(.t.S5B`price)~1 2.0,1,1,a failed manipulation writes the ORIGINAL unmodified rows rather than losing the day's data
+true,0,0,q,.t.S5B`logged,1,1,the failed manipulation is logged as an error rather than swallowed silently
+comment,,,,,,,S6 - a full end of day: flush every table, sort it, move it to the hdb and prime the next partition
+before,0,0,q,".t.S6:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; .t.mktrade[]; .t.mkhb[]; upd[`trade;([]time:2026.01.05D12:00 2026.01.05D10:00 2026.01.05D11:00;sym:`c`a`b;price:3 1 2.0)]; upd[`heartbeat;([]time:enlist .z.p;proc:enlist`x)]; wdb.endofday[2026.01.05]; :`traderows`hbrows`hdbpart`wdbpart`diskrows`syms`nextpart`tabsizes!(count trade; count heartbeat; .t.ondisk .t.BASE,""/hdb/2026.01.05""; .t.ondisk .t.BASE,""/wdbhdb/2026.01.05""; .t.rows .t.BASE,""/hdb/2026.01.05/trade""; exec time from get hsym`$.t.BASE,""/hdb/2026.01.05/trade""; .t.ondisk .t.BASE,""/wdbhdb/2026.01.06""; count .m.di.0wdb.tabsizes)}[]",1,1,scenario: three trade rows and one ignored heartbeat row through a full roll
+true,0,0,q,0=.t.S6`traderows,1,1,endofday clears the in-memory trade table
+true,0,0,q,1=.t.S6`hbrows,1,1,heartbeat is on the default ignorelist and is neither saved nor cleared
+true,0,0,q,(.t.S6`hdbpart)~enlist`trade,1,1,the day's trade partition landed in the hdb - and heartbeat did not
+true,0,0,q,3=.t.S6`diskrows,1,1,all three rows reached the hdb partition
+true,0,0,q,"(.t.S6`syms)~asc .t.S6`syms",1,1,"di.dbwrite sorted the partition on disk by time - its default config when no sortcsv is loaded"
+true,0,0,q,0=count .t.S6`wdbpart,1,1,the working partition was emptied and removed once its data moved to the hdb
+true,0,0,q,`trade in .t.S6`nextpart,1,1,the NEXT partition is primed with every table schema - legacy reaches this via idbreload
+true,0,0,q,0=.t.S6`tabsizes,1,1,tabsizes is cleared at the end of the roll
+before,0,0,q,".t.S6B:{[] :`part`booked!(.m.di.0wdb.getpartition[];`wdbeodflush in exec id from .t.jobrows)}[]",1,1,scenario: state left behind by S6's roll
+true,0,0,q,2026.01.06=.t.S6B`part,1,1,the current partition rolls forward to the next day
+true,0,0,q,.t.S6B`booked,1,1,"doreload books the one-shot release job on the injected timer, so a reload that never answers still frees the waiters"
+comment,,,,,,,"S6 also proves doreload and informgateway survive an uninitialised di.servers - they are"
+comment,,,,,,,"protected reads, because the eod path must not abort after the data is already on disk"
+true,0,0,q,"not .t.logged[`error;""failed to sort""]",1,1,nothing failed to sort - the fixtures live under .t so only real tables are written
+comment,,,,,,,S7 - endofday is UNARY. di.pubsub.callendofday broadcasts (`endofday;d) - one argument
+true,0,0,q,1=count value[wdb`endofday]1,1,1,endofday takes exactly one argument - a binary one would silently become a projection
+true,0,0,q,3=count value[wdb`endofperiod]1,1,1,endofperiod takes three arguments - matching di.pubsub.callendofperiod's ternary broadcast
+before,0,0,q,".t.S7:{[] .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; endofperiod[2026.01.05D16:00;2026.01.05D17:00;()!()]; :.t.logged[`info;""received endofperiod""]}[]",1,1,scenario: the root endofperiod entry point
+true,0,0,q,.t.S7,1,1,the root endofperiod logs the roll rather than leaving the broadcast unhandled
+comment,,,,,,,S8 - tablelist ordering and the ignorelist
+before,0,0,q,".t.S8:{[] .t.setupfixture[]; .t.clearroot[]; wdb.init[.t.mkdeps[`numrows`numtab!(0;()!())]]; .t.mktrade[]; .t.mkhb[]; @[`.;`quote;:;([]time:`timestamp$();sym:`symbol$();bid:`float$())]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; upd[`quote;([]time:10#.z.p;sym:10#`a;bid:10#1.0)]; .m.di.0wdb.savetables[.t.SD;2026.01.05;1b;] each `trade`quote; :`list`sizes!(.m.di.0wdb.tablelist[]; exec tablename from .m.di.0wdb.tabsizes)}[]",1,1,scenario: two tables of different sizes plus one on the ignorelist
+true,0,0,q,not `heartbeat in .t.S8`list,1,1,tablelist excludes the ignorelist
+true,0,0,q,(`quote`trade)~asc .t.S8`list,1,1,tablelist covers every root table that is not ignored
+true,0,0,q,`quote=first .t.S8`list,1,1,tablelist orders largest-on-disk first so the biggest tables flush soonest
+comment,,,,,,,S9 - movetohdb refuses to overwrite a table that already exists in the hdb partition
+before,0,0,q,".t.S9:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; .t.mktrade[]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; .m.di.0wdb.savetables[.t.SD;2026.01.05;1b;`trade]; system""mkdir -p "",.t.BASE,""/hdb/2026.01.05/trade""; r:@[{.m.di.0wdb.movetohdb . x};(.t.BASE,""/wdbhdb/2026.01.05"";.t.BASE,""/hdb/2026.01.05"";2026.01.05);{[e] e}]; :`err`kept!(r; .t.ondisk .t.BASE,""/wdbhdb/2026.01.05"")}[]",1,1,scenario: the hdb already holds a trade directory for this date
+true,0,0,q,"0<count (.t.S9`err) ss ""present in both""",1,1,movetohdb aborts on a table clash rather than corrupting the hdb
+true,0,0,q,`trade in .t.S9`kept,1,1,the working partition is left intact when the move is aborted - the data is recoverable
+comment,,,,,,,S10 - normpath is the .os.pthq replacement. di.os.topath goes the OPPOSITE way and cannot substitute
+true,0,0,q,`:a/b/c~.m.di.0wdb.normpath`:a/b/c,1,1,normpath leaves a forward-slash hsym untouched and keeps the leading colon
+true,0,0,q,"`:c:/dir/hdb~.m.di.0wdb.normpath`$"":c:\\dir\\hdb""",1,1,normpath rewrites windows separators to forward slashes
+true,0,0,q,"""/a/b""~.m.di.0wdb.normpath""/a/b""",1,1,normpath accepts a string and returns a string
+true,0,0,q,"-11h=type .m.di.0wdb.normpath`:a/b",1,1,normpath returns a symbol atom for a symbol input so it stays a usable hsym
+comment,,,,,,,S11 - the tickerplant wait budget. tpcheckcycles 0W is legacy's DEFAULT and must not overflow
+before,0,0,q,".t.S11:{[] .t.clearroot[]; wdb.init[.t.mkdeps[`tpcheckcycles`tpconnsleepintv!(0W;10)]]; inf:.m.di.0wdb.tptimeout[]; wdb.init[.t.mkdeps[`tpcheckcycles`tpconnsleepintv!(3;2)]]; :`inf`finite!(inf;.m.di.0wdb.tptimeout[])}[]",1,1,scenario: an infinite and a finite retry budget
+true,0,0,q,0<.t.S11`inf,1,1,"tpcheckcycles 0W yields a POSITIVE budget - the naive multiply overflows to a negative one, which would abandon the wait immediately"
+true,0,0,q,2147483647=.t.S11`inf,1,1,an infinite retry budget is clamped to the largest int millisecond count
+true,0,0,q,6000=.t.S11`finite,1,1,a finite budget is cycles times interval in milliseconds
+comment,,,,,,,S12 - replaynumrows/replaynumtab fall back to the RESOLVED numrows/numtab
+comment,,,,,,,legacy leaves both undefined except via config layering - config/settings/wdb.q is their only definition
+before,0,0,q,".t.S12:{[] .t.clearroot[]; wdb.init[.t.mkdeps[`numrows`numtab!(777;enlist[`trade]!enlist 5)]]; fell:`rows`tab!(.m.di.0wdb.replaynumrows;.m.di.0wdb.replaynumtab); wdb.init[.t.mkdeps[`numrows`replaynumrows!(777;99999)]]; :`fell`explicit!(fell;.m.di.0wdb.replaynumrows)}[]",1,1,scenario: replay limits left unset then set explicitly
+true,0,0,q,777=.t.S12[`fell]`rows,1,1,an unset replaynumrows falls back to the CONFIGURED numrows not to the static default
+true,0,0,q,(.t.S12[`fell]`tab)~enlist[`trade]!enlist 5,1,1,an unset replaynumtab falls back to the configured numtab
+true,0,0,q,99999=.t.S12`explicit,1,1,an explicit replaynumrows overrides the fallback
+before,0,0,q,".t.S12B:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[`numrows`numtab`replaynumrows`replaynumtab!(0W;()!();2;()!())]]; .t.mktrade[]; rupd:.m.di.0wdb.replayupd; rupd[`trade;([]time:3#.z.p;sym:`a`b`c;price:1 2 3.0)]; :`rows`disk!(count trade;.t.rows .t.BASE,""/wdbhdb/"",(string .m.di.0wdb.getpartition[]),""/trade"")}[]",1,1,scenario: the replay upd flushes at the REPLAY limit while the live limit is infinite
+true,0,0,q,0=.t.S12B`rows,1,1,replayupd flushes to disk once the replay row limit is passed
+true,0,0,q,3=.t.S12B`disk,1,1,"the replay flush reached the working partition - without it a whole day lands in memory at once"
+comment,,,,,,,S13 - teardown withdraws exactly what init and start installed
+before,0,0,q,".t.S13:{[] .t.clearroot[]; .t.jobrows::0#.t.jobrows; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.starttimer[]; booked:exec id from .t.jobrows; wdb.teardown[]; :`booked`roots`uend`jobs!(booked; any (`upd`endofday`endofperiod`wdbreloadhandler) in key `.; `end in key `.u; exec id from .t.jobrows)}[]",1,1,scenario: init then starttimer then teardown
+true,0,0,q,(.t.S13`booked)~enlist`wdbsavetodisk,1,1,starttimer books the periodic write-down job on the injected timer
+true,0,0,q,not .t.S13`roots,1,1,teardown withdraws every root entry point it installed
+true,0,0,q,not .t.S13`uend,1,1,teardown withdraws the .u.end alias
+true,0,0,q,0=count .t.S13`jobs,1,1,teardown deletes the timer jobs - a non-callable deletejobs would silently delete nothing here
+comment,,,,,,,teardown must be safe to call twice - a shutdown path may do so
+run,0,0,q,wdb.teardown[],1,1,a second teardown is a no-op rather than dying on the names the first one removed
+comment,,,,,,,S14 - a re-init refreshes config without wiping live runtime state
+before,0,0,q,".t.S14:{[] .t.clearroot[]; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.currentpartition:2026.03.09; .m.di.0wdb.subtables:enlist`trade; .m.di.0wdb.started:1b; wdb.init[.t.mkdeps[enlist[`gc]!enlist 0b]]; :`part`subs`started`gc!(.m.di.0wdb.getpartition[];.m.di.0wdb.subtables;.m.di.0wdb.started;.m.di.0wdb.gc)}[]",1,1,scenario: a second init over a running wdb
+true,0,0,q,2026.03.09=.t.S14`part,1,1,a re-init does not wipe the live partition
+true,0,0,q,(.t.S14`subs)~enlist`trade,1,1,a re-init does not wipe the subscribed table list
+true,0,0,q,.t.S14`started,1,1,a re-init does not reset the started flag on a running wdb
+true,0,0,q,not .t.S14`gc,1,1,a re-init DOES refresh config
+comment,,,,,,,S15 - the reload reply callback must be reachable BY NAME from root
+comment,,,,,,,"a reloading process answers with an async (name;args) message which .z.ps evaluates in root,"
+comment,,,,,,,and module functions live in private .z.m - without the root binding every reply would be lost
+before,0,0,q,".t.S15:{[] .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.countreload:1; .m.di.0wdb.timeouttime:0Wp; wdbreloadhandler[(`hdb;1b;`$""reloaded successfully"")]; :.t.logged[`info;""reloaded successfully""]}[]",1,1,scenario: a reload reply arriving at the root callback
+true,0,0,q,.t.S15,1,1,a reply routed through the root callback reaches the module and is logged
+comment,,,,,,,guards - every exported function refuses to run before init
+comment,,,,,,,"requireinit is checked on a FRESH module, so this section runs last and re-inits afterwards"
+comment,,,,,,,version and api metadata
+true,0,0,q,`version in key wdb,1,1,version is still an export - di.depcheck resolves it from the export dict
+true,0,0,q,"3=count ""."" vs wdb.version",1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any wdb.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
+true,0,0,q,"(asc (key wdb) except `init`getapimeta)~asc exec name from wdb.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,"not any `init`getapimeta in exec name from wdb.getapimeta[]",1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols wdb.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,all exec public from wdb.getapimeta[],1,1,every documented row is public
+true,0,0,q,all 0<count each exec descrip from wdb.getapimeta[],1,1,every documented row carries a description
+comment,,,,,,,"the module must load and wire standalone, the way di.torq will - not only in this suite's dialect"
+before,0,0,q,".t.S16:{[] .t.clearroot[]; lg:use`di.log; d:(lg`logdict),`timer`hdbdir`savedir!(.t.mtimer;.t.HD;.t.SD); :@[{wdb.init[x]; 1b};d;{[e] 0b}]}[]",1,1,scenario: wire init off di.log's real logdict rather than a hand-rolled mock
+true,0,0,q,.t.S16,1,1,init accepts di.log's shipped logdict - the dep shape di.torq actually hands every module
+comment,,,,,,,S17 - clearwdbdata removes a stale working partition before the replay
+comment,,,,,,,"replaying on top of a previous run's partition would double every row, so this runs in start"
+before,0,0,q,".t.S17:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; pt:.m.di.0wdb.getpartition[]; .t.mktrade[]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; .m.di.0wdb.savetables[.t.SD;pt;1b;`trade]; had:.t.ondisk .t.BASE,""/wdbhdb/"",string pt; .m.di.0wdb.clearwdbdata[]; gone:.t.ondisk .t.BASE,""/wdbhdb/"",string pt; .t.resetcap[]; .m.di.0wdb.clearwdbdata[]; :`had`gone`noop!(had;gone;.t.logged[`info;""no directory found""])}[]",1,1,scenario: a written partition is cleared then cleared again
+true,0,0,q,`trade in .t.S17`had,1,1,the working partition held data before clearwdbdata ran
+true,0,0,q,0=count .t.S17`gone,1,1,clearwdbdata removes the working partition so the replay cannot double-count
+true,0,0,q,.t.S17`noop,1,1,"clearwdbdata on an absent partition is a logged no-op, not an error"
+comment,,,,,,,S18 - fixpartition moves data written under the wrong date to the tickerplant log date
+before,0,0,q,".t.S18:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; orig:.m.di.0wdb.getpartition[]; tgt:orig-1; .t.mktrade[]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; .m.di.0wdb.savetables[.t.SD;orig;1b;`trade]; had:.t.ondisk .t.BASE,""/wdbhdb/"",string orig; .m.di.0wdb.fixpartition[enlist[`tplogdate]!enlist tgt]; :`had`origafter`moved`tracked!(had; .t.ondisk .t.BASE,""/wdbhdb/"",string orig; .t.ondisk .t.BASE,""/wdbhdb/"",string tgt; tgt=.m.di.0wdb.getpartition[])}[]",1,1,scenario: data written under today when the tp log is for the day before
+true,0,0,q,`trade in .t.S18`had,1,1,data was written under the original partition first
+true,0,0,q,`trade in .t.S18`moved,1,1,fixpartition moved the data to the tickerplant log date's partition
+true,0,0,q,0=count .t.S18`origafter,1,1,the wrongly-dated partition is left empty after the move
+true,0,0,q,.t.S18`tracked,1,1,the current partition now tracks the tickerplant log date
+before,0,0,q,".t.S18B:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; pt:.m.di.0wdb.getpartition[]; .m.di.0wdb.fixpartition[enlist[`tplogdate]!enlist pt]; :.t.logged[`info;""does not match""]}[]",1,1,scenario: the tp log date already matches the current partition
+true,0,0,q,not .t.S18B,1,1,fixpartition is a silent no-op when the dates already agree
+comment,,,,,,,"S19 - start installs the REPLAY upd before talking to anyone, and only swaps back after the replay"
+comment,,,,,,,"a whole day of replayed messages would otherwise land in memory at once. verified through the"
+comment,,,,,,,"failure path: start aborts at di.servers, leaving root upd on the replay one, never swapped back"
+before,0,0,q,".t.S19:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[`tpcheckcycles`tpconnsleepintv!(1;1)]]; .m.di.0wdb.started:0b; afterinit:(`. `upd)~.m.di.0wdb.upd; r:@[{wdb.start[];`NOTHROWN};::;{[e] e}]; :`afterinit`during`err`started!(afterinit;(`. `upd)~.m.di.0wdb.replayupd;r;.m.di.0wdb.started)}[]",1,1,scenario: init then a start that cannot reach di.servers
+true,0,0,q,.t.S19`afterinit,1,1,init alone publishes the LIVE upd at root so a tick arriving before start is handled
+true,0,0,q,.t.S19`during,1,1,start swaps root upd to the flushing replay upd BEFORE any i/o
+true,0,0,q,not .t.S19`started,1,1,a start that throws part way does not claim the module is started
+true,0,0,q,-11h<>type .t.S19`err,1,1,start surfaced a real error rather than completing silently
+comment,,,,,,,S20 - a failed write raises a NAMED error through the logger rather than a bare type
+before,0,0,q,".t.S20:{[] .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[`hdbdir`savedir!(hsym`$""/nonexistent/nope/hdb"";hsym`$""/nonexistent/nope/wdb"")]]; .t.mktrade[]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; r:@[{.m.di.0wdb.savetables[.m.di.0wdb.savedir;2026.01.05;1b;`trade];`NOTHROWN};::;{[e] e}]; :`err`logged`rows!(r;.t.logged[`error;""failed to save""];count trade)}[]",1,1,scenario: an unwritable savedir
+true,0,0,q,"0<count (.t.S20`err) ss ""di.wdb: savetables""",1,1,a failed save raises an error naming the module and the function
+true,0,0,q,.t.S20`logged,1,1,the failure reaches the injected logger before it is signalled
+true,0,0,q,1=.t.S20`rows,1,1,"a failed save leaves the rows in memory - the table is only cleared after a successful write"
+comment,,,,,,,S21 - the reload round trip over a REAL ipc handle
+comment,,,,,,,"exercises the reload path end to end through q's message-apply route: the reload actually"
+comment,,,,,,,"runs, the reply reaches wdbreloadhandler, and a remote that THROWS is reported as a failure"
+comment,,,,,,,"rather than a false success."
+comment,,,,,,,"IT DOES NOT prove the work is SENT to the remote rather than run here. kdb+ resolves a"
+comment,,,,,,,"connection to this process's own listening port to the SELF-HANDLE 0, which applies the"
+comment,,,,,,,"message locally, so both the sent-triple and the called-locally forms pass here (measured)."
+comment,,,,,,,"that distinction needs a second process - see test_integration.csv"
+before,0,0,q,".t.S21:{[] .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; @[`.;`reloadcalls;:;()]; @[`.;`reload;:;{[d] @[`.;`reloadcalls;,;d]; `reloaded}]; system""p 0W""; h:hopen `$"":localhost:"",string system""p""; .m.di.0wdb.countreload:1; .m.di.0wdb.timeouttime:0Wp; .m.di.0wdb.asyncreload[h;2026.01.05;`hdb]; h""""; h""""; a:reloadcalls; alog:.t.logged[`info;""reloaded successfully""]; @[`.;`reloadcalls;:;()]; .m.di.0wdb.syncreload[h;2026.02.09;`hdb]; s:reloadcalls; @[`.;`reload;:;{[d] '""boom""}]; .t.resetcap[]; .m.di.0wdb.syncreload[h;2026.03.01;`hdb]; f:.t.logged[`error;""failed to reload""]; if[0<h;hclose h]; system""p 0""; :`async`asynclog`sync`failrep!(a;alog;s;f)}[]",1,1,scenario: async and sync reload driven over a loopback ipc handle
+true,0,0,q,"(.t.S21`async)~enlist 2026.01.05",1,1,the ASYNC reload actually executed on the remote with the partition date
+true,0,0,q,.t.S21`asynclog,1,1,the remote's reply reached wdbreloadhandler and was logged as a success
+true,0,0,q,"(.t.S21`sync)~enlist 2026.02.09",1,1,the SYNC reload actually executed on the remote with the partition date
+true,0,0,q,.t.S21`failrep,1,1,"a remote reload that THROWS is reported as a failure, not a false success"
+comment,,,,,,,S22 - flushend releases the waiting processes by HANDLE
+comment,,,,,,,"regression guard for a silent no-op: `key` on a KEYED table returns a TABLE, so iterating it"
+comment,,,,,,,"yields one-column dicts rather than handles. neg[dict] is a dict, the send then indexes it"
+comment,,,,,,,"instead of writing to a socket, and the protected apply swallows that - the release notified"
+comment,,,,,,,nobody while still logging that it had. these two rows pin the distinction.
+before,0,0,q,".t.S22:{[] .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.reloadsummary:.m.di.0wdb.reloadsummary upsert (4i;`hdb;1b;`$""ok""); rs:.m.di.0wdb.reloadsummary; byhandle:exec handle from rs; bykey:first key rs; .m.di.0wdb.reloadcomplete:0b; .m.di.0wdb.flushend[]; :`byhandle`bykey`complete`logged!(byhandle;bykey;.m.di.0wdb.reloadcomplete;.t.logged[`info;""end of day sort is now complete""])}[]",1,1,scenario: a populated reloadsummary released by flushend
+true,0,0,q,"6h=type .t.S22`byhandle",1,1,the release iterates an int handle VECTOR
+true,0,0,q,"99h=type .t.S22`bykey",1,1,"""pins WHY: key on a keyed table yields DICTS, not handles - the shape that silently notified nobody"""
+true,0,0,q,".t.S22`complete",1,1,flushend marks the roll complete
+true,0,0,q,".t.S22`logged",1,1,flushend logs that the end of day sort finished
+before,0,0,q,".m.di.0wdb.reloadsummary:0#.m.di.0wdb.reloadsummary",1,1,tidy up the seeded row so later scenarios are unaffected
+comment,,,,,,,S23 - savedir must not be the hdb root
+comment,,,,,,,"never a valid configuration, and the failure it causes is quiet and recurring rather than loud:"
+comment,,,,,,,"savetables writes straight into the hdb, movetohdb then finds every table in BOTH source and"
+comment,,,,,,,"destination and aborts, logging ""present in both"" on EVERY roll for the life of the process."
+comment,,,,,,,"the data lands in the right place, so nothing looks broken until someone reads the log."
+fail,0,0,q,"wdb.init[.t.mkdeps[enlist[`savedir]!enlist .t.HD]]",1,1,init rejects savedir equal to hdbdir
+before,0,0,q,".t.S23:{[] :@[{[x] wdb.init[x];""""};.t.mkdeps[enlist[`savedir]!enlist .t.HD];{[e] e}]}[]",1,1,scenario: capture the message
+true,0,0,q,"0<count (.t.S23) ss ""staging area""",1,1,the rejection explains what savedir is for rather than just refusing
+comment,,,,,,,S24 - a roll with nothing to write must not shell out to a doomed mv
+comment,,,,,,,with no root tables (or all of them ignored) no working partition exists. attempting the move
+comment,,,,,,,"anyway makes di.os shell out, and the OS error text reaches STDERR as raw output before this"
+comment,,,,,,,module sees it - shell noise in a client log on an otherwise clean end of day
+before,0,0,q,".t.S24:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; r:@[{wdb.endofday[x];`ok};2026.04.01;{[e] `$""err: "",e}]; :`out`logged`errs!(r; .t.logged[`info;""nothing to move""]; count select from .t.caprows where lvl=`error)}[]",1,1,scenario: end of day with no tables at all
+true,0,0,q,"`ok~.t.S24`out",1,1,a roll with nothing to write completes cleanly
+true,0,0,q,".t.S24`logged",1,1,it logs that there was no working partition to move
+true,0,0,q,"0=.t.S24`errs",1,1,"and logs no error at all - this is a normal quiet day, not a failure"
+comment,,,,,,,S25 - every way a save can fail raises a NAMED error through the logger
+comment,,,,,,,"the manipulation, the unkey, the enumeration and the write all sit inside ONE protected apply."
+comment,,,,,,,anything evaluated as an ARGUMENT to it throws BEFORE the handler and escapes the logger with a
+comment,,,,,,,bare error naming neither module nor table - two defects of that shape lived here
+before,0,0,q,".t.S25:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[enlist[`savedownmanipulation]!enlist enlist[`trade]!enlist {[t] 42}]]; .t.mktrade[]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; r:@[{.m.di.0wdb.savetables[.m.di.0wdb.savedir;x;1b;`trade];""NOTHROWN""};2026.04.02;{[e] e}]; :`err`logged`rows!(r; .t.logged[`error;""failed to save""]; count trade)}[]",1,1,scenario: a manipulation that returns a non-table
+true,0,0,q,"0<count (.t.S25`err) ss ""di.wdb: savetables""",1,1,"a manipulation returning a non-table is named, not a bare type error"
+true,0,0,q,".t.S25`logged",1,1,the failure reaches the injected logger
+true,0,0,q,"1=.t.S25`rows",1,1,the rows stay in memory - a failed save never clears the table
+comment,,,,,,,S26 - partitiontype month rolls end to end
+comment,,,,,,,exercises the movetohdb hdb-root fix: legacy locates the root by dropping ten characters off the
+comment,,,,,,,"partition path, which is a date-shaped assumption and silently breaks for month or year"
+before,0,0,q,".t.S26:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[enlist[`partitiontype]!enlist `month]]; .t.mktrade[]; upd[`trade;([]time:2026.01.05D12:00 2026.01.05D10:00;sym:`b`a;price:2 1.0)]; r:@[{wdb.endofday[x];`ok};2026.01m;{[e] `$""err: "",e}]; :`out`hdb`rows`nextp!(r; .t.ondisk .t.BASE,""/hdb/2026.01""; .t.rows .t.BASE,""/hdb/2026.01/trade""; .t.ondisk .t.BASE,""/wdbhdb/2026.02"")}[]",1,1,scenario: a month-partitioned roll
+true,0,0,q,"`ok~.t.S26`out",1,1,a month-partitioned end of day completes
+true,0,0,q,"(.t.S26`hdb)~enlist`trade",1,1,the month partition landed in the hdb
+true,0,0,q,"2=.t.S26`rows",1,1,both rows were written
+true,0,0,q,"`trade in .t.S26`nextp",1,1,the next month partition is primed
+comment,,,,,,,S27 - a stale tabsizes row must not abort the end of day
+comment,,,,,,,tabsizes is internal bookkeeping that OUTLIVES the tables it describes. legacy builds tablelist
+comment,,,,,,,"as `sorted union tables[`.]`, so a table written down earlier and since dropped from root is"
+comment,,,,,,,"still handed to savetables, whose `value t` throws '<tablename> - taking the WHOLE roll down and"
+comment,,,,,,,"leaving the day's other tables unwritten. tabsizes drives the ORDER, not membership."
+before,0,0,q,".t.S27:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; .t.mktrade[]; @[`.;`quote;:;([]time:`timestamp$();sym:`symbol$();bid:`float$())]; upd[`trade;([]time:enlist .z.p;sym:enlist`a;price:enlist 1.0)]; upd[`quote;([]time:enlist .z.p;sym:enlist`a;bid:enlist 9.0)]; .m.di.0wdb.savetables[.m.di.0wdb.savedir;2026.05.01;1b;] each `trade`quote; stale:`trade in exec tablename from .m.di.0wdb.tabsizes; ![`.;();0b;enlist`trade]; lst:.m.di.0wdb.tablelist[]; r:@[{wdb.endofday[x];`ok};2026.05.01;{[e] `$""err: "",e}]; :`stale`lst`out`quoteonhdb!(stale;lst;r;.t.ondisk .t.BASE,""/hdb/2026.05.01"")}[]",1,1,"scenario: a table is saved, then dropped from root, then the day rolls"
+true,0,0,q,".t.S27`stale",1,1,the dropped table is still recorded in tabsizes - the stale row this guards against
+true,0,0,q,"not `trade in .t.S27`lst",1,1,tablelist excludes a tabsizes name that no longer exists at root
+true,0,0,q,"`quote in .t.S27`lst",1,1,tablelist still returns the tables that DO exist
+true,0,0,q,"`ok~.t.S27`out",1,1,the roll completes instead of dying on the stale row
+true,0,0,q,"`quote in .t.S27`quoteonhdb",1,1,and the surviving table still reached the hdb
+comment,,,,,,,"S28 - a missing hdb sym file is normal on a fresh hdb, not an error"
+comment,,,,,,,".Q.en creates it on the first write, so an hdb never written to has none. logging that at ERROR"
+comment,,,,,,,level on every clean no-data roll is the noise that teaches an operator to ignore the log.
+before,0,0,q,".t.S28:{[] .t.setupfixture[]; .t.clearroot[]; .t.resetcap[]; wdb.init[.t.mkdeps[()!()]]; .m.di.0wdb.reloadsymfile[.Q.dd[.m.di.0wdb.hdbdir;`sym]]; :`errs`noted!(count select from .t.caprows where lvl=`error; .t.logged[`info;""nothing to reload""])}[]",1,1,scenario: reload a sym file that does not exist yet
+true,0,0,q,"0=.t.S28`errs",1,1,a missing sym file logs no error
+true,0,0,q,".t.S28`noted",1,1,it is noted at info level instead

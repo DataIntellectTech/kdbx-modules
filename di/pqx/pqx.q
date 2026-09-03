@@ -279,13 +279,15 @@ buildvirtualtable:{[hdbdir;tname;levels]
 
 checkvirtualtypes:{[types]
   / validates that every value in the caller-supplied levels dict is one of the uppercase kdb+
-  / parse-cast type chars (see castvirtuallevel) - almost all of the lowercase equivalents are
-  / also "valid" to kdb+, but as raw byte/reinterpret casts rather than string parses, so passing
-  / one wouldn't error, it would just silently corrupt the reconstructed partition values
+  / parse-cast type chars (see castvirtuallevel)
   valid:"BGXHIJEFCSPMDZNUVT";
   bad:distinct types where not types in valid;
   if[count bad;
-    '"di.pqx: unsupported partition level type(s) ",.Q.s1[bad],", expected one of ",.Q.s1 valid];
+    .z.m.logerr[`pqx;err:"di.pqx: unsupported partition level type(s) ",.Q.s1[bad],", expected one of ",.Q.s1 valid];
+    'err
+  ];
+  :(::)
+
  };
 
 checkvirtuallevels:{[levels;lv;splits]
@@ -296,16 +298,22 @@ checkvirtuallevels:{[levels;lv;splits]
   / than silently mislabeling or dropping partition columns
   depths:count each splits;
   if[1<count distinct depths;
-    '"di.pqx: inconsistent partition depth across files under this path"];
+    .z.m.logerr[`pqx;err:"di.pqx: inconsistent partition depth across files under this path"];
+    'err
+  ];
   depth:(first[depths]-1)-lv;
   if[depth<>count levels;
-    '"di.pqx: expected ",string[count levels]," partition level(s) ",.Q.s1[levels],", found ",string[depth]," on disk"];
+    .z.m.logerr[`pqx;err:"di.pqx: expected ",string[count levels]," partition level(s) ",.Q.s1[levels],", found ",string[depth]," on disk"];
+    'err
+  ];
   idx:lv+til count levels;
   hivecols:distinct {[idx;x] `$first each "=" vs' x idx}[idx] each splits;
   if[1<count hivecols;
-    '"di.pqx: partition key names are inconsistent across files"];
+    .z.m.logerr[`pqx;err:"di.pqx: partition key names are inconsistent across files"];
+    'err];
   if[not levels~first hivecols;
-    '"di.pqx: partition levels ",.Q.s1[levels]," don't match on-disk keys ",.Q.s1 first hivecols];
+    .z.m.logerr[`pqx;err:"di.pqx: partition levels ",.Q.s1[levels]," don't match on-disk keys ",.Q.s1 first hivecols];
+    'err];
  };
 
 castvirtuallevel:{[typ;x;y]

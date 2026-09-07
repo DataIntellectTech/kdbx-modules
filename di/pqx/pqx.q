@@ -4,22 +4,22 @@ default:(
   `symcol`timecol`presort`rowgroupbytes`codec`complevel`virtualcols,
   `parallel`outdir`filestub
   )!(
-  512*1024*1024;                 / ~512 MB target file size
-  1.5;                           / hard cap = target * maxfactor
-  1b;                            / split instruments larger than the cap
-  1b;                            / run a calibration write to set the ratio
-  0b;                            / enforce a single instrument per file
-  0.30;                          / raw->parquet ratio if not calibrating
-  `sym;                          / instrument column
-  `time;                         / time column
-  1b;                            / sort by (sym,time) if not already
-  128*1024*1024;                 / ~128 MB row groups
-  `zstd;                         / codec
-  3;                             / compression level
-  `symbol$();                    / virtual (path-only) partition columns, taking precedence over onesymperfile/splitoversized
-  0b;                            / write files via peach
-  `:.;                           / output directory
-  "part"                         / file name stub
+  512*1024*1024;                 / targetsize - ~512 MB target file size
+  1.5;                           / maxfactor - hard size cap = target * maxfactor
+  1b;                            / splitoversized - split instruments larger than the cap
+  1b;                            / calibrate - run a calibration write to set the ratio
+  0b;                            / onesymperfile - enforce a single instrument per file
+  0.30;                          / compressionratio - raw->parquet ratio if not calibrating
+  `sym;                          / symcol - instrument column
+  `time;                         / timecol - time column
+  1b;                            / presort - sort by (sym,time) if not already
+  128*1024*1024;                 / rowgroupbytes - ~128 MB row groups
+  `zstd;                         / codec - compression algorithm
+  3;                             / complevel - compression level
+  `symbol$();                    / virtualcols - virtual (path-only) partition columns, taking precedence over onesymperfile/splitoversized
+  0b;                            / parallel - write files via peach
+  `:.;                           / outdir - output directory
+  "part"                         / filestub - file name stub
   );
 
 / define empty schema for manifest
@@ -72,10 +72,8 @@ calibrateratio:{[t;o;writeopt]
   / writes a sample of data to disk and reads its size on disk
   / calculates the compression ratio and returns if a new ratio was successfully calculated, otherwise old ratio is maintained
 
-  / remove leading : from outdir
-  testloc:$[":" ~ first string[o`outdir];
-    1_string[o`outdir],"/testWrite.parquet";
-    string[o`outdir],"/testWrite.parquet"];
+  / remove leading : from outdir if it exists
+  testloc:(":" ~ first string[o`outdir])_ string[o`outdir],"/testWrite.parquet";
 
   / outputs two items - success flag and any error msg
   .z.m.loginfo[`pqx;"Attempting test write of median sym for calibration"];
@@ -130,13 +128,15 @@ plan:{[t;o;maxsize]
   plans:();
 
   / if one sym per file, enlist each sym to assign to individual buckets
-  / else move to oversized and packing logic
-  $[o`onesymperfile;
-    [.z.m.loginfo[`pqx;"Enforcing one sym per file"];
+  if[o`onesymperfile;
+    .z.m.loginfo[`pqx;"Enforcing one sym per file"];
     plans,:enlist each t[o[`symcol]]
-    ];
+  ];
+  
+  / if not onesymperfile move to oversized and packing logic
+  if[not o`onesymperfile;
     / if split oversized is required, check against maxsize and return a plan entry for each required file
-    [if[o`splitoversized;
+    if[o`splitoversized;
       .z.m.loginfo[`pqx;"Splitting large instruments"];
       t:update islargerthantargetsize:estbyt>maxsize from t;
       oversized:select from t where islargerthantargetsize;
@@ -160,7 +160,6 @@ plan:{[t;o;maxsize]
       bins: (step\[(0;0);til n])[;0];
 
       plans,:value[tabs @ group bins]
-      ]
     ]
   ];
   plans:flip `seqno`syms!((1 + til count plans);plans);
@@ -184,7 +183,7 @@ datalookuponesym:{[t;symcol;sym;cnt;mask]
   :ceiling [%[count[where mask&t[symcol] in sym];cnt]] cut where mask&t[symcol] in sym
  };
 
-writefile:{[t;o;writeopt;writedir;map]
+writefile:{[t;o;writeopt;writedir;numfiles;map]
   / writes data to disk in Parquet format
   / returns stats to be inserted into the manifest
   
@@ -198,7 +197,6 @@ writefile:{[t;o;writeopt;writedir;map]
   segs:{string[x],"=",string y}'[key combo;value combo];
   writedir:writedir,$[count segs;("/" sv segs),"/";""];
   combomask:$[count segs;min each flip {[t;x;y] t[x]=y}[t]'[key combo;value combo];count[t]#1b];
-
   map:flip (`syms,o[`virtualcols]) _ map;
 
   / row indices must be found before virtualcols columns are dropped - datalookup needs t[symcol], and symcol
@@ -212,7 +210,7 @@ writefile:{[t;o;writeopt;writedir;map]
   t:$[count o`virtualcols;![t;();0b;o`virtualcols];t];
 
   / build paths for each seqno
-  paths:writedir,/:o[`filestub],/:"-",/:("0"^-5$string[map`seqno]),\:".parquet";
+  paths:writedir,/:o[`filestub],/:"-",/:("0"^neg[count[string[numfiles]]]$string[map`seqno]),\:".parquet";
 
   / data to write, iterated by file
   res:raze {[t;o;writeopt;split;syms;map;path;i]
@@ -384,7 +382,7 @@ extract:{[t;tname;dt;o]
   if[opts`presort;
     .z.m.loginfo[`pqx;"Sorting data"];
     t:opts[`symcol`timecol] xasc t;
-    t:![t;();0b;(enlist opts[`symcol])!enlist(#;enlist `p;opts[`symcol])]
+    t:@[t;opts[`symcol];`p#]
   ];
 
   writeopt:`PARQUET_VERSION`COMPRESSION!(`V2.LATEST;upper[opts`codec]);
@@ -421,7 +419,7 @@ extract:{[t;tname;dt;o]
   parallelfn:(each;peach)[opts[`parallel]];
 
   .z.m.loginfo[`pqx;"Writing down ",string[tname]," Parquet files to disk for ",string dt];
-  res:raze parallelfn [.z.m.writefile[t;opts;writeopt;writedir]; plans];
+  res:raze parallelfn [.z.m.writefile[t;opts;writeopt;writedir;count raze plans[`seqno]]; plans];
   .Q.gc[];
 
   / write down manifest to partition - best-effort, does not abort the extract call if it fails
@@ -441,6 +439,11 @@ extract:{[t;tname;dt;o]
 getmanifest:{[]
   / return the manifest accumulated so far across all extract calls
   :manifest;
+ };
+
+getdefault:{[]
+  / return the default config
+  :default;
  };
 
 init:{[deps]

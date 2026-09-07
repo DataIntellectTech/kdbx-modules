@@ -11,6 +11,7 @@ before,0,0,q,pqxnotime:([]sym:5#`AAPL;price:1.0 2.0 3.0 4.0 5.0),1,,Table missin
 before,0,0,q,pqxaltsym:([]sym:`B`A`B`A`A;alt:`X`Y`X`Y`Y;time:2025.07.15D00:00:00.000000005 2025.07.15D00:00:00.000000004 2025.07.15D00:00:00.000000003 2025.07.15D00:00:00.000000002 2025.07.15D00:00:00.000000001;price:1.0 2.0 3.0 4.0 5.0),1,,Table with a second candidate instrument column to probe the symcol option
 before,0,0,q,pqxsingle:([]sym:enlist`AAPL;time:enlist 2025.07.15D09:30:00.000000000;price:enlist 123.45),1,,Single-row table edge case
 before,0,0,q,pqxdict:([]sym:`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG`AAPL`MSFT`GOOG;exch:`N`N`N`O`O`O`N`N`N;time:2025.07.15D09:30:00.000000000+1000000000*til 9;price:100.0 200.0 300.0 101.0 201.0 301.0 102.0 202.0 302.0;size:10 20 30 40 50 60 70 80 90),1,,Table with an exchange column where every instrument trades on both exchanges - probes virtualcols row-filtering correctness
+before,0,0,q,pqxpad12:([]sym:`S1`S2`S3`S4`S5`S6`S7`S8`S9`S10`S11`S12;time:2025.07.15D09:30:00.000000000+1000000000*til 12;price:12?100.0),1,,Twelve single-instrument rows to force a twelve-file extract - for exercising two-digit zero-padded seqnos in file names
 
 true,0,0,q,98h~type pqx.getmanifest[],1,,Manifest is a table before anything is written
 
@@ -58,7 +59,7 @@ true,0,0,q,20000~first exec rows from pqx.getmanifest[] where file like "*pqxout
 true,0,0,q,not first exec split from pqx.getmanifest[] where file like "*pqxout5*",1,,The single oversized file is not flagged as split
 
 run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.17;`outdir`filestub`codec!(`:pqxout6/;"foo";`gzip)],1,,Extract with a custom filestub and a non-default (but valid) codec
-true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout6*""),(file like ""*foo-00001.parquet*"")",1,,Custom filestub is used to name the written file and the write succeeds with a valid non-default codec
+true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout6*""),(file like ""*foo-1.parquet*"")",1,,Custom filestub is used to name the written file and the write succeeds with a valid non-default codec
 
 run,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.18;`outdir`parallel!(`:pqxout7/;1b)],1,,Extract with files written via peach instead of each
 true,0,0,q,9~exec sum rows from pqx.getmanifest[] where file like "*pqxout7*",1,,Parallel write produces the same row coverage as the sequential path
@@ -126,6 +127,12 @@ run,0,0,q,pqx.extract[pqxoversized;`pqxtrade;2025.07.30;`targetsize`maxfactor`ca
 true,0,0,q,1~count select from pqx.getmanifest[] where file like "*pqxout13*",1,,onesymperfile forces splitoversized off, so the oversized instrument is written to a single file
 true,0,0,q,20000~first exec rows from pqx.getmanifest[] where file like "*pqxout13*",1,,The single file still contains every row of the oversized instrument
 true,0,0,q,not first exec split from pqx.getmanifest[] where file like "*pqxout13*",1,,The single file is not flagged as split, since splitting was suppressed by onesymperfile
+
+run,0,0,q,pqx.extract[pqxpad12;`pqxtrade;2025.08.07;`outdir`onesymperfile!(`:pqxout18/;1b)],1,,Extract twelve single-row instruments with onesymperfile on - twelve files means seqnos need two-digit zero-padded names
+true,0,0,q,12~count select from pqx.getmanifest[] where file like "*pqxout18*",1,,Twelve files are written - one per instrument
+true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout18*""),(file like ""*-01.parquet*"")",1,,seqno 1 is zero-padded to match the two-digit width of the twelve-file count
+true,0,0,q,"1~count select from pqx.getmanifest[] where (file like ""*pqxout18*""),(file like ""*-12.parquet*"")",1,,seqno 12 is written at its natural two-digit width, unpadded
+true,0,0,q,"0~count select from pqx.getmanifest[] where (file like ""*pqxout18*""),(file like ""*-1.parquet*"")",1,,No file is written with an unpadded single-digit seqno once the file count needs two digits
 
 fail,0,0,q,pqx.extract[pqxbasic;`pqxtrade;2025.07.31;`outdir`badoption!(`:pqxoutf7/;1)],1,,Extract fails when passed an option key that isn't recognised
 
@@ -214,4 +221,4 @@ run,0,0,q,pqxvtempty:pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;enlist[`date]!e
 fail,0,0,q,select from pqxvtempty,1,,Querying a virtual table built over zero files fails rather than silently returning an empty result
 fail,0,0,q,pqx.buildvirtualtable[`:pqxoutf9/;`pqxempty;enlist[`date]!enlist"d"],1,,buildvirtualtable rejects an unsupported type char up front even when no files exist to check level names against
 
-after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxout17 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8 pqxoutf9",1,,Remove parquet output directories written by tests
+after,0,0,q,system "rm -rf pqxout1 pqxout1b pqxout2 pqxout3 pqxout4 pqxout5 pqxout6 pqxout7 pqxout8 pqxout9 pqxout10 pqxout11 pqxout12 pqxout13 pqxout14 pqxout15 pqxout16 pqxout17 pqxout18 pqxoutf1 pqxoutf1b pqxoutf2 pqxoutf3 pqxoutf4 pqxoutf5 pqxoutf6 pqxoutf7 pqxoutf8 pqxoutf9",1,,Remove parquet output directories written by tests

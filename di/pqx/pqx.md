@@ -85,9 +85,9 @@ omitted from `o` fall back to the default shown below.
 | `virtualcols` | `` `symbol$() `` | symbol list | Virtual, path-only partition columns. When non-empty, takes precedence over `onesymperfile`/`splitoversized`: one file is written per distinct combination of these columns' values, forcing both of those off for the call |
 | `parallel` | `0b` | boolean | Write files with `peach` instead of `each` |
 | `outdir` | `` `:. `` | symbol | Root output directory |
-| `filestub` | `"part"` | string | File name stub; files are written as `<filestub>-NNNNN.parquet` |
+| `filestub` | `"part"` | string | File name stub; files are written as `<filestub>-N.parquet`, where `N` is the file's `seqno`, zero-padded to the digit-width of the total number of files written by the call (e.g. `part-02.parquet` when the call writes 10-99 files, `part-002.parquet` for 100-999, and unpadded when it writes fewer than 10) |
 
-Output files are written to `<outdir>/<tname>/date=<dt>/<filestub>-NNNNN.parquet`. `extract` throws
+Output files are written to `<outdir>/<tname>/date=<dt>/<filestub>-N.parquet`. `extract` throws
 (`` `di.pqx: input keys not recognised - ... ``) if `o` contains any key not present in the module's
 `default` dict — this is the very first check `extract` performs, before the empty-table check. It
 also throws (`` `di.pqx: no symcol found in table `` / `` `di.pqx: no timecol found in table ``) if
@@ -106,7 +106,7 @@ When `virtualcols` is non-empty, it takes precedence over both `onesymperfile` a
 becomes exactly one output file, however large. `extract` throws (`` `di.pqx: not all virtualcols
 found in table ``) if any `virtualcols` column is not present in the input table. Output paths gain one
 `<col>=<value>/` segment per `virtualcols` column, Hive-style, e.g.
-`<outdir>/<tname>/date=<dt>/exchange=NASDAQ/<filestub>-NNNNN.parquet` — the file's combination is also
+`<outdir>/<tname>/date=<dt>/exchange=NASDAQ/<filestub>-N.parquet` — the file's combination is also
 recorded directly in the manifest's `virtualcols` column (see Manifest Schema below). The `virtualcols`
 columns themselves are dropped from the on-disk data before writing (their value is already fixed by the
 path, so keeping them in every row would just be redundant storage) — use `readfile` (see below) to
@@ -337,7 +337,7 @@ res
 
 file                                      seq virtualcols syms       nsyms rows  mintime                       maxtime                       estbytes bytes   split status
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-:./trade/date=2025.07.15/part-00001.parquet 1  `symbol$()  `AAPL`MSFT 2     50000 2025.07.15D00:00:00.000000000 2025.07.15D23:59:59.000000000 1153433  1048576 0b    ok
+:./trade/date=2025.07.15/part-1.parquet     1  `symbol$()  `AAPL`MSFT 2     50000 2025.07.15D00:00:00.000000000 2025.07.15D23:59:59.000000000 1153433  1048576 0b    ok
 
 // getmanifest[] returns the full accumulated table across every extract call so far
 pqx.getmanifest[]
@@ -357,7 +357,10 @@ instrument with `splitoversized` on and off, a `symcol` override, parallel (`pea
 custom `filestub`/non-default codec — then asserts on the resulting `getmanifest[]` rows and (via
 `` .m.di.0pqx.arrow.pq.readParquetToTable ``) the files written back to disk. It also covers a
 zero-row table and a table missing `symcol`/`timecol` (both fail outright), and an invalid `codec`
-(degrades gracefully — see Manifest Schema's `status` column).
+(degrades gracefully — see Manifest Schema's `status` column). The zero-padded `seqno` naming is
+covered directly with `onesymperfile` against a twelve-instrument table (forcing a twelve-file,
+two-digit-wide call): asserting the padded `-01.parquet`/`-12.parquet` names are written and that no
+unpadded `-1.parquet` name appears.
 
 It also builds `buildvirtualtable` views over several of those same `extract` outputs — a `levels`
 dict with just the date level, one with a single additional partition level, and one with two

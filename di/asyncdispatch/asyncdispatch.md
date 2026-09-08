@@ -40,8 +40,15 @@ The `log` dependency must be passed to `init` inside the `deps` dict. The module
 | `` `querykeeptime `` | no | `0D00:30` | How long `removequeries` retains finished query rows |
 | `` `clearinactivetime `` | no | `0D01:00` | How long `removeinactive` retains disconnected server rows |
 | `` `synccallsallowed `` | no | `0b` | Whether `execquery[...;1b]` (deferred sync mode) is permitted |
+| `` `cp `` | no | `{.z.p}` | Current-time function. Override for simulation or backtest; `setcp` does the same after `init` |
+
+**Every optional key is type-checked at `init`**, so a misconfiguration fails loudly at startup rather than silently at first use. A `querykeeptime` or `clearinactivetime` passed as an int, for instance, would otherwise be accepted and then read as nanoseconds by the purge jobs. An **empty** `errorprefix` is rejected outright, not merely defaulted: `di.dataaccess.shardresult` detects a backend error with `prefix~(count prefix) sublist result`, and an empty prefix matches *every* string result, so every ordinary string a shard returned would be misread as an error. Validation runs before any state is written, so a rejected `init` leaves a previously wired module intact.
+
+**`init` must be called before any other function.** There is no default logger, so every public entry point guards on it and signals `di.asyncdispatch: <fn>: init must be called first` rather than surfacing a raw `.m.di.0asyncdispatch.<name>` error that names module internals.
 
 Housekeeping — `checktimeout`, `removequeries`, `removeinactive`, and `removeclients` — is the caller's responsibility. Wire them into your gateway's timer after `init`. The configured default age parameters are accessible as `querykeeptime` and `clearinactivetime` via module state.
+
+> Both TorQ (`gateway.q:590-593`, three `.timer.repeat` calls inline at load) and `di.dataaccess` (which takes a required `timer` dep and schedules its own jobs in `init`) self-schedule this housekeeping instead. This module deliberately does not, keeping it timer-agnostic and leaving the wiring to `di.gateway`. Noted so the divergence is a recorded decision rather than an oversight.
 
 ---
 
@@ -181,6 +188,60 @@ Inject a custom scheduling strategy. `f` must be niladic and return a 0- or 1-ro
 // priority queue example - highest-priority query first
 ad.setgetnextqueryid[{1 sublist `priority xdesc 0!select from .z.m.queryqueue where null returntime}]
 ```
+
+### `asyncexec[query;servertype]`
+The raze / no-postback / no-timeout / async convenience form — a projection of `execquery`, and the entry point most TorQ gateway clients actually call. Exactly TorQ's `asyncexec` (`gateway.q:419`, `asyncexecjpt[;;raze;();0Wn]`).
+```q
+ad.asyncexec["select from trade";`rdb`hdb]      // equivalent to execquery[...;raze;();0Wn;0b]
+```
+
+### `status[]`
+A snapshot of live dispatch state. Returns a dictionary:
+
+| Key | Meaning |
+|---|---|
+| `queued` | Queries accepted but not yet dispatched (null `submittime`) |
+| `running` | Queries dispatched and awaiting a backend reply |
+| `servers` | Rows in the server registry, active or not |
+| `activeservers` | Active server count broken down by servertype |
+| `clients` | Rows in the client audit table |
+| `errorprefix`, `querykeeptime`, `clearinactivetime`, `synccallsallowed` | The live config values |
+
+This exists because **`.z.m` is invisible over IPC** — a remote query runs in the root context, whose `.z.m` is not this module's, so `h".z.m.servers"` throws. An export is the only way `di.gateway` or a monitoring process can read this module's state at all.
+
+The `queued`/`running` split is what the `submittime` column on `queryqueue` is for: it is null until `runnextquery` dispatches the query, then stamped fill-if-null so a redispatch never restamps. That is TorQ's own mechanism (`gateway.q:180` stamps it in `getnextquery`, `:194` derives `?[null submittime;\`pending;\`running]` in `getqueue`).
+
+### `teardown[]`
+Clears all dispatch state — `queryqueue`, `servers`, `clients`, `results` — and resets the query-id counter, so a re-init or a test starts clean.
+
+> This is deliberately **not** the `di.servers` teardown contract, which withdraws process-global registrations while leaving module state intact. This module installs no process-global bindings to withdraw: it registers no handler and schedules no timer job, both being the caller's responsibility. What it does own is four tables and a counter, so a state reset is the only shape that means anything here.
+
+If any query is still in flight (null `returntime`) it **warns** rather than dropping it silently — those clients are never replied to and never find out, the same hazard `di.dataaccess.init` warns about on re-init.
+
+### `setcp[f]`
+Replace the clock function after `init`, to control time in tests without sleeping. `f` is niladic and returns a timestamp. The same thing can be passed as the `` `cp `` key to `init`; use this when a test needs to swap the clock mid-run.
+
+### `version`
+The module version string, read at load time from the module's `VERSION` file (bare `major.minor.patch`,
+no trailing newline). `init.q` fails loudly if the file is missing, unreadable or empty. This is not a
+convenience export: `di.depcheck.checkdepversion` resolves a dependency's version from the export
+dictionary and classes a missing one as a **failure**, which makes `di.depcheck.init` throw for every
+process that loads a module declaring `di.asyncdispatch` as a hard dependency — `di.gateway` and
+`di.dataaccess` both do. It must stay exported.
+
+### `getapimeta[]`
+Niladic. Returns an unkeyed table of `` `name`public`descrip`params`return `` rows, one per **callable**
+export. The module only *declares* this metadata — it never calls `di.api.add` itself; `di.torq` collects
+each module's `getapimeta[]` at startup and registers the rows centrally with `di.api`. Names are bare;
+`di.torq` applies the process-wide qualification.
+
+`init` and `getapimeta` are omitted from the table rather than listed as `public:0b` rows. Both are
+framework plumbing that `di.torq` invokes by convention, not by discovering them in the registry, so
+registering them would describe startup wiring as though it were callable API. `test.csv` asserts both
+directions — that every callable export has a row, and that neither plumbing name appears.
+
+`setcp` is deliberately absent: it is an internal test hook for controlling the clock without sleeping,
+is not in the export dictionary, and so is not part of the callable API.
 
 ---
 

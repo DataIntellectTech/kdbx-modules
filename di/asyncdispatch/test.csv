@@ -16,6 +16,7 @@ before,0,0,q,bh:hopen`$raze("::";string p),1,,open handle to backend
 before,0,0,q,ad.addserver[bh;`mock],1,,register first backend as mock server
 before,0,0,q,bh2:hopen`$raze("::";string p2),1,,open handle to second backend
 before,0,0,q,ad.addserver[bh2;`scatter],1,,register second backend as scatter servertype
+before,0,0,q,savedsched:.m.di.0asyncdispatch.getnextqueryid,1,,capture the REAL default scheduler so a test that overrides it can restore the genuine one rather than an approximation
 
 / Test 0: server registry
 true,0,0,q,bh in exec handle from srv[] where active,1,,first backend server is active
@@ -91,7 +92,7 @@ run,0,0,q,ad.removeserverhandle[99i],1,,clean up fake server
 
 / Test 10: addservererror - real backend error path via IPC callback
 run,0,0,q,ad.setcallbacks[`.m.di.0asyncdispatch.addserverresult;`.m.di.0asyncdispatch.addservererror],1,,restore callbacks overridden in test 8
-run,0,0,q,ad.setgetnextqueryid[{r:0!select from .m.di.0asyncdispatch.queryqueue where null returntime;1 sublist select from r where not queryid in key .m.di.0asyncdispatch.results}],1,,restore scheduler overridden in test 8
+run,0,0,q,ad.setgetnextqueryid[savedsched],1,,restore the REAL scheduler overridden in test 8 - the previous hand-written stand-in here had no servertype-availability filter so every dispatch test after this point exercised the stand-in rather than the module
 run,0,0,q,.m.di.0asyncdispatch.addquery["'errortest";enlist`mock;raze;();0Wn;0b],1,,queue a query that will signal an error on the backend
 run,0,0,q,qid5:exec first queryid from qq[] where query~\:"'errortest",1,,capture the queued query id
 run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch query to backend
@@ -123,7 +124,7 @@ run,0,0,q,ad.setformatresponse[{[status;sync;result]$[not[status]and sync;'resul
 
 / Test 13: execqueryto local path - successful result delivered in-process
 run,0,0,q,ad.setcallbacks[`.m.di.0asyncdispatch.addserverresult;`.m.di.0asyncdispatch.addservererror],1,,restore callbacks
-run,0,0,q,ad.setgetnextqueryid[{r:0!select from .m.di.0asyncdispatch.queryqueue where null returntime;1 sublist select from r where not queryid in key .m.di.0asyncdispatch.results}],1,,restore scheduler
+run,0,0,q,ad.setgetnextqueryid[savedsched],1,,restore the REAL scheduler
 run,0,0,q,.test.localcap:(::),1,,reset local capture
 run,0,0,q,.test.localfn:{[reqid;qry;res] .test.localcap:(reqid;qry;res)},1,,define local capturing callback in root namespace
 run,0,0,q,ad.execqueryto[0Ni;"2+2";enlist`mock;{sum x};(.test.localfn;`req1);0Wn;0b],1,,dispatch via local path with postback (sum collapses single-element result to scalar)
@@ -179,6 +180,82 @@ run,0,0,q,bh"",1,,sync flush - wait for the backend result callback
 true,0,0,q,0b~first exec error from qq[] where queryid=qidx,1,,query completed without error via the injected source
 true,0,0,q,not null first exec returntime from qq[] where queryid=qidx,1,,result routed via the dispatch record (servertype ext) not the servers table (mock)
 run,0,0,q,ad.setavailableservers[savedavail],1,,restore the default internal-registry source
+
+/ Test 20: module metadata - version and getapimeta
+true,0,0,q,"3=count ""."" vs ad.version",1,,VERSION file holds a parseable major.minor.patch string
+true,0,0,q,ad.version~trim ad.version,1,,no stray whitespace or newline came through from the VERSION file
+true,0,0,q,`name`public`descrip`params`return~cols ad[`getapimeta][],1,,getapimeta rows carry the registry columns
+true,0,0,q,"(asc (key ad) except `init`getapimeta)~asc exec name from ad[`getapimeta][]",1,,getapimeta documents exactly the callable exports (init/getapimeta omitted as plumbing)
+true,0,0,q,"not any `init`getapimeta in exec name from ad[`getapimeta][]",1,,framework plumbing is not registered in the api
+true,0,0,q,all exec public from ad[`getapimeta][],1,,every documented row is public
+true,0,0,q,all 0<count each exec descrip from ad[`getapimeta][],1,,every documented row carries a description
+true,0,0,q,all 0<count each exec params from ad[`getapimeta][],1,,every documented row carries a params string
+
+/ Test 21: init validation - every guarded path signals rather than being accepted silently
+fail,0,0,q,ad.init[(::)],1,,init rejects a non-dictionary deps
+fail,0,0,q,ad.init[()!()],1,,init rejects deps with no log key
+fail,0,0,q,ad.init[enlist[`log]!enlist 42],1,,init rejects a non-dict log value
+fail,0,0,q,"ad.init[enlist[`log]!enlist enlist[`info]!enlist{[c;m]}]",1,,init rejects a log dict missing warn and error
+fail,0,0,q,"ad.init[`log`errorprefix!(mocklog;`notastring)]",1,,init rejects a non-string errorprefix
+fail,0,0,q,"ad.init[`log`errorprefix!(mocklog;"""")]",1,,init rejects an empty errorprefix - it would match every string result di.dataaccess inspects
+fail,0,0,q,"ad.init[`log`querykeeptime!(mocklog;42)]",1,,init rejects a non-timespan querykeeptime - an int is read as nanoseconds by the purge job
+fail,0,0,q,"ad.init[`log`clearinactivetime!(mocklog;42)]",1,,init rejects a non-timespan clearinactivetime
+fail,0,0,q,"ad.init[`log`synccallsallowed!(mocklog;1)]",1,,init rejects a non-boolean synccallsallowed
+fail,0,0,q,"ad.init[`log`cp!(mocklog;42)]",1,,init rejects a non-function cp
+true,0,0,q,`logerr in key `.m.di.0asyncdispatch,1,,a rejected init left the previously wired state intact - validation runs before any state write
+
+/ Test 22: cp accepted via the init dict as well as via setcp
+run,0,0,q,"ad.init[`log`cp!(mocklog;{2000.01.01D})]",1,,init accepts a cp function
+true,0,0,q,2000.01.01D~.m.di.0asyncdispatch.cp[],1,,cp from the init dict reached module state
+run,0,0,q,ad.init[enlist[`log]!enlist mocklog],1,,re-init without cp leaves the previously set clock in place
+true,0,0,q,2000.01.01D~.m.di.0asyncdispatch.cp[],1,,cp is only written when the key is present
+run,0,0,q,ad.setcp[{.z.p}],1,,restore the real clock via the now-exported setter
+true,0,0,q,2000.01.02D<.m.di.0asyncdispatch.cp[],1,,the real clock is back rather than the frozen test one
+
+/ Test 23: submittime separates a queued query from a running one
+/ NB the probe query string must be unique in this file - "2+2" and "6*7" are each queued by several
+/ earlier tests, so `first queryid ... where query~\:` would pick up a long-completed row
+run,0,0,q,.m.di.0asyncdispatch.addquery["8+9";enlist`mock;raze;();0Wn;0b],1,,queue a query without dispatching it
+run,0,0,q,qsub:exec first queryid from qq[] where query~\:"8+9",1,,capture the query id
+true,0,0,q,null first exec submittime from qq[] where queryid=qsub,1,,a queued query has a null submittime
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch it
+true,0,0,q,not null first exec submittime from qq[] where queryid=qsub,1,,dispatch stamps submittime
+run,0,0,q,stamped:first exec submittime from qq[] where queryid=qsub,1,,remember the stamp
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,run the dispatcher again
+true,0,0,q,stamped~first exec submittime from qq[] where queryid=qsub,1,,a redispatch does not restamp - fill-if-null matches TorQ getnextquery
+run,0,0,q,bh"",1,,flush the backend so the query completes
+
+/ Test 24: status - the only way to read module state over IPC
+/ assertions are self-consistent against the live tables rather than absolute counts, so accumulated
+/ state from earlier tests cannot make them pass or fail for the wrong reason
+true,0,0,q,`queued`running`servers`activeservers`clients`errorprefix`querykeeptime`clearinactivetime`synccallsallowed~key ad.status[],1,,status reports the documented keys
+true,0,0,q,"""error: ""~ad.status[]`errorprefix",1,,status reports the live config not a hardcoded default
+true,0,0,q,0D00:30~ad.status[]`querykeeptime,1,,status reports the live querykeeptime
+true,0,0,q,ad.status[][`servers]=count srv[],1,,status server count agrees with the servers table
+true,0,0,q,ad.status[][`clients]=count cl[],1,,status client count agrees with the clients table
+true,0,0,q,"(sum value ad.status[]`activeservers)=count select from srv[] where active",1,,activeservers breaks the active pool down by servertype
+true,0,0,q,"ad.status[][`queued]=count select from qq[] where null returntime,null submittime",1,,queued counts undispatched rows
+true,0,0,q,"ad.status[][`running]=count select from qq[] where null returntime,not null submittime",1,,running counts dispatched but unreturned rows
+run,0,0,q,q0:ad.status[]`queued,1,,queued count before adding an unsatisfiable query
+run,0,0,q,.m.di.0asyncdispatch.addquery["13*13";enlist`nosuchtype;raze;();0Wn;0b],1,,queue a query no registered servertype can satisfy
+true,0,0,q,1=ad.status[][`queued]-q0,1,,status counts the new query as queued
+run,0,0,q,r0:ad.status[]`running,1,,running count before a dispatch attempt
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,try to dispatch - no server matches its servertype
+true,0,0,q,r0=ad.status[]`running,1,,it never became running so it is still counted as queued
+
+/ Test 25: teardown - state reset, and it warns rather than discarding in-flight work silently
+run,0,0,q,"warned:();caplog:`info`warn`error!({[c;m]};{[c;m] warned,:enlist m};{[c;m]})",1,,capturing logger so the teardown warning can be asserted
+run,0,0,q,ad.init[enlist[`log]!enlist caplog],1,,re-init onto the capturing logger
+run,0,0,q,ad.teardown[],1,,tear down with one query still in flight
+true,0,0,q,0<count warned,1,,teardown warned rather than discarding the in-flight row silently
+true,0,0,q,"0<count first[warned] ss ""will not be replied to""",1,,the warning names the consequence for the client
+true,0,0,q,0=count qq[],1,,queryqueue cleared
+true,0,0,q,0=count srv[],1,,servers cleared
+true,0,0,q,0=count cl[],1,,clients cleared
+true,0,0,q,0=count res[],1,,results cleared
+true,0,0,q,0=.m.di.0asyncdispatch.queryid,1,,the query id counter reset
+true,0,0,q,0=ad.status[]`queued,1,,status agrees the queue is empty after teardown
+run,0,0,q,ad.init[enlist[`log]!enlist mocklog],1,,restore the no-op logger
 
 / Teardown
 run,0,0,q,neg[bh](exit;0);neg[bh](::),1,,send exit to first backend process and flush

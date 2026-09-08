@@ -54,7 +54,13 @@ availableservers:{[excludeinuse]
 servers:([handle:`u#`int$()] servertype:`symbol$(); inuse:`boolean$(); active:`boolean$(); disconnecttime:`timestamp$());
 
 // pending and in-flight client queries
-queryqueue:([queryid:`u#`long$()] time:`timestamp$(); clienth:`int$(); query:(); servertype:(); join:(); postback:(); timeout:`timespan$(); returntime:`timestamp$(); error:`boolean$(); sync:`boolean$(); local:`boolean$());
+// submittime is stamped when the query is dispatched and is what separates a queued query from a
+// running one - it is the only thing status[] needs to report pending vs running, exactly as TorQ's
+// getqueue derived it (gateway.q:194, status:?[null submittime;`pending;`running])
+queryqueue:([queryid:`u#`long$()]
+  time:`timestamp$(); clienth:`int$(); query:(); servertype:(); join:(); postback:();
+  timeout:`timespan$(); submittime:`timestamp$(); returntime:`timestamp$(); error:`boolean$();
+  sync:`boolean$(); local:`boolean$());
 
 // connected client tracking
 clients:([] time:`timestamp$(); clienth:`int$(); user:`symbol$(); ip:`int$(); host:`symbol$());
@@ -68,6 +74,28 @@ queryid:0;
 // ============================================================
 // internal helpers
 // ============================================================
+
+requireinit:{[ctx]
+  // internal - every public entry point needs init to have run first. without this guard a bare read
+  // of an unwritten .z.m name surfaces as a raw '.m.di.0asyncdispatch.<name> error naming module
+  // internals. signals plainly rather than via raiseerror - there is no logger to log through yet
+  if[not `logerr in key .z.m;'"di.asyncdispatch: ",string[ctx],": init must be called first"];
+  };
+
+raiseerror:{[ctx;msg]
+  // internal - log an error under ctx then signal it, so failures are observable in the log and not
+  // only as a thrown exception the caller may swallow
+  .z.m.logerr[ctx;msg];
+  '"di.asyncdispatch: ",string[ctx],": ",msg;
+  };
+
+checkopt:{[deps;k;ok;what]
+  // internal - validate an optional config value's TYPE at init, so a misconfiguration fails loudly
+  // at startup instead of silently at first use. querykeeptime and clearinactivetime both feed
+  // cp[]>x+age comparisons, where an int is accepted and then read as nanoseconds by the purge jobs
+  if[k in key deps;
+    if[not ok deps k;'"di.asyncdispatch: ",string[k]," must be ",what]];
+  };
 
 sendclientreply:{[qid;result;status]
   // deliver result or error to the client, handling sync vs async send and postback wrapping
@@ -117,6 +145,9 @@ runnextquery:{[]
   types:torun`servertype;
   handles:avail types;
   qid:torun`queryid;
+  // stamp the dispatch time - fill-if-null so a redispatch never restamps, matching TorQ's
+  // getnextquery (gateway.q:180, .proc.cp[]^submittime)
+  update submittime:.z.m.cp[]^submittime from .z.M.queryqueue where queryid=qid;
   slots:types!count[types]#enlist(0Ni;(::);0b);
   slots[types;0]:handles;
   // indexed assignment on bare results propagates through to .z.m in kdb-x (empirically verified)
@@ -126,7 +157,8 @@ runnextquery:{[]
 
 addqueryto:{[query;servertype;join;postback;timeout;sync;replyto;local]
   // enqueue a query with an explicit reply target - used by execqueryto for local in-process routing
-  .z.M.queryqueue upsert (queryid;.z.m.cp[];replyto;query;servertype;join;{$[11h=type x;enlist x;x]}postback;timeout;0Np;0b;sync;local);
+  .z.M.queryqueue upsert (queryid;.z.m.cp[];replyto;query;servertype;join;
+    {$[11h=type x;enlist x;x]}postback;timeout;0Np;0Np;0b;sync;local);
   .z.m.queryid:queryid+1;
   };
 
@@ -137,22 +169,26 @@ addquery:{[query;servertype;join;postback;timeout;sync]
 
 removequeries:{[age]
   // prevent queryqueue growing unboundedly - purge completed queries older than age
+  requireinit`removequeries;
   delete from .z.M.queryqueue where not null returntime, .z.m.cp[]>returntime+age;
   };
 
 removeinactive:{[age]
   // prune stale disconnected-server rows to stop the servers table growing forever
+  requireinit`removeinactive;
   delete from .z.M.servers where not active, .z.m.cp[]>disconnecttime+age;
   };
 
 removeclients:{[age]
   // prune stale client audit rows to stop the clients table growing forever
   // clients are recorded on every connect by addclientdetails and never removed otherwise
+  requireinit`removeclients;
   delete from .z.M.clients where .z.m.cp[]>time+age;
   };
 
 checktimeout:{[]
   // periodic scan to error queries that have waited beyond their timeout
+  requireinit`checktimeout;
   qids:exec queryid from .z.m.queryqueue where not timeout=0Wn, null returntime, .z.m.cp[]>time+timeout;
   if[count qids;
     .z.m.logwarn[`asyncdispatch;"queries timed out: ",", " sv string qids];
@@ -194,6 +230,7 @@ addserver:{[h;st]
   // register a backend handle and servertype so it becomes eligible for dispatch.
   // this is the default (built-in) server source; to dispatch against di.serverselect's view instead,
   // inject it via setavailableservers - no registration and no di.serverselect dependency required
+  requireinit`addserver;
   .z.m.loginfo[`asyncdispatch;"server registered: ",string[st]," handle ",string h];
   .z.M.servers upsert (h;st;0b;1b;0Np);
   };
@@ -201,6 +238,7 @@ addserver:{[h;st]
 removeserverhandle:{[serverh]
   // on backend disconnect, error in-flight queries using that handle and queued queries
   // that can no longer be satisfied
+  requireinit`removeserverhandle;
   if[null st:first exec servertype from .z.m.servers where handle=serverh;:()];
   err:errorprefix,"backend ",string[st]," server disconnected";
   .z.m.logwarn[`asyncdispatch;"backend disconnected: ",string st];
@@ -220,6 +258,7 @@ removeserverhandle:{[serverh]
 
 addclientdetails:{[h]
   // record client identity on connect for audit and orphan-query cleanup on disconnect
+  requireinit`addclientdetails;
   .z.m.loginfo[`asyncdispatch;"client connected: handle ",string h];
   .z.M.clients insert (.z.m.cp[];h;.z.u;.z.a;.z.h);
   };
@@ -228,6 +267,7 @@ removeclienthandle:{[h]
   // on client disconnect, mark their pending queries errored so result slots are not leaked
   // free any servers in-flight for this client before removing result slots, then re-dispatch
   // local queries store clienth:0Ni and are not matched here - the in-process caller owns cleanup for its own requests
+  requireinit`removeclienthandle;
   .z.m.loginfo[`asyncdispatch;"client disconnected: handle ",string h];
   inflightqids:(exec queryid from .z.m.queryqueue where clienth=h, null returntime) inter key .z.m.results;
   if[count inflightqids;
@@ -241,6 +281,7 @@ removeclienthandle:{[h]
 addserverresult:{[qid;data]
   // fill one result slot - once all slots for a query are filled, run the join and reply
   // bare indexed assignment on results propagates through to .z.m in kdb-x (empirically verified)
+  requireinit`addserverresult;
   if[not qid in key results;:()];
   slots:results[qid;1];
   // map the responding handle to its servertype from THIS query's own dispatch record, not a server
@@ -262,6 +303,7 @@ addserverresult:{[qid;data]
 
 addservererror:{[qid;err]
   // short-circuit a query on backend failure - free the server and notify the client
+  requireinit`addservererror;
   .z.m.logerr[`asyncdispatch;"backend error for query ",string[qid],": ",err];
   sendclientreply[qid;errorprefix,err;0b];
   update inuse:0b from .z.M.servers where handle in .z.w;
@@ -271,10 +313,11 @@ addservererror:{[qid;err]
 
 execquery:{[query;servertype;join;postback;timeout;sync]
   // public entry point - validate sync constraints then enqueue and kick dispatch
+  requireinit`execquery;
   if[sync;
     if[not ()~postback;.z.m.logwarn[`asyncdispatch;"execquery: postback ignored for sync call"]];
-    if[not synccallsallowed;'"syncexec: synchronous calls are not allowed"];
-    if[not @[{-30!x;1b};(::);0b];'"syncexec: deferred response not supported on this connection"];
+    if[not synccallsallowed;raiseerror[`execquery;"synchronous calls are not allowed"]];
+    if[not @[{-30!x;1b};(::);0b];raiseerror[`execquery;"deferred response not supported on this connection"]];
     .[{[q;s;j;t]addquery[q;s;j;();t;1b];runnextquery[]};(query;servertype;join;timeout);{-30!(.z.w;1b;x)}];
     :()];
   addquery[query;servertype;join;postback;timeout;0b];
@@ -286,12 +329,106 @@ execqueryto:{[replyto;query;servertype;join;postback;timeout;sync]
   // postback must be non-empty when replyto is 0Ni - there is no handle to send a bare result to
   // sync is not supported for local invocation
   // mount-qualified postback symbols required for local invocation e.g. `da.shardresult not `shardresult
+  requireinit`execqueryto;
   if[0Ni~replyto;
-    if[()~postback;'"di.asyncdispatch: local invocation requires a non-empty postback"];
-    if[sync;'"di.asyncdispatch: local invocation does not support sync mode"]];
+    if[()~postback;raiseerror[`execqueryto;"local invocation requires a non-empty postback"]];
+    if[sync;raiseerror[`execqueryto;"local invocation does not support sync mode"]]];
   local:0Ni~replyto;
   addqueryto[query;servertype;join;postback;timeout;sync;replyto;local];
   runnextquery[];
+  };
+
+// the raze / no-postback / no-timeout / async convenience form, TorQ's asyncexec
+// (gateway.q:419, asyncexecjpt[;;raze;();0Wn]). the most common client entry point in practice
+asyncexec:execquery[;;raze;();0Wn;0b];
+
+status:{[]
+  // a snapshot of live dispatch state. .z.m is invisible over IPC - a remote query runs in the ROOT
+  // context, whose .z.m is not this module's - so an export is the only way di.gateway or a monitor
+  // can see the queue, the server pool or the wiring at all
+  requireinit`status;
+  live:select from .z.m.queryqueue where null returntime;
+  :`queued`running`servers`activeservers`clients`errorprefix`querykeeptime`clearinactivetime`synccallsallowed!
+    (count select from live where null submittime;
+     count select from live where not null submittime;
+     count .z.m.servers;
+     exec count i by servertype from .z.m.servers where active;
+     count .z.m.clients;
+     .z.m.errorprefix;
+     .z.m.querykeeptime;
+     .z.m.clearinactivetime;
+     .z.m.synccallsallowed);
+  };
+
+teardown:{[]
+  // clear all dispatch state so a re-init or a test starts clean.
+  // NOT the di.servers teardown contract (withdraw process-global registrations) - this module
+  // installs none: it registers no handler and schedules no timer job, both being the caller's job.
+  // what it does own is four tables and a counter, so a state reset is the only shape that means
+  // anything here.
+  // WARNS about in-flight work rather than dropping it silently - those clients are never replied to
+  // and never find out, the same hazard di.dataaccess.init warns about on re-init
+  requireinit`teardown;
+  if[count inflight:select from .z.m.queryqueue where null returntime;
+    .z.m.logwarn[`teardown;"discarding ",string[count inflight],
+      " in-flight query row(s); their clients will not be replied to"]];
+  delete from .z.M.queryqueue;
+  delete from .z.M.servers;
+  delete from .z.M.clients;
+  .z.m.results:()!();
+  .z.m.queryid:0;
+  };
+
+getapimeta:{[]
+  // one row per CALLABLE export, for di.torq to collect and register with di.api. init and
+  // getapimeta are omitted as framework plumbing - di.torq calls both by convention, so neither
+  // belongs in the registry. names are bare; di.torq applies the process-wide qualification
+  :flip `name`public`descrip`params`return!flip(
+    (`version;             1b; "module version string";
+       "[]";                                                                        "string: version");
+    (`status;              1b; "snapshot of live dispatch state - queue depth by pending/running, server and client counts, live config";
+       "[]";                              "dict: queued, running, servers, activeservers, clients, config");
+    (`teardown;            1b; "clear all dispatch state (queue, servers, clients, results) so a re-init or test starts clean";
+       "[]";                                                                        "null");
+    (`setcp;               1b; "replace the clock function after init - used to control time in tests without sleeping";
+       "[function: {[]} returning a timestamp]";                                    "null");
+    (`setformatresponse;   1b; "override reply formatting, e.g. to wrap results in a standard envelope";
+       "[function: {[boolean: status; boolean: sync; any: result]}]";               "null");
+    (`setcallbacks;        1b; "set the symbols backends call back through, for a non-default mount point";
+       "[symbol: result callback; symbol: error callback]";                         "null");
+    (`setavailableservers; 1b; "swap in a custom server source or routing strategy without forking core dispatch";
+       "[function: {[boolean: excludeinuse]} returning a handle/servertype table]"; "null");
+    (`setgetnextqueryid;   1b; "inject a priority or custom scheduling strategy";
+       "[function: {[]} returning 0 or 1 rows of the query queue]";                 "null");
+    (`addserver;           1b; "register a backend handle and servertype so it becomes eligible for dispatch";
+       "[int: handle; symbol: servertype]";                                         "null");
+    (`removeserverhandle;  1b; "mark a backend inactive on disconnect and error the queries it can no longer satisfy";
+       "[int: handle]";                                                             "null");
+    (`addclientdetails;    1b; "record client identity on connect, for audit and orphan-query cleanup";
+       "[int: handle]";                                                             "null");
+    (`removeclienthandle;  1b; "on client disconnect, free their in-flight servers and drop their pending result slots";
+       "[int: handle]";                                                             "null");
+    (`addserverresult;     1b; "backend callback - fill one result slot and, once all slots are in, join and reply";
+       "[long: queryid; any: result]";                                              "null");
+    (`addservererror;      1b; "backend callback - short-circuit a query on backend failure and reply the error";
+       "[long: queryid; string: error]";                                            "null");
+    (`execquery;           1b; "enqueue a query, scatter it to one backend per required servertype and join the results";
+       "[any: query; symbol list: servertype; function: join; list: postback; timespan: timeout; boolean: sync]";
+       "null: the reply is delivered asynchronously to the calling handle");
+    (`execqueryto;         1b; "in-process variant of execquery - replyto is a client handle, or 0Ni to postback locally";
+       "[int: replyto; any: query; symbol list: servertype; function: join; list: postback; timespan: timeout; boolean: sync]";
+       "null: the reply is delivered asynchronously to replyto");
+    (`asyncexec;           1b; "execquery with raze as the join, no postback and no timeout - the common client entry point";
+       "[any: query; symbol list: servertype]";
+       "null: the reply is delivered asynchronously to the calling handle");
+    (`checktimeout;        1b; "error any in-flight query that has waited beyond the timeout execquery recorded for it";
+       "[]";                                                                        "null");
+    (`removequeries;       1b; "purge completed query rows older than age";
+       "[timespan: age]";                                                           "null");
+    (`removeinactive;      1b; "purge disconnected server rows older than age";
+       "[timespan: age]";                                                           "null");
+    (`removeclients;       1b; "purge client audit rows older than age";
+       "[timespan: age]";                                                           "null"));
   };
 
 init:{[deps]
@@ -302,6 +439,9 @@ init:{[deps]
   //   `querykeeptime     - optional: timespan to keep completed queries. default: 0D00:30
   //   `clearinactivetime - optional: timespan to keep disconnected servers. default: 0D01:00
   //   `synccallsallowed  - optional: boolean, whether sync calls are permitted. default: 0b
+  //   `cp                - optional: current-time fn, default {.z.p}. override for sim/backtest.
+  //                        setcp does the same thing after init, for a test that swaps the clock
+  //                        mid-run; passing it here wins, since init runs later
   // housekeeping (checktimeout; removequeries; removeinactive; removeclients) is the caller's
   // responsibility - wire them into your timer after init; the exported defaults for age params are
   // querykeeptime and clearinactivetime
@@ -316,6 +456,15 @@ init:{[deps]
     '"di.asyncdispatch: log value must be a dict; pass `info`warn`error functions"];
   if[not all `info`warn`error in key deps`log;
     '"di.asyncdispatch: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
+  // optional config is type-checked HERE so a misconfiguration fails at startup rather than silently
+  // at first use. an empty errorprefix is rejected outright: di.dataaccess.shardresult detects a
+  // backend error with prefix~(count prefix) sublist result, and an empty prefix matches EVERY string
+  // result, so every ordinary string a shard returned would be misread as an error
+  checkopt[deps;`errorprefix;{(10h=type x) and 0<count x};"a non-empty string"];
+  checkopt[deps;`querykeeptime;{-16h=type x};"a timespan"];
+  checkopt[deps;`clearinactivetime;{-16h=type x};"a timespan"];
+  checkopt[deps;`synccallsallowed;{-1h=type x};"a boolean"];
+  checkopt[deps;`cp;{type[x] within 100 112h};"a function"];
   .z.m.loginfo:(deps`log)`info;
   .z.m.logwarn:(deps`log)`warn;
   .z.m.logerr:(deps`log)`error;
@@ -323,5 +472,6 @@ init:{[deps]
   if[`querykeeptime in key deps; .z.m.querykeeptime:deps`querykeeptime];
   if[`clearinactivetime in key deps; .z.m.clearinactivetime:deps`clearinactivetime];
   if[`synccallsallowed in key deps; .z.m.synccallsallowed:deps`synccallsallowed];
+  if[`cp in key deps; .z.m.cp:deps`cp];
   .z.m.loginfo[`asyncdispatch;"di.asyncdispatch initialised"];
   };

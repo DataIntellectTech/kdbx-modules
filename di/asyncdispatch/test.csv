@@ -313,6 +313,13 @@ true,0,0,q,0b~first exec inuse from srv[] where handle=77i,1,,THE FIX - the back
 true,0,0,q,not qto in key res[],1,,and its result slot was dropped
 run,0,0,q,ad.removeserverhandle[77i],1,,clean up the fake backend
 
+/ Test 29: teardown clears the eod suspension - eod is runtime state not config, so a state reset owns it
+/ ordering matters here: test 25 tears down BEFORE any seteod row runs, so this pairing was never exercised
+run,0,0,q,ad.seteod[1b],1,,start a suspension so teardown has something to clear
+true,0,0,q,1b~ad.status[]`eod,1,,guard: the suspension really is active going into teardown
+run,0,0,q,ad.teardown[],1,,tear down while suspended
+true,0,0,q,0b~ad.status[]`eod,1,,THE FIX - teardown cleared the suspension rather than handing back a module that silently holds every multi-servertype query
+
 / Teardown
 run,0,0,q,neg[bh](exit;0);neg[bh](::),1,,send exit to first backend process and flush
 run,0,0,q,hclose bh,1,,close first backend handle

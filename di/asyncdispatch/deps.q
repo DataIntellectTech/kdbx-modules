@@ -1,6 +1,6 @@
 / hard module dependencies and their minimum versions, validated by di.depcheck.
 / di.asyncdispatch has NONE, and the empty manifest is deliberate rather than the file being absent:
-/ di.depcheck's getdepspath returns (::) for a module that ships no deps.q, which is indistinguishable
+/ di.depcheck's finddepsq returns (::) for a module that ships no deps.q, which is indistinguishable
 / from "nobody has decided yet". an explicit empty dict records that the STANDALONE classification in
 / the modularisation plan was checked against the source and holds.
 / verified: asyncdispatch.q and init.q contain no `use` at all. every TorQ namespace the source it was

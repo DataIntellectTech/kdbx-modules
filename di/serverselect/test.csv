@@ -6,7 +6,7 @@ before,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,init the module with the 
 / ---- getserverstable: initial state ----
 comment,,,,,,,getserverstable - initial state before any addserverattr
 true,0,0,q,0=count srvsel.getserverstable[],1,1,servers empty on fresh module load
-true,0,0,q,`serverid`handle`procname`servertype`hpup`active`lastp`hits`attributes~cols srvsel.getserverstable[],1,1,servers has correct schema
+true,0,0,q,`serverid`handle`procname`servertype`hpup`active`lastp`hits`attributes`disconnecttime~cols srvsel.getserverstable[],1,1,servers has correct schema
 
 / ---- addserverattr / addserver / addserverfull: registration ----
 comment,,,,,,,addserverattr and addserver - server registration
@@ -192,3 +192,354 @@ fail,0,0,q,srvsel.init[enlist[`log]!enlist(::)],1,1,init rejects a log value tha
 fail,0,0,q,"srvsel.init[enlist[`log]!enlist(`info`warn!({[c;m]};{[c;m]}))]",1,1,init rejects a log dict missing the error key
 true,0,0,q,"""di.serverselect""~15#@[srvsel.init;(::);{x}]",1,1,init error message is prefixed di.serverselect
 run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,restore the no-op logger
+
+/ ---- version ----
+comment,,,,,,,version - read from the VERSION file and still exported
+true,0,0,q,"""0.1.0""~srvsel.version",1,1,version matches the VERSION file contents
+true,0,0,q,`version in key srvsel,1,1,version is still an export - di.depcheck resolves a dependency version from there
+true,0,0,q,"3=count ""."" vs srvsel.version",1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any srvsel.version in ""\n\r""",1,1,no stray newline or carriage return came through from the file
+true,0,0,q,srvsel.version~trim srvsel.version,1,1,version has no leading or trailing whitespace
+
+/ ---- getapimeta ----
+comment,,,,,,,getapimeta - api metadata conformance
+true,0,0,q,"(asc (key srvsel) except `init`getapimeta)~asc exec name from srvsel.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,"not any `init`getapimeta in exec name from srvsel.getapimeta[]",1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols srvsel.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,all exec public from srvsel.getapimeta[],1,1,every documented function is public
+true,0,0,q,all 0<count each exec descrip from srvsel.getapimeta[],1,1,every documented function carries a description
+true,0,0,q,all 0<count each exec params from srvsel.getapimeta[],1,1,every documented function carries a params string
+
+/ ---- adversarial review: attribute matching engine ----
+comment,,,,,,,adversarial - engine fixture reset (internals reached via .m.di.0serverselect)
+run,0,0,q,"advreset:{.m.di.0serverselect.servers:0#.m.di.0serverselect.servers;.m.di.0serverselect.serverid:0i;}",1,1,helper resetting the registry so each engine fixture has known server ids
+run,0,0,q,advreset[],1,1,reset the registry before building the engine fixture
+run,0,0,q,"srvsel.addserverattr[101i;`hdb;`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,fixture sid1 - dates 01.01 and 01.02, syms AAPL and MSFT
+run,0,0,q,"srvsel.addserverattr[102i;`hdb;`date`sym!(2024.01.03 2024.01.04;`AAPL`GOOG)]",1,1,fixture sid2 - dates 01.03 and 01.04, syms AAPL and GOOG
+run,0,0,q,"srvsel.addserverattr[103i;`hdb;(enlist`date)!enlist 2024.01.01 2024.01.05]",1,1,fixture sid3 - date attribute only, no sym attribute at all
+run,0,0,q,"srvsel.addserverattr[104i;`rdb;(enlist`date)!enlist enlist 2024.01.09]",1,1,fixture sid4 - rdb with an unrelated date
+true,0,0,q,4=count srvsel.getserverstable[],1,1,fixture registry holds exactly the four fixture servers
+true,0,0,q,1 2 3 4i~exec serverid from srvsel.getserverstable[],1,1,fixture server ids run 1 to 4 after the reset
+
+comment,,,,,,,adversarial case 1 - empty attribute requirements degrade to any server of the type
+true,0,0,q,1 2 3 4i~raze srvsel.getserverids[()!()],1,1,an empty requirement dict returns every active server rather than none
+true,0,0,q,"1 2 3i~asc raze srvsel.getserverids[enlist[`servertype]!enlist`hdb]",1,1,empty requirements plus a servertype returns all servers of that type
+true,0,0,q,"1 2 3i~asc raze srvsel.getserverids[`hdb]",1,1,the bare symbol path agrees with the empty-requirement dict path
+true,0,0,q,"1 2 3 4i~asc raze srvsel.getserverids[enlist[`besteffort]!enlist 0b]",1,1,a control-key-only dict is still an empty requirement and matches everything
+
+comment,,,,,,,adversarial case 2 - attributes present on some servers but not others
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`date`sym!(enlist 2024.01.01;enlist`AAPL)]",1,1,only the server advertising both date and sym matches
+true,0,0,q,"not 3i in raze srvsel.getserverids[`date`sym!(enlist 2024.01.01;enlist`AAPL)]",1,1,sid3 has the date but advertises no sym attribute so it is excluded not silently included
+true,0,0,q,"1 3i~asc raze srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01]",1,1,sid3 reappears once sym is dropped - its exclusion was the missing key not a failed match
+true,0,0,q,"1 2i~asc raze srvsel.getserverids[`date`sym!(2024.01.01 2024.01.03;enlist`AAPL)]",1,1,a partial-coverage request does not fail the whole match
+
+comment,,,,,,,adversarial case 3 - besteffort divergence and best-match ranking
+run,0,0,q,advreset[],1,1,reset the registry for the ranking fixture
+run,0,0,q,"srvsel.addserverattr[111i;`hdb;(enlist`date)!enlist enlist 2024.01.01]",1,1,narrow server sid1 - one date only
+run,0,0,q,"srvsel.addserverattr[112i;`hdb;(enlist`date)!enlist 2024.01.01 2024.01.02 2024.01.03]",1,1,wide server sid2 - all three requested dates
+run,0,0,q,"srvsel.addserverattr[113i;`hdb;(enlist`date)!enlist enlist 2024.01.02]",1,1,narrow server sid3 - one different date
+true,0,0,q,"(enlist 2i)~raze srvsel.getserverids[`date`besteffort!(2024.01.01 2024.01.02 2024.01.03;1b)]",1,1,best match is the WIDE server alone - best really is best not merely the first candidate found
+true,0,0,q,"(enlist 2i)~raze srvsel.getserverids[(enlist`date)!enlist 2024.01.01 2024.01.02]",1,1,the wide server is still preferred over the two narrow servers that jointly cover the same dates
+fail,0,0,q,"srvsel.getserverids[`date`besteffort!(2024.01.01 1999.01.01;0b)]",1,1,besteffort 0b fails when the cross product cannot be covered in full
+true,0,0,q,"1 2i~asc raze srvsel.getserverids[`date`besteffort!(2024.01.01 1999.01.01;1b)]",1,1,besteffort 1b returns the partial match - the servers covering the satisfiable date
+fail,0,0,q,"srvsel.getserverids[`date`besteffort!(enlist 1999.01.01;1b)]",1,1,besteffort 1b still errors when no server matches any part of the request
+
+comment,,,,,,,adversarial case 4 - one server satisfying several requirement combinations at once
+run,0,0,q,advreset[],1,1,reset the registry for the cross-product fixture
+run,0,0,q,"srvsel.addserverattr[121i;`hdb;`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,single server covering a full 2x2 cross product on its own
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,a server covering all four combinations is returned once not duplicated
+true,0,0,q,"1=count distinct raze srvsel.getserverids[`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,no duplicate server ids come back from the cross-product logic
+run,0,0,q,"srvsel.addserverattr[122i;`hdb;`date`sym!(2024.01.03 2024.01.04;`AAPL`GOOG)]",1,1,add a second server covering a disjoint part of the cross product
+true,0,0,q,"1 2i~asc raze srvsel.getserverids[`date`sym!(2024.01.01 2024.01.03;enlist`AAPL)]",1,1,a cross product spanning two servers returns both
+
+comment,,,,,,,adversarial case 5 - further edges found reading the matcher closely
+true,0,0,q,"1 2i~asc raze srvsel.getserverids[`date`sym`attributetype!(enlist 2024.01.01;enlist`GOOG;`independent)]",1,1,independent mode lets two different servers each satisfy one requirement
+fail,0,0,q,"srvsel.getserverids[`date`sym`attributetype`besteffort!(enlist 2024.01.01;enlist`ZZZ;`independent;0b)]",1,1,independent mode with besteffort 0b fails when one requirement cannot be matched at all
+true,0,0,q,"0<count raze srvsel.getserverids[`date`sym`attributetype`besteffort!(enlist 2024.01.01;enlist`ZZZ;`independent;1b)]",1,1,independent mode with besteffort 1b returns the satisfiable part
+fail,0,0,q,"srvsel.getserverids[`date`sym`attributetype`besteffort!(enlist 1999.01.01;enlist`ZZZ;`independent;0b)]",1,1,independent mode errors when nothing at all can be matched
+true,0,0,q,"1 2i~asc raze srvsel.getserverids[`date`sym!(2024.01.01 2024.01.03;`AAPL`GOOG)]",1,1,a three-way spanning request still resolves across both servers
+true,0,0,q,"`date`sym~cols .m.di.0serverselect.buildcross[`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,buildcross returns a table with one column per requirement key
+true,0,0,q,"4=count .m.di.0serverselect.buildcross[`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,buildcross produces the full 2x2 cross product
+true,0,0,q,"1=count .m.di.0serverselect.buildcross[(enlist`date)!enlist enlist 2024.01.01]",1,1,buildcross of a single requirement value is a one-row table
+true,0,0,q,"(enlist 1i)~raze .m.di.0serverselect.getserveridstype[(enlist`date)!enlist enlist 2024.01.01;1b;`cross;`hdb]",1,1,getserveridstype called directly on the internal path resolves one servertype (controls now passed explicitly)
+true,0,0,q,"1=count .m.di.0serverselect.getserversinitial[()!();(enlist 1i)!enlist ()!()]",1,1,getserversinitial with no requirements returns a single all-servers row
+fail,0,0,q,"srvsel.getserverids[(enlist`nosuchattr)!enlist enlist 1]",1,1,a requirement key no server advertises errors rather than matching everything
+
+comment,,,,,,,adversarial case 6 - empty registry, duplicates and inactive exclusion
+run,0,0,q,advreset[],1,1,reset to a completely empty registry
+fail,0,0,q,"srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01]",1,1,an attribute request against an empty registry errors rather than returning nothing
+fail,0,0,q,srvsel.getserverids[()!()],1,1,an empty requirement against an empty registry errors
+true,0,0,q,()~srvsel.gethandlebytype[`hdb;`roundrobin],1,1,gethandlebytype returns () against an empty registry
+run,0,0,q,"srvsel.addserverattr[131i;`hdb;(enlist`date)!enlist enlist 2024.01.01]",1,1,register the first of two identical servers
+run,0,0,q,"srvsel.addserverattr[132i;`hdb;(enlist`date)!enlist enlist 2024.01.01]",1,1,register the second identical server
+true,0,0,q,"1 2i~asc raze srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01]",1,1,two servers with identical attributes are both returned
+run,0,0,q,srvsel.setserveractive[132i;0b],1,1,deactivate one of the identical pair
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01]",1,1,an inactive server is excluded from attribute matching
+run,0,0,q,srvsel.setserveractive[132i;1b],1,1,reactivate it again
+
+/ ---- regression: F1 multi-servertype fan-out ----
+comment,,,,,,,regression F1 - a multi-servertype request tolerates a servertype that matches nothing
+run,0,0,q,advreset[],1,1,reset the registry for the F1 regression fixture
+run,0,0,q,"srvsel.addserverattr[141i;`hdb;(enlist`date)!enlist enlist 2024.01.01]",1,1,hdb server carrying the requested date
+run,0,0,q,"srvsel.addserverattr[142i;`rdb;(enlist`date)!enlist enlist 2024.01.09]",1,1,rdb server carrying a different date
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`servertype`date!(`hdb`rdb;enlist 2024.01.01)]",1,1,F1 - hdb ids come back even though rdb matches nothing (previously aborted the whole query)
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`servertype`date!(`rdb`hdb;enlist 2024.01.01)]",1,1,F1 - the same holds with the servertypes listed in the other order
+true,0,0,q,"(enlist 2i)~raze srvsel.getserverids[`servertype`date!(`hdb`rdb;enlist 2024.01.09)]",1,1,F1 - and symmetrically when only rdb matches
+fail,0,0,q,"srvsel.getserverids[`servertype`date!(`hdb`rdb;enlist 1999.01.01)]",1,1,F1 - an all-types miss still errors through the aggregate guard
+fail,0,0,q,"srvsel.getserverids[`servertype`date!(`nosuchtype;enlist 2024.01.01)]",1,1,F1 - a single unknown servertype still errors
+run,0,0,q,srvsel.init[enlist[`log]!enlist caplogger],1,1,re-init with the capturing logger to observe the F1 log levels
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,"srvsel.getserverids[`servertype`date!(`hdb`rdb;enlist 2024.01.01)]",1,1,run the partially-matching multi-servertype request under capture
+true,0,0,q,0<count select from caplog where lvl=`warn,1,1,F1 - the servertype that missed is reported at WARN
+true,0,0,q,0=count select from caplog where lvl=`error,1,1,F1 - a routine partial match logs no ERROR line
+true,0,0,q,"any caplog[`msg] like ""*no servers matched servertype rdb*""",1,1,F1 - the warning names the servertype that missed
+run,0,0,q,caplog:0#caplog,1,1,reset capture before the all-miss case
+run,0,0,q,"@[srvsel.getserverids;`servertype`date!(`hdb`rdb;enlist 1999.01.01);{}]",1,1,run an all-types miss under capture (signal swallowed)
+true,0,0,q,0<count select from caplog where lvl=`error,1,1,F1 - an all-types miss IS logged at error by the aggregate guard
+run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,restore the no-op logger
+
+/ ---- regression: F2 atom attribute requirement ----
+comment,,,,,,,regression F2 - an atom requirement value no longer throws a raw unlogged rank
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[(enlist`date)!enlist 2024.01.01]",1,1,F2 - an atom requirement value is accepted (previously a raw rank)
+true,0,0,q,"(raze srvsel.getserverids[(enlist`date)!enlist 2024.01.01])~raze srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01]",1,1,F2 - the atom form returns exactly what the one-element list form returns
+true,0,0,q,"(raze srvsel.getserverids[`servertype`date!(`hdb;2024.01.01)])~raze srvsel.getserverids[`servertype`date!(`hdb;enlist 2024.01.01)]",1,1,F2 - atom promotion applies alongside a servertype key too
+fail,0,0,q,"srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01 2024.01.02]",1,1,F2 - a genuinely nested requirement value is still rejected
+true,0,0,q,"""di.serverselect""~15#@[srvsel.getserverids;(enlist`date)!enlist enlist 2024.01.01 2024.01.02;{x}]",1,1,F2 - the nested-value rejection is a prefixed module error not a raw rank
+true,0,0,q,"(enlist 2024.01.01)~.m.di.0serverselect.normreq[(enlist`date)!enlist 2024.01.01]`date",1,1,F2 - normreq promotes an atom requirement value to a one-element list
+true,0,0,q,"(enlist 2024.01.01 2024.01.02)~.m.di.0serverselect.normreq[(enlist`date)!enlist enlist 2024.01.01 2024.01.02]`date",1,1,F2 - normreq leaves a nested value alone so the 0h guard still catches it
+true,0,0,q,"(enlist`EU)~.m.di.0serverselect.normreq[(enlist`besteffort)!enlist`EU]`besteffort",1,1,F2 - normreq now promotes every key because it only ever receives pure requirements
+
+/ ---- regression: F3 control key validation ----
+comment,,,,,,,regression F3 - control keys are validated instead of being silently ignored
+fail,0,0,q,"srvsel.getserverids[`date`besteffort!(2024.01.01;0)]",1,1,F3 - an int besteffort is rejected rather than silently keeping the 1b default
+fail,0,0,q,"srvsel.getserverids[`date`besteffort!(2024.01.01;`no)]",1,1,F3 - a symbol besteffort is rejected
+fail,0,0,q,"srvsel.getserverids[`date`attributetype!(2024.01.01;`bogus)]",1,1,F3 - an unknown attributetype is rejected rather than silently falling back to cross
+fail,0,0,q,"srvsel.getserverids[`date`attributetype!(2024.01.01;""independent"")]",1,1,F3 - a string attributetype is rejected
+fail,0,0,q,"srvsel.getserverids[`servertype`date!(""hdb"";2024.01.01)]",1,1,F3 - a string servertype is rejected
+true,0,0,q,"0<count raze srvsel.getserverids[`date`attributetype!(2024.01.01;`cross)]",1,1,F3 - an explicit cross attributetype is still accepted
+true,0,0,q,"0<count raze srvsel.getserverids[`date`besteffort!(2024.01.01;1b)]",1,1,F3 - a correctly typed besteffort is still accepted
+
+/ ---- setselector ----
+comment,,,,,,,setselector - pluggable selection strategy
+run,0,0,q,advreset[],1,1,reset the registry for the selector fixture
+run,0,0,q,"srvsel.addserverfull[80i;`selA;`seltest;`:sel:1;()!()]",1,1,register the first seltest server
+run,0,0,q,"srvsel.addserverfull[81i;`selB;`seltest;`:sel:2;()!()]",1,1,register the second seltest server
+true,0,0,q,(srvsel.gethandlebytype[`seltest;`roundrobin]) in 80 81i,1,1,the default selector picks one of the registered seltest handles
+run,0,0,q,"srvsel.setselector[{[t;s] first select from t where handle=81i}]",1,1,install a strategy that always picks handle 81
+true,0,0,q,81i~srvsel.gethandlebytype[`seltest;`roundrobin],1,1,setselector override took effect - gethandlebytype returns the forced handle
+true,0,0,q,81i~srvsel.gethandlebytype[`seltest;`any],1,1,the override applies whatever strategy symbol is requested
+true,0,0,q,`:sel:2~srvsel.gethpbytype[`seltest;`roundrobin],1,1,the override also drives gethpbytype
+true,0,0,q,`selB~srvsel.getserverbytype[`seltest;`procname;`roundrobin],1,1,the override also drives getserverbytype
+run,0,0,q,srvsel.setselector[srvsel.selector],1,1,restore the exported default selector
+true,0,0,q,(srvsel.gethandlebytype[`seltest;`roundrobin]) in 80 81i,1,1,default behaviour is restored after setselector
+true,0,0,q,"80i~(srvsel.selector[([]handle:80 81i;lastp:(2024.01.01D00:00;2024.01.02D00:00));`roundrobin])`handle",1,1,the exported selector itself is unchanged by setselector
+fail,0,0,q,srvsel.setselector[42],1,1,setselector rejects a non-function argument
+fail,0,0,q,srvsel.setselector[`notafunction],1,1,setselector rejects a symbol
+
+/ ---- disconnecttime and removeinactive ----
+comment,,,,,,,disconnecttime and removeinactive - age-based purge driven by the injected cp
+run,0,0,q,advreset[],1,1,reset the registry for the purge fixture
+run,0,0,q,"srvsel.addserverfull[90i;`purgeA;`purgetest;`:p:1;()!()]",1,1,register purgetest server A
+run,0,0,q,"srvsel.addserverfull[91i;`purgeB;`purgetest;`:p:2;()!()]",1,1,register purgetest server B
+true,0,0,q,all null exec disconnecttime from srvsel.getserverstable[],1,1,disconnecttime is null while a server is active
+run,0,0,q,srvsel.setserveractive[90i;0b],1,1,deactivate purgetest server A
+true,0,0,q,not null first exec disconnecttime from srvsel.getserverstable[] where handle=90i,1,1,setserveractive 0b stamps disconnecttime
+true,0,0,q,null first exec disconnecttime from srvsel.getserverstable[] where handle=91i,1,1,the still-active server keeps a null disconnecttime
+run,0,0,q,srvsel.setserveractive[90i;1b],1,1,reactivate purgetest server A
+true,0,0,q,null first exec disconnecttime from srvsel.getserverstable[] where handle=90i,1,1,setserveractive 1b clears disconnecttime back to null
+run,0,0,q,srvsel.setserveractive[90i;0b],1,1,deactivate server A again for the purge itself
+run,0,0,q,srvsel.removeinactive[1D],1,1,purge with a one day age immediately after the disconnect
+true,0,0,q,2=count srvsel.getserverstable[],1,1,a recently-inactive server is NOT purged while inside the age window
+run,0,0,q,.m.di.0serverselect.cp:{.z.p+2D},1,1,fast-forward the module clock two days past the disconnect
+run,0,0,q,srvsel.removeinactive[1D],1,1,purge again after the fast-forward
+true,0,0,q,0=count select from srvsel.getserverstable[] where handle=90i,1,1,the aged-out inactive server was purged
+true,0,0,q,1=count select from srvsel.getserverstable[] where handle=91i,1,1,the still-active server was untouched by the purge
+true,0,0,q,1=count srvsel.getserverstable[],1,1,exactly one row was removed
+run,0,0,q,.m.di.0serverselect.cp:{.z.p},1,1,restore the real module clock
+fail,0,0,q,srvsel.removeinactive[42],1,1,removeinactive rejects a non-timespan age
+fail,0,0,q,srvsel.removeinactive[2024.01.01],1,1,removeinactive rejects a date age
+
+/ ---- init: optional cp and clearinactivetime ----
+comment,,,,,,,init - optional cp and clearinactivetime configuration
+fail,0,0,q,"srvsel.init[`log`cp!(noop;42)]",1,1,init rejects a cp that is not a function
+fail,0,0,q,"srvsel.init[`log`clearinactivetime!(noop;42)]",1,1,init rejects a clearinactivetime that is not a timespan
+true,0,0,q,"0<count key .m.di.0serverselect",1,1,a rejected init left the previously wired module state in place
+run,0,0,q,"srvsel.init[`log`cp`clearinactivetime!(noop;{.z.p};0D02:00)]",1,1,init accepts a valid cp and clearinactivetime
+true,0,0,q,0D02:00~.m.di.0serverselect.clearinactivetime,1,1,clearinactivetime is stored in module state
+run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,re-init with defaults
+true,0,0,q,0D01:00~.m.di.0serverselect.clearinactivetime,1,1,clearinactivetime defaults to one hour
+true,0,0,q,-12h=type .m.di.0serverselect.cp[],1,1,the default cp returns a timestamp
+true,0,0,q,.m.di.0serverselect.selector~srvsel.selector,1,1,init reseeds the live selector from the exported default
+
+/ ---- regression: smoke-test findings ----
+comment,,,,,,,regression F4 - attributes must be a dictionary at registration time
+run,0,0,q,advreset[],1,1,reset the registry for the attributes-validation fixture
+fail,0,0,q,"srvsel.addserverattr[1i;`rdb;42]",1,1,F4 - a non-dict attributes value is rejected at registration (was accepted and broke queries later)
+fail,0,0,q,"srvsel.addserverattr[1i;`rdb;()]",1,1,F4 - an empty general list is rejected as attributes
+fail,0,0,q,"srvsel.addserverattr[1i;`rdb;([]a:1 2)]",1,1,F4 - a table is rejected as attributes
+fail,0,0,q,"srvsel.addserverfull[1i;`p;`rdb;`:h:1;""notadict""]",1,1,F4 - a string is rejected as attributes
+fail,0,0,q,"srvsel.addserversfromtable[`ALL;([]w:enlist 5i;proctype:enlist`rdb;attributes:enlist 42)]",1,1,F4 - bulk registration rejects a non-dict attributes cell
+true,0,0,q,0=count srvsel.getserverstable[],1,1,F4 - no malformed row reached the registry
+run,0,0,q,"srvsel.addserverattr[1i;`rdb;()!()]",1,1,F4 - a proper empty dict is still accepted
+run,0,0,q,"srvsel.addserverattr[2i;`hdb;(enlist`date)!enlist enlist 2024.01.01]",1,1,F4 - a populated dict is still accepted
+true,0,0,q,"1=count srvsel.getservers[`servertype;`hdb;(enlist`date)!enlist enlist 2024.01.01]",1,1,F4 - attribute-scored lookup works against the clean registry
+
+comment,,,,,,,regression F5 - removeinactive rejects ages that would silently purge everything
+run,0,0,q,srvsel.setserveractive[2i;0b],1,1,deactivate a server to give the purge something to consider
+fail,0,0,q,srvsel.removeinactive[0Nn],1,1,F5 - a null age is rejected (disconnecttime+0Nn is 0Np so everything compared as aged out)
+fail,0,0,q,srvsel.removeinactive[-1D],1,1,F5 - a negative age is rejected
+true,0,0,q,2=count srvsel.getserverstable[],1,1,F5 - the rejected purges deleted nothing
+run,0,0,q,srvsel.removeinactive[0Wn],1,1,F5 - an infinite age is accepted as a no-op
+true,0,0,q,2=count srvsel.getserverstable[],1,1,F5 - 0Wn means retain forever and purges nothing (it overflowed to year 1734 before)
+run,0,0,q,srvsel.removeinactive[1D],1,1,F5 - a one day age with a fresh disconnect
+true,0,0,q,2=count srvsel.getserverstable[],1,1,F5 - nothing purged inside the age window
+run,0,0,q,srvsel.removeinactive[0D],1,1,F5 - a zero age purges anything already inactive
+true,0,0,q,1=count srvsel.getserverstable[],1,1,F5 - the inactive server was purged by a zero age
+
+comment,,,,,,,regression F6 - a repeated servertype is resolved once not twice
+run,0,0,q,advreset[],1,1,reset the registry for the dedupe fixture
+run,0,0,q,"srvsel.addserverattr[1i;`hdb;(enlist`date)!enlist enlist 2024.01.01]",1,1,register an hdb carrying the requested date
+run,0,0,q,"srvsel.addserverattr[2i;`rdb;(enlist`date)!enlist enlist 2024.01.09]",1,1,register an rdb carrying a different date
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`servertype`date!(`hdb`hdb;enlist 2024.01.01)]",1,1,F6 - a duplicated servertype yields the serverid once not twice
+true,0,0,q,"1=count srvsel.getserverids[`servertype`date!(`hdb`hdb;enlist 2024.01.01)]",1,1,F6 - and produces a single result group
+true,0,0,q,"(raze srvsel.getserverids[`servertype`date!(`hdb`hdb;enlist 2024.01.01)])~raze srvsel.getserverids[`servertype`date!(enlist`hdb;enlist 2024.01.01)]",1,1,F6 - duplicated and single servertype requests agree
+
+comment,,,,,,,regression F7 - the single-servertype path keeps the engine's specific error wording
+run,0,0,q,srvsel.init[enlist[`log]!enlist caplogger],1,1,re-init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset capture
+run,0,0,q,"@[srvsel.getserverids;(enlist`date)!enlist enlist 1999.01.01;{}]",1,1,run an all-path miss under capture (signal swallowed)
+true,0,0,q,1=count select from caplog where lvl=`error,1,1,F7 - the all-path miss is logged exactly once at error
+true,0,0,q,0=count select from caplog where lvl=`warn,1,1,F7 - and not also downgraded to a warning
+true,0,0,q,"any caplog[`msg] like ""*getserveridstype*""",1,1,F7 - the specific engine wording survives rather than being replaced by a generic message
+run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,restore the no-op logger
+
+/ ---- setserveridactive: registration-level activation on a shared handle ----
+comment,,,,,,,setserveridactive - deactivate one registration without touching handle siblings
+run,0,0,q,advreset[],1,1,reset the registry for the shared-handle fixture
+run,0,0,q,"srvsel.addserverfull[60i;`sha;`zdba;`:h:1;()!()]",1,1,register the first servertype on shared handle 60
+run,0,0,q,"srvsel.addserverfull[60i;`shb;`zdbb;`:h:2;()!()]",1,1,register the second servertype on the same handle 60
+run,0,0,q,"srvsel.addserverfull[61i;`other;`zdbc;`:h:3;()!()]",1,1,register an unrelated server on its own handle
+true,0,0,q,2=count select from srvsel.getserverstable[] where handle=60i,1,1,two distinct registrations share handle 60
+true,0,0,q,all exec active from srvsel.getserverstable[],1,1,all three registrations start active
+run,0,0,q,srvsel.setserveridactive[1i;0b],1,1,deactivate ONLY serverid 1 by serverid
+true,0,0,q,not first exec active from srvsel.getserverstable[] where serverid=1i,1,1,serverid 1 is now inactive
+true,0,0,q,first exec active from srvsel.getserverstable[] where serverid=2i,1,1,its handle sibling serverid 2 is UNTOUCHED - this is the whole point
+true,0,0,q,not null first exec disconnecttime from srvsel.getserverstable[] where serverid=1i,1,1,setserveridactive stamps disconnecttime like setserveractive does
+true,0,0,q,null first exec disconnecttime from srvsel.getserverstable[] where serverid=2i,1,1,the sibling keeps a null disconnecttime
+true,0,0,q,"0=count srvsel.getservers[`servertype;`zdba;()!()]",1,1,the deactivated registration drops out of routing
+true,0,0,q,"1=count srvsel.getservers[`servertype;`zdbb;()!()]",1,1,the sibling servertype is still routable on the same handle
+run,0,0,q,srvsel.setserveridactive[1i;1b],1,1,reactivate serverid 1
+true,0,0,q,first exec active from srvsel.getserverstable[] where serverid=1i,1,1,serverid 1 is active again
+true,0,0,q,null first exec disconnecttime from srvsel.getserverstable[] where serverid=1i,1,1,reactivation clears disconnecttime back to null
+comment,,,,,,,setserveridactive - setserveractive is unchanged and still bulk by handle
+run,0,0,q,srvsel.setserveractive[60i;0b],1,1,a genuine handle disconnect still takes both registrations down together
+true,0,0,q,"0=count select from srvsel.getserverstable[] where handle=60i,active",1,1,setserveractive keeps its handle-level bulk behaviour unchanged
+true,0,0,q,"2=count select from srvsel.getserverstable[] where handle=60i,not null disconnecttime",1,1,both handle siblings were stamped by the handle-level call
+true,0,0,q,first exec active from srvsel.getserverstable[] where handle=61i,1,1,the unrelated handle was not affected
+run,0,0,q,srvsel.setserveractive[60i;1b],1,1,restore both registrations on handle 60
+comment,,,,,,,setserveridactive - validation and no-op semantics
+run,0,0,q,srvsel.setserveridactive[9999i;0b],1,1,setserveridactive on an unregistered serverid is a no-op
+true,0,0,q,3=count srvsel.getserverstable[],1,1,the no-op inserted no row - matching setserveractive on an unknown handle
+fail,0,0,q,"srvsel.setserveridactive[`notanint;0b]",1,1,setserveridactive rejects a symbol serverid
+fail,0,0,q,"srvsel.setserveridactive[1i;`yes]",1,1,setserveridactive rejects a non-boolean active flag
+true,0,0,q,"`setserveridactive in exec name from srvsel.getapimeta[]",1,1,setserveridactive is declared in the api metadata
+run,0,0,q,srvsel.setserveridactive[1i;0b],1,1,retire one registration by serverid ahead of the purge check
+run,0,0,q,.m.di.0serverselect.cp:{.z.p+2D},1,1,fast-forward the module clock
+run,0,0,q,srvsel.removeinactive[1D],1,1,purge aged-out registrations
+true,0,0,q,0=count select from srvsel.getserverstable[] where serverid=1i,1,1,a registration retired by serverid ages out on the same terms as a handle disconnect
+true,0,0,q,"1=count select from srvsel.getserverstable[] where handle=60i",1,1,its handle sibling survived the purge
+run,0,0,q,.m.di.0serverselect.cp:{.z.p},1,1,restore the real module clock
+
+/ ---- requireinit: a pre-init call names the problem instead of leaking internals ----
+comment,,,,,,,requireinit - every public entry point reports that init was not called
+run,0,0,q,"![`.m.di.0serverselect;();0b;enlist`logerr]",1,1,simulate an uninitialised module by removing the wired logger from module state
+true,0,0,q,"""di.serverselect: getserverstable: init must be called first""~@[srvsel.getserverstable;::;{x}]",1,1,a pre-init call names the entry point and the real problem instead of leaking .m.di.0serverselect internals
+true,0,0,q,"""di.serverselect: getserverids: init must be called first""~@[srvsel.getserverids;`rdb;{x}]",1,1,getserverids reports the same
+true,0,0,q,"""di.serverselect: removeinactive: init must be called first""~@[srvsel.removeinactive;1D;{x}]",1,1,removeinactive reports the same
+true,0,0,q,"""di.serverselect: setselector: init must be called first""~@[srvsel.setselector;{[a;b]a};{x}]",1,1,setselector now refuses pre-init instead of silently accepting a strategy init would overwrite
+true,0,0,q,"""di.serverselect: getserverbytype: init must be called first""~@[srvsel.gethandlebytype[`rdb;];`roundrobin;{x}]",1,1,the gethandlebytype projection inherits the guard
+true,0,0,q,"""di.serverselect: addserverfull: init must be called first""~@[srvsel.addserver[1i;];`rdb;{x}]",1,1,registration reports the same through its delegate
+true,0,0,q,0<count srvsel.getapimeta[],1,1,getapimeta is deliberately NOT guarded - di.torq collects api metadata at startup which may precede init
+true,0,0,q,"""0.1.0""~srvsel.version",1,1,version needs no init either
+run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,re-init to restore module state for the remaining tests
+true,0,0,q,`serverid in cols srvsel.getserverstable[],1,1,the module is usable again after re-init (init deliberately does not reset the registry)
+
+/ ---- setselector arity validation ----
+comment,,,,,,,setselector - arity is checked where the mistake is, not at the next getserverbytype
+run,0,0,q,"srvsel.setselector[{[a;b]a}]",1,1,a binary lambda is accepted
+run,0,0,q,"srvsel.setselector[{[a;b;c]a}[;;`x]]",1,1,a projection with two elided arguments is accepted
+run,0,0,q,srvsel.setselector[first],1,1,a primitive is accepted - q reports no arity for it so the check does not apply
+fail,0,0,q,"srvsel.setselector[{[t]t}]",1,1,a monadic lambda is rejected at the setselector call site (used to throw rank later)
+fail,0,0,q,srvsel.setselector[{42}],1,1,a niladic-looking lambda is rejected - it is really arity 1 via implicit x
+fail,0,0,q,"srvsel.setselector[{[a;b;c]a}]",1,1,a ternary lambda is rejected
+fail,0,0,q,"srvsel.setselector[{[a;b;c]a}[;`x;`y]]",1,1,a projection leaving only one argument elided is rejected
+true,0,0,q,"2=.m.di.0serverselect.selectorarity[{[a;b]a}]",1,1,selectorarity reads a lambda parameter count
+true,0,0,q,"2=.m.di.0serverselect.selectorarity[{[a;b;c]a}[;;`x]]",1,1,selectorarity counts a projection's elided arguments
+true,0,0,q,"2=.m.di.0serverselect.selectorarity[{[h;t;s]h}[9i]]",1,1,selectorarity handles a TRAILING partial application - it carries no :: placeholders so counting them alone read it as arity 0
+true,0,0,q,"1=.m.di.0serverselect.selectorarity[{[h;t;s]h}[9i;`t]]",1,1,selectorarity subtracts every supplied argument not just the elided ones
+run,0,0,q,"srvsel.setselector[{[h;t;s] first select from t where handle=h}[9i]]",1,1,a trailing-partial strategy is accepted - this is the natural way to capture a value in a strategy
+run,0,0,q,srvsel.setselector[srvsel.selector],1,1,restore the default after the trailing-partial check
+true,0,0,q,null .m.di.0serverselect.selectorarity[first],1,1,selectorarity returns null where q reports no arity rather than guessing
+true,0,0,q,"null .m.di.0serverselect.selectorarity[('[first;where])]",1,1,a composition also reports no arity and is accepted rather than rejected
+run,0,0,q,srvsel.setselector[srvsel.selector],1,1,restore the default selector
+
+/ ---- nested attrs form: control keys no longer collide with attribute names ----
+comment,,,,,,,getserverids - the attrs form lets an attribute be named like a control key
+run,0,0,q,advreset[],1,1,reset the registry for the attrs fixture
+run,0,0,q,"srvsel.addserverattr[1i;`hdb;`date`besteffort!(2024.01.01 2024.01.02;`EU`US)]",1,1,register a server genuinely advertising an attribute named besteffort
+fail,0,0,q,"srvsel.getserverids[(enlist`besteffort)!enlist enlist`EU]",1,1,flat form still treats besteffort as a control key and rejects a symbol value
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[(enlist`attrs)!enlist (enlist`besteffort)!enlist enlist`EU]",1,1,the attrs form matches the real besteffort attribute with no collision
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`attrs`servertype!((enlist`besteffort)!enlist enlist`EU;`hdb)]",1,1,attrs requirements and a servertype control coexist
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`attrs`besteffort!((enlist`besteffort)!enlist enlist`EU;1b)]",1,1,an attribute and a control key of the SAME name are handled independently
+fail,0,0,q,"srvsel.getserverids[`attrs`besteffort!((enlist`besteffort)!enlist enlist`ZZ;0b)]",1,1,the control besteffort 0b still applies strictly to an attrs requirement that cannot match
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[(enlist`attrs)!enlist (enlist`date)!enlist 2024.01.01]",1,1,the attrs form promotes atom values exactly as the flat form does
+fail,0,0,q,"srvsel.getserverids[(enlist`attrs)!enlist 42]",1,1,attrs must itself be a dictionary
+true,0,0,q,"(raze srvsel.getserverids[(enlist`attrs)!enlist (enlist`date)!enlist enlist 2024.01.01])~raze srvsel.getserverids[(enlist`date)!enlist enlist 2024.01.01]",1,1,flat and attrs forms agree for a non-colliding attribute name
+
+/ ---- maxcrossproduct bound ----
+comment,,,,,,,getserverids - the requirement cross product is bounded
+true,0,0,q,1000000=.m.di.0serverselect.maxcrossproduct,1,1,maxcrossproduct defaults to one million
+run,0,0,q,"srvsel.init[`log`maxcrossproduct!(noop;1000)]",1,1,re-init with a low bound to exercise it
+run,0,0,q,advreset[],1,1,reset the registry for the bound fixture
+run,0,0,q,"srvsel.addserverattr[1i;`hdb;`a`b!(til 400;til 400)]",1,1,register a server advertising wide attribute ranges
+true,0,0,q,"0<count raze srvsel.getserverids[`a`b!(til 30;til 30)]",1,1,a 900-combination request is under the bound and resolves
+fail,0,0,q,"srvsel.getserverids[`a`b!(til 40;til 40)]",1,1,a 1600-combination request exceeds the bound and is rejected before the cross product is built
+true,0,0,q,"0<count raze srvsel.getserverids[`a`b`attributetype!(til 40;til 40;`independent)]",1,1,independent matching is not combinatorial so it is not bounded
+run,0,0,q,"srvsel.init[`log`maxcrossproduct!(noop;0W)]",1,1,re-init with 0W to disable the bound
+true,0,0,q,"0<count raze srvsel.getserverids[`a`b!(til 400;til 400)]",1,1,maxcrossproduct 0W means unbounded
+fail,0,0,q,"srvsel.init[`log`maxcrossproduct!(noop;-5)]",1,1,init rejects a negative maxcrossproduct
+fail,0,0,q,"srvsel.init[`log`maxcrossproduct!(noop;1.5)]",1,1,init rejects a non-long maxcrossproduct
+run,0,0,q,srvsel.init[enlist[`log]!enlist noop],1,1,restore the default configuration
+true,0,0,q,"0<count raze srvsel.getserverids[()!()]",1,1,an empty requirement dict still works under the bound (prd of an empty list is () not 1)
+
+/ ---- third-pass smoke-test regressions ----
+comment,,,,,,,regression G1 - the attrs form rejects unknown top-level keys instead of swallowing them
+run,0,0,q,advreset[],1,1,reset the registry for the G1 fixture
+run,0,0,q,"srvsel.addserverattr[1i;`hdb;`date`sym!(2024.01.01 2024.01.02;`AAPL`MSFT)]",1,1,register a server with date and sym attributes
+fail,0,0,q,"srvsel.getserverids[`attrs`date!((enlist`sym)!enlist`AAPL;2024.01.09)]",1,1,G1 - a requirement left OUTSIDE attrs is rejected not silently dropped
+fail,0,0,q,"srvsel.getserverids[`attrs`besteffor!((enlist`date)!enlist 2024.01.01;0b)]",1,1,G1 - a mistyped besteffort control is rejected (the flat form errors too so nested must not be laxer)
+fail,0,0,q,"srvsel.getserverids[`attrs`attributetyp!((enlist`date)!enlist 2024.01.01;`independent)]",1,1,G1 - a mistyped attributetype control is rejected
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`attrs`servertype`besteffort`attributetype!((enlist`date)!enlist 2024.01.01;`hdb;1b;`cross)]",1,1,G1 - all three real control keys are still allowed beside attrs
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[(enlist`attrs)!enlist (enlist`date)!enlist 2024.01.01]",1,1,G1 - attrs alone still works
+true,0,0,q,"(enlist 1i)~raze srvsel.getserverids[`date`sym!(2024.01.01;`AAPL)]",1,1,G1 - the flat form is unaffected - an unknown key there is simply a requirement
+
+comment,,,,,,,regression G2 - selectorarity resolves nested projections
+true,0,0,q,"2=.m.di.0serverselect.selectorarity[{[x;y;z]x}[;;`c]]",1,1,G2 - a single projection resolves
+true,0,0,q,"1=.m.di.0serverselect.selectorarity[{[x;y;z]x}[;;`c][;`b]]",1,1,G2 - a projection OF a projection resolves rather than falling through to null
+true,0,0,q,"2=.m.di.0serverselect.selectorarity[{[w;x;y;z]w}[`a][;;`d]]",1,1,G2 - a trailing partial then an elided projection resolves
+fail,0,0,q,"srvsel.setselector[{[x;y;z]x}[;;`c][;`b]]",1,1,G2 - a nested projection of the wrong arity is now rejected
+run,0,0,q,"srvsel.setselector[{[w;x;y;z]w}[`a][;;`d]]",1,1,G2 - a nested projection of arity 2 is accepted
+run,0,0,q,srvsel.setselector[srvsel.selector],1,1,restore the default selector
+
+comment,,,,,,,regression G3 - a keyed table is type 99h too so a bare dict check is not enough
+run,0,0,q,"kt:([a:1 2]b:3 4)",1,1,define a keyed table for the G3 checks
+fail,0,0,q,"srvsel.addserverattr[9i;`hdb;kt]",1,1,G3 - a keyed table is rejected as attributes (it is 99h so the old check let it through)
+fail,0,0,q,"srvsel.addserverattr[9i;`hdb;([a:`int$()]b:`int$())]",1,1,G3 - an EMPTY keyed table is rejected too
+fail,0,0,q,"srvsel.addserverattr[9i;`hdb;(enlist 1)!enlist 2]",1,1,G3 - a dictionary keyed on non-symbols is rejected
+fail,0,0,q,"srvsel.getserverids[(enlist`attrs)!enlist kt]",1,1,G3 - attrs rejects a keyed table
+fail,0,0,q,"srvsel.getservers[`servertype;`hdb;kt]",1,1,G3 - getservers validates req the same way
+fail,0,0,q,"srvsel.addserversfromtable[`ALL;([w:enlist 8i]proctype:enlist`rdb;attributes:enlist()!())]",1,1,G3 - addserversfromtable requires an unkeyed table
+fail,0,0,q,srvsel.addserversfromtable[`ALL;42],1,1,G3 - addserversfromtable rejects a non-table
+run,0,0,q,"srvsel.addserver[10i;`rdb]",1,1,G3 - the empty dict ()!() is still accepted as attributes
+true,0,0,q,"(()!())~first exec attributes from srvsel.getserverstable[] where handle=10i",1,1,G3 - ()!() keys on an empty GENERAL list not a symbol vector so the check must allow it
+true,0,0,q,"0<count srvsel.getservers[`servertype;`rdb;()!()]",1,1,G3 - getservers still accepts an empty req dict

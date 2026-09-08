@@ -126,7 +126,7 @@ srvsel.init[enlist[`log]!enlist `info`warn`error!({[c;m]};{[c;m]};{[c;m]})];
 / =========================================================================
 hdr"STEP 1  initial empty state";
 chk["fresh module: server table empty";0=count srvsel.getserverstable[];1b];
-chk["schema columns correct";`serverid`handle`procname`servertype`hpup`active`lastp`hits`attributes;cols srvsel.getserverstable[]];
+chk["schema columns correct";`serverid`handle`procname`servertype`hpup`active`lastp`hits`attributes`disconnecttime;cols srvsel.getserverstable[]];
 
 / =========================================================================
 hdr"STEP 2  registration of live handles (addserver / addserverattr / addserverfull)";
@@ -223,6 +223,10 @@ hdr"STEP 9  disconnect: kill a backend, deactivate it, prove routing adapts";
 chk["rdb1 pid captured (so the kill below is real)";1b;not null pids 0];
 @[system;"kill ",string[pids 0]," 2>/dev/null; true";{}]; system"sleep 0.3";
 srvsel.setserveractive[handles 0;0b];
+chk["disconnect stamped disconnecttime on the dropped handle";1b;
+  not null first exec disconnecttime from srvsel.getserverstable[] where handle=handles 0];
+chk["a still-active server keeps a null disconnecttime";1b;
+  null first exec disconnecttime from srvsel.getserverstable[] where handle=handles 1];
 / active rdbs are now rdb2 (live) and rdb3 (live); the dead rdb1 must never be picked
 postresp:{[i] route[`rdb;`roundrobin]} each til 6;
 chk["killed/deactivated rdb1 is never selected";1b;not `rdb1 in postresp];
@@ -270,6 +274,78 @@ kxbinary:`info`warn`error!(
 srvsel.init[enlist[`log]!enlist kxbinary];
 srvsel.addserver[41i;`rdb];
 chk["kx.log logger wired and usable";1b;41i in exec handle from srvsel.getservers[`servertype;`rdb;()!()]];
+
+/ =========================================================================
+hdr"STEP 12  setselector / removeinactive / module metadata";
+/ STEP 11 registered synthetic rdb handles (40i, 41i) purely to prove each logger was wired - they
+/ are NOT live processes, so retire everything that is not one of this test's own child handles
+/ before routing again, or a round-robin pick lands on a dead handle. done by difference against
+/ `handles` rather than by listing 40i/41i, so adding another synthetic handle upstream cannot rot this
+srvsel.setserveractive[;0b] each exec distinct handle from srvsel.getserverstable[] where active,not handle in handles;
+/ setselector must demonstrably change WHICH live backend a query reaches, not merely run.
+/ pin the strategy to rdb3 and prove ping[] comes back from rdb3 every time.
+/ NB the pinned handle is captured by PROJECTION, not read from a global: the strategy is invoked
+/ from inside the module, where a bare name resolves against the module's own .z.m rather than the
+/ root namespace this file defines, so a global `pinned` reads as unset and the select throws 'type
+srvsel.setselector[{[h;servertable;selection] first select from servertable where handle=h}[handles 5]];
+chk["setselector overrode routing - every rdb query reaches the pinned backend";enlist`rdb3;
+  distinct {route[`rdb;`roundrobin]} each til 4];
+chk["the exported selector itself is unchanged by setselector";handles 1;
+  (srvsel.selector[select from srvsel.getserverstable[] where handle=handles 1;`roundrobin])`handle];
+srvsel.setselector[srvsel.selector];
+chk["restoring the default puts the live strategy back";1b;.m.di.0serverselect.selector~srvsel.selector];
+chk["default routing spreads across both live rdbs again";`rdb2`rdb3;
+  asc distinct {route[`rdb;`roundrobin]} each til 8];
+chkerr["setselector rejects a non-function";{srvsel.setselector[42]}];
+
+/ removeinactive: rdb1 was killed and deactivated in STEP 9, so it is the real purge candidate
+chk["the disconnected backend is still on record before any purge";1b;
+  0<count select from srvsel.getserverstable[] where handle=handles 0];
+srvsel.removeinactive[1D];
+chk["a recently-disconnected server survives a 1D purge";1b;
+  0<count select from srvsel.getserverstable[] where handle=handles 0];
+/ drive the purge off the injected clock rather than sleeping for a day
+.m.di.0serverselect.cp:{.z.p+2D};
+srvsel.removeinactive[1D];
+.m.di.0serverselect.cp:{.z.p};
+chk["the aged-out disconnected server was purged";0;
+  count select from srvsel.getserverstable[] where handle=handles 0];
+chk["the live backends were untouched by the purge";1b;
+  all (handles 1 2 3 5) in exec handle from srvsel.getserverstable[] where active];
+chk["routing still works against live backends after the purge";`rdb2`rdb3;
+  asc distinct {route[`rdb;`roundrobin]} each til 8];
+chkerr["removeinactive rejects a non-timespan age";{srvsel.removeinactive[42]}];
+
+/ setserveridactive: registration-level retirement on a SHARED live handle. rdb2's handle is
+/ registered a second time under another servertype, so both registrations sit on one real socket
+srvsel.addserverfull[handles 1;`rdb2alt;`rdbalt;`:alt:1;()!()];
+/ plain assignment, NOT `::` - at script top level `name::expr` defines a lazily re-evaluated VIEW,
+/ not a global, and the serverid must be captured once here rather than recomputed on every read
+altsid:first exec serverid from srvsel.getserverstable[] where servertype=`rdbalt;
+chk["both servertypes share one live handle";2;
+  count select from srvsel.getserverstable[] where handle=handles 1];
+chk["the alt servertype routes to the real backend before retirement";`rdb2;route[`rdbalt;`roundrobin]];
+srvsel.setserveridactive[altsid;0b];
+chk["setserveridactive retired only that registration";`NONE;route[`rdbalt;`roundrobin]];
+chk["its handle sibling still routes on the same socket";1b;`rdb2 in {route[`rdb;`roundrobin]} each til 6];
+chk["the sibling registration is still marked active";1b;
+  first exec active from srvsel.getserverstable[] where handle=handles 1,servertype=`rdb];
+srvsel.setserveridactive[altsid;1b];
+chk["reactivating by serverid restores routing";`rdb2;route[`rdbalt;`roundrobin]];
+/ and a genuine handle disconnect still takes every registration on that socket down together
+srvsel.setserveractive[handles 1;0b];
+chk["setserveractive is unchanged - a handle disconnect retires both registrations";0;
+  count select from srvsel.getserverstable[] where handle=handles 1,active];
+srvsel.setserveractive[handles 1;1b];
+chkerr["setserveridactive rejects a non-int serverid";{srvsel.setserveridactive[`nope;0b]}];
+
+/ module metadata di.torq depends on
+chk["version is exported as a major.minor.patch string";1b;
+  (10h=type srvsel.version) and 3=count "." vs srvsel.version];
+chk["getapimeta documents exactly the callable exports";1b;
+  (asc (key srvsel) except `init`getapimeta)~asc exec name from srvsel.getapimeta[]];
+chk["getapimeta carries the di.api registry columns";`name`public`descrip`params`return;
+  cols srvsel.getapimeta[]];
 
 -1"";-1"===========================================================";
 -1"  TOTAL: ",(string PASS+FAIL)," | PASS: ",(string PASS)," | FAIL: ",string FAIL;

@@ -22,5 +22,6 @@ version:@[{trim first read0 x};`:::VERSION;{'"di.serverselect: VERSION file miss
 if[0=count version;'"di.serverselect: VERSION file is empty"];
 
 export:([init;
-  addserverfull;addserverattr;addserver;setserveractive;getserverstable;addserversfromtable;
-  getservers;selector;getserverbytype;gethandlebytype;gethpbytype;getserverids;version])
+  addserverfull;addserverattr;addserver;setserveractive;setserveridactive;getserverstable;addserversfromtable;
+  getservers;selector;setselector;getserverbytype;gethandlebytype;gethpbytype;getserverids;
+  removeinactive;getapimeta;version])

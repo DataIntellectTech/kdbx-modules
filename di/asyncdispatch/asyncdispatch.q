@@ -24,6 +24,13 @@ synccallsallowed:0b;
 // injectable clock - replaced in tests to control time without sleeping
 cp:{.z.p};
 
+// end-of-day reload suspension. runtime state, not config - TorQ never made it settable either
+// (gateway.q:91). while set, a query needing MORE THAN ONE servertype is held in the queue rather
+// than dispatched: during a roll, data is moving between e.g. the rdb and the hdb, so a query
+// straddling both can double-count or miss rows. single-servertype queries are unaffected.
+// held queries are NOT errored - they run once the suspension clears
+eod:0b;
+
 // symbols backend servers call back via - stored as symbols so names survive IPC serialisation
 resultcallback:`addserverresult;
 errorcallback:`addservererror;
@@ -35,7 +42,13 @@ formatresponse:{[status;sync;result]$[not[status]and sync;'result;result]};
 getnextqueryid:{
   avail:exec distinct servertype from availableservers 1b;
   // 0! is required - select from a keyed table stays keyed in kdb-x, and runnextquery needs queryid via first
-  runnable:0!select from .z.m.queryqueue where null returntime, not queryid in key .z.m.results, {all x in y}[;avail] each servertype;
+  // the trailing eod clause mirrors TorQ's canberun (gateway.q:147), which filters the queue to
+  // single-servertype queries for as long as a reload is in progress
+  // checkeod must be reached as .z.m.checkeod here: q-sql evaluates where-clause expressions in the
+  // CALLING context, not the module namespace, so a bare module name throws 'checkeod. avail is a
+  // function local, which is why it resolves bare
+  runnable:0!select from .z.m.queryqueue where null returntime, not queryid in key .z.m.results,
+    {all x in y}[;avail] each servertype, not .z.m.checkeod each servertype;
   1 sublist select from runnable where time=min time
   };
 
@@ -89,6 +102,15 @@ raiseerror:{[ctx;msg]
   '"di.asyncdispatch: ",string[ctx],": ",msg;
   };
 
+checkeod:{[types]
+  // internal - 1b if an eod reload is in progress AND this query spans more than one servertype.
+  // faithful to TorQ's checkeod (gateway.q:93): the suspension alone does not block anything, it is
+  // the multi-servertype span that does. internal deliberately - TorQ's has no caller outside .gw
+  // NB the explicit : is load-bearing. this function must RETURN a boolean, and a trailing statement
+  // semicolon would make it return the generic null instead - `not (::)` then throws 'type
+  :eod and 1<count distinct types,();
+  };
+
 checkopt:{[deps;k;ok;what]
   // internal - validate an optional config value's TYPE at init, so a misconfiguration fails loudly
   // at startup instead of silently at first use. querykeeptime and clearinactivetime both feed
@@ -112,7 +134,19 @@ sendclientreply:{[qid;result;status]
   };
 
 finishquery:{[qid;err]
-  // remove query from the live results accumulator and stamp its completion time
+  // remove query from the live results accumulator and stamp its completion time.
+  // FIRST release any backend still assigned to these queries, so that finishing a query always
+  // releases its servers - an invariant every caller can rely on rather than a per-call-site duty.
+  // DELIBERATE DIVERGENCE FROM TorQ. TorQ's finishquery takes a serverh and frees it via
+  // setserverstate (gateway.q:187), but checktimeout calls it as finishquery[qids;1b;0Ni]
+  // (gateway.q:314) and `where handle in 0Ni` matches nothing - so TorQ leaks the slot too. Left
+  // as-is, a timed-out in-flight query pins its backend inuse:1b until it eventually replies or
+  // disconnects, and a run of timeouts against one stuck backend progressively starves the dispatch
+  // pool with no recovery short of a disconnect. see asyncdispatch.md for the full reasoning
+  held:(qid,()) inter key .z.m.results;
+  if[count held;
+    freed:distinct raze {value[.z.m.results[x;1]][;0]} each held;
+    update inuse:0b from .z.M.servers where handle in freed];
   .z.m.results:(qid,())_results;
   update error:err,returntime:.z.m.cp[] from .z.M.queryqueue where queryid in qid;
   };
@@ -141,6 +175,10 @@ runnextquery:{[]
   // called after any state change that may unblock work
   if[0=count torun:getnextqueryid[];:()];
   torun:first torun;
+  // backstop gate, matching TorQ's runquery (gateway.q:486). getnextqueryid already excludes these,
+  // but it is PLUGGABLE via setgetnextqueryid and an injected scheduler need not implement the eod
+  // rule - TorQ keeps both checks for exactly this reason
+  if[checkeod torun`servertype;:()];
   avail:exec first handle by servertype from availableservers 1b;
   types:torun`servertype;
   handles:avail types;
@@ -203,6 +241,24 @@ checktimeout:{[]
 setcp:{[f]
   // replace the clock function - used in tests to control time without sleeping
   .z.m.cp:f;
+  };
+
+seteod:{[b]
+  // start or end an end-of-day reload suspension. while set, queries spanning more than one
+  // servertype are held in the queue rather than dispatched, and run once it clears.
+  // di.gateway calls this - TorQ drives it from the wdb, which sends reloadstart/reloadend to the
+  // gateway process (wdb.q:261,274 -> gateway.q:560,570). those two live at TorQ's ROOT namespace,
+  // not in .gw, because they also refresh .servers attributes - so the orchestration is the process
+  // module's job and only the suspension itself belongs here.
+  // DIVERGENCE: clearing the suspension flushes the held queue here, where TorQ's reloadend does it
+  // as a separate explicit runnextquery[] call (gateway.q:577). doing it here means the module
+  // guarantees the flush rather than depending on every caller remembering; without it a held query
+  // waits for whatever unrelated dispatch happens next
+  requireinit`seteod;
+  if[not -1h=type b;raiseerror[`seteod;"b must be a boolean"]];
+  .z.m.eod:b;
+  .z.m.loginfo[`asyncdispatch;"eod reload suspension ",$[b;"started";"ended"]];
+  if[not b;runnextquery[]];
   };
 
 setformatresponse:{[f]
@@ -348,9 +404,11 @@ status:{[]
   // can see the queue, the server pool or the wiring at all
   requireinit`status;
   live:select from .z.m.queryqueue where null returntime;
-  :`queued`running`servers`activeservers`clients`errorprefix`querykeeptime`clearinactivetime`synccallsallowed!
+  :`queued`running`held`eod`servers`activeservers`clients`errorprefix`querykeeptime`clearinactivetime`synccallsallowed!
     (count select from live where null submittime;
      count select from live where not null submittime;
+     count select from live where null submittime, .z.m.checkeod each servertype;
+     .z.m.eod;
      count .z.m.servers;
      exec count i by servertype from .z.m.servers where active;
      count .z.m.clients;
@@ -386,8 +444,10 @@ getapimeta:{[]
   :flip `name`public`descrip`params`return!flip(
     (`version;             1b; "module version string";
        "[]";                                                                        "string: version");
-    (`status;              1b; "snapshot of live dispatch state - queue depth by pending/running, server and client counts, live config";
-       "[]";                              "dict: queued, running, servers, activeservers, clients, config");
+    (`status;              1b; "snapshot of live dispatch state - queue depth by pending/running/held, server and client counts, live config";
+       "[]";                              "dict: queued, running, held, eod, servers, activeservers, clients, config");
+    (`seteod;              1b; "start or end an end-of-day reload suspension - while set, queries spanning more than one servertype are held";
+       "[boolean: b]";                                                              "null");
     (`teardown;            1b; "clear all dispatch state (queue, servers, clients, results) so a re-init or test starts clean";
        "[]";                                                                        "null");
     (`setcp;               1b; "replace the clock function after init - used to control time in tests without sleeping";

@@ -81,11 +81,14 @@ true,0,0,q,(`myresult;`myerror)~(.m.di.0asyncdispatch.resultcallback;.m.di.0asyn
 
 / Test 9: removeclienthandle frees in-flight servers on client disconnect
 run,0,0,q,ad.addserver[99i;`inflight],1,,register fake server for in-flight test
-run,0,0,q,update inuse:1b from .m.di.0asyncdispatch.servers where handle=99i,1,,manually mark server in-use to simulate dispatched query
+run,0,0,q,update inuse:1b from `.m.di.0asyncdispatch.servers where handle=99i,1,,manually mark server in-use to simulate a dispatched query - the backtick NAME form is required; the value form builds a new table and discards it
+true,0,0,q,1b~first exec inuse from srv[] where handle=99i,1,,guard: the setup above actually took - without it the later freed-on-disconnect assertion passes vacuously
 run,0,0,q,ad.addclientdetails[5i],1,,add fake client
-run,0,0,q,.m.di.0asyncdispatch.addquery["5+5";enlist`inflight;raze;();0Wn;0b],1,,queue query for fake server
+run,0,0,q,"ad.execqueryto[5i;""5+5"";enlist`inflight;raze;();0Wn;0b]",1,,queue a query OWNED BY CLIENT 5i - addquery would attribute it to .z.w instead, which is 0i in-process, so removeclienthandle[5i] would correctly match nothing
 run,0,0,q,qid4:exec first queryid from qq[] where query~\:"5+5",1,,capture query id
+true,0,0,q,5i~first exec clienth from qq[] where queryid=qid4,1,,guard: the query really belongs to client 5i
 run,0,0,q,.m.di.0asyncdispatch.results[qid4]:(5i;enlist[`inflight]!enlist(99i;(::);0b)),1,,inject in-flight slot to simulate dispatched-but-pending query
+true,0,0,q,qid4 in key res[],1,,guard: the slot injection took
 run,0,0,q,ad.removeclienthandle[5i],1,,disconnect client mid-flight
 true,0,0,q,0b~first exec inuse from srv[] where handle=99i,1,,in-flight server freed on client disconnect
 run,0,0,q,ad.removeserverhandle[99i],1,,clean up fake server
@@ -228,7 +231,7 @@ run,0,0,q,bh"",1,,flush the backend so the query completes
 / Test 24: status - the only way to read module state over IPC
 / assertions are self-consistent against the live tables rather than absolute counts, so accumulated
 / state from earlier tests cannot make them pass or fail for the wrong reason
-true,0,0,q,`queued`running`servers`activeservers`clients`errorprefix`querykeeptime`clearinactivetime`synccallsallowed~key ad.status[],1,,status reports the documented keys
+true,0,0,q,`queued`running`held`eod`servers`activeservers`clients`errorprefix`querykeeptime`clearinactivetime`synccallsallowed~key ad.status[],1,,status reports the documented keys
 true,0,0,q,"""error: ""~ad.status[]`errorprefix",1,,status reports the live config not a hardcoded default
 true,0,0,q,0D00:30~ad.status[]`querykeeptime,1,,status reports the live querykeeptime
 true,0,0,q,ad.status[][`servers]=count srv[],1,,status server count agrees with the servers table
@@ -256,6 +259,59 @@ true,0,0,q,0=count res[],1,,results cleared
 true,0,0,q,0=.m.di.0asyncdispatch.queryid,1,,the query id counter reset
 true,0,0,q,0=ad.status[]`queued,1,,status agrees the queue is empty after teardown
 run,0,0,q,ad.init[enlist[`log]!enlist mocklog],1,,restore the no-op logger
+
+/ Test 26: eod suspension holds multi-servertype queries and lets single-servertype ones through
+/ rebuild the two backends into the registry - test 25 tore the servers table down
+run,0,0,q,ad.addserver[bh;`mock],1,,re-register first backend as mock
+run,0,0,q,ad.addserver[bh2;`scatter],1,,re-register second backend as scatter
+true,0,0,q,0b~ad.status[]`eod,1,,eod suspension is off by default
+fail,0,0,q,ad.seteod[1],1,,seteod rejects a non-boolean
+run,0,0,q,ad.seteod[1b],1,,start an eod reload suspension
+true,0,0,q,1b~ad.status[]`eod,1,,status reports the suspension is active
+run,0,0,q,"ad.execquery[""21+21"";`mock`scatter;raze;();0Wn;0b]",1,,submit a query spanning two servertypes during the suspension
+run,0,0,q,"qeod:exec first queryid from qq[] where query~\:""21+21""",1,,capture the multi-servertype query id
+true,0,0,q,null first exec submittime from qq[] where queryid=qeod,1,,it was NOT dispatched - it is held not errored
+true,0,0,q,0b~first exec error from qq[] where queryid=qeod,1,,and it was not errored either
+true,0,0,q,1=ad.status[]`held,1,,status counts it as held
+true,0,0,q,0=count .m.di.0asyncdispatch.getnextqueryid[],1,,the scheduler excludes it while the suspension is active
+run,0,0,q,"ad.execquery[""22+22"";enlist`mock;raze;();0Wn;0b]",1,,a single-servertype query is unaffected by the suspension
+run,0,0,q,bh"",1,,flush the backend
+true,0,0,q,"not null first exec submittime from qq[] where query~\:""22+22""",1,,the single-servertype query dispatched normally during the suspension
+true,0,0,q,null first exec submittime from qq[] where queryid=qeod,1,,the multi-servertype query is still held
+run,0,0,q,ad.seteod[0b],1,,end the suspension - this flushes the held queue
+run,0,0,q,bh"";bh2"",1,,flush both backends
+true,0,0,q,0b~ad.status[]`eod,1,,status reports the suspension is over
+true,0,0,q,not null first exec submittime from qq[] where queryid=qeod,1,,the held query dispatched once the suspension cleared
+true,0,0,q,0=ad.status[]`held,1,,nothing is held any more
+
+/ Test 27: the backstop gate - an injected scheduler that ignores eod must not get past runnextquery
+run,0,0,q,ad.seteod[1b],1,,start a suspension again
+run,0,0,q,"ad.execquery[""23+23"";`mock`scatter;raze;();0Wn;0b]",1,,submit another multi-servertype query
+run,0,0,q,"qeod2:exec first queryid from qq[] where query~\:""23+23""",1,,capture its id
+run,0,0,q,"ad.setgetnextqueryid[{1 sublist 0!select from .m.di.0asyncdispatch.queryqueue where null returntime,null submittime}]",1,,inject a scheduler with no eod rule at all
+true,0,0,q,0<count .m.di.0asyncdispatch.getnextqueryid[],1,,the injected scheduler does offer the held query
+run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch attempt goes through the backstop
+true,0,0,q,null first exec submittime from qq[] where queryid=qeod2,1,,runnextquery refused it even though the scheduler offered it
+run,0,0,q,ad.setgetnextqueryid[savedsched],1,,restore the real scheduler
+run,0,0,q,ad.seteod[0b],1,,end the suspension
+run,0,0,q,bh"";bh2"",1,,flush both backends
+
+/ Test 28: a timed-out in-flight query releases its backend rather than pinning it
+run,0,0,q,ad.addserver[77i;`stuck],1,,register a fake backend that will never reply
+run,0,0,q,update inuse:1b from `.m.di.0asyncdispatch.servers where handle=77i,1,,mark it in-use as if a query had been dispatched to it
+true,0,0,q,1b~first exec inuse from srv[] where handle=77i,1,,guard: the backend really is pinned in-use before the timeout
+run,0,0,q,"ad.execqueryto[6i;""24+24"";enlist`stuck;raze;();0D00:00:01;0b]",1,,queue a query for it with a one second timeout
+run,0,0,q,"qto:exec first queryid from qq[] where query~\:""24+24""",1,,capture the query id
+run,0,0,q,".m.di.0asyncdispatch.results[qto]:(6i;enlist[`stuck]!enlist(77i;(::);0b))",1,,inject the in-flight slot to simulate a dispatched but unanswered query
+true,0,0,q,qto in key res[],1,,guard: the slot injection took so the query really counts as in flight
+run,0,0,q,ad.setcp[{.z.p+0D00:01}],1,,fast-forward past the timeout
+run,0,0,q,ad.checktimeout[],1,,run the timeout sweep
+run,0,0,q,ad.setcp[{.z.p}],1,,restore the real clock
+true,0,0,q,not null first exec returntime from qq[] where queryid=qto,1,,the timed-out query was finished
+true,0,0,q,1b~first exec error from qq[] where queryid=qto,1,,and marked errored
+true,0,0,q,0b~first exec inuse from srv[] where handle=77i,1,,THE FIX - the backend was released rather than left pinned in-use
+true,0,0,q,not qto in key res[],1,,and its result slot was dropped
+run,0,0,q,ad.removeserverhandle[77i],1,,clean up the fake backend
 
 / Teardown
 run,0,0,q,neg[bh](exit;0);neg[bh](::),1,,send exit to first backend process and flush

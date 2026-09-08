@@ -18,7 +18,7 @@ if[0=count version;'"di.asyncdispatch: VERSION file is empty"];
 
 // public api - only the functions intended to be called externally are exported
 export:([
-  setcp;setformatresponse;setcallbacks;setavailableservers;setgetnextqueryid;
+  setcp;setformatresponse;setcallbacks;setavailableservers;setgetnextqueryid;seteod;
   addserver;removeserverhandle;
   addclientdetails;removeclienthandle;
   addserverresult;addservererror;

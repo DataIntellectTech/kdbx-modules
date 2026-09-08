@@ -218,6 +218,21 @@ Clears all dispatch state — `queryqueue`, `servers`, `clients`, `results` — 
 
 If any query is still in flight (null `returntime`) it **warns** rather than dropping it silently — those clients are never replied to and never find out, the same hazard `di.dataaccess.init` warns about on re-init.
 
+### `seteod[b]`
+Start (`1b`) or end (`0b`) an end-of-day reload suspension.
+
+While set, a query needing **more than one servertype** is held in the queue rather than dispatched — during a roll, data is moving between (say) the rdb and the hdb, so a query straddling both can double-count or miss rows. Single-servertype queries are unaffected and keep running. Held queries are **not errored**; they dispatch once the suspension clears.
+
+This is TorQ's `eod`/`seteod`/`checkeod` (`gateway.q:91-93`), and the rule is deliberately narrow: the suspension alone blocks nothing, it is the multi-servertype span that does.
+
+**Who calls it.** `di.gateway`. TorQ drives this from the **wdb**, which sends `reloadstart`/`reloadend` to the gateway process (`wdb.q:261,274` → `gateway.q:560,570`). Those two live at TorQ's **root** namespace rather than in `.gw`, because they also refresh `.servers` attributes — so the orchestration belongs to the process module and only the suspension itself belongs here.
+
+**Enforced at two points**, matching TorQ: the scheduler excludes held queries (`canberun`, `gateway.q:147`), and `runnextquery` refuses them as a backstop (`runquery`, `gateway.q:486`). The backstop is not redundant — `getnextqueryid` is pluggable via `setgetnextqueryid`, and an injected scheduler need not implement the eod rule. TorQ keeps both checks for the same reason.
+
+> TorQ has a third eod check at `gateway.q:438`, but it sits inside `syncexecjpre36` — the pre-3.6 path, which is dead on kdb-x and deliberately not ported. `asyncexecjpts` has no eod check at all, so on any modern kdb+ there are only the two gates above.
+
+> **Divergence:** clearing the suspension flushes the held queue here, where TorQ's `reloadend` does it as a separate explicit `runnextquery[]` (`gateway.q:577`). Doing it inside `seteod` means the module guarantees the flush rather than depending on every caller remembering; without it a held query waits for whatever unrelated dispatch happens next.
+
 ### `setcp[f]`
 Replace the clock function after `init`, to control time in tests without sleeping. `f` is niladic and returns a timestamp. The same thing can be passed as the `` `cp `` key to `init`; use this when a test needs to swap the clock mid-run.
 
@@ -300,13 +315,15 @@ k4unit.moduletest`di.asyncdispatch
 ## Notes
 
 - Housekeeping (`checktimeout`, `removequeries`, `removeinactive`, `removeclients`) is the caller's responsibility — the gateway process already has a timer running and is better placed to decide intervals. Wire all four after `init`; see the usage example above
-- When `checktimeout` fires for a query that is already in-flight (dispatched to a backend but not yet answered), the client receives the timeout error and the query is marked done, but the backend that received the dispatch remains `inuse:1b` until it eventually replies. A slow-but-alive backend holds its dispatch slot until `addserverresult` or `addservererror` fires; a permanently hung backend holds it until `removeserverhandle` fires on disconnect. Size backend pools and timeouts with this in mind — a run of timeouts against a stuck backend will not free its slot on timeout alone
+- **Finishing a query releases its backends.** `finishquery` frees any server still holding a slot for the query before dropping the result accumulator, so a timed-out in-flight query returns its backend to the pool. This is a **deliberate divergence from TorQ**, which leaks the slot: TorQ's `finishquery` takes a `serverh` and frees it via `setserverstate` (`gateway.q:187`), but `checktimeout` calls it as `finishquery[qids;1b;0Ni]` (`gateway.q:314`), and `where handle in 0Ni` matches no real handle. Left faithful, a run of timeouts against one stuck backend would progressively starve the dispatch pool with no recovery short of a disconnect — the same shape of reasoning as `di.rdb`'s partition guard, where the module also diverged from legacy to avoid a silent, unrecoverable failure. The behaviour is pinned by a test that fails against the unfixed module and passes against this one
 - `.z.M.<name>` is used for in-place mutation of tables (`upsert`, `insert`, `update from`, `delete from`) and `.z.m.<name>:value` for whole-variable reassignment — the same convention used by `di.cache`
 - Module globals referenced inside q-sql expressions (WHERE conditions, UPDATE SET values) must use the `.z.m.varname` form since q-sql evaluates column expressions in the calling context rather than the module namespace
 - `servertype` in `queryqueue` and `addquery` is a list of servertype symbols — one per required backend type. Pass `` enlist`rdb `` for single-server queries, `` `rdb`hdb `` for scatter-gather across two types
 - `setcallbacks` must be called before any queries are dispatched if the module is mounted under a non-default path — `serverexecute` reads `resultcallback` and `errorcallback` by bare name on the backend process and posts back to whatever symbols they resolve to
 - This module opens and accepts no connections itself — `addserver` and the `.z.po`/`.z.pc` wiring are the consumer's responsibility, keeping the module dependency-free and testable in-process
 - All three log keys (`info`, `warn`, `error`) are required — the module calls `info` on server/client connect and init, `warn` on disconnect and timeout, and `error` on backend error and join failure
+- **`errorprefix` is a two-module contract, not local config.** `di.dataaccess.shardresult` detects a backend error by comparing the leading characters of a shard result against *its own* copy of the prefix, so the two modules must be configured identically or ordinary string results get misread as errors. Both now reject an empty prefix at `init`, and `di.dataaccess`'s integration suite asserts the two defaults agree. A deployment that overrides one and not the other still breaks the contract — that case is not detectable from inside either module
+- **A failed *local* postback is logged but not otherwise observable.** Confirmed by measurement: `sendclientreply`'s local branch traps the invocation, logs `local postback failed: <error>` at error level, and returns normally. The query is then finished with `error:0b` — recorded as **successful** even though the reply reached nobody. The trap has to stay (a throwing postback must not kill the dispatch loop), so the open question is only how the failure becomes visible to the requester; the log is currently the sole signal. See the note in `dataaccess.md` for the matching side
 - `execqueryto` with `replyto:0Ni` invokes the postback locally via `value` — the postback head symbol must be mount-qualified (e.g. `` `da.shardresult ``) since bare exported names are not globals. This is the same resolution mechanism used by `setcallbacks`
 - Local queries store `clienth:0Ni` and are not matched by `removeclienthandle` — the in-process caller owns disconnect cleanup for its own requests
 - `setformatresponse` overrides only apply to the remote IPC path — local invocation via `execqueryto[0Ni;...]` calls the postback directly without applying `formatresponse`. The default `formatresponse` is a pass-through for async, so this is transparent by default; consumers that override it should not combine that with local invocation

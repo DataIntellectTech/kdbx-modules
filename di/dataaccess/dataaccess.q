@@ -234,8 +234,13 @@ submitshards:{[reqid;shards;timeout]
   / went to the client (which has no shardresult) and the join never ran. 0Ni makes asyncdispatch
   / invoke the postback locally via value instead, which is why resultcallback must be
   / mount-qualified. see dataaccess.md
-  / NB local invocation is SYNCHRONOUS - shardresult can fire before this returns, so the request row
-  / and its shardresults slot must already exist. execquery files both before calling here
+  / NB the request row and its shardresults slot MUST already exist before this is called, and
+  / execquery files both first. the postback is invoked synchronously by asyncdispatch's local branch
+  / (value tosend, inside addserverresult), so whether shardresult re-enters this module before
+  / submitshards returns depends on when the backend reply is processed: against an in-process
+  / backend on handle 0 - which this build executes locally - it re-enters immediately, so the
+  / ordering is load-bearing. against a real remote backend the reply arrives later, which is why
+  / test_integration.csv needs an explicit round-trip to force it through before asserting
   {[reqid;timeout;stype;q]
     asyncdispatch.execqueryto[0Ni;q;enlist stype;first;(.z.m.resultcallback;reqid);timeout;0b]
     }[reqid;timeout]'[shards`servertype;shards`shardquery];
@@ -361,7 +366,9 @@ init:{[deps]
   / deps keys:
   /   log              (required) `info`warn`error!{[c;m]} dict - binary, already conforming.
   /                    a raw monadic kx.log instance is NOT adapted here and will 'rank at first use
-  /   timer            (required) di.timer instance - uses `addjob` to schedule housekeeping
+  /   timer            (required) di.timer instance - must carry `addjob` and `deletejobs`. init
+  /                    deletes both housekeeping job ids before re-adding them, so it stays
+  /                    re-callable; di.timer signals on a duplicate id rather than replacing it
   /   resultcallback   (required) MOUNT-QUALIFIED postback symbol for shard replies, e.g.
   /                    `da.shardresult. required, not defaulted: submitshards dispatches with
   /                    replyto:0Ni, so asyncdispatch resolves this symbol with value inside its OWN
@@ -388,6 +395,12 @@ init:{[deps]
     '"di.dataaccess: log dict must have `info`warn`error keys; got: ",(", " sv string key deps`log)];
   if[not `timer in key deps;
     '"di.dataaccess: timer dependency is required; pass a di.timer instance keyed on `timer"];
+  / validated to the same depth as log, because init CALLS both timer keys below. a malformed timer
+  / otherwise surfaces as a raw 'type out of the addjob line, naming nothing
+  if[99h<>type deps`timer;
+    '"di.dataaccess: timer value must be a dict; pass a di.timer instance"];
+  if[not all `addjob`deletejobs in key deps`timer;
+    '"di.dataaccess: timer dict must have `addjob`deletejobs keys; got: ",(", " sv string key deps`timer)];
   if[not `resultcallback in key deps;
     '"di.dataaccess: resultcallback dependency is required; pass the mount-qualified postback symbol, e.g. `da.shardresult"];
   if[not -11h=type deps`resultcallback;
@@ -438,6 +451,16 @@ init:{[deps]
   .z.m.shardresults:()!();
   .z.m.requestid:0;
   .z.m.loginfo[`init;"dataaccess initialised; scheduling request housekeeping and timeout checks"];
+  / delete before adding, so init is genuinely re-callable. di.timer REJECTS a duplicate id outright
+  / ('"Cannot add id : <id> already exists in jobs", timer/init.q), and both ids here are fixed - so a
+  / second init threw and aborted before this line, leaving the module half-wired. that is not
+  / hypothetical: this module documents init as re-callable and warns about discarding in-flight
+  / requests on re-init, and the suite re-inits repeatedly. it stayed green only because the test mock
+  / accepted duplicate ids where the real di.timer does not.
+  / deletejobs is a safe no-op for ids that were never added (delete ... where id in ids matches
+  / nothing), so this costs nothing on a first init, and it also lets a re-init pick up a changed
+  / timeoutcheckperiod rather than silently keeping the old schedule
+  .z.m.timer[`deletejobs] `dataaccesspurge`dataaccesstimeout;
   .z.m.timer[`addjob][`default][`dataaccesspurge;removerequests;enlist .z.m.requestkeeptime;1800i;1];
   .z.m.timer[`addjob][`default][`dataaccesstimeout;checktimeout;();.z.m.timeoutcheckperiod;1];
   warnprefixmismatch`init;

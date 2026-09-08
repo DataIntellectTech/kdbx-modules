@@ -30,6 +30,40 @@ Loading pulls in the two **hard dependencies** (`di.asyncdispatch`, `di.serverse
 | `di.asyncdispatch` | dispatch each shard | `execqueryto[replyto;query;servertype;join;postback;timeout;sync]`, called with `replyto:0Ni` |
 | `di.serverselect` | learn reachable servertypes for routing | `getservers[`servertype;`;()!()]` → active-servers table (reads `servertype` column) |
 
+### ⚠️ Every backend must be registered with **both** modules
+
+Routing and dispatch read **two different server registries**, and nothing keeps them in sync:
+
+- `getrouting` asks **`di.serverselect`** which servertypes are reachable, and drops any partition whose servertype is not among them.
+- **`di.asyncdispatch`** then dispatches from its **own** `servers` table, populated only by its own `addserver`.
+
+So a backend registered with only one of the two produces a **silent** failure, not an error. Register it with `di.serverselect` alone and asyncdispatch has no handle to dispatch to, so the shard sits in `queryqueue` un-dispatched and the client eventually gets a generic *"request timed out"* from `checktimeout` — several seconds after the fact, describing a timeout rather than the wiring mistake that caused it. Register it with `di.asyncdispatch` alone and `getrouting` drops the partition, so the request routes to zero shards and returns an **empty result** that reads as "no data".
+
+```q
+/ on connect - BOTH, always
+ad.addserver[h;`hdb];
+srvsel.addserver[h;`hdb];
+srvsel.setserveractive[h;1b];
+```
+
+The same applies in reverse on disconnect. All four cleanup functions may be called on **every** `.z.pc` without first working out what kind of handle it was — none of them corrupts state for a handle it does not recognise:
+
+```q
+/ on .z.pc - safe to call all four unconditionally
+ad.removeserverhandle[h];      / early-returns if h is not a registered backend
+ad.removeclienthandle[h];      / clauses match nothing; see caveats below
+srvsel.setserveractive[h;0b];  / update matches nothing
+da.removeclient[h];            / early-returns if h has no in-flight requests
+```
+
+Three caveats worth knowing before relying on that, all verified against the source rather than assumed:
+
+- **Two of them are not silent.** `asyncdispatch.removeclienthandle` and `serverselect.setserveractive` each log at **info** on *every* call, including for handles they know nothing about — so wiring all four onto `.z.pc` produces two log lines per disconnect regardless of handle type.
+- **`removeclienthandle` also calls `runnextquery[]`.** Harmless (it just attempts a normal dispatch), but it is a side effect, not a pure no-op.
+- **All four require their module to be `init`-ed**, and `serverselect.setserveractive` / `dataaccess.removeclient` additionally reject a non-int handle. `.z.w` in a `.z.pc` handler satisfies this.
+
+`test_integration.csv` registers its backend with both modules for exactly this reason.
+
 ### Injected via `init` (a single `deps` dict — **`log` and `timer` are required**, no fallback)
 
 | Key | Required | Default | Purpose |
@@ -50,6 +84,14 @@ Loading pulls in the two **hard dependencies** (`di.asyncdispatch`, `di.serverse
 ## Routing & query rewriting
 
 These are dataaccess's **own** domain logic (not delegated — `di.serverselect` does server *selection*, not time-range routing).
+
+> **Open question for whoever scopes `di.gateway`: end-of-day suspension does not cover this module.**
+>
+> `di.asyncdispatch.seteod[1b]` holds a query only when it spans **more than one servertype** (`checkeod`). Every shard this module dispatches is single-servertype by construction — `submitshards` passes `enlist stype` — so **no dataaccess-originated query is ever held by that suspension**, whatever `seteod` is set to.
+>
+> This module has no hold or suspend mechanism of its own. Its only protection against a request straddling a live rollover is `setpartitions` being called at the right moment, which is timing, not interlocking.
+>
+> So: should `di.dataaccess` grow its own eod equivalent, or should `di.gateway` hold requests upstream of it entirely? Is the race even reachable in practice, given how `setpartitions` is driven? Recorded here as an unresolved design question — **not** decided, and not implied by anything currently in the code.
 
 ### `getrouting[starttime;endtime]` → shard table
 Asks `serverselect.getservers` which servertypes are reachable, then clips `[starttime;endtime]` against the `partitions` coverage table. Each surviving partition becomes one shard:
@@ -101,7 +143,7 @@ Four behaviours of the real `asyncdispatch` that dataaccess accommodates:
    Two consequences worth knowing:
 
    - **`resultcallback` must be mount-qualified** (`` `da.shardresult ``, not `` `shardresult ``). `value` runs inside asyncdispatch's own namespace, where a bare export name does not resolve. This is why the key is required rather than defaulted — a wrong value fails *silently*, swallowed by asyncdispatch's local-postback trap.
-   - **Local invocation is synchronous.** `shardresult` can fire before `submitshards` returns, so `execquery` files the request row and its `shardresults` slot, and consumes the request id, *before* dispatching.
+   - **The request row must exist before dispatch.** `execquery` files the request row and its `shardresults` slot, and consumes the request id, *before* calling `submitshards`. The postback itself is invoked synchronously by asyncdispatch's local branch (`value tosend`, inside `addserverresult`), so whether `shardresult` re-enters this module before `submitshards` returns depends on when the backend's reply is processed: against an **in-process backend on handle `0`** — which this build executes locally — it re-enters immediately, which is what makes the ordering load-bearing. Against a **real remote backend** the reply arrives later, which is why `test_integration.csv` needs an explicit round-trip (`h "1b"`) to force it through before asserting.
 
 ---
 
@@ -144,7 +186,7 @@ Four behaviours of the real `asyncdispatch` that dataaccess accommodates:
 - **`shardresult[reqid;query;result]`** — asyncdispatch success-postback callback; accumulates, and triggers the join when all shards are in. Detects `"error:"` results and routes them to `sharderror`.
 - **`sharderror[reqid;err]`** — short-circuits the request, logs, replies the error.
 - **`removerequests[age]`** — purge completed `requests` rows older than `age` (timer-driven; also callable manually). Note it only purges rows that already have a `returntime`, so an *abandoned* in-flight request is invisible to it — that is `checktimeout`'s and `removeclient`'s job.
-- **`checktimeout[]`** — error any in-flight request that has passed the `timeout` `execquery` recorded for it, routing it through `sharderror` so the client is told and the row becomes purgeable. `init` schedules this on the injected timer every `timeoutcheckperiod` seconds. Without it a shard that never returns leaves its request in flight forever: `removerequests` only touches rows that already have a `returntime`. `di.asyncdispatch` runs an equivalent sweep over its *own* queue, but only if the caller scheduled it, and it cannot see this module's `requests` table — so the timeout recorded here is enforced here.
+- **`checktimeout[]`** — error any in-flight request that has passed the `timeout` `execquery` recorded for it, routing it through `sharderror` so the client is told and the row becomes purgeable. `init` schedules this on the injected timer every `timeoutcheckperiod` seconds. Without it a shard that never returns leaves its request in flight forever: `removerequests` only touches rows that already have a `returntime`. `di.asyncdispatch` runs an equivalent sweep over its *own* queue, but only if the caller scheduled it, and it cannot see this module's `requests` table — so the timeout recorded here is enforced here. **Caveat:** this errors *this* module's request and replies to the client, but it cannot reach into `di.asyncdispatch`'s `queryqueue`/`results` to cancel the shard query underneath. The backend slot that shard was dispatched to therefore stays `inuse:1b` until asyncdispatch's own `checktimeout` fires (only if the caller scheduled it) or the backend disconnects. Size the backend pool accordingly, and schedule *both* sweeps — see the matching pool-starvation note in `asyncdispatch.md`.
 
 > **Why `removeclient` is necessary.** Every shard is now dispatched with `replyto:0Ni`, so `di.asyncdispatch.removeclienthandle` can never match a dataaccess-originated shard query for a real client handle — its own comment says local queries "are not matched here — the in-process caller owns cleanup for its own requests". The real client handle exists only in this module's `requests` table. Without `removeclient`, a client that disconnects mid-flight leaves its row in `requests` and its accumulator in `shardresults` forever.
 

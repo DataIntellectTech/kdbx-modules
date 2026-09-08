@@ -11,7 +11,7 @@ before,0,0,q,ad:use`di.asyncdispatch,1,1,mount the REAL di.asyncdispatch (same i
 before,0,0,q,srvsel:use`di.serverselect,1,1,mount the REAL di.serverselect - getrouting asks it which servertypes are reachable
 before,0,0,q,da:use`di.dataaccess,1,1,mount di.dataaccess as a root global so `da.shardresult resolves
 before,0,0,q,"logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,1,silent no-op binary logger
-before,0,0,q,"mocktimer:`addjob`cp!((enlist`default)!enlist{[id;f;p;per;mode]};{.z.p})",1,1,timer mock - dataaccess schedules its purge job at init
+before,0,0,q,"mocktimer:`addjob`deletejobs`cp!((enlist`default)!enlist{[id;f;p;per;mode]};{[ids]};{.z.p})",1,1,timer mock - init deletes then re-adds its housekeeping jobs so re-init stays safe against the real di.timer
 before,0,0,q,ad.init[enlist[`log]!enlist logdep],1,1,init asyncdispatch
 before,0,0,q,srvsel.init[enlist[`log]!enlist logdep],1,1,init serverselect
 before,0,0,q,ad.setcallbacks[`ad.addserverresult;`ad.addservererror],1,1,mount-qualify asyncdispatch's own backend callbacks so the child's reply resolves here

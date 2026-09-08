@@ -10,7 +10,8 @@ comment,,,,,,,setup - capturing logger and recording timer (required deps)
 before,0,0,q,logged:(),1,,log capture buffer of (level;ctx;msg) triples
 before,0,0,q,"mocklog:`info`warn`error!({[c;m]logged,:enlist(`info;c;m)};{[c;m]logged,:enlist(`warn;c;m)};{[c;m]logged,:enlist(`error;c;m)})",1,,capturing binary {[c;m]} logger
 before,0,0,q,scheduledjobs:(),1,,timer addjob capture buffer of (id;period;mode)
-before,0,0,q,"mocktimer:`addjob`cp!((enlist`default)!enlist{[id;f;p;per;mode]scheduledjobs,:enlist(id;per;mode);};{.z.p})",1,,mock di.timer with recording addjob.default
+before,0,0,q,livejobs:`$(),1,,ids currently registered with the mock timer - stands in for di.timer's jobs table
+before,0,0,q,"mocktimer:`addjob`deletejobs`cp!((enlist`default)!enlist{[id;f;p;per;mode] if[id in livejobs;'""Cannot add id : "",string id]; livejobs,:id; scheduledjobs,:enlist(id;per;mode);};{[ids] livejobs::livejobs except ids,();};{.z.p})",1,,timer mock that REJECTS a duplicate id exactly as di.timer does - the old permissive mock hid a real re-init failure
 before,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,init with required log+timer+resultcallback and a single hdb partition covering all time
 before,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;first shards`shardquery;2]}",1,,stub submitshards - feed a fixed result back via shardresult per shard
 
@@ -27,6 +28,21 @@ comment,,,,,,,init wired the housekeeping job into the injected timer
 true,0,0,q,2=count scheduledjobs,1,,init scheduled both housekeeping timer jobs
 true,0,0,q,`dataaccesspurge~scheduledjobs[0;0],1,,first scheduled job is the request purge
 true,0,0,q,`dataaccesstimeout~scheduledjobs[1;0],1,,second scheduled job is the timeout sweep
+
+comment,,,,,,,THE FIX - init stays re-callable against a timer that enforces di.timer's duplicate-id contract
+comment,,,,,,,di.timer signals on a duplicate id rather than replacing it - so before the deletejobs
+comment,,,,,,,call the second init aborted part-wired. the whole suite stayed green because the old
+comment,,,,,,,mock accepted duplicates where the real timer does not
+run,0,0,q,"livejobs:`$();scheduledjobs:()",1,,reset the mock timer state so the job counts below are unambiguous
+run,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;mocktimer;`da.shardresult)]",1,,first init registers both housekeeping jobs
+true,0,0,q,2=count livejobs,1,,both jobs are live after the first init
+run,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;mocktimer;`da.shardresult)]",1,,re-init - this THREW Cannot add id before the fix
+true,0,0,q,2=count livejobs,1,,THE FIX - still exactly two live jobs after re-init rather than a throw
+true,0,0,q,"(asc `dataaccesspurge`dataaccesstimeout)~asc livejobs",1,,and they are still the two expected ids
+true,0,0,q,4=count scheduledjobs,1,,addjob really was called again - the re-add happened rather than being skipped
+fail,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;42;`da.shardresult)]",1,,init rejects a non-dict timer
+fail,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;(enlist`addjob)!enlist mocktimer`addjob;`da.shardresult)]",1,,init rejects a timer dict missing deletejobs
+run,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,restore the standard init for the tests that follow
 
 comment,,,,,,,getrouting - clips the request range to a single hdb shard
 true,0,0,q,`servertype`rangestart`rangeend~cols .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,routing returns the expected columns

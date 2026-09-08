@@ -74,8 +74,15 @@ ports:findfree[baseport;count names];
 launch:{[port]
   / start a bare q listener detached and capture its shell background pid ($!) - so every
   / child can be reaped by exact pid later, whether or not we ever connect to it, and with
-  / no dependence on the qbin path (identity/api are injected over IPC once connected)
-  :"I"$first system qbin," -p ",string[port]," -q </dev/null >/dev/null 2>&1 & echo $!";
+  / no dependence on the qbin path (identity/api are injected over IPC once connected).
+  / nohup is REQUIRED, not cosmetic: without it system returns the generic null rather than the
+  / echoed pid whenever the backgrounded child is itself a q process, so "I"$first threw a bare
+  / 'type here and the fleet never launched. a backgrounded sleep captures fine, which is what
+  / makes it look like a shell-quoting problem rather than a q-child one. measured, not assumed.
+  / nohup over setsid: it execs rather than forking, so $! is unambiguously the q child's own pid
+  / (verified against pgrep), and it is POSIX where setsid is util-linux. both redirects stay, so
+  / nohup writes no nohup.out
+  :"I"$first system "nohup ",qbin," -p ",string[port]," -q </dev/null >/dev/null 2>&1 & echo $!";
   };
 
 connect:{[port]

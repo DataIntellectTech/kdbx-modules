@@ -93,6 +93,10 @@ init:{[deps]
   /   clearinactivetime (optional) timespan, default 0D01:00. NOT read by any function here -
   /                     removeinactive is caller-invoked, so this is the age di.torq passes it when
   /                     it schedules the purge, mirroring di.dataaccess's requestkeeptime
+  /   maxcrossproduct   (optional) long, default 1000000. upper bound on the requirement cross
+  /                     product getserverids builds when cross matching, checked before it is built -
+  /                     cost is the PRODUCT of the requirement value counts, so a gateway forwarding
+  /                     client-supplied requirements can get very large very cheaply. 0W disables it
   / e.g. di.serverselect.init[enlist[`log]!enlist logdep]
   if[99h<>type deps;
     '"di.serverselect: deps must be a dict with `log key"];

@@ -61,7 +61,15 @@ myfunc:{[x]
 Callers provide a dict of functions. Use `di.log` if no custom logger is needed:
 
 ```q
-log:use`di.log
-logdep:`info`warn`error!(log.info;log.warn;log.error)
+logging:use`di.log
+logdep:`info`warn`error!(logging.info;logging.warn;logging.error)
 mymodule.init[enlist[`log]!enlist logdep]
+```
+
+`di.log`'s `logdict` skips building that dict by hand — it's already wrapped in the shape `init`
+expects:
+
+```q
+logging:use`di.log
+mymodule.init[logging.logdict]
 ```

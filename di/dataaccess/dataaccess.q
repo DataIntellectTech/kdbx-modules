@@ -64,10 +64,17 @@ partitionserror:{[parts]
   / internal - "" if parts is a valid partition coverage table, else the reason it is not.
   / shared by init and setpartitions so both enforce EXACTLY the same contract; they disagreed
   / before, init accepting a keyed table that setpartitions rejected
+  / values are checked as well as columns: a null or inverted range passes every column check and
+  / then silently covers NOTHING - getrouting drops it on rangestart<rangeend and the request routes
+  / to zero shards, so the caller gets an empty result rather than any hint the config is dead
   $[not 98h=type parts;
     "partitions must be an unkeyed table";
     not all `servertype`coverfrom`coverto in cols parts;
     "partitions config must have columns servertype, coverfrom, coverto";
+    any null (parts`coverfrom),parts`coverto;
+    "partitions coverfrom and coverto must not be null";
+    any parts[`coverfrom]>=parts`coverto;
+    "each partition needs coverfrom earlier than coverto - a zero-width or inverted range covers nothing";
     ""]
   };
 
@@ -80,6 +87,22 @@ partitionsoverlap:{[parts]
   if[2>count parts;:0b];
   s:`coverfrom xasc select coverfrom,coverto from parts;
   any (1_s`coverfrom) < -1_ maxs s`coverto
+  };
+
+warnprefixmismatch:{[ctx]
+  / internal - shardresult decides a shard result is a backend ERROR by comparing its leading
+  / characters against THIS module's errorprefix, but di.asyncdispatch is what actually prepends it.
+  / configured differently, a genuine backend failure is silently joined into the client's result as
+  / ordinary data and the request completes with error:0b - measured, not inferred.
+  / di.asyncdispatch exports its live value through status[], so the mismatch IS detectable from here.
+  / warn rather than signal: asyncdispatch may legitimately not be init'd yet when this module is
+  / wired, and its status[] signals in that case - hence the protected call
+  st:@[asyncdispatch[`status];(::);{(::)}];
+  if[99h<>type st;:()];
+  if[not `errorprefix in key st;:()];
+  if[st[`errorprefix]~.z.m.errorprefix;:()];
+  .z.m.logwarn[ctx;"errorprefix ",(-3!.z.m.errorprefix)," does not match di.asyncdispatch's ",
+    (-3!st`errorprefix),"; backend errors will not be recognised and will be joined into client results as data"];
   };
 
 warnoverlap:{[ctx;parts]
@@ -95,6 +118,12 @@ maskliterals:{[q]
   if[0=count q;:q];
   quotes:(q="\"") and not prev[q]="\\";
   @[q;where 1=(sums quotes) mod 2;:;" "]
+  };
+
+striptrailing:{[q]
+  / internal - drop trailing whitespace and statement separators so a clause can be appended safely
+  n:count[q]-0^first where not reverse[q] in "; \t\r\n";
+  q til n
   };
 
 haswhereclause:{[q]
@@ -128,8 +157,12 @@ buildshardquery:{[query;rangestart;rangeend]
   / string-based by design - assumes a flat select string; not robust to subqueries.
   / where-detection is whole-word and literal-aware (see haswhereclause), so an identifier that
   / merely contains "where" no longer produces an invalid ", time within (...)" tail
+  / trailing whitespace/semicolons are stripped first: "select from t;" would otherwise become
+  / "select from t; where time within (...)", which is not valid q - the ; ends the statement and the
+  / backend fails with 'a. measured, not assumed
+  q:striptrailing query;
   clause:(string .z.m.timecolumn)," within (",(string rangestart),";",(string rangeend),")";
-  $[haswhereclause query;query," , ",clause;query," where ",clause]
+  $[haswhereclause q;q," , ",clause;q," where ",clause]
   };
 
 / --- shard result accumulation ---
@@ -359,6 +392,17 @@ init:{[deps]
     '"di.dataaccess: resultcallback dependency is required; pass the mount-qualified postback symbol, e.g. `da.shardresult"];
   if[not -11h=type deps`resultcallback;
     '"di.dataaccess: resultcallback must be a symbol; got type ",string type deps`resultcallback];
+  / the symbol must RESOLVE to a function here. di.asyncdispatch resolves it with value inside its own
+  / namespace and traps the failure, logging "local postback failed" and finishing the query with
+  / error:0b - so a bare or misspelt symbol means every request hangs in flight forever with no reply
+  / and no diagnostic from this module. checking it at init is the only place it is cheap and loud
+  cb:@[{(1b;value x)};deps`resultcallback;{(0b;x)}];
+  if[not cb 0;
+    '"di.dataaccess: resultcallback ",string[deps`resultcallback]," does not resolve (",(cb 1),
+      "); it must be MOUNT-QUALIFIED, e.g. da.shardresult when the module is mounted as da"];
+  if[not type[cb 1] within 100 112h;
+    '"di.dataaccess: resultcallback ",string[deps`resultcallback]," resolves to type ",
+      (string type cb 1),"h, not a function"];
   if[`partitions in key deps;
     if[count e:partitionserror deps`partitions;'"di.dataaccess: ",e]];
   / optional config is type-checked HERE so a misconfiguration fails at startup rather than silently
@@ -396,4 +440,5 @@ init:{[deps]
   .z.m.loginfo[`init;"dataaccess initialised; scheduling request housekeeping and timeout checks"];
   .z.m.timer[`addjob][`default][`dataaccesspurge;removerequests;enlist .z.m.requestkeeptime;1800i;1];
   .z.m.timer[`addjob][`default][`dataaccesstimeout;checktimeout;();.z.m.timeoutcheckperiod;1];
+  warnprefixmismatch`init;
   };

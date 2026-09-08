@@ -36,7 +36,7 @@ Loading pulls in the two **hard dependencies** (`di.asyncdispatch`, `di.serverse
 |---|---|---|---|
 | `log` | ✅ | — | binary `` `info`warn`error!{[c;m]} `` dict. **No adaptation is performed** — a raw monadic `kx.log` instance will `'rank` at the first call site; wrap it yourself |
 | `timer` | ✅ | — | `di.timer` instance; `init` schedules `removerequests` via `addjob` |
-| `resultcallback` | ✅ | — | **mount-qualified** postback symbol, e.g. `` `da.shardresult `` — see below |
+| `resultcallback` | ✅ | — | **mount-qualified** postback symbol, e.g. `` `da.shardresult ``. Must *resolve to a function* at `init` — a bare or misspelt symbol is rejected there rather than hanging every request. See below |
 | `cp` | — | `{.z.p}` | current-time function (override for sim / backtesting) |
 | `errorprefix` | — | `"error: "` | client-error prefix, **must be a non-empty string**; **must match the prefix `di.asyncdispatch` is configured with** — `shardresult` detects backend errors by comparing against it |
 | `timeoutcheckperiod` | — | `10i` | seconds between `checktimeout` sweeps |
@@ -59,6 +59,8 @@ partitions:  ([] servertype; coverfrom; coverto)   / coverfrom/coverto are times
 result:      ([] servertype; rangestart; rangeend)  / rangestart=coverfrom|starttime, rangeend=coverto&endtime, kept where rangestart<rangeend
 ```
 
+> Partition coverage is validated by **value** as well as by column: `init` and `setpartitions` both reject a null `coverfrom`/`coverto` and any range where `coverfrom` is not strictly earlier than `coverto`. Such a range passes every column check and then silently covers nothing — the request routes to zero shards and the caller gets an empty result rather than any hint the config is dead. An empty coverage table is still accepted: nothing routable is a legitimate state.
+>
 > Partition coverage should be **non-overlapping** — overlapping ranges produce multiple shards for the same slice and double-count. **`init` and `setpartitions` both detect this and log a warning**; it is a warning rather than an error because a caller may intend it. Ranges that merely *touch* (hdb `coverto` = rdb `coverfrom`, the documented rollover shape) are not treated as an overlap. For "now"-relative boundaries the caller moves the boundary at rollover with `setpartitions`.
 
 ### `buildshardquery[query;rangestart;rangeend]` → rewritten query string
@@ -70,6 +72,8 @@ Appends a `within` filter on `timecolumn` as the **last** clause, so it is valid
 ```
 
 > **String-based by design** (per the chosen query representation). It assumes a flat `select … from … [where …]` string and is **not** robust to subqueries or `fby`. If queries become structured/functional, swap this one function.
+>
+> Trailing whitespace and statement separators are stripped before the clause is appended. `"select from t;"` would otherwise become `"select from t; where time within (…)"`, which is not valid q — the `;` ends the statement and the backend fails with `'a`.
 >
 > Where-detection **is** whole-word and literal-aware: `where` is matched only as a complete token and only outside double-quoted string literals. A bare `query like "*where*"` used to fire on any identifier merely *containing* the substring — a column named `wherever`, a symbol `` `nowhere `` — and then emitted `"select wherever from t , time within (…)"`, which is invalid q.
 
@@ -83,10 +87,12 @@ Each shard is submitted as an independent async query:
 asyncdispatch.execqueryto[0Ni; shardquery; enlist servertype; first; (resultcallback;reqid); timeout; 0b]
 ```
 
-Two behaviours of the real `asyncdispatch` that dataaccess accommodates:
+Four behaviours of the real `asyncdispatch` that dataaccess accommodates:
 
 1. **Postback arity.** asyncdispatch replies `(postback…, query, result)`, so the callback arrives as **`shardresult[reqid;query;result]`** (the `query` arg is echoed and unused).
-2. **Errors share the postback.** A backend error is delivered through the *same* postback as an `"error: …"` result string (asyncdispatch has no separate client error-callback). So `shardresult` detects an `errorprefix`-prefixed string result and short-circuits via `sharderror`. A genuine string result beginning `"error: "` would be misclassified — acceptable given the string contract.
+2. **`errorprefix` must match `di.asyncdispatch`'s.** This is a contract between two modules, not local config: `shardresult` compares the leading characters of a shard result against this module's copy, while `di.asyncdispatch` is what actually prepends the prefix. Both modules reject an empty prefix at `init` (an empty one matches *every* string result), and `test_integration.csv` asserts the two defaults agree. **A deployment that overrides one and not the other is now detected too:** `di.asyncdispatch` exposes its live value through `status[]`, and this module holds a hard handle to it, so `init` compares the two and **logs a warning** naming both values. It warns rather than signals because `di.asyncdispatch` may legitimately not be `init`-ed yet when this module is wired, in which case `status[]` signals and the check is skipped. Measured: with the prefixes mismatched and no check, a genuine backend failure is joined into the client's result as ordinary data and the request completes with `error:0b`.
+3. **A failed local postback is logged, not raised.** `resultcallback` must be mount-qualified because `di.asyncdispatch` resolves it with `value` inside its own namespace. If it does not resolve, `sendclientreply`'s local branch traps and logs `local postback failed: …` at error, then finishes the query with `error:0b` — so the request is recorded as successful and this module never learns the reply was lost. Confirmed by measurement, not inferred. The trap is correct (a throwing postback must not kill the dispatch loop). **This module now closes the common case at `init`:** `resultcallback` must not merely be a symbol, it must *resolve to a function* — `value` on a bare or misspelt symbol throws, so a typo is rejected loudly at startup instead of hanging every request forever with no diagnostic. What remains open on `di.asyncdispatch`'s side is only the case where the symbol resolves at `init` and stops resolving later.
+4. **Errors share the postback.** A backend error is delivered through the *same* postback as an `"error: …"` result string (asyncdispatch has no separate client error-callback). So `shardresult` detects an `errorprefix`-prefixed string result and short-circuits via `sharderror`. A genuine string result beginning `"error: "` would be misclassified — acceptable given the string contract.
 
 3. **Reply routing — RESOLVED.** This was previously documented here as an open asyncdispatch-side concern; it is fixed and closed. `asyncdispatch.execquery` captures `clienth:.z.w` at call time and posts the reply there — and because dataaccess calls it **in-process**, `.z.w` is the *end client's* handle inherited through the synchronous call chain. Every shard reply therefore went to the client, which has no `shardresult`, and the join never ran.
 

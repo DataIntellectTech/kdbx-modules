@@ -226,3 +226,28 @@ run,0,0,q,.m.di.0dataaccess.cp:{.z.p},1,,restore the real clock
 
 comment,,,,,,,FIX 7 - getapimeta still matches the export surface after adding checktimeout
 true,0,0,q,"(asc (key da) except `init`getapimeta)~asc exec name from da[`getapimeta][]",1,,getapimeta documents checktimeout too
+comment,,,,,,,SMOKE FIX - resultcallback must RESOLVE to a function not merely be a symbol
+comment,,,,,,,di.asyncdispatch resolves it with value in its own namespace and TRAPS failure - a bare
+comment,,,,,,,or misspelt symbol means every request hangs in flight forever with no reply at all
+fail,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;mocktimer;`shardresult)]",1,,init rejects a bare unqualified resultcallback (the old default)
+fail,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;mocktimer;`nosuchmount.shardresult)]",1,,init rejects a resultcallback whose mount does not exist
+run,0,0,q,notafunction::42,1,,define a non-function global
+fail,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;mocktimer;`notafunction)]",1,,init rejects a resultcallback that resolves to a non-function
+run,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,restore a good init
+
+comment,,,,,,,SMOKE FIX - trailing separators would make the appended clause invalid q
+true,0,0,q,".m.di.0dataaccess.buildshardquery[""select from t;"";""p""$2000.01.01;""p""$2000.01.02] like ""select from t where *""",1,,a trailing semicolon is stripped before the where clause is appended
+true,0,0,q,".m.di.0dataaccess.buildshardquery[""select from t;;  "";""p""$2000.01.01;""p""$2000.01.02] like ""select from t where *""",1,,repeated separators and trailing spaces are stripped too
+true,0,0,q,"2=count value .m.di.0dataaccess.buildshardquery[""select from ([]time:\""p\""$2000.01.01 2000.01.02);"";""p""$2000.01.01;""p""$2000.01.03]",1,,the rewritten query actually evaluates - it was invalid q before this fix
+true,0,0,q,"0<count .m.di.0dataaccess.buildshardquery[""select from t where a=1;"";""p""$2000.01.01;""p""$2000.01.02] ss "" , time within""",1,,an existing where clause still gets the time filter ANDed on after stripping
+
+comment,,,,,,,SMOKE FIX - partition coverage VALUES are validated not just the column names
+comment,,,,,,,a null or inverted range passes every column check then silently covers nothing
+fail,0,0,q,"da.setpartitions[([]servertype:enlist`hdb;coverfrom:enlist 0Np;coverto:enlist 0Wp)]",1,,setpartitions rejects a null coverfrom
+fail,0,0,q,"da.setpartitions[([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Np)]",1,,setpartitions rejects a null coverto
+fail,0,0,q,"da.setpartitions[([]servertype:enlist`hdb;coverfrom:enlist 0Wp;coverto:enlist -0Wp)]",1,,setpartitions rejects an inverted range
+fail,0,0,q,"da.setpartitions[([]servertype:enlist`hdb;coverfrom:enlist ""p""$2000.01.01;coverto:enlist ""p""$2000.01.01)]",1,,setpartitions rejects a zero-width range which can never route
+fail,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]servertype:enlist`hdb;coverfrom:enlist 0Np;coverto:enlist 0Wp))]",1,,init enforces the identical value contract
+run,0,0,q,"da.setpartitions[([]servertype:`hdb`rdb;coverfrom:(-0Wp;""p""$2000.06.01);coverto:(""p""$2000.06.01;0Wp))]",1,,valid touching coverage is still accepted
+run,0,0,q,"da.setpartitions[0#([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)]",1,,an empty coverage table is still accepted - nothing routable is a legitimate state
+run,0,0,q,"da.setpartitions[([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)]",1,,restore full coverage

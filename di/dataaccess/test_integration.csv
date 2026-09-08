@@ -55,7 +55,7 @@ comment,,,,,,,THE FIX - the shard was dispatched for LOCAL invocation not handle
 comment,,,,,,,these two assert the mechanism directly and are what actually discriminate the fix:
 comment,,,,,,,with the old execquery call asyncdispatch records local:0b and clienth:.z.w and BOTH fail
 comment,,,,,,,the outcome assertions below cannot discriminate on their own - in-process .z.w is 0i and
-comment,,,,,,,this q build executes a message sent to handle 0 locally, so broken handle routing and
+comment,,,,,,,this q build executes a message sent to handle 0 locally - so broken handle routing and
 comment,,,,,,,correct local invocation look identical from the outcome alone. measured not assumed
 true,0,0,q,1=count qq,1,1,exactly one shard query was dispatched through asyncdispatch
 true,0,0,q,1b~first exec local from qq,1,1,the shard was queued for LOCAL invocation - this is execqueryto[0Ni] and only that
@@ -77,3 +77,31 @@ true,0,0,q,not reqid in key .m.di.0dataaccess.shardresults,1,1,shard result accu
 
 comment,,,,,,,the child process is fully cleaned up
 true,0,0,q,.it.gone,1,1,the child process is gone after the test
+
+/ contract: di.dataaccess detects a backend error by comparing the leading characters of a shard
+/ result against its OWN errorprefix copy, so the two modules must be configured identically. this
+/ asserts the DEFAULTS agree; a deployment that overrides one and not the other still breaks the
+/ contract, which is why both modules now reject an empty prefix outright
+true,0,0,q,.m.di.0dataaccess.defaulterrorprefix~.m.di.0asyncdispatch.errorprefix,1,1,di.dataaccess and di.asyncdispatch default to the same errorprefix
+true,0,0,q,0<count .m.di.0dataaccess.defaulterrorprefix,1,1,the shared default prefix is non-empty - an empty one would match every string result
+fail,0,0,q,"ad.init[`log`errorprefix!(logdep;"""")]",1,1,di.asyncdispatch rejects an empty errorprefix rather than silently matching every result
+fail,0,0,q,"da.init[`log`timer`resultcallback`errorprefix!(logdep;mocktimer;`da.shardresult;"""")]",1,1,di.dataaccess rejects an empty errorprefix on the same grounds
+
+comment,,,,,,,SMOKE FIX - the errorprefix contract is now CHECKED at init not just documented
+comment,,,,,,,di.asyncdispatch exports its live errorprefix via status[] and this module holds a hard
+comment,,,,,,,handle to it - so a mismatch that silently joins backend FAILURES into client results
+comment,,,,,,,as ordinary data is detectable here. warned not signalled: asyncdispatch may not be init'd yet
+run,0,0,q,"caplog:`info`warn`error!({[c;m]cap,:enlist(`info;c;m)};{[c;m]cap,:enlist(`warn;c;m)};{[c;m]cap,:enlist(`error;c;m)})",1,1,capturing logger
+run,0,0,q,"prefixwarns:{count cap[;2] where ({0<count x ss ""errorprefix""} each cap[;2]) and `warn=cap[;0]}",1,1,count errorprefix warnings in the capture buffer
+run,0,0,q,"ad.init[`log`errorprefix!(caplog;""error: "")]",1,1,asyncdispatch on the default prefix
+run,0,0,q,cap:(),1,1,clear the capture buffer
+run,0,0,q,"da.init[`log`timer`resultcallback!(caplog;mocktimer;`da.shardresult)]",1,1,dataaccess on the default prefix - the two now agree
+true,0,0,q,0=prefixwarns[],1,1,no warning when the two modules agree
+run,0,0,q,"ad.init[`log`errorprefix!(caplog;""ERR: "")]",1,1,reconfigure asyncdispatch with a DIFFERENT prefix
+run,0,0,q,cap:(),1,1,clear the capture buffer
+run,0,0,q,"da.init[`log`timer`resultcallback!(caplog;mocktimer;`da.shardresult)]",1,1,dataaccess still on the default - now a genuine mismatch
+true,0,0,q,0<prefixwarns[],1,1,init warns that backend errors will be joined into results as data
+run,0,0,q,cap:(),1,1,clear the capture buffer
+run,0,0,q,"da.init[`log`timer`resultcallback`errorprefix!(caplog;mocktimer;`da.shardresult;""ERR: "")]",1,1,align dataaccess to the overridden prefix
+true,0,0,q,0=prefixwarns[],1,1,silent again once both are overridden to the same value
+run,0,0,q,"ad.init[`log`errorprefix!(logdep;""error: "")]",1,1,restore asyncdispatch to the default prefix

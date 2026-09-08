@@ -1,0 +1,79 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration test - drives a REAL shard round-trip through di.asyncdispatch to a real child q
+comment,,,,,,,this is the one test the unit suite cannot do: every row in test.csv stubs submitshards
+comment,,,,,,,so asyncdispatch is never reached and the execqueryto fix has no coverage there at all
+comment,,,,,,,proves execqueryto[0Ni;..] routes the shard reply BACK to shardresult rather than to .z.w
+comment,,,,,,,under the old execquery call the reply went to the end client and joinfn never ran
+comment,,,,,,,note k4unit runs every before row first then the asserts - so results are captured in befores
+comment,,,,,,,child port is OS-assigned via \p 0W - no env var no hardcoded port; child self-exits on disconnect
+
+before,0,0,q,ad:use`di.asyncdispatch,1,1,mount the REAL di.asyncdispatch (same instance dataaccess uses)
+before,0,0,q,srvsel:use`di.serverselect,1,1,mount the REAL di.serverselect - getrouting asks it which servertypes are reachable
+before,0,0,q,da:use`di.dataaccess,1,1,mount di.dataaccess as a root global so `da.shardresult resolves
+before,0,0,q,"logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,1,silent no-op binary logger
+before,0,0,q,"mocktimer:`addjob`cp!((enlist`default)!enlist{[id;f;p;per;mode]};{.z.p})",1,1,timer mock - dataaccess schedules its purge job at init
+before,0,0,q,ad.init[enlist[`log]!enlist logdep],1,1,init asyncdispatch
+before,0,0,q,srvsel.init[enlist[`log]!enlist logdep],1,1,init serverselect
+before,0,0,q,ad.setcallbacks[`ad.addserverresult;`ad.addservererror],1,1,mount-qualify asyncdispatch's own backend callbacks so the child's reply resolves here
+before,0,0,q,qcands:$[count qh:getenv[`QHOME];(raze(qh;"/bin/q");raze(qh;"/";string .z.o;"/q"));()],1,1,candidate q binary locations for kdbx and classic layouts
+before,0,0,q,qbin:$[count ex:qcands where {not ()~key hsym `$x} each qcands;first ex;"q"],1,1,pick the first candidate that exists else fall back to q on PATH
+before,0,0,q,".it.tryopen:{[p] @[{hopen (`$"""" sv ("":localhost:"";string x);500)};p;0Ni]}",1,1,attempt one connection returning a null handle on failure
+before,0,0,q,".it.wait:{[p;n] $[n<=0;0Ni;not null hh:.it.tryopen p;hh;[system""sleep 0.3"";.it.wait[p;n-1]]]}",1,1,poll for the child to accept connections
+before,0,0,q,system"p 0W",1,1,ask the OS for a free ephemeral port
+before,0,0,q,cport:system"p",1,1,read the OS-assigned port
+before,0,0,q,system"p 0",1,1,release the listener so the child can bind it
+before,0,0,q,"cpid:""J""$last system """" sv (qbin;"" -q -p "";string cport;"" </dev/null >/dev/null 2>&1 & echo $!"")",1,1,launch a bare child q as the hdb backend and capture its PID
+before,0,0,q,h:.it.wait[cport;20],1,1,connect to the child with a bounded retry
+before,0,0,q,"if[null h;@[{system """" sv (""kill -9 "";string cpid)};::;{x}];exit 0]",1,1,if the child never came up kill it by PID and skip cleanly
+before,0,0,q,"@[{h "".z.pc:{exit 0}""};::;{x}]",1,1,backstop - child self-exits whenever its connection to this process drops
+before,0,0,q,"@[{h ""t:([]time:2020.01.01D00:00:00+86400000000000*til 5;sym:5#`AAPL;price:1 2 3 4 5f)""};::;{x}]",1,1,give the child a 5-row table to serve - the child needs no other cooperating code
+before,0,0,q,.it.roundtrip:@[{4=h "2+2"};::;{0b}],1,1,confirm a real synchronous round-trip before relying on the handle
+before,0,0,q,ad.addserver[h;`hdb],1,1,register the child as the hdb backend so asyncdispatch will dispatch to it
+before,0,0,q,srvsel.addserver[h;`hdb],1,1,register the SAME handle with serverselect - getrouting drops any partition whose servertype is not reachable there
+before,0,0,q,srvsel.setserveractive[h;1b],1,1,mark it active so getservers returns it
+before,0,0,q,"routable:exec distinct servertype from srvsel.getservers[`servertype;`;()!()]",1,1,snapshot what serverselect reports as reachable
+before,0,0,q,"parts:([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)",1,1,one hdb partition covering all time
+before,0,0,q,"da.init[`log`timer`resultcallback`partitions!(logdep;mocktimer;`da.shardresult;parts)]",1,1,init dataaccess with the MOUNT-QUALIFIED postback symbol asyncdispatch will value
+before,0,0,q,jres:(::),1,1,capture slot - stays :: unless the join function actually runs
+before,0,0,q,"reqid:da.execquery[""select from t"";2019.01.01D00:00:00.000000000;2021.01.01D00:00:00.000000000;{jres::x;raze x};();0Wn;0b]",1,1,REAL dispatch - no submitshards stub - joinfn records the shard results it is handed
+before,0,0,q,.it.flushed:@[{h "1b"};::;{0b}],1,1,sync round-trip on the same handle - forces the child's async reply to be processed first
+before,0,0,q,"reqrow:select from .m.di.0dataaccess.requests where requestid=reqid",1,1,snapshot the request row after the round-trip
+before,0,0,q,"qq:select from .m.di.0asyncdispatch.queryqueue where query like ""select from t where time within*""",1,1,snapshot how asyncdispatch actually recorded the shard dispatch
+before,0,0,q,"@[{system """" sv (""kill -9 "";string cpid)};::;{x}]",1,1,kill the child by PID
+before,0,0,q,system"sleep 0.3",1,1,give the OS a moment to reap the child
+before,0,0,q,".it.gone:0=count @[{system """" sv (""ps -p "";string cpid;"" -o pid="")};::;{()}]",1,1,verify the child is actually gone
+
+comment,,,,,,,serverselect sees the backend - and the mounted instance is shared with dataaccess
+true,0,0,q,`hdb in routable,1,1,serverselect reports hdb reachable through the root-level handle
+true,0,0,q,1=count .m.di.0dataaccess.getrouting[2019.01.01D00:00:00.000000000;2021.01.01D00:00:00.000000000],1,1,dataaccess's own getrouting sees that same registration - use returns one shared instance
+
+comment,,,,,,,the child backend was reachable
+true,0,0,q,.it.roundtrip,1,1,synchronous query to the real child returned the expected result
+true,0,0,q,.it.flushed,1,1,the post-dispatch flush round-trip completed
+
+comment,,,,,,,THE FIX - the shard was dispatched for LOCAL invocation not handle routing
+comment,,,,,,,these two assert the mechanism directly and are what actually discriminate the fix:
+comment,,,,,,,with the old execquery call asyncdispatch records local:0b and clienth:.z.w and BOTH fail
+comment,,,,,,,the outcome assertions below cannot discriminate on their own - in-process .z.w is 0i and
+comment,,,,,,,this q build executes a message sent to handle 0 locally, so broken handle routing and
+comment,,,,,,,correct local invocation look identical from the outcome alone. measured not assumed
+true,0,0,q,1=count qq,1,1,exactly one shard query was dispatched through asyncdispatch
+true,0,0,q,1b~first exec local from qq,1,1,the shard was queued for LOCAL invocation - this is execqueryto[0Ni] and only that
+true,0,0,q,null first exec clienth from qq,1,1,no client handle was captured for the shard - the old execquery stored .z.w here
+
+comment,,,,,,,and the shard reply came back to shardresult and drove the join
+true,0,0,q,not (::)~jres,1,1,joinfn ran - so shardresult received the shard reply (this is what execqueryto[0Ni] buys)
+true,0,0,q,1=count jres,1,1,exactly one shard result was accumulated
+true,0,0,q,5=count first jres,1,1,the shard result carries all 5 rows the child actually holds
+true,0,0,q,"`time`sym`price~cols first jres",1,1,the shard result is the child's real table not an error string
+
+comment,,,,,,,the request completed cleanly and cleaned up after itself
+true,0,0,q,-7h=type reqid,1,1,execquery returned the requestid it filed the request under
+true,0,0,q,1=count reqrow,1,1,a request row was filed under the returned id
+true,0,0,q,0b~first exec error from reqrow,1,1,request completed without error
+true,0,0,q,not null first exec returntime from reqrow,1,1,request was stamped complete
+true,0,0,q,0~first exec remaining from reqrow,1,1,no shards left outstanding
+true,0,0,q,not reqid in key .m.di.0dataaccess.shardresults,1,1,shard result accumulator was cleaned up after the join
+
+comment,,,,,,,the child process is fully cleaned up
+true,0,0,q,.it.gone,1,1,the child process is gone after the test

@@ -4,14 +4,14 @@ before,0,0,q,da:use`di.dataaccess,1,,load module
 before,0,0,q,reqs:{.m.di.0dataaccess.requests},1,,live requests table accessor
 before,0,0,q,sr:{.m.di.0dataaccess.shardresults},1,,live shard results dict accessor
 comment,,,,,,,setup - override hard deps with mocks so tests are deterministic
-before,0,0,q,".m.di.0dataaccess.asyncdispatch:enlist[`execquery]!enlist{[q;st;jf;pb;t;s]1}",1,,mock di.asyncdispatch (submitshards stub bypasses it anyway)
+before,0,0,q,".m.di.0dataaccess.asyncdispatch:enlist[`execqueryto]!enlist{[rt;q;st;jf;pb;t;s]1}",1,,mock di.asyncdispatch - execqueryto takes 7 args (replyto first)
 before,0,0,q,".m.di.0dataaccess.serverselect:enlist[`getservers]!enlist{[no;lu;req]select servertype from .m.di.0dataaccess.partitions}",1,,mock di.serverselect - all configured partition types are reachable
 comment,,,,,,,setup - capturing logger and recording timer (required deps)
 before,0,0,q,logged:(),1,,log capture buffer of (level;ctx;msg) triples
 before,0,0,q,"mocklog:`info`warn`error!({[c;m]logged,:enlist(`info;c;m)};{[c;m]logged,:enlist(`warn;c;m)};{[c;m]logged,:enlist(`error;c;m)})",1,,capturing binary {[c;m]} logger
 before,0,0,q,scheduledjobs:(),1,,timer addjob capture buffer of (id;period;mode)
 before,0,0,q,"mocktimer:`addjob`cp!((enlist`default)!enlist{[id;f;p;per;mode]scheduledjobs,:enlist(id;per;mode);};{.z.p})",1,,mock di.timer with recording addjob.default
-before,0,0,q,"da.init[`log`timer`partitions!(mocklog;mocktimer;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,init with required log+timer and a single hdb partition covering all time
+before,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,init with required log+timer+resultcallback and a single hdb partition covering all time
 before,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;first shards`shardquery;2]}",1,,stub submitshards - feed a fixed result back via shardresult per shard
 
 comment,,,,,,,init validation - all required-dep failures must signal
@@ -19,11 +19,14 @@ fail,0,0,q,da.init[(::)],1,,init rejects a non-dictionary deps
 fail,0,0,q,"da.init[enlist[`timer]!enlist mocktimer]",1,,init rejects missing log dependency
 fail,0,0,q,"da.init[`log`timer!((enlist`info)!enlist{[c;m]};mocktimer)]",1,,init rejects an incomplete log dict
 fail,0,0,q,"da.init[enlist[`log]!enlist mocklog]",1,,init rejects missing timer dependency
-fail,0,0,q,"da.init[`log`timer`partitions!(mocklog;mocktimer;([]bad:enlist`x))]",1,,init rejects a partitions table with wrong columns
+fail,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]bad:enlist`x))]",1,,init rejects a partitions table with wrong columns
+fail,0,0,q,"da.init[`log`timer!(mocklog;mocktimer)]",1,,init rejects missing resultcallback
+fail,0,0,q,"da.init[`log`timer`resultcallback!(mocklog;mocktimer;""da.shardresult"")]",1,,init rejects a non-symbol resultcallback
 
 comment,,,,,,,init wired the housekeeping job into the injected timer
-true,0,0,q,1=count scheduledjobs,1,,init scheduled exactly one timer job
-true,0,0,q,`dataaccesspurge~scheduledjobs[0;0],1,,scheduled job id is dataaccesspurge
+true,0,0,q,2=count scheduledjobs,1,,init scheduled both housekeeping timer jobs
+true,0,0,q,`dataaccesspurge~scheduledjobs[0;0],1,,first scheduled job is the request purge
+true,0,0,q,`dataaccesstimeout~scheduledjobs[1;0],1,,second scheduled job is the timeout sweep
 
 comment,,,,,,,getrouting - clips the request range to a single hdb shard
 true,0,0,q,`servertype`rangestart`rangeend~cols .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,routing returns the expected columns
@@ -85,3 +88,141 @@ true,0,0,q,1=count keys reqs[],1,,requests table is still keyed after a purge
 run,0,0,q,.m.di.0dataaccess.cp:{.z.p},1,,restore the real clock
 run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit another query after the purge
 true,0,0,q,1~count select from reqs[] where not null returntime,1,,post-purge query completed - table was not bricked
+comment,,,,,,,module metadata - version and getapimeta
+true,0,0,q,"3=count ""."" vs da.version",1,,VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"da.version~trim da.version",1,,no stray whitespace or newline came through from the VERSION file
+true,0,0,q,`name`public`descrip`params`return~cols da[`getapimeta][],1,,getapimeta rows carry the registry columns
+true,0,0,q,"(asc (key da) except `init`getapimeta)~asc exec name from da[`getapimeta][]",1,,getapimeta documents exactly the callable exports (init/getapimeta omitted as plumbing)
+true,0,0,q,"not any `init`getapimeta in exec name from da[`getapimeta][]",1,,framework plumbing is not registered in the api
+true,0,0,q,all exec public from da[`getapimeta][],1,,every documented row is public
+true,0,0,q,all 0<count each exec descrip from da[`getapimeta][],1,,every documented row carries a description
+
+comment,,,,,,,execquery returns the requestid the call was filed under
+run,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;first shards`shardquery;2]}",1,,ensure the auto-delivering stub is in place
+run,0,0,q,"retid:da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b]",1,,capture the return value of a normal single-shard call
+true,0,0,q,-7h=type retid,1,,execquery returns a long
+true,0,0,q,1=count select from reqs[] where requestid=retid,1,,the returned id is the one a request row was actually filed under
+run,0,0,q,"retid2:da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b]",1,,second call
+true,0,0,q,retid2>retid,1,,consecutive calls return distinct increasing ids
+true,0,0,q,"1=count select from reqs[] where requestid=retid2",1,,second id also filed a row
+
+comment,,,,,,,execquery no-shard path also returns a usable long (not ::)
+run,0,0,q,".m.di.0dataaccess.partitions:([]servertype:enlist`hdb;coverfrom:enlist ""p""$1990.01.01;coverto:enlist ""p""$1990.01.02)",1,,partition coverage that cannot overlap the request range
+run,0,0,q,"noshard:.[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{0N}]",1,,submit a query no partition covers
+true,0,0,q,-7h=type noshard,1,,no-shard path returns a long rather than a generic null
+true,0,0,q,noshard>retid2,1,,the no-shard path consumed and returned the next id
+run,0,0,q,".m.di.0dataaccess.partitions:([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)",1,,restore full coverage
+
+comment,,,,,,,setpartitions - validates and swaps live coverage
+fail,0,0,q,"da.setpartitions[([]bad:enlist`x)]",1,,setpartitions rejects a table with the wrong columns
+fail,0,0,q,da.setpartitions[42],1,,setpartitions rejects a non-table
+run,0,0,q,"da.setpartitions[([]servertype:`hdb`rdb;coverfrom:2#-0Wp;coverto:2#0Wp)]",1,,install a valid two-partition coverage table
+true,0,0,q,2~count .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,routing now yields two shards from the swapped-in coverage
+run,0,0,q,"da.setpartitions[([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)]",1,,restore single-partition coverage
+true,0,0,q,1~count .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,routing back to one shard
+
+comment,,,,,,,removeclient - cleans up in-flight requests for a disconnected handle
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,stub to leave the request in flight
+run,0,0,q,"orphanid:da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b]",1,,submit a request that never completes
+true,0,0,q,"1=count select from reqs[] where requestid=orphanid, null returntime",1,,request is in flight before the disconnect
+true,0,0,q,orphanid in key sr[],1,,shard result accumulator exists for the in-flight request
+run,0,0,q,da.removeclient[.z.w],1,,the client owning that request disconnects
+true,0,0,q,1b~first exec error from reqs[] where requestid=orphanid,1,,orphaned request flagged as error
+true,0,0,q,not null first exec returntime from reqs[] where requestid=orphanid,1,,orphaned request stamped with a returntime
+true,0,0,q,not orphanid in key sr[],1,,shard result accumulator dropped for the orphaned request
+run,0,0,q,da.removeclient[9999i],1,,removeclient for a handle with no requests
+true,0,0,q,1b~first exec error from reqs[] where requestid=orphanid,1,,no-op removeclient left existing state untouched
+run,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;first shards`shardquery;2]}",1,,restore the auto-delivering stub
+
+comment,,,,,,,errorprefix is injectable and drives shardresult error detection
+run,0,0,q,"da.init[`log`timer`resultcallback`errorprefix!(mocklog;mocktimer;`da.shardresult;""ERR: "")]",1,,re-init with a non-default error prefix
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,capture reqid without delivering
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit query under the custom prefix
+run,0,0,q,"da.shardresult[pendreqid;""q"";""ERR: backend blew up""]",1,,deliver a result carrying the CUSTOM prefix
+true,0,0,q,1b~first exec error from reqs[] where requestid=pendreqid,1,,custom-prefixed result was detected as a shard error
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit another query
+run,0,0,q,"da.shardresult[pendreqid;""q"";""error: not the configured prefix""]",1,,deliver a result carrying the DEFAULT prefix
+true,0,0,q,0b~first exec error from reqs[] where requestid=pendreqid,1,,default prefix is no longer special once errorprefix is overridden
+comment,,,,,,,FIX 1 - errorprefix must be a non-empty string (empty matched every string result)
+fail,0,0,q,"da.init[`log`timer`resultcallback`errorprefix!(mocklog;mocktimer;`da.shardresult;"""")]",1,,init rejects an empty errorprefix
+fail,0,0,q,"da.init[`log`timer`resultcallback`errorprefix!(mocklog;mocktimer;`da.shardresult;`err)]",1,,init rejects a symbol errorprefix
+comment,,,,,,,FIX 1b - other optional config is type-checked at init not at first use
+fail,0,0,q,"da.init[`log`timer`resultcallback`requestkeeptime!(mocklog;mocktimer;`da.shardresult;5)]",1,,init rejects an int requestkeeptime
+fail,0,0,q,"da.init[`log`timer`resultcallback`cp!(mocklog;mocktimer;`da.shardresult;42)]",1,,init rejects a non-function cp
+fail,0,0,q,"da.init[`log`timer`resultcallback`timecolumn!(mocklog;mocktimer;`da.shardresult;""time"")]",1,,init rejects a string timecolumn
+fail,0,0,q,"da.init[`log`timer`resultcallback`synccallsallowed!(mocklog;mocktimer;`da.shardresult;1)]",1,,init rejects a non-boolean synccallsallowed
+fail,0,0,q,"da.init[`log`timer`resultcallback`timeoutcheckperiod!(mocklog;mocktimer;`da.shardresult;10)]",1,,init rejects a long timeoutcheckperiod
+
+comment,,,,,,,FIX 4 - init and setpartitions enforce the SAME partitions contract
+fail,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([servertype:enlist`hdb]coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,init now rejects a KEYED partitions table (it used to accept one)
+fail,0,0,q,"da.setpartitions[([servertype:enlist`hdb]coverfrom:enlist -0Wp;coverto:enlist 0Wp)]",1,,setpartitions rejects the same keyed table
+run,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,restore a good init
+
+comment,,,,,,,FIX 6 - where-detection is whole-word and literal-aware
+true,0,0,q,".m.di.0dataaccess.buildshardquery[""select wherever from t"";""p""$2000.01.01;""p""$2000.01.02] like ""select wherever from t where *""",1,,a column merely CONTAINING where does not count as a where clause
+true,0,0,q,"0=count .m.di.0dataaccess.buildshardquery[""select wherever from t"";""p""$2000.01.01;""p""$2000.01.02] ss "" , """,1,,and so no invalid comma-tail is produced
+true,0,0,q,".m.di.0dataaccess.buildshardquery[""select from t where sym=`nowhere"";""p""$2000.01.01;""p""$2000.01.02] like ""*`nowhere , time within (*""",1,,a real where clause plus a symbol containing where is ANDed correctly
+true,0,0,q,".m.di.0dataaccess.buildshardquery[""select from t where s like \""where\"""";""p""$2000.01.01;""p""$2000.01.02] like ""* , time within (*""",1,,where inside a string literal is ignored but the real where clause is found
+true,0,0,q,"not .m.di.0dataaccess.haswhereclause[""select nowhere from elsewhere""]",1,,no false positive from identifiers containing where
+true,0,0,q,".m.di.0dataaccess.haswhereclause[""select from t where a=1""]",1,,a genuine where clause is detected
+
+comment,,,,,,,FIX 2 - a wrong-arity joinfn returns a projection and must be treated as a join failure
+run,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout]da.shardresult[reqid;first shards`shardquery;2]}",1,,auto-delivering stub
+run,0,0,q,"badjoin:da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;{[a;b]a+b};();0Wn;0b]",1,,submit with a BINARY joinfn
+true,0,0,q,1b~first exec error from reqs[] where requestid=badjoin,1,,binary joinfn flagged as an error instead of silently returning a projection
+
+comment,,,,,,,FIX 3 - execquery validates every argument through raiseerror
+fail,0,0,q,"da.execquery[`notastring;""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b]",1,,execquery rejects a symbol query
+fail,0,0,q,"da.execquery["""";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b]",1,,execquery rejects an empty query
+fail,0,0,q,"da.execquery[""select from t"";2000.01.01;""p""$2000.01.02;first;();0Wn;0b]",1,,execquery rejects a date starttime
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.01;first;first;();0Wn;0b]",1,,execquery rejects a non-timestamp endtime
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;42;();0Wn;0b]",1,,execquery rejects a non-function joinfn
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;""str"";0Wn;0b]",1,,execquery rejects a string postback
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();5;0b]",1,,execquery rejects an int timeout
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;1]",1,,execquery rejects a non-boolean sync
+
+comment,,,,,,,FIX 11 - degenerate time ranges are loud not silently empty
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.02;""p""$2000.01.01;first;();0Wn;0b]",1,,execquery rejects an inverted range
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.01;first;();0Wn;0b]",1,,execquery rejects a zero-width range
+fail,0,0,q,"da.execquery[""select from t"";0Np;""p""$2000.01.02;first;();0Wn;0b]",1,,execquery rejects a null starttime
+fail,0,0,q,"da.execquery[""select from t"";""p""$2000.01.01;0Np;first;();0Wn;0b]",1,,execquery rejects a null endtime
+
+comment,,,,,,,FIX 5 - removeclient validates its handle
+fail,0,0,q,da.removeclient[`notahandle],1,,removeclient rejects a symbol handle
+fail,0,0,q,"da.removeclient[""h""]",1,,removeclient rejects a string handle instead of silently no-opping
+run,0,0,q,da.removeclient[9999i],1,,a valid int handle with no requests is still a no-op
+
+comment,,,,,,,FIX 9 + 13 - init warns on discarded in-flight work and on overlapping coverage
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,leave the next request in flight
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit a request that never completes
+run,0,0,q,logged:(),1,,clear the log buffer
+run,0,0,q,"da.init[`log`timer`resultcallback`partitions!(mocklog;mocktimer;`da.shardresult;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,re-init while a request is in flight
+true,0,0,q,any `warn=logged[;0],1,,re-init warned that it discarded in-flight work
+true,0,0,q,"0<count logged[;2] where {0<count x ss ""in-flight""} each logged[;2]",1,,the warning names the discarded in-flight requests
+run,0,0,q,logged:(),1,,clear the log buffer again
+run,0,0,q,"da.setpartitions[([]servertype:`hdb`rdb;coverfrom:2#-0Wp;coverto:2#0Wp)]",1,,install fully overlapping coverage
+true,0,0,q,any `warn=logged[;0],1,,setpartitions warned about overlapping coverage
+run,0,0,q,logged:(),1,,clear the log buffer
+run,0,0,q,"da.setpartitions[([]servertype:`hdb`rdb;coverfrom:(-0Wp;""p""$2000.06.01);coverto:(""p""$2000.06.01;0Wp))]",1,,install merely TOUCHING coverage - the documented rollover shape
+true,0,0,q,not any `warn=logged[;0],1,,touching coverage is not reported as an overlap
+run,0,0,q,"da.setpartitions[([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)]",1,,restore single-partition coverage
+
+comment,,,,,,,FIX 8 - checktimeout errors in-flight requests past their timeout
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,capture reqid without delivering
+run,0,0,q,"toid:da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0D00:00:01;0b]",1,,submit with a one-second timeout
+true,0,0,q,"1=count select from reqs[] where requestid=toid, null returntime",1,,request is in flight before the sweep
+run,0,0,q,da.checktimeout[],1,,sweep before the timeout has elapsed
+true,0,0,q,"1=count select from reqs[] where requestid=toid, null returntime",1,,a request inside its timeout is left alone
+run,0,0,q,.m.di.0dataaccess.cp:{.z.p+2D},1,,fast-forward the module clock past the timeout
+run,0,0,q,da.checktimeout[],1,,sweep after the timeout has elapsed
+true,0,0,q,1b~first exec error from reqs[] where requestid=toid,1,,timed-out request flagged as an error
+true,0,0,q,not null first exec returntime from reqs[] where requestid=toid,1,,timed-out request stamped complete so removerequests can reclaim it
+run,0,0,q,.m.di.0dataaccess.cp:{.z.p},1,,restore the real clock
+run,0,0,q,"noto:da.execquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b]",1,,submit with NO timeout
+run,0,0,q,.m.di.0dataaccess.cp:{.z.p+3650D},1,,fast-forward ten years
+run,0,0,q,da.checktimeout[],1,,sweep
+true,0,0,q,"1=count select from reqs[] where requestid=noto, null returntime",1,,a 0Wn timeout never expires
+run,0,0,q,.m.di.0dataaccess.cp:{.z.p},1,,restore the real clock
+
+comment,,,,,,,FIX 7 - getapimeta still matches the export surface after adding checktimeout
+true,0,0,q,"(asc (key da) except `init`getapimeta)~asc exec name from da[`getapimeta][]",1,,getapimeta documents checktimeout too

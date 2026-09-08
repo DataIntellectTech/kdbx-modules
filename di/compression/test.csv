@@ -1,6 +1,9 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 
-before,0,0,q,cmp:use`di.compression,1,,Initialize module
+before,0,0,q,cmp:use`di.compression,1,,load module
+before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,,define no-op mock logger
+fail,0,0,q,cmp.init[(::)],1,,init without log dep throws
+run,0,0,q,cmp.init[enlist[`log]!enlist mocklog],1,,init with injected logger
 
 before,0,0,q,trade:([]date:asc 100#.z.d - til 10;time:100#asc 09:30+10?00:10:00;sym:100?`AAPL`GOOGL`MSFT`TSLA`NVDA`AMD;price:(5*100?10000)%100;size:5*100?100;side:100?`B`S;src:100?`NYSE`NASDAQ),1,,Create mock trade table
 before,0,0,q,quote:([]date:asc 100#.z.d - til 10;time:100#asc 09:30+10?00:10:00;sym:100?`AAPL`GOOGL`MSFT`TSLA`NVDA`AMD;bid:(5*100?10000)%100;ask:(5*100?10000)%100;bsize:5*100?100;asize:5*100?100;src:100?`NYSE`NASDAQ),1,,Create mock quote table

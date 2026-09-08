@@ -14,13 +14,13 @@ q)k4unit:use`di.k4unit
 
 Then run the module test function to run the tests on another module, example:
 ```q
-q)k4unit.moduletest`di.timezone
+q)k4unit.moduletest`di.tz
 ```
 
-As part of the test cases it rquires the "before" test to module load the module with the same naming convention used for the tests, in this case "timezone":
+As part of the test cases it requires the "before" test to module load the module with the same naming convention used for the tests, in this case "tz":
 ``` 
-before,0,0,q,timezone:use`di.timezone,1,,Initialize module
-true,0,0,q,2025.07.22D14:19:48.386221575=timezone.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575],1,,Test local to gmt 1
+before,0,0,q,tz:use`di.tz,1,,Initialize module
+true,0,0,q,2025.07.22D14:19:48.386221575=tz.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575],1,,Test local to gmt 1
 ```
 
 ---
@@ -40,19 +40,19 @@ q)k4unit.saveresults`:path/to/output.csv
 q)k4unit.loadresults`:path/to/output.csv
 action ms bytes lang code                                                                                                                                                          ..
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------..
-true   0  0     q    2025.07.22D14:19:48.386221575=timezone.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575]                                                         ..
-true   0  0     q    1999.03.03D12:13:48.919241092=timezone.localtogmt[`$"Europe/London";1999.03.03D12:13:48.919241092]                                                            ..
-true   0  0     q    1967.05.02D21:03:52.857237462=timezone.gmttolocal[`$"America/Toronto";1967.05.03D01:03:52.857237462]                                                          ..
-true   0  0     q    2017.09.01D04:03:52.857237462=timezone.gmttolocal[`$"America/Los_Angeles";2017.09.01D11:03:52.857237462]                                                      ..
-true   0  0     q    2025.07.21D19:19:48.386221575=timezone.convert[`$"Asia/Singapore";`$"America/Vancouver";2025.07.22D10:19:48.386221575]                                        ..
-true   0  0     q    2025.07.24D15:27:58.224707599=timezone.convert[`$"America/New_York";`$"America/Toronto";2025.07.24D15:27:58.224707599]                                        ..
-true   0  0     q    2025.11.02D01:30:00.000=timezone.convert[`$"America/New_York";`$"America/New_York";2025.11.02D01:30:00.000]                                                   ..
-true   0  0     q    (2025.08.03D22:50:46.515073740;2025.08.04D22:50:46.515073740;2025.08.05D22:50:46.515073740)~timezone.localtogmt[`$"America/Toronto";(2025.08.03D18:50:46.51507..
-true   0  0     q    (2025.08.03D11:50:46.515073740;2025.08.04D11:50:46.515073740;2025.08.05D11:50:46.515073740)~timezone.gmttolocal[`$"America/Vancouver";(2025.08.03D18:50:46.515..
-true   0  0     q    (2025.08.05D19:50:46.515073740;2025.08.05D14:50:46.515073740)~timezone.gmttolocal[`$("Europe/London";"America/New_York");2# 2025.08.05D18:50:46.515073740]    ..
-true   0  0     q    (2025.08.05D17:50:46.515073740;2025.08.05D22:50:46.515073740)~timezone.localtogmt[`$("Europe/London";"America/New_York");2# 2025.08.05D18:50:46.515073740]    ..
-true   0  0     q    `notValidTimezone~.[timezone.gmttolocal;(`testTimezone;.z.p);{`$x}]                                                                                           ..
-true   0  0     q    `notValidTimezone~.[timezone.localtogmt;(`testTimezone;.z.p);{`$x}]           
+true   0  0     q    2025.07.22D14:19:48.386221575=tz.localtogmt[`$"America/New_York";2025.07.22D10:19:48.386221575]                                                               ..
+true   0  0     q    1999.03.03D12:13:48.919241092=tz.localtogmt[`$"Europe/London";1999.03.03D12:13:48.919241092]                                                                  ..
+true   0  0     q    1967.05.02D21:03:52.857237462=tz.gmttolocal[`$"America/Toronto";1967.05.03D01:03:52.857237462]                                                                ..
+true   0  0     q    2017.09.01D04:03:52.857237462=tz.gmttolocal[`$"America/Los_Angeles";2017.09.01D11:03:52.857237462]                                                            ..
+true   0  0     q    2025.07.21D19:19:48.386221575=tz.convert[`$"Asia/Singapore";`$"America/Vancouver";2025.07.22D10:19:48.386221575]                                              ..
+true   0  0     q    2025.07.24D15:27:58.224707599=tz.convert[`$"America/New_York";`$"America/Toronto";2025.07.24D15:27:58.224707599]                                              ..
+true   0  0     q    2025.11.02D01:30:00.000=tz.convert[`$"America/New_York";`$"America/New_York";2025.11.02D01:30:00.000]                                                         ..
+true   0  0     q    (2025.08.03D22:50:46.515073740;2025.08.04D22:50:46.515073740;2025.08.05D22:50:46.515073740)~tz.localtogmt[`$"America/Toronto";(2025.08.03D18:50:46.51507      ..
+true   0  0     q    (2025.08.03D11:50:46.515073740;2025.08.04D11:50:46.515073740;2025.08.05D11:50:46.515073740)~tz.gmttolocal[`$"America/Vancouver";(2025.08.03D18:50:46.515      ..
+true   0  0     q    (2025.08.05D19:50:46.515073740;2025.08.05D14:50:46.515073740)~tz.gmttolocal[`$("Europe/London";"America/New_York");2# 2025.08.05D18:50:46.515073740]          ..
+true   0  0     q    (2025.08.05D17:50:46.515073740;2025.08.05D22:50:46.515073740)~tz.localtogmt[`$("Europe/London";"America/New_York");2# 2025.08.05D18:50:46.515073740]          ..
+true   0  0     q    `notValidTimezone~.[tz.gmttolocal;(`testTimezone;.z.p);{`$x}]                                                                                                 ..
+true   0  0     q    `notValidTimezone~.[tz.localtogmt;(`testTimezone;.z.p);{`$x}]                                                                                                 ..
 ```
 
 ### Configuration

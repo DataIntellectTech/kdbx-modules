@@ -1,0 +1,81 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,cfg:use`di.config,1,1,load the module
+before,0,0,q,"logtab:([]lvl:`symbol$();ctx:`symbol$();msg:())",1,1,capturing log table
+before,0,0,q,"mocklog:`info`warn`error!({[c;m]`logtab upsert(`info;c;m)};{[c;m]`logtab upsert(`warn;c;m)};{[c;m]`logtab upsert(`error;c;m)})",1,1,define a capturing binary logger
+before,0,0,q,cfg.init[enlist[`log]!enlist mocklog],1,1,init with the required log dependency
+before,0,0,q,"system""mkdir -p /tmp/diconfigbuiltin""",1,1,builtin root for the cascade
+before,0,0,q,"system""mkdir -p /tmp/diconfigapp""",1,1,app root for the cascade
+before,0,0,q,"(`:/tmp/diconfigbuiltin/default.q) 0: (""diconfiga:1"";""diconfigb:1"")",1,1,builtin/default flat name:value (two settings)
+before,0,0,q,"(`:/tmp/diconfigbuiltin/rdb.q) 0: enlist ""diconfigb:10""",1,1,builtin/rdb proctype tier sets diconfigb
+before,0,0,q,"(`:/tmp/diconfigapp/default.q) 0: (""diconfiga:100"";""diconfigb:5"")",1,1,app/default flat name:value (two settings)
+before,0,0,q,"(`:/tmp/diconfigapp/rdb1.q) 0: enlist ""diconfiga:999""",1,1,app/rdb1 procname tier sets diconfiga
+before,0,0,q,"basecfg:`enabled`rows`syms`tab`byte`str!(0b;100;`a`b;([]a:`long$());0x01;"":olddb"")",1,1,base config dict for the overrideconfig tests (str is a char-string setting, as a .toml value would be)
+before,0,0,q,"system""mkdir -p /tmp/diconfigskip""",1,1,dir for the malformed-line skip test
+before,0,0,q,"(`:/tmp/diconfigskip/default.q) 0: (""a:1"";"""";""/ a comment"";""straynocolon"";""b:2"")",1,1,a .q file mixing valid pairs with blank/comment/no-colon lines
+before,0,0,q,"system""mkdir -p /tmp/diconfigtoml""",1,1,dir for the toml-guard test
+before,0,0,q,"(`:/tmp/diconfigtoml/present.toml) 0: enlist ""a = 1""",1,1,a .toml file that exists but cannot be parsed without di.toml (absent in kdbx-modules)
+comment,,,,,,,init - dependency validation
+fail,0,0,q,cfg.init[(::)],1,1,init rejects a non-dictionary deps
+fail,0,0,q,cfg.init[enlist[`foo]!enlist 1],1,1,init rejects deps without a log key
+fail,0,0,q,cfg.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
+fail,0,0,q,cfg.init[enlist[`log]!enlist ((enlist`info)!enlist {[c;m]})],1,1,init rejects a log dict missing warn/error
+comment,,,,,,,parsefile - parse one flat .q settings file into a dict (.toml delegated to di.toml)
+true,0,0,q,"1~cfg.parsefile[""/tmp/diconfigbuiltin/default.q""]`diconfiga",1,1,parsefile reads a flat name:value .q file into a dict
+true,0,0,q,"2=count cfg.parsefile[""/tmp/diconfigbuiltin/default.q""]",1,1,parsefile returns every setting in the file
+true,0,0,q,"0=count cfg.parsefile[""/tmp/diconfignope/default.q""]",1,1,parsefile returns an empty dict for a missing .q file
+true,0,0,q,"(`a`b!1 2)~cfg.parsefile[""/tmp/diconfigskip/default.q""]",1,1,parsefile skips blank/comment/no-colon lines and returns only valid pairs (no-colon line must not crash the split)
+comment,,,,,,,parsefile - .toml guard rail (di.toml is a soft dep; absent in kdbx-modules so the error path is exercised here)
+true,0,0,q,"0=count cfg.parsefile[""/tmp/diconfignope/absent.toml""]",1,1,a MISSING .toml contributes nothing and does NOT require di.toml (existence checked before delegation)
+fail,0,0,q,"cfg.parsefile[""/tmp/diconfigtoml/present.toml""]",1,1,an EXISTING .toml with no di.toml on QPATH signals rather than parsing
+true,0,0,q,"(@[cfg.parsefile;""/tmp/diconfigtoml/present.toml"";{x}]) like ""*di.toml module was not found*""",1,1,the .toml guard error names the missing di.toml module
+comment,,,,,,,cascade - merged flat dict over two roots x default/proctype/procname (name-major; .toml>.q within a tier)
+true,0,0,q,"100~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdbnofile])`diconfiga",1,1,within a name the later (app) root overrides the builtin root
+true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdbnofile])`diconfigb",1,1,name-major: builtin proctype beats app default (would be 5 under root-major)
+true,0,0,q,"999~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1])`diconfiga",1,1,name-major: the procname tier (app/rdb1) wins over every less-specific name
+true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1])`diconfigb",1,1,a key absent from the procname tier keeps its most-specific set value (builtin proctype)
+true,0,0,q,"not (`) in key cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1]",1,1,the sentinel merge key is dropped from the returned dict
+true,0,0,q,"0=count cfg.cascade[""/tmp/diconfignope1"";""/tmp/diconfignope2"";`rdb;`rdb1]",1,1,an all-missing cascade resolves to an empty dict
+true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`default])`diconfigb",1,1,dedup: procname=`default must NOT re-apply the default tier last and override proctype (would be 5 without distinct)
+true,0,0,q,"100~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb])`diconfiga",1,1,dedup: proctype~procname resolves correctly (each tier once)
+fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;(`)]",1,1,cascade rejects a null procname (else it resolves a bogus root/.q tier)
+fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";(`);`rdb1]",1,1,cascade rejects a null proctype
+fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";""rdb"";`rdb1]",1,1,cascade rejects a non-symbol (string) proctype
+comment,,,,,,,overrideconfig - command-line override layer applied onto a resolved config dict
+true,0,0,q,"1b~(cfg.overrideconfig[basecfg;`enabled`rows!(enlist""1"";enlist""500"")])`enabled",1,1,bool parsed and set from string
+true,0,0,q,"500~(cfg.overrideconfig[basecfg;`enabled`rows!(enlist""1"";enlist""500"")])`rows",1,1,long parsed and set from string
+true,0,0,q,"basecfg~cfg.overrideconfig[basecfg;()!()]",1,1,empty params returns the config unchanged
+true,0,0,q,"0b~(cfg.overrideconfig[basecfg;enlist[`enabled]!enlist ""bad""])`enabled",1,1,unparseable boolean is rejected - the value is left unchanged (not silently set to 0b via a null)
+true,0,0,q,"any (exec msg from logtab) like ""*did not parse*""",1,1,rejected boolean override is logged
+true,0,0,q,"0xff~(cfg.overrideconfig[basecfg;enlist[`byte]!enlist ""ff""])`byte",1,1,valid hex byte parsed and applied
+true,0,0,q,"0x01~(cfg.overrideconfig[basecfg;enlist[`byte]!enlist ""gg""])`byte",1,1,invalid hex byte is rejected (no null - must not slip through as 0x00)
+true,0,0,q,"`xx`yy~(cfg.overrideconfig[basecfg;enlist[`syms]!enlist (""xx"";""yy"")])`syms",1,1,symbol list parsed and set from strings
+true,0,0,q,""":newdb""~(cfg.overrideconfig[basecfg;enlist[`str]!enlist "":newdb""])`str",1,1,a string-typed setting is overridden as-is (this is what makes .toml string settings overridable)
+true,0,0,q,"10h~type (cfg.overrideconfig[basecfg;enlist[`str]!enlist "":newdb""])`str",1,1,string override preserves the string (10h) type
+true,0,0,q,"100~(cfg.overrideconfig[basecfg;enlist[`rows]!enlist (""55"";""66"")])`rows",1,1,a multi-value override on a scalar setting is rejected (not silently first) - left unchanged
+true,0,0,q,""":olddb""~(cfg.overrideconfig[basecfg;enlist[`str]!enlist (""aa"";""bb"")])`str",1,1,a multi-value override on a string setting is rejected - left unchanged
+true,0,0,q,"any (exec msg from logtab) like ""*expected a single value*""",1,1,a multi-value override on a single-valued setting is logged
+true,0,0,q,"not `nope in key cfg.overrideconfig[basecfg;enlist[`nope]!enlist enlist""1""]",1,1,an unknown setting is not added to the config dict
+true,0,0,q,"(key basecfg)~key cfg.overrideconfig[basecfg;enlist[`nope]!enlist enlist""1""]",1,1,an unknown setting leaves the config keys unchanged
+true,0,0,q,"any (exec msg from logtab) like ""*unknown setting*""",1,1,unknown setting logged
+true,0,0,q,"(cfg.overrideconfig[basecfg;enlist[`tab]!enlist enlist""1""])[`tab]~basecfg`tab",1,1,a non-basic-type setting (table) is left unchanged
+true,0,0,q,"any (exec msg from logtab) like ""*not a basic type*""",1,1,non-basic-type setting logged
+fail,0,0,q,cfg.overrideconfig[42;()!()],1,1,overrideconfig rejects a non-dict config
+fail,0,0,q,cfg.overrideconfig[basecfg;42],1,1,overrideconfig rejects non-dict params
+fail,0,0,q,"cfg.overrideconfig[basecfg;enlist[1]!enlist enlist""x""]",1,1,overrideconfig rejects non-symbol params keys
+comment,,,,,,,getapimeta - module api metadata
+true,0,0,q,(asc key cfg)~asc exec name from cfg.getapimeta[],1,1,getapimeta documents exactly the module's exports
+true,0,0,q,`name`public`descrip`params`return~cols cfg.getapimeta[],1,1,getapimeta rows carry the registry columns
+true,0,0,q,1b~(1!cfg.getapimeta[])[`cascade]`public,1,1,a public API function (cascade) is marked public
+true,0,0,q,0b~(1!cfg.getapimeta[])[`init]`public,1,1,framework plumbing (init) is not public
+comment,,,,,,,logger emission - real logger via a caller-side binary wrapper (must run last; re-inits cfg)
+run,0,0,q,kxlogger:use`kx.log,1,1,load the kx.log module
+run,0,0,q,kxinst:kxlogger.createLog[],1,1,create a real kx.log instance
+run,0,0,q,kxh:hopen `:/tmp/diconfigkxsink.txt,1,1,open a file sink to capture output
+run,0,0,q,kxinst.add[kxh;`info],1,1,route info-level output to the file sink
+run,0,0,q,"kxbinary:`info`warn`error!({[c;m]kxinst[`info][string[c],"": "",m]};{[c;m]kxinst[`warn][string[c],"": "",m]};{[c;m]kxinst[`error][string[c],"": "",m]})",1,1,wrap the monadic logger into the binary {[c;m]} contract
+run,0,0,q,cfg.init[enlist[`log]!enlist kxbinary],1,1,re-init di.config with the conforming binary logger
+run,0,0,q,"kxres:cfg.overrideconfig[enlist[`kxrows]!enlist 5;enlist[`kxrows]!enlist enlist""7""]",1,1,drive a real info-level log through the wrapped logger
+run,0,0,q,hclose kxh,1,1,flush and close the file sink
+true,0,0,q,7~kxres`kxrows,1,1,the override was applied (returned dict carries the new value)
+true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*overrideconfig: setting*""",1,1,the override emitted an info line through the real logger
+true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*kxrows*""",1,1,emitted message names the overridden setting

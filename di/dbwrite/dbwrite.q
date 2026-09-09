@@ -10,7 +10,7 @@ defaultparams:([] tabname:enlist`default; att:enlist`; column:enlist`time; sort:
 init:{[deps]
   / wire the injected logger - required, no silent fallback. deps: a dict with a `log key
   / holding a binary `info`warn`error dict of {[c;m]} loggers (context symbol, message string),
-  / from di.log or hand-rolled. no adaptation here, so a monadic kx.log instance must be wrapped
+  / from di.util.log or hand-rolled. no adaptation here, so a monadic kx.log instance must be wrapped
   / first. e.g. di.dbwrite.init[enlist[`log]!enlist logdep]
   if[99h<>type deps;
     '"di.dbwrite: deps must be a dict with a `log key"];

@@ -17,12 +17,12 @@ depend on di.api.
 
 `init` must be called before any other function. The `log` dependency is **required** — there is no
 fallback, and the module does no adaptation. The `log` value must already be a binary
-`` `info`warn`error!{[c;m]} `` dict (context symbol, message string), built from `di.log` or
+`` `info`warn`error!{[c;m]} `` dict (context symbol, message string), built from `di.util.log` or
 hand-rolled; a raw monadic `kx.log` instance must be wrapped by the caller first.
 
 ```q
 api:use`di.api
-logger:use`di.log
+logger:use`di.util.log
 api.init[enlist[`log]!enlist `info`warn`error!(logger.info;logger.warn;logger.error)]
 ```
 
@@ -85,7 +85,7 @@ see only a process's top-level glue, not the module logic they exist to inspect.
 | `whereami` | Reverse-looks-up a function value to its name via the root scan — returns nothing for a function that lives inside a module (i.e. the usual error-trap case). |
 | `fullapi` (namespace scan) | The scan-and-left-join-`detail` model does not apply; `getapi`/`find` serve the registry directly. |
 | `mem` / `m` | Memory sizing belongs to `di.memstats`. |
-| `exportconfig` / `exportallconfig` / `torqnamespaces` | A faithful port needs config **values** (di.config `getmodule`) joined with **descriptions** (di.api `getapi`/`find`). di.config and di.api are both standalone and don't depend on each other, so the join belongs in **di.torq** (it has both). It is a **di.torq-era task**, not a di.config change: di.config's `getmodule` already returns per-namespace values; the missing piece is pairing them with the api descriptions across namespaces. |
+| `exportconfig` / `exportallconfig` / `torqnamespaces` | A faithful port needs config **values** (di.torq.config `getmodule`) joined with **descriptions** (di.api `getapi`/`find`). di.torq.config and di.api are both standalone and don't depend on each other, so the join belongs in **di.torq** (it has both). It is a **di.torq-era task**, not a di.torq.config change: di.torq.config's `getmodule` already returns per-namespace values; the missing piece is pairing them with the api descriptions across namespaces. |
 
 ## Hard dependencies
 

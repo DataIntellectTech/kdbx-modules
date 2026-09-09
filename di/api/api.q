@@ -8,7 +8,7 @@ detailschema:([name:`u#`symbol$()] public:`boolean$(); descrip:(); params:(); re
 
 init:{[deps]
   / wire the injected logger (required, no fallback) and start with an empty registry. deps: a `log
-  / key holding a binary `info`warn`error dict of {[c;m]} loggers (di.log or hand-rolled; a monadic
+  / key holding a binary `info`warn`error dict of {[c;m]} loggers (di.util.log or hand-rolled; a monadic
   / kx.log instance must be wrapped first). e.g. di.api.init[enlist[`log]!enlist logdep]
   if[99h<>type deps;
     '"di.api: deps must be a dict with a `log key"];

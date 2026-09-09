@@ -80,8 +80,8 @@ run,0,0,q,eodtime.init[enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)]
 run,0,0,q,.test.err:@[{eodtime.init[()!()]};(::);{x}],1,1,capture error string from init with missing log dep
 true,0,0,q,.test.err like "di.eodtime:*",1,1,error is prefixed di.eodtime:
 
-comment,,,,,,,init - accepts any dict already shaped to the binary {[c;m]} contract (e.g. di.log's logdict)
-run,0,0,q,sixlvllog:`trace`debug`info`warn`error`fatal!({[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]}),1,1,hand-built six-level dict matching di.log's logdict shape
+comment,,,,,,,init - accepts any dict already shaped to the binary {[c;m]} contract (e.g. di.util.log's logdict)
+run,0,0,q,sixlvllog:`trace`debug`info`warn`error`fatal!({[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]};{[c;m]}),1,1,hand-built six-level dict matching di.util.log's logdict shape
 run,0,0,q,eodtime.init[`log`rolltimezone!(sixlvllog;`$"GMT")],1,1,superset log dict accepted as-is - only info/warn/error are used
 
 comment,,,,,,,log call verification - capturing logger sees init message with binary {[c;m]} args

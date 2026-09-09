@@ -22,10 +22,10 @@ A **config table** (`tabname`,`att`,`column`,`sort`) drives which columns are so
 |---|---|---|---|
 | logger | `` `log `` | yes | Functions `info`,`warn`,`error` — each binary `{[c;m] ...}` (context symbol, message string) |
 
-The `log` dependency must be passed to `init`. The module throws if it is absent, `(::)`, or missing any of the three keys. The `log` value must **already** be a binary `` `info`warn`error!{[c;m]} `` dict — each function takes a context symbol `c` (the calling function) and a message string `m`. `init` performs **no** adaptation and fans the dict out into `.z.m.loginfo`/`.z.m.logwarn`/`.z.m.logerr`. Build it from `di.log` (which exports binary `info`/`warn`/`error`) or hand-roll one; a raw monadic [`kx.log`](https://github.com/KxSystems/logging) instance must be wrapped by the caller first — the module will not do it.
+The `log` dependency must be passed to `init`. The module throws if it is absent, `(::)`, or missing any of the three keys. The `log` value must **already** be a binary `` `info`warn`error!{[c;m]} `` dict — each function takes a context symbol `c` (the calling function) and a message string `m`. `init` performs **no** adaptation and fans the dict out into `.z.m.loginfo`/`.z.m.logwarn`/`.z.m.logerr`. Build it from `di.util.log` (which exports binary `info`/`warn`/`error`) or hand-roll one; a raw monadic [`kx.log`](https://github.com/KxSystems/logging) instance must be wrapped by the caller first — the module will not do it.
 
 ```q
-logger:use`di.log
+logger:use`di.util.log
 logdep:`info`warn`error!(logger.info;logger.warn;logger.error)
 dbwrite:use`di.dbwrite
 dbwrite.init[enlist[`log]!enlist logdep]

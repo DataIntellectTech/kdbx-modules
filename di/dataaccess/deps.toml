@@ -1,0 +1,4 @@
+# Peer modules di.dataaccess `use`s (see di/depcheck/depcheck.md).
+[dependencies]
+"di.asyncdispatch" = "0.1.0"
+"di.serverselect" = "0.1.0"

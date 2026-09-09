@@ -48,11 +48,11 @@ alongside it.
 The `log` dependency must be passed to `init` inside a dict keyed on `` `log ``. `init` throws
 immediately if `log` is absent, is not a dict, or is missing any of `info`/`warn`/`error`. The value
 must already conform to the binary `{[c;m]}` contract — `init` performs no adaptation, so a raw
-monadic `kx.log` instance must be wrapped by the caller first. Build the dict from `di.log`, or
+monadic `kx.log` instance must be wrapped by the caller first. Build the dict from `di.util.log`, or
 hand-roll one.
 
 ```q
-logger:use`di.log
+logger:use`di.util.log
 logdep:`info`warn`error!(logger.info;logger.warn;logger.error)
 pqx:use`di.pqx
 pqx.init[enlist[`log]!enlist logdep]
@@ -253,7 +253,7 @@ pqx.init[enlist[`log]!enlist logdep]
 | `getmanifest[]` | Return the manifest accumulated so far across all `extract` calls. |
 | `readfile[path;readopt]` | Read a single file back, reattaching its `virtualcols`/`date` values reconstructed from its path (see Options). |
 | `buildvirtualtable[hdbdir;tname;levels]` | Compose every file under `hdbdir/tname/` into one queryable virtual table, with each hive-style path segment in `levels` reconstructed and typed per its declared type char (see Virtual Tables). |
-| `version` | The module version string, read from the `VERSION` file at load time. Consumed by `di.depcheck`. |
+| `version` | The module version string, read from the `VERSION` file at load time. Consumed by `di.torq.depcheck`. |
 
 The remaining exports — `checkandconvertcols`, `estimate`, `plan`, `writefile`, `tryfn`,
 `checkvirtuallevels`, `checkvirtualtypes` — are internal pipeline steps of
@@ -272,7 +272,7 @@ required key.
 
 ### `version`
 The module version string, read from the `VERSION` file at load time (fails loudly if that file
-is missing, unreadable, or empty). Consumed by `di.depcheck`.
+is missing, unreadable, or empty). Consumed by `di.torq.depcheck`.
 ```q
 pqx.version   / "0.1.0"
 ```
@@ -326,7 +326,7 @@ Only useful for a file written with `virtualcols` set, or to recover the `date` 
 pqx:use`di.pqx
 
 // Wire the log dependency (once per process)
-logger:use`di.log
+logger:use`di.util.log
 pqx.init[logger.logdict]
 
 // Write `trade` for 2025.07.15, overriding the target file size and codec

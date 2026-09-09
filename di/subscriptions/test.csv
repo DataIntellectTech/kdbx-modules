@@ -1,0 +1,24 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,sub:use`di.subscriptions,1,,load module
+before,0,0,q,system "l di/subscriptions/test.q",1,,load fixture helpers
+before,0,0,q,buildlog[4],1,,build a real 4-message tp log via di.tplogmgr
+
+fail,0,0,q,sub.init[()!();()!()],1,,init without the log dependency must error
+
+run,0,0,q,sub.init[()!();deps[]],1,,init with a mock log dependency
+run,0,0,q,`upd set rootupd,1,,define the root-namespace-safe upd the replay drives - as di.rdb does
+run,0,0,q,@[`.;`trade;:;0#tradeschema[]],1,,ensure no stale trade table before subscribing
+run,0,0,q,sd:sub.subscribe[mocktph[4];`;`;1b],1,,subscribe all/all with replay over the mock TP handle
+
+true,0,0,q,`trade in tables[],1,,subscribe created the trade table from the returned schema
+true,0,0,q,`g=attr trade`sym,1,,the schema's g# attribute on sym was preserved
+true,0,0,q,4=count trade,1,,all four logged messages were replayed into the table
+true,0,0,q,4=sd`rowcount,1,,subdetails reported the pre-subscription rowcount
+true,0,0,q,sub.subscribed[],1,,the subscription was recorded in the registry
+
+run,0,0,q,`trade set 0#tradeschema[],1,,reset the table for the filtered-subscription test
+run,0,0,q,sdf:sub.subscribe[mocktph[4];`;enlist`S1;1b],1,,subscribe with a sym filter (only S1)
+true,0,0,q,1=count trade,1,,replay filtered to the single subscribed sym
+true,0,0,q,`S1=first trade`sym,1,,the replayed row is the subscribed sym
+
+after,0,0,q,teardownfixture[],1,,remove the temp log dir

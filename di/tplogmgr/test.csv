@@ -1,0 +1,24 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tp:use`di.tplogmgr,1,,load module
+before,0,0,q,system "l di/tplogmgr/test.q",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,create temp fixture dirs
+
+run,0,0,q,dowriteandreopen[],1,,open fresh + write two + reopen (replays through root upd)
+true,0,0,q,0=FRESHCOUNT,1,,a freshly created log has zero messages
+true,0,0,q,2=REOPENCOUNT,1,,reopening replays and reports the two written messages
+true,0,0,q,2=count replayed,1,,both messages were replayed through the root upd
+true,0,0,q,`trade=first first replayed,1,,the replayed message carried the correct table name
+
+run,0,0,q,rollok:dorollnewfile[],1,,roll closes the current log and opens the next day's
+true,0,0,q,rollok,1,,the next day's log file exists after a roll
+
+fail,0,0,q,opencorrupt[],1,,opening a corrupt log fails fast rather than partially replaying
+
+run,0,0,q,repok:replaynodouble[],1,,replay repairs a corrupt log and processes each good message once
+true,0,0,q,repok,1,,replay executed the root upd exactly once per recovered message (no double-processing)
+
+true,0,0,q,checkcleanok[],1,,check on a clean log returns the same file unchanged
+
+true,0,0,q,replayuptopartial[],1,,replayupto replays only the first n messages (not later live-and-logged ones)
+
+after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

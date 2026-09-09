@@ -1,0 +1,44 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tk:use`di.proc.tickerplant,1,,load module
+before,0,0,q,system "l di/proc/tickerplant/test.q",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,create temp fixture dirs and schema files
+
+fail,0,0,q,initbad[],1,,a schema with no time/sym table fails init (run first while root is clean of good tables)
+
+run,0,0,q,doinit[immcfg[]],1,,init in immediate mode with logging
+true,0,0,q,`trade in tables[],1,,schema file loaded the trade table at root
+true,0,0,q,`g=attr trade`sym,1,,the g# attribute was applied to sym
+true,0,0,q,`upd in key `.,1,,feed entry point published at root
+true,0,0,q,`sub in key `.u,1,,subscriber entry point published as .u.sub
+true,0,0,q,scheduled[`tpeodcheck],1,,the eod-roll check job was scheduled
+true,0,0,q,not scheduled[`tpflush],1,,immediate mode schedules no flush job
+
+run,0,0,q,feedtrades[2],1,,feed two trades in immediate mode
+true,0,0,q,0=count trade,1,,immediate mode retains no local rows
+true,0,0,q,loghas["log";2],1,,both feed messages were written to the tp log
+
+true,0,0,q,subdetailsok[],1,,subdetails returns rowcount + tables/schemas + logfile/date for a replaying subscriber
+
+run,0,0,q,doinit[batchcfg[]],1,,re-init in batched mode
+true,0,0,q,scheduled[`tpflush],1,,batched mode schedules a flush job
+true,0,0,q,flushperiodok[],1,,flush job uses the configured pubperiod
+run,0,0,q,feedtrades[3],1,,feed three trades in batched mode
+true,0,0,q,3=count trade,1,,batched mode buffers rows locally
+run,0,0,q,(tk`flush)[],1,,flush publishes and clears the buffer
+true,0,0,q,0=count trade,1,,flush emptied the buffered table
+
+run,0,0,q,doinit[replaycfg[]],1,,fresh batched init pointing at an empty replay log dir
+run,0,0,q,feedtrades[4],1,,write four trades to the replay log
+run,0,0,q,doinit[replaycfg[]],1,,re-init against the same log (simulates a restart)
+true,0,0,q,4=count trade,1,,restart replayed the four logged messages back into the buffer
+
+run,0,0,q,doinit[nologcfg[]],1,,init with no tplogdir configured
+run,0,0,q,feedtrades[1],1,,feeding with logging disabled must not error
+true,0,0,q,0=count trade,1,,immediate mode still retains nothing with logging off
+
+run,0,0,q,doinit[replaycfg[]],1,,re-init for the eod roll test (batched with a log)
+run,0,0,q,ROLLDATE:"d"$.z.p,1,,capture today's date before rolling
+run,0,0,q,endofday[],1,,force an end-of-day roll
+true,0,0,q,rolledfile["replog";ROLLDATE+1],1,,the roll opened the next day's log file
+
+after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

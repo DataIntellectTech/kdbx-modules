@@ -197,7 +197,7 @@ init:{[deps]
   /   cmp.init[enlist[`log]!enlist logdep]
   logdict:$[99h=type deps;$[(`log in key deps) and not (::)~deps`log;deps`log;()!()];()!()];
   if[not count logdict;
-    '"di.compression: log dependency is required; pass `info`warn`error functions - see di.log or refer to confluence documentation";
+    '"di.compression: log dependency is required; pass `info`warn`error functions - see di.util.log or refer to confluence documentation";
   ];
   .z.m.loginfo:logdict`info;
   .z.m.logwarn:logdict`warn;

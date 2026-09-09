@@ -24,7 +24,7 @@ Passed as a dictionary to `init`. The `log` dependency is required — `init` th
 
 | Key | Required | Type | Description |
 |---|---|---|---|
-| `` `log `` | yes | dict | Logger with keys `` `info`warn`error ``, each `{[c;m]}`. See `di.log` for a default implementation. |
+| `` `log `` | yes | dict | Logger with keys `` `info`warn`error ``, each `{[c;m]}`. See `di.util.log` for a default implementation. |
 
 ---
 

@@ -114,8 +114,8 @@ eodtime.setd[1+eodtime.getd[]]
 ## Usage Example
 
 ```q
-/ log dep must already match the binary {[c;m]} contract - write your own, or use di.log:
-/   logging:use`di.log
+/ log dep must already match the binary {[c;m]} contract - write your own, or use di.util.log:
+/   logging:use`di.util.log
 /   eodtime.init[logging.logdict]
 logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
 
@@ -145,7 +145,7 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.eodtime
 ```
 
-The test suite injects a no-op mock logger and a capturing logger that records `(level;msg)` pairs for assertion. It covers: dependency validation (non-dict deps throws; missing `log` key throws; non-dict log value throws; missing `info` key throws; `info`-only log dict succeeds); config defaults and overrides; `getroll` with GMT and non-GMT roll timezones including DST transitions (London winter vs summer, and an overnight DST-transition rollover); `getdailyadjustment` with UTC shortcuts and DST-aware timezones; state setters (`setnextroll`, `setdailyadj`, `setd`) and their corresponding getters; and a six-level log dict (matching `di.log`'s `logdict` shape) accepted as-is by `init`.
+The test suite injects a no-op mock logger and a capturing logger that records `(level;msg)` pairs for assertion. It covers: dependency validation (non-dict deps throws; missing `log` key throws; non-dict log value throws; missing `info` key throws; `info`-only log dict succeeds); config defaults and overrides; `getroll` with GMT and non-GMT roll timezones including DST transitions (London winter vs summer, and an overnight DST-transition rollover); `getdailyadjustment` with UTC shortcuts and DST-aware timezones; state setters (`setnextroll`, `setdailyadj`, `setd`) and their corresponding getters; and a six-level log dict (matching `di.util.log`'s `logdict` shape) accepted as-is by `init`.
 
 ---
 

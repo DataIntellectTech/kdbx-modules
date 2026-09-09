@@ -1,0 +1,5 @@
+# Peer modules di.wdb `use`s (see di/depcheck/depcheck.md for the manifest-graph mechanism).
+[dependencies]
+"di.torq.servers" = "0.3.0"       # requires the INJECTED-servers contract (deps`servers)
+"di.subscriptions" = "0.1.0"
+"di.dbwrite" = "0.1.0"

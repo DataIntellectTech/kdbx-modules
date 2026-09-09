@@ -1,0 +1,9 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,gw:use`di.proc.gateway,1,,load module
+before,0,0,q,mlog:`info`warn`error!(3#enlist {[c;m]}),1,,a minimal (binary) log dep dict
+
+fail,0,0,q,gw.init[()!();()!()],1,,init without any deps must error
+fail,0,0,q,gw.init[()!();(enlist`log)!enlist mlog],1,,init with log but no timer/handlers deps must error
+
+true,0,0,q,`init`asyncexec`asyncexecjpt`reload`version~key gw,1,,module exports init/asyncexec/asyncexecjpt/reload/version
+true,0,0,q,0<count gw`version,1,,version string is present (e.g. 0.1.0)

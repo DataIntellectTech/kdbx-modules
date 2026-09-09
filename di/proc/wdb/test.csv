@@ -1,0 +1,9 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,wdb:use`di.proc.wdb,1,,load module
+before,0,0,q,mlog:`info`warn`error!(3#enlist {[c;m]}),1,,a minimal (dyadic) log dep dict
+
+fail,0,0,q,wdb.init[()!();()!()],1,,init without the log dependency must error
+fail,0,0,q,wdb.init[()!();(enlist`log)!enlist mlog],1,,init with log but no timer dependency must error
+
+true,0,0,q,`init`endofday`version~key wdb,1,,module exports init/endofday/version
+true,0,0,q,0<count wdb`version,1,,version string is present (e.g. 0.1.0)

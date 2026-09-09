@@ -1,0 +1,30 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,hdb:use`di.proc.hdb,1,,load module
+before,0,0,q,system "l di/proc/hdb/test.q",1,,load mock log dependency and fixture helpers
+before,0,0,q,setupfixture[],1,,create a temp serialized table to mount
+
+fail,0,0,q,hdb.init[absdircfg[];()!()],1,,init without a log dependency must error
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,hdb.init[absdircfg[];mockdeps[]],1,,init with an absolute dir - sidesteps needing TORQXHOME
+true,0,0,q,`widgets in tables[],1,,the fixture table was mounted
+true,0,0,q,3=count widgets,1,,mounted table has the expected row count
+true,0,0,q,0<count select from calls where lvl=`info,1,,init logged at least one info message
+true,0,0,q,`reload in key `.hdb,1,,init published reload at the real root namespace .hdb
+
+run,0,0,q,delete widgets from `.,1,,drop the in-memory table to prove reload actually remounts it
+run,0,0,q,.hdb.reload[],1,,call the published root-level reload entry point
+true,0,0,q,`widgets in tables[],1,,reload remounted the fixture table
+
+run,0,0,q,setenv[`TORQXAPPHOME;"/tmp"],1,,point TORQXAPPHOME so resolvedir can join a relative dir against it
+run,0,0,q,delete widgets from `.,1,,drop it again before testing the relative-path init
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,hdb.init[reldircfg[];mockdeps[]],1,,init with a relative dir - exercises resolvedir's TORQXAPPHOME join
+true,0,0,q,`widgets in tables[],1,,relative dir correctly resolved against TORQXAPPHOME and mounted
+
+run,0,0,q,delete widgets from `.,1,,drop it again before testing a string-typed (not symbol) dir
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,hdb.init[absdirstringcfg[];mockdeps[]],1,,init with dir as a plain q string - simulates a .toml-sourced settings value
+true,0,0,q,`widgets in tables[],1,,resolvedir normalized the string to a symbol internally and mounted correctly
+
+after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

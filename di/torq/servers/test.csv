@@ -1,0 +1,48 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,svc:use`di.torq.servers,1,1,load the module
+before,0,0,q,"system ""l di/torq/servers/test.q""",1,1,load recording mocks + real-peer fixture helpers (cwd is the repo root under moduletest)
+before,0,0,q,setupfixture[],1,1,write a temp process.csv fixture (self/otherproc/deadproc) and pick free ports
+before,0,0,q,spawnpeer[],1,1,launch a genuinely separate q peer to act as otherproc
+comment,,,,,,,init - dependency + config validation (plain signal; logger not wired yet)
+fail,0,0,q,svc.init[()!()],1,1,init with no deps errors
+fail,0,0,q,svc.init[enlist[`log]!enlist mocklog],1,1,init missing timer/handlers errors
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(42;mocktimer;mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a non-dict log value
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!((enlist`info)!enlist{[c;m]};mocktimer;mockhandlers;`selfproc;`selfinst)]",1,1,init rejects a log dict missing warn/error
+fail,0,0,q,"svc.init[`log`timer`handlers!(mocklog;mocktimer;mockhandlers)]",1,1,init rejects deps without proctype/procname identity
+comment,,,,,,,init - wiring and idempotency
+run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,init with mock deps + config (dial otherproc and deadproc)
+true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,init registered its .z.pc observer via the handlers dep
+true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,init scheduled the retry job via the timer dep
+true,0,0,q,10=first exec period from timercalls where id=`serversretry,1,1,retry period is 10s (di.timer mode-1h period in seconds - guards the old 10000 typo)
+run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,re-init must be idempotent
+true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,idempotent re-init did NOT add a second retry job
+true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,idempotent re-init did NOT re-register the pc handler
+comment,,,,,,,startup - connect to a live peer and a dead one (self excluded)
+run,0,0,q,svc.startup[svrdeps[`otherproc`deadproc]],1,1,open connections to otherproc (live) and deadproc (nothing listening) - connections+processcsv come from the config arg
+true,0,0,q,0=count svc.getservers[`selfproc],1,1,self is excluded even though it is in process.csv
+true,0,0,q,1=count svc.getservers[`otherproc],1,1,otherproc connected successfully
+true,0,0,q,0=count svc.getservers[`deadproc],1,1,deadproc failed (nothing listening) so it is not live
+true,0,0,q,"warnlogged[""failed to open connection""]",1,1,the failed dial was logged at warn
+comment,,,,,,,gethandlebytype - a genuinely live remote handle
+run,0,0,q,h:svc.gethandlebytype[`otherproc;`any],1,1,get a handle to the peer
+true,0,0,q,"2=h ""1+1""",1,1,the handle is a live remote connection to a separate process
+comment,,,,,,,cleanup + retry recover an ungraceful kill
+run,0,0,q,killpeer[],1,1,kill the peer ungracefully (handlers are mocked so no auto .z.pc fires)
+run,0,0,q,"@[{h ""1+1""};();{[e]e}]",1,1,touch the dead handle so kdb+ drops it from .z.W (protected - expected to error)
+run,0,0,q,firejob[`serversretry],1,1,fire the retry job (runs cleanup then reopen) exactly as the timer would
+true,0,0,q,0=count svc.getservers[`otherproc],1,1,cleanup marked the dead connection as gone
+run,0,0,q,spawnpeer[],1,1,bring a fresh peer up on the same port
+run,0,0,q,firejob[`serversretry],1,1,fire retry again - should reconnect now a peer is listening
+true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
+comment,,,,,,,waitfortype - connected vs timeout
+true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
+true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
+comment,,,,,,,input validation + getapimeta
+fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
+fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection
+fail,0,0,q,"svc.waitfortype[`hdb;""x"";200]",1,1,waitfortype rejects a non-integer timeout
+fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;mocktimer;mockhandlers;""rdb"";`p)]",1,1,init rejects a non-symbol proctype
+true,0,0,q,(asc (key svc) except `init`getapimeta)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,not any `init`getapimeta in exec name from svc.getapimeta[],1,1,getapimeta omits plumbing (init/getapimeta not registered)
+true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapimeta rows carry the registry columns
+after,0,0,q,teardownfixture[],1,1,kill the peer and remove the fixture dir

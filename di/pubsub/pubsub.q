@@ -83,9 +83,7 @@ priorpc:@[value;`.z.pc;{[e] (::)}];
 / broadcast to all subscribers upon end of day, client needs to define endofday function
 callendofday:{[d](neg getallhandles[])@\:(`endofday;d)};
 
-/ broadcast to all subscribers upon end of period - TERNARY (currentperiod;nextperiod;data),
-/ matching legacy and its real subscribers (rdb.q, wdb.q). NB callendofday stays unary - its
-/ subscriber doesn't use the second legacy argument, so don't "fix" that one for symmetry
+/ broadcast to all subscribers upon end of period - TERNARY (currentperiod;nextperiod;data), matching legacy and its real subscribers (rdb.q, wdb.q)
 callendofperiod:{[currentperiod;nextperiod;data](neg getallhandles[])@\:(`endofperiod;currentperiod;nextperiod;data)};
 
 / get table schema

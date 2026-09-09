@@ -128,13 +128,9 @@ requireflag:{[ctx;nm;x]
   };
 
 islive:{[stored;h]
-  / is this registry row's subscription still live? TWO complementary signals, because neither alone
-  / is sufficient (both measured):
-  /   stored - set 0b by the .z.pc observer the instant the tickerplant drops. exact, and immune to
-  /            handle-number recycling, which a .z.W probe alone is NOT: kdb+ hands back the lowest
-  /            free descriptor, so a reused number would otherwise revive a stale row and make the
-  /            duplicate guard refuse a legitimate re-subscribe after a reconnect
-  /   .z.W   - catches a handle the CALLER closed itself, which does not fire .z.pc at all
+  / is this registry row's subscription still live? TWO complementary signals: stored, set 0b by the
+  / .z.pc observer the instant the tickerplant drops - exact, and immune to handle-number recycling,
+  / which a bare .z.W probe is not; and .z.W, which catches a handle the CALLER closed itself.
   / a non-int handle (the function the unit tests pass) cannot be probed, so only stored applies
   if[not stored; :0b];
   :$[type[h] in -7 -6h; h in key .z.W; 1b];
@@ -151,11 +147,9 @@ markdead:{[wh]
 
 activesubscriptions:{[]
   / internal - the registry with the effective live flag folded into active.
-  / NB islive is hoisted into a LOCAL first: a q-sql select/update/where clause inside module code
-  / cannot resolve a module-level name (it throws 'islive) - only function-locals and column names
-  / resolve there. the from-target is fine, it is only the clauses that are affected
-  / the boolean cast keeps the column type stable: on an EMPTY registry each' yields a general empty
-  / list, which would report active as type 0h rather than the boolean the api metadata promises
+  / islive is hoisted to a LOCAL first - a q-sql clause cannot resolve a module-level name directly.
+  / the boolean cast keeps the column type stable on an EMPTY registry, where each' would otherwise
+  / yield a general empty list instead of the boolean api metadata promises
   f:islive;
   :update active:`boolean$f'[active;handle] from .z.m.subscriptions;
   };
@@ -163,17 +157,11 @@ activesubscriptions:{[]
 / init
 
 init:{[deps]
-  / wire the injected dependencies (log and handlers - both REQUIRED, never defaulted) and this
-  / module's config. ONE dict carrying dependency and config keys side by side - the call shape
-  / di.torq wires every module with.
-  / e.g. sub.init[`log`handlers!(logging.logdict`log;handlerdep)]
-  / NB di.servers is NOT injected - it is a HARD dependency imported with `use` in init.q, per the
-  / modularisation plan's tier table (di.subscriptions -> di.servers, di.pubsub). see deps.q
-  / NB build deps as ONE multi-key dict. joining logdict to a single-key dict - i.e.
-  / logdict,enlist[`handlers]!enlist handlerdep - throws 'mismatch: both value sides are tables
-  / init has ONE process-global side effect: a .z.pc observer registered through di.handlers, which
-  / marks a dropped connection's subscriptions dead. teardown removes it. the registration is
-  / idempotent - di.handlers replaces a duplicate [event;name] in place - so a second init is safe
+  / wire the injected dependencies (log and handlers, both REQUIRED) and this module's config - ONE
+  / dict carrying dependency and config keys side by side, the shape di.torq wires every module with.
+  / di.servers is NOT injected - it's a hard `use` dependency (see deps.q).
+  / one process-global side effect: a .z.pc observer via di.handlers, marking a dropped connection's
+  / subscriptions dead; teardown removes it. idempotent - a second init is safe
   if[99h<>type deps;
     '"di.subscriptions: deps must be a dict with `log and `handlers keys - see di.log, di.handlers"];
   if[not all `log`handlers in key deps;
@@ -240,29 +228,20 @@ teardown:{[]
   };
 
 requireobserver:{[ctx]
-  / a new subscription is only trackable while the .z.pc observer is installed. after teardown it is
-  / not, and the registry would then report a dead tickerplant as live for as long as .z.W held the
-  / handle number - and indefinitely once kdb+ reissued that number to another connection. that is
-  / precisely the failure the handlers dependency exists to prevent (see deps.q), so taking a new
-  / subscription in that state is refused rather than silently degraded to the .z.W-only mode this
-  / module documents as insufficient. reading and releasing stay available, for shutdown paths
-  / read explicitly, not as a bare name. a bare read does resolve to .z.m, but every other state
-  / access in this module is explicit, and the bare form is the one thing qlint flags as an
-  / undeclared global - a warning a reader has to dismiss by hand every time
+  / a subscription is only trackable while the .z.pc observer is installed - refused after teardown
+  / rather than silently degrading to the .z.W-only liveness check, which cannot detect a dropped
+  / tickerplant (see deps.q). reading and releasing stay available for shutdown paths
   if[not .z.m.observing;
-    raiseerror[ctx;"the .z.pc observer is not installed - teardown removed it, or init did not ",
-      "complete - so a new subscription could not be tracked. call init again before subscribing"]];
+    raiseerror[ctx;"the .z.pc observer is not installed - call init again before subscribing"]];
   };
 
 / subscription
 
 fetchdetails:{[tph;tabs;syms]
-  / the bundled round trip: schemas, log details and counts in one call.
-  / NB this does NOT replace legacy's separate tablelist call - subscribe still makes that one first,
-  / and must (see publishedtabs and narrowtabs). an earlier revision of this module dropped it on the
-  / assumption that the bundled response made it redundant; it does not, because subdetails is
-  / .ps.subscribe each-left and fails outright on a name the tickerplant does not publish.
-  / calling this REGISTERS the handle for live delivery as a side effect - see registerednote
+  / the bundled round trip: schemas, log details and counts in one call. does NOT replace legacy's
+  / separate tablelist call - subscribe still makes that first (see publishedtabs, narrowtabs),
+  / because subdetails fails outright each-left on a name the tickerplant does not publish.
+  / registers the handle for live delivery as a side effect - see registerednote
   r:@[{[h;m] (1b;h m)}[tph];(.z.m.subdetailsfunc;tabs;syms);{[e] (0b;e)}];
   if[not first r;
     raiseerror[`subscribe;"tickerplant ",(string .z.m.subdetailsfunc)," call failed: ",last r]];
@@ -348,19 +327,12 @@ fetchdetails:{[tph;tabs;syms]
   };
 
 publishedtabs:{[tph;needed]
-  / the tickerplant's published table list via a tablelist round trip, or ` when it cannot answer.
-  / this call is PURE - tablelist is {.stpps.t} on both shipped producers and registers nothing,
-  / unlike subdetails - so it is safe to make before any guard runs.
-  / it does two jobs, and legacy does both from the same round trip (subscriptions.q:108-110):
-  /   1. resolves the ` all-tables sentinel. a SEGMENTED tickerplant cannot accept `: its subdetails
-  /      hands tabs to .stplg.replaylog, whose `where tbl in t` matches nothing for an atom and then
-  /      ranks on the each-left (measured - getlogs[`period][`] throws 'rank). a CHAINED tickerplant
-  /      DOES accept it (chainedtp.q does subtabs,() then first), which is why the sentinel is a
-  /      usable fallback rather than a failure
-  /   2. narrows an EXPLICIT request to what the tickerplant actually publishes - see narrowtabs
-  / needed says which of the two the caller depends on, so a tickerplant with no tablelist is only
-  / reported at warn when the ` sentinel genuinely had to be resolved. on the explicit path the
-  / round trip is a safety net, so failing to get one is an info, not a warning
+  / the tickerplant's published table list via a PURE tablelist round trip (registers nothing, unlike
+  / subdetails), or ` when it cannot answer. does two jobs: resolves the ` all-tables sentinel (a
+  / SEGMENTED tickerplant cannot accept ` directly - see subscriptions.md), and narrows an explicit
+  / request to what's actually published (see narrowtabs).
+  / needed says which job the caller depends on: only warn when ` genuinely had to be resolved,
+  / info when the round trip was just a safety net on the explicit path
   say:$[needed;.z.m.logwarn;.z.m.loginfo];
   r:@[{[h;m] (1b;h m)}[tph];(.z.m.tablelistfunc;`);{[e] (0b;e)}];
   if[not first r;
@@ -381,20 +353,15 @@ publishedtabs:{[tph;needed]
   };
 
 narrowtabs:{[tabs;published]
-  / drop from an explicit request any table the tickerplant does not publish, exactly as legacy does
-  / (subscriptions.q:41-43, "tables ... are not available to be subscribed to, they will be ignored").
-  / this is NOT tidiness. subdetails is .ps.subscribe each-left over tabs, and every shipped producer
-  / fails on a name it does not publish: standard SIGNALS 'x (u.q sub), while segmented and chained
-  / answer the pair (name;"Table ... not in list of stp pub/sub tables") which the schema guard then
-  / rejects. either way ONE bad name sinks the WHOLE call - and because the each-left runs left to
-  / right, every valid table ahead of it has already been registered by suball before the failure.
-  / a typo or a table retired at the tickerplant would otherwise take down the entire subscription
-  / and leave a partial one live at the tickerplant with nothing on this side recording it
+  / drop from an explicit request any table the tickerplant does not publish, matching legacy. this
+  / is NOT tidiness - one bad name fails the WHOLE subdetails call, and because it runs each-left,
+  / every valid table ahead of it is already registered by suball - leaving a partial subscription
+  / live at the tickerplant with nothing on this side recording it. see subscriptions.md for the
+  / per-producer failure shapes
   dropped:(),tabs except published;
   if[0=count dropped; :tabs];
   .z.m.logwarn[`subscribe;"tickerplant does not publish ",(", " sv string dropped)," - dropping ",
-    $[1=count dropped;"it";"them"]," from the request, because asking for a table a tickerplant ",
-    "does not publish fails the whole subdetails call"];
+    $[1=count dropped;"it";"them"]," from the request"];
   keep:(),tabs inter published;
   if[0=count keep;
     raiseerror[`subscribe;"tickerplant publishes none of the requested table(s): ",
@@ -403,17 +370,11 @@ narrowtabs:{[tabs;published]
   };
 
 guardduplicate:{[wanted]
-  / refuse to re-subscribe a table that already has a LIVE subscription: a second subscribe would
-  / redefine the table (discarding its rows) and replay the log into it again. this is deliberately
-  / NOT a port of legacy's reducesubs - no instrument-level dedup, no partial-overlap splitting, just
-  / enough to fail loud instead of failing open. re-subscribing after the tickerplant has gone is
-  / legitimate and stays allowed, which is why the check is on LIVE rows rather than history.
-  / this runs BEFORE the tickerplant is asked for its schemas, against the requested (tablelist-
-  / resolved) list rather than the offered one, because asking REGISTERS the handle - see subscribe.
-  / that also makes the rule consistent: re-subscribing to a table already held is a caller mistake
-  / whatever the tickerplant happens to offer this round, and checking the offered set instead let the
-  / same mistake pass with only a warnmissing whenever the tickerplant had also stopped offering it.
-  / subscribe still calls this again on the offered set, for the one case ` cannot be resolved up front
+  / refuse to re-subscribe a table with a LIVE subscription - a second subscribe would redefine and
+  / replay into it again. checked against LIVE rows, not history, so re-subscribing after the
+  / tickerplant has gone stays allowed.
+  / runs BEFORE the tickerplant is asked (asking REGISTERS the handle - see subscribe), against the
+  / requested list; subscribe calls this again on the offered set when ` couldn't be resolved up front
   live:select from activesubscriptions[] where active;
   if[0=count live; :(::)];
   held:distinct (),raze live`tabs;
@@ -452,15 +413,11 @@ createtables:{[schemapairs]
 / replay
 
 logstatus:{[lf]
-  / the readable state of a log as (goodmessages;corrupt), via the NON-EXECUTING -11!(-2;..)
-  / streaming count. a clean log returns a single count; a corrupt one returns
-  / (goodmessages;validbytes) - that PAIR is the only signal kdb+ gives that the tail is unreadable,
-  / so it is carried out of here rather than collapsed away. callers that compare against a finite
-  / claimed count only need the count (corruption BEYOND the messages actually wanted is tolerated
-  / and deliberate); the caller that replays the WHOLE log needs the flag too.
-  / doing this BEFORE any replay is load-bearing, not defensive padding: -11!(n;log) with n past the
-  / corruption point replays every good message and THEN throws, leaving tables half populated
-  / (measured: a 4-message log truncated to 3 good, replayed with n=4, ran upd 3 times then threw 'badtail)
+  / the readable state of a log as (goodmessages;corrupt), via the non-executing -11!(-2;..) streaming
+  / count. a clean log returns a single count; a corrupt one returns (goodmessages;validbytes) - the
+  / only signal kdb+ gives that the tail is unreadable, so it's carried out rather than collapsed away.
+  / doing this BEFORE any replay is load-bearing: -11! with a count past the corruption point replays
+  / every good message and only THEN throws, leaving tables half populated
   r:@[{(1b;-11!(-2;x))};lf;{[e] (0b;e)}];
   if[not first r;
     raiseerror[`replay;"cannot read log ",(string lf),": ",(last r),registerednote]];
@@ -493,12 +450,10 @@ requirerootupd:{[]
   };
 
 requiretablesexist:{[wanted]
-  / with setschema 0b the caller keeps its own schemas, so nothing here defines the target tables -
-  / and a replay would then drive upd into tables that may not exist. that fails differently on each
-  / path and NEITHER failure reaches raiseerror or the log: the all-syms path dies inside the
-  / caller's own upd, the narrowed path throws from `cols get t` in payloadtable. check it up front.
-  / tables[`.] is specifically the ROOT table list - it excludes a non-table root name that happens
-  / to collide, which a bare `in key `.` would not (both measured from module context)
+  / with setschema 0b the caller keeps its own schemas - nothing here defines the tables, and an
+  / undefined one would otherwise fail far from here (inside the caller's own upd, or from
+  / payloadtable), bypassing raiseerror and the log entirely. checked up front instead.
+  / tables[`.] is the ROOT table list specifically - excludes a non-table name that happens to collide
   missing:(),wanted where not wanted in tables[`.];
   if[0<count missing;
     raiseerror[`subscribe;"setschema is 0b but no table is defined at root for ",(", " sv string missing),
@@ -547,25 +502,21 @@ logentries:{[details]
   };
 
 collapsesharedlogs:{[entries]
-  / a segmented tickerplant in singular or periodic multilog mode writes EVERY table to ONE log
-  / (stplog.q's logname.singular ignores the table argument), and getlogs returns one
-  / (messagecount;logname) pair PER TABLE - so the same physical file legitimately arrives more than
-  / once with different counts. replaying it once per entry re-applies the head of the file:
-  / measured, (4;LF) then (2;LF) over a 6-message shared log applies messages 0 and 1 TWICE and never
-  / reaches 4 and 5.
-  / collapse to ONE replay per file and mark it 0W, handing the resolution to preflightone. the
-  / per-table counts cannot be turned into a single file offset, so the only answer that cannot
-  / silently DROP a subscribed message is to replay the whole file and let the table filter discard
-  / the rest. a silently missed row is invisible and permanent; a duplicated row is visible and
-  / diagnosable, and this module rejects rather than silently narrows everywhere else.
-  / NB a file that appears ONCE keeps its own count - only a shared one is marked
+  / a segmented tickerplant in singular/periodic multilog mode writes every table to ONE log, and
+  / getlogs returns one (messagecount;logname) pair PER TABLE - so the same file can legitimately
+  / arrive more than once with different counts. replaying each pair separately re-applies the head
+  / of the file instead of reaching its end.
+  / collapse to ONE replay per shared file, marked 0W for preflightone to resolve - the per-table
+  / counts cannot be turned into a single offset, and a duplicated row is visible and diagnosable
+  / where a silently dropped one is not. a file appearing once keeps its own count
   if[0=count entries; :entries];
   fs:entries[;1];
   if[(count distinct fs)=count fs; :entries];
   g:group fs;
-  .z.m.logwarn[`replay;"tickerplant reported ",(", " sv string where 1<count each g)," more than ",
-    "once - a shared-log (singular or periodic multilog) tickerplant. replaying each in full; ",
-    "messages logged between the subdetails call and the replay may arrive again on the live feed"];
+  .z.m.logwarn[`replay;"tickerplant reported ",(", " sv string where 1<count each g),
+    " more than once - shared-log tickerplant, replaying each in full"];
+  .z.m.logwarn[`replay;"messages logged since the subdetails call may arrive again on ",
+    "the live feed"];
   :{[e;lf;ix] :$[1=count ix;e ix 0;(0W;lf)]}[entries]'[key g;value g];
   };
 
@@ -608,12 +559,10 @@ preflightone:{[entry]
 
 preflightlogs:{[details]
   / verify EVERY log before anything is created or replayed, so a short log fails with the process
-  / untouched - no half-defined schemas and no half-populated tables. this runs the whole check up
-  / front rather than per-log inside the replay loop, because the first log could otherwise replay
-  / successfully before the second one is found wanting.
-  / returns the RESOLVED entries - shared logs already collapsed, any 0W already turned into a real
-  / count, each carrying whether that count means "the whole file" - so the replay neither rescans a
-  / file that has just been scanned here nor has to re-derive which files were read to their end
+  / untouched - checked up front, not per-log inside the replay loop, since an earlier log could
+  / otherwise succeed before a later one is found wanting.
+  / returns the RESOLVED entries - shared logs collapsed, any 0W resolved to a real count - so replay
+  / neither rescans a file nor re-derives which were read to their end
   :preflightone each collapsesharedlogs logentries details;
   };
 
@@ -663,18 +612,12 @@ tplogdate:{[details]
   };
 
 buildreturn:{[details;subtabs]
-  / the shape legacy's callers actually consume, read off the shipped consumers rather than assumed.
-  / rdb.q takes subtables and tplogdate (rdb.q:171) and wdb.q takes tplogdate for fixpartition
-  / (wdb.q:546) - but a chained tickerplant reads `d` and `icounts`, NOT `date` and `rowcounts`
-  / (chainedtp.q:81-84, sctp.q:22-25), and it reads them through `if[key in r]` guards. a missing key
-  / there does not fail: it silently never seeds .u.d or .u.icounts/.u.jcounts, and every downstream
-  / subscriber of that process then gets wrong counts. so both names are emitted.
-  / rowcounts and date stay canonical - they are the tickerplant's OWN key names, carried through from
-  / the subdetails reply unchanged, whereas subtables and tplogdate are names legacy invented and so
-  / keep legacy's spelling. icounts and d are the compatibility surface for code ported from TorQ.
-  / legacy's `i` is deliberately NOT emitted: no shipped consumer reads it, and legacy gives it two
-  / different meanings by tickerplant type - the whole logfilelist for segmented, the message count
-  / for standard and chained - which this module has no tptype to disambiguate between
+  / the shape legacy's callers actually consume: rdb/wdb read subtables/tplogdate, but a chained
+  / tickerplant reads `d`/`icounts` through if[key in r] guards - a missing key there fails silently,
+  / seeding nothing rather than throwing. both names are emitted so neither path breaks quietly.
+  / rowcounts/date are canonical (the tickerplant's own names); icounts/d are legacy's compat surface.
+  / legacy's `i` is deliberately NOT emitted - it means different things by tickerplant type, and this
+  / module has no tptype to disambiguate
   r:`subtables`tplogdate`rowcounts`date!(subtabs;tplogdate details;details`rowcounts;details`date);
   r:r,`icounts`d!(details`rowcounts;details`date);
   :$[`logdir in key details;r,enlist[`logdir]!enlist details`logdir;r];
@@ -683,44 +626,22 @@ buildreturn:{[details;subtabs]
 / public api
 
 handoffpublisher:{[]
-  / hand the tables this process has subscribed to over to the LOCAL di.pubsub, so it can serve them
-  / downstream. this is the chained/segmented tickerplant role: TorQ's chainedtp.q (:71-82) and
-  / sctp.q (:15-25) subscribe upstream and republish the same tables, serving their own table list
-  / straight out of the pubsub registry (chainedtp.q:7, tablelist:{.stpps.t}).
-  / OFF by default - a plain rdb or wdb subscriber must not silently become a publisher.
-  / passes the union across the WHOLE registry, not just the tables from this subscribe call:
-  / di.pubsub's setsubtables REPLACES its table list (pubsub.q:119), so sending only the latest
-  / call's tables would drop everything subscribed before it
-  / read EXPLICITLY - a bare read would resolve to .z.m.republish just the same, but every other
-  / state access in this module is explicit and the bare form is the one thing qlint flags
+  / hand tables this process has subscribed to over to the LOCAL di.pubsub, so it can serve them
+  / downstream - the chained/segmented tickerplant role. OFF by default: a plain rdb/wdb subscriber
+  / must not silently become a publisher
   if[not .z.m.republish;:()];
-  / ADDITIVE - unions with what the publisher already serves rather than recomputing purely from the
-  / registry. two reasons, both measured:
-  /   - unsubscribe DELETES its registry rows, so a registry-only union would drop those tables at the
-  /     next unrelated subscribe. downstream subscribers would silently stop receiving a table, at a
-  /     moment unconnected to the unsubscribe that caused it
-  /   - setsubtables with an EMPTY list does not mean "publish nothing": di.pubsub then falls back to
-  /     every table at root (pubsub.q:125), so shrinking toward empty is actively dangerous
-  / the set therefore only grows within a process. a table that is unsubscribed stays advertised and
-  / simply stops receiving data - a visible, inert condition rather than a silent disappearance
+  / ADDITIVE, not a pure registry recompute: unsubscribe deletes its rows, so a registry-only union
+  / would drop those tables at the next unrelated subscribe; and an EMPTY setsubtables list means
+  / "publish everything at root" to di.pubsub, not "publish nothing". the set only grows - an
+  / unsubscribed table stays advertised but stops receiving data, visibly rather than silently
   tabs:distinct (),raze exec tabs from .z.m.subscriptions;
   tabs:distinct tabs,pubsub.getsubtables[];
-  / di.pubsub.init reads each table from ROOT (extractschema:{0#value table}, pubsub.q:84), so a name
-  / that was never defined - a subscribe with setschema:0b against a table this process does not hold -
-  / would throw there. drop those rather than hand over a name the publisher cannot resolve
+  / di.pubsub reads each table from ROOT, so a name never defined there (setschema:0b) would throw -
+  / drop those rather than hand over a name the publisher cannot resolve
   tabs:tabs where tabs in tables[];
   if[0=count tabs;:()];
-  / WARN, not raiseerror: unlike every other raiseerror site in this module, a failure here does not
-  / mean the subscribe failed. it already fully succeeded - schemas defined, replay done, registry row
-  / committed - before this runs at all (see the call site, last statement of subscribe).
-  / registerednote's remedy, "close the handle before retrying", describes a DIFFERENT failure - a
-  / subdetails call that registered live delivery before subscribe could be validated - and would be
-  / actively wrong advice here: the connection is healthy, and a retry would immediately hit
-  / guardduplicate against the row this very call committed.
-  / this matches how unsubscribe handles the identical shape (local state already committed, an
-  / optional notification step then fails): warn and return, because what mattered locally already
-  / happened. republish is opt-in and secondary by design, so it must not take down a successful
-  / subscribe
+  / WARN, not raiseerror: the subscribe has already fully succeeded by this point, so a failure here
+  / doesn't mean it failed - retrying would just hit guardduplicate against the row it committed
   r:@[{[t] pubsub.setsubtables t; pubsub.init[]; (1b;t)};tabs;{[e] (0b;e)}];
   $[first r;
     .z.m.loginfo[`handoffpublisher;"registered ",(", " sv string tabs)," with the local ",
@@ -833,21 +754,11 @@ subscribe:{[tph;tabs;syms;setschema;replay]
   };
 
 unsubscribe:{[tph]
-  / release the subscriptions held on this handle, and return the tables released.
-  / call this BEFORE hclose. it exists because of the one liveness signal kdb+ cannot give us: a
-  / handle the CALLER closes fires no .z.pc, and kdb+ then reissues the freed descriptor to the next
-  / connection - so a stale row would go on reporting live, and the duplicate guard would refuse a
-  / legitimate re-subscribe to a table nobody holds any more. the .z.pc observer covers tickerplant
-  / death; this covers a deliberate local close, which nothing else can observe
-  / the caller owns the connection, so this NEVER closes the handle. it also never messages the
-  / tickerplant: the subdetails protocol has no unsubscribe verb, and inventing one would break the
-  / property that this module speaks TorQ's real protocol rather than a private dialect
-  / a deliberate release DELETES its rows rather than flagging them dead: the caller already knows it
-  / closed the handle, so the row carries no information it does not have. a .z.pc drop is the
-  / opposite case and KEEPS its row (see markdead) - an unexpected disconnect is worth seeing after
-  / the fact. that asymmetry is deliberate; see subscriptions.md for what it does and does not bound
-  / idempotent by design - a release path must be safe to call twice, and a subscription the
-  / tickerplant already dropped is dead before we get here, so neither case is an error
+  / release the subscriptions held on this handle, and return the tables released - call BEFORE
+  / hclose. covers the one liveness gap .z.pc cannot: a handle the CALLER closes fires no .z.pc, and
+  / kdb+ reissues the freed descriptor, so a stale row would otherwise refuse a legitimate re-subscribe.
+  / never closes the handle or messages the tickerplant - no unsubscribe verb exists in the protocol.
+  / DELETES its rows (a .z.pc drop instead KEEPS them - see markdead) - idempotent, safe to call twice
   requireinit[`unsubscribe];
   requirehandle[`unsubscribe;tph];
   / select on the STORED active flag, NOT the effective one activesubscriptions computes. a caller
@@ -881,17 +792,12 @@ unsubscribe:{[tph]
   };
 
 resubscribe:{[tph]
-  / re-establish every subscription that has since dropped, over a NEW handle to the same tickerplant.
-  / this is legacy's retrysubscription (subscriptions.q:155) ported to this module's shape. legacy
-  / drove it from .servers.connectcustom, which would make di.servers a hard dependency and would
-  / mean this module resolving connections - the one thing it deliberately does not do. so the split
-  / is: the module keeps the knowledge of WHAT was subscribed, the caller supplies the new handle,
-  / and di.rdb/di.servers decide WHEN to call it.
-  / setschema 0b and replay 0b exactly as legacy does: the tables are already defined and their
-  / history was replayed on the first subscribe, so a reconnect wants the live feed back and nothing
-  / else. replaying again would double-apply everything since the original subscription.
-  / best-effort per subscription and never fatal - a reconnect path that aborts on the first failure
-  / leaves the rest of the process unsubscribed with no way to retry
+  / re-establish every dropped subscription over a NEW handle to the same tickerplant - legacy's
+  / retrysubscription ported to this module's shape. the module keeps knowledge of what was
+  / subscribed; the caller supplies the new handle and decides when to call this, so di.servers
+  / stays out of this module's hard dependencies.
+  / setschema/replay stay 0b - tables are already defined and history already replayed, so a
+  / reconnect wants only the live feed back. best-effort per subscription, never fatal
   requireinit[`resubscribe];
   requireobserver[`resubscribe];
   requirehandle[`resubscribe;tph];
@@ -915,11 +821,9 @@ resubscribe:{[tph]
   if[0=count dead;
     .z.m.loginfo[`resubscribe;"no dropped subscription this tickerplant can serve"];
     :`$()];
-  / report what subscribe ACTUALLY established, not what this row asked for. narrowtabs drops a table
-  / the tickerplant no longer publishes with a warn rather than a failure, so a multi-table row can
-  / succeed having re-established only some of its tables - and taking the request as the outcome
-  / would then mark the dropped one done and delete it below, losing every trace of it with nothing
-  / left to retry it. subtables is the narrowed list subscribe actually registered (see buildreturn)
+  / report what subscribe ACTUALLY established, not the request - a row can partially succeed, and
+  / treating the request as the outcome would delete the still-dropped tables with nothing left to
+  / retry them (subtables is the narrowed list subscribe registered - see buildreturn)
   done:raze {[tph;t;s]
     r:@[{[tph;t;s] res:subscribe[tph;t;s;0b;0b]; (1b;res`subtables)}[tph;t];s;{[e] (0b;e)}];
     if[not first r;
@@ -928,20 +832,12 @@ resubscribe:{[tph]
     :(),r 1}[tph]'[dead`tabs;dead`syms];
   done:distinct (),done;
   if[0<count done;
-    / retire the tables we have just replaced from the dead rows that carried them. the registry
-    / otherwise KEEPS a dropped subscription on purpose, so a post-mortem can see it - but a table
-    / that is live again on a new handle is superseded history, not evidence, and leaving it makes
-    / every later resubscribe retry it and warn. measured before this: a second call emitted three
-    / warnings and grew with the number of historically-dead rows, on the one path a caller drives
-    / from a timer.
-    / rows are NARROWED rather than deleted whole, and a row is dropped only once nothing is left in
-    / it. deleting whole would discard the tables that did NOT come back, and keeping whole would
-    / retry them alongside the ones that did - which now hold a live subscription, so guardduplicate
-    / would reject the retry and warn about it on every call, forever
-    / only the rows this call ATTEMPTED are touched (dead`idx), so a same-named table belonging to a
-    / different tickerplant's dead row is left alone - narrower than matching on table name alone
-    / strip and ix are LOCALS - a module-level name does not resolve inside a q-sql clause, only
-    / function-locals and column names do (see activesubscriptions)
+    / retire the tables just re-established from the dead rows that held them - live-again tables
+    / are superseded history, not evidence, and leaving them would make every later resubscribe
+    / retry and warn about them forever.
+    / rows are NARROWED, not deleted whole: deleting whole would discard tables that did NOT come
+    / back, keeping whole would retry the ones that DID and hit guardduplicate. only rows this call
+    / attempted (dead`idx) are touched, so an unrelated tickerplant's dead row is left alone
     strip:{[d;t] :(),((),t) except d}[done];
     ix:dead`idx;
     .z.m.subscriptions:update tabs:strip'[tabs] from .z.m.subscriptions where i in ix;
@@ -964,23 +860,13 @@ getsubscriptions:{[]
   };
 
 getsubscriptionhandles:{[proctype;procname]
-  / resolve tickerplant handles by proctype and/or procname, projected to the (procname;proctype;w)
-  / triple a caller needs before it can subscribe. ported from TorQ .sub.getsubscriptionhandles
-  / (code/common/subscriptions.q:11) - registered public API there (apidetails.q:67), called by
-  / rdb.q:163, wdb.q:540, chainedtp.q:71 and sctp.q:15.
-  / the two lookup arguments are NOT interchangeable and this is the whole of the function's logic:
-  / ` matches EVERY row, () matches NONE and additionally switches the combine from intersection to
-  / union. that is what makes both real call shapes work off one function - rdb/wdb pass [types;()]
-  / and want the proctype matches, chainedtp/sctp pass [`;name] and want the single named process.
-  / TWO deliberate differences from legacy, both forced by di.servers' contract:
-  /   - legacy took a third `attributes` argument and filtered on .servers.SERVERS's attributes
-  /     column. di.servers' SERVERS carries no such column, so the parameter is DROPPED rather than
-  /     accepted and ignored - a filter that silently does nothing returns handles the caller
-  /     believes were filtered, which surfaces far from its cause
-  /   - legacy passed autoopen:1b to retry dead connections on demand. di.servers returns live rows
-  /     only (where not null w) and runs its own retry job, so reconnection is its concern now
-  / di.servers is reached directly as a hard dependency (init.q's `use`), not through an injected
-  / dict - the plan's tier table makes it a hard edge, and a module import needs no wiring
+  / resolve tickerplant handles by proctype and/or procname, projected to (procname;proctype;w) -
+  / ported from TorQ .sub.getsubscriptionhandles (see subscriptions.md for callers).
+  / the two arguments are NOT interchangeable: ` matches EVERY row, () matches NONE and switches the
+  / combine from intersection to union - rdb/wdb pass [types;()], chainedtp/sctp pass [`;name].
+  / two deliberate differences from legacy's contract: the `attributes` filter is DROPPED (di.servers
+  / carries no such column), and autoopen is gone (di.servers retries dead connections itself).
+  / di.servers is a hard `use` dependency here, not injected - see deps.q
   requireinit[`getsubscriptionhandles];
   if[not all (type each (proctype;procname)) in -11 11 0h;
     raiseerror[`getsubscriptionhandles;"proctype and procname must each be a symbol, a symbol list or ()"]];

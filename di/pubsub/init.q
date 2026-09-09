@@ -4,7 +4,6 @@
 \l ::pubsub.q
 
 / version string, read from the VERSION file - fails if missing or empty
-/ NB must stay in export: di.depcheck reads it from here to resolve a dependency's minimum version
 version:first read0`:::VERSION
 
 export:([subscribe;subscribestr;subscribestrfilter;publish;setsubtables;getsubtables;callendofperiod;callendofday;closesub;pubclear;init;version])

@@ -10,7 +10,7 @@
 / module version, read from the on-disk VERSION file (the module-local `:::` path convention).
 / di.torq.depcheck needs BOTH: the file, for its pre-load manifest walk (reads VERSION without
 / loading the module), and this export, for its post-load session audit of a loaded peer that a
-/ manifest declares - di.proc.gateway's deps.toml declares di.serverselect, so a missing version
+/ manifest declares - di.torq.proc.gateway's deps.toml declares di.serverselect, so a missing version
 / here fails a real gateway startup.
 version:first read0`:::VERSION
 

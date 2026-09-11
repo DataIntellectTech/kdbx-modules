@@ -3,7 +3,7 @@
 / child process spawned by spawnchildinit below (see test_childinit.q) - each gets
 / its own independent copy of everything defined here. Run di.torq.logroll's tests in
 / their own fresh q session, not interleaved with other modules' tests in one
-/ shared process (same convention as di.proc.hdb's tests).
+/ shared process (same convention as di.torq.proc.hdb's tests).
 
 calls:([]lvl:`symbol$();ctx:`symbol$();msg:())
 resetcalls:{[] `calls set ([]lvl:`symbol$();ctx:`symbol$();msg:()); }
@@ -30,7 +30,7 @@ teardownfixture:{[]
   }
 
 / config-dict builders - factored out so test.csv rows never need a raw "," inline
-/ (see di/proc/hdb/test.q's absdircfg/reldircfg for the same reasoning).
+/ (see di/torq/proc/hdb/test.q's absdircfg/reldircfg for the same reasoning).
 nosectioncfg:{[] (enlist`procname)!enlist `testproc}
 disabledcfg:{[] `procname`logroll!(`testproc;(enlist`enabled)!enlist 0b)}
 enabledabsdircfg:{[] `procname`logroll!(`testproc;`enabled`dir!(1b;FIXTUREDIR))}
@@ -78,7 +78,7 @@ addjobhasstartattime:{[] `startattime in key first loadchildaddjobcalls[]`opts}
 / factored into helpers (not inline in test.csv) - a code field that starts with a
 / literal `"` confuses the CSV reader into treating it as a quoted field and
 / mishandling whatever follows the closing quote (same bug class noted in
-/ di/proc/hdb/test.q and project memory).
+/ di/torq/proc/hdb/test.q and project memory).
 resolveabssymbolok:{[] "/tmp/absprobe"~logroll.resolvedir[`:/tmp/absprobe]}
 resolveabsstringok:{[] "/tmp/absprobe"~logroll.resolvedir["/tmp/absprobe"]}
 resolverelstringok:{[] (getenv[`TORQXAPPHOME],"/relprobe")~logroll.resolvedir["relprobe"]}

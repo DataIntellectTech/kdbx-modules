@@ -4,7 +4,7 @@
 / same init[config;deps] calling convention.
 
 / built-in process type registry: proctype -> di.* module name
-builtin:`hdb`tickerplant`rdb`wdb`gateway!`di.proc.hdb`di.proc.tickerplant`di.proc.rdb`di.proc.wdb`di.proc.gateway
+builtin:`hdb`tickerplant`rdb`wdb`gateway!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.gateway
 
 reqenv:{[e]
   v:getenv e;
@@ -182,6 +182,55 @@ runhook:{[proctype;overrides]
   if[`run in key ns;(get `$".",(string proctype),".run")[]];
   }
 
+/ --- optional query logging ---------------------------------------------------------------
+/ Wires di.querylog (kdbx-modules main, consumed unmodified) behind a [querylog] settings section - a silent
+/ no-op unless enabled=true, same convention as di.torq.logroll. di.querylog wraps the .z.* handlers by DIRECT
+/ assignment, not through di.torq.handlers, so init calls this LAST - after the process module and app code
+/ have bound theirs. KNOWN LIMITATION (torq.md "Query logging"): an exec owner claimed on .z.pg/.z.ps/etc.
+/ AFTER this - e.g. a later permissions/auth layer - silently replaces the wrapper; that event's logging
+/ drops to zero with no error.
+querylogwired:0b
+qlflushtime:0D
+
+/ di.querylog matches an async message's head against its ignorelist: di.pubsub sends a symbol head
+/ (`upd;t;x), a feed may send a string head (".u.upd";t;x) - so expand each name into both shapes
+qlignore:{[names]
+  s:{$[-11h=type x;x;`$x]} each names,();
+  s,string s
+  }
+
+qlresolvedir:{[dir] $["/"=first dir;dir;reqenv[`TORQXAPPHOME],"/",dir]}
+
+/ timer job body - drop in-memory query-log rows older than the configured flushtime
+flushquerylog:{[] ((use`di.querylog)`flushusage)[.z.m.qlflushtime];}
+
+initquerylog:{[config;deps]
+  sect:$[`querylog in key config;config`querylog;()!()];
+  if[not $[`enabled in key sect;`boolean$sect`enabled;0b];:()];
+  / di.querylog's own init is not idempotent - a second call wraps its own wrappers and every query logs twice
+  if[.z.m.querylogwired;deps[`log][`info][`torq;"query logging already wired in this process - not re-wrapping"];:()];
+  opt:{[s;k;d] $[k in key s;s k;d]}[sect];
+  cfg:`logtomemory`logtodisk`level`localtime`ignore`ignorelist!(
+    `boolean$opt[`logtomemory;1b];
+    `boolean$opt[`logtodisk;0b];
+    "j"$opt[`level;3];
+    `boolean$opt[`localtime;0b];
+    1b;
+    qlignore opt[`ignorelist;`upd`.u.upd]);
+  if[cfg`logtodisk;
+    dir:qlresolvedir opt[`dir;"logs"];
+    system "mkdir -p ",dir;
+    cfg:cfg,`logdir`logname!(dir;string config`procname)];
+  ((use`di.querylog)`init)[cfg];
+  .z.m.querylogwired:1b;
+  ft:"j"$opt[`flushtime;86400];
+  if[ft>0;
+    .z.m.qlflushtime:ft*0D00:00:01;
+    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];1h;()!()]];
+  msg:"query logging on (level ",(string cfg`level),", memory=",(string cfg`logtomemory),", disk=",(string cfg`logtodisk),")";
+  deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
+  }
+
 / reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
 / di.torq itself (identity, stack id, port, norun), NOT config settings. Everything else on the
 / command line is a candidate config override.
@@ -202,10 +251,10 @@ init:{[proctype;procname;overrides]
   proctype:ident`proctype;
   procname:ident`procname;
   / pre-load VERSION graph (reconciled di.torq.depcheck: kdbx's semver + manifest reading, TorqX's on-disk
-  / VERSION-file walk - see docs/reconciliation/depcheck.md): now that identity is known, walk THIS process's
+  / VERSION-file walk): now that identity is known, walk THIS process's
   / dependency subtree - each module's own deps.q/deps.toml declares the minimum versions of the modules it
   / `use`s, validated transitively against the VERSION files installed on QPATH. Turns "customer upgraded
-  / di.proc.gateway but not the di.serverselect it now needs" from a cryptic mid-startup runtime error into a
+  / di.torq.proc.gateway but not the di.serverselect it now needs" from a cryptic mid-startup runtime error into a
   / clear startup failure naming the culprit. Built-in proctypes have a di.* entry module; a custom proctype's
   / optional manifest lives at code/processes/<proctype>.deps.toml. Pure on-disk reads, still before any module loads.
   $[proctype in key builtin;
@@ -245,6 +294,9 @@ init:{[proctype;procname;overrides]
   / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
   / app file may define/override .<proctype>.run for the hook to pick up).
   loadappcode[logdep;config;proctype;procname];
+  / optional query logging - a no-op unless [querylog] enabled=true. LAST of everything that binds .z.*, because
+  / di.querylog wraps whatever is bound at this moment by direct assignment (see initquerylog / torq.md)
+  initquerylog[config;deps];
   / post-load session audit (di.torq.depcheck.init): now that every module is loaded, introspect the live
   / session - core-dependency contract shapes (log/timer/handlers), .z.ts ownership, and an optional minimum
   / kdb-x engine version (config`minkdbxversion). Complements the pre-load VERSION graph above, which validated

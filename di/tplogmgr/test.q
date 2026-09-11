@@ -1,4 +1,4 @@
-/ fixture helpers for di.tplogmgr's tests. Assumes cwd is the TorqX repo root.
+/ fixture helpers for di.tplogmgr's tests. Assumes cwd is the kdbx-modules repo root.
 / di.tplogmgr's open/replay execute the ROOT-level `upd` for each replayed message, so a
 / recorder `upd` is defined here at root. Message tuples contain commas/backticks, so
 / they are built in helpers, never inline in test.csv (raw commas break CSV fields).

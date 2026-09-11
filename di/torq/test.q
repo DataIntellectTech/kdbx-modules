@@ -1,11 +1,11 @@
 / fixture helpers for di.torq's tests.
-/ Assumes q is started with the TorqX repo root as the working directory AND with
-/ TORQXHOME already pointing at the real TorqX checkout (di.torq's own built-in
+/ Assumes q is started with the kdbx-modules repo root as the working directory AND with
+/ TORQXHOME already pointing at the real kdbx-modules checkout (di.torq's own built-in
 / settings and `builtin` registry genuinely live there - there is no faking that part).
 / TORQXAPPCONFIG and TORQXAPPHOME are both repointed at a temp fixture below to
 / isolate everything else (process.csv, app-level settings, a scratch hdb dir, the
 / custom proctype's code file) from any real app - nothing this test does touches a
-/ real app directory. Uses real di.util.log/di.timer/di.torq.handlers/di.proc.hdb throughout rather than
+/ real app directory. Uses real di.util.log/di.timer/di.torq.handlers/di.torq.proc.hdb throughout rather than
 / mocking them - they are each already covered by their own module's tests, and
 / di.torq's job is to wire them together correctly, which mocking them away would not
 / actually test.
@@ -66,6 +66,15 @@ enablenamecode:{[] writelines[APPBASE,"/settings/testinst.q";enlist "loadnamecod
 / flags di.torq consumes (proctype/procname/torqxstackid/p/norun) with two real setting flags
 / (myrows/myname), so a test can assert clioverrideparams keeps only the latter.
 sampleopts:{[] `proctype`procname`torqxstackid`p`norun`myrows`myname!((enlist"hdb");(enlist"hdb");(enlist"s1");(enlist"5560");();(enlist"7");(enlist"widget"))}
+
+/ query-logging helpers (the initquerylog tests), kept here so test.csv cells stay comma-free: count the
+/ completed rows for one .z.* event, the total row count, and drive one sync and one async message
+/ through the wrapped handlers.
+qlcompleted:{[zc] count select from ((use`di.querylog)`getusage)[] where zcmd=zc,status="c"}
+qlrowcount:{[] count ((use`di.querylog)`getusage)[]}
+qlsync:{[] .z.pg "1+1"}
+qlasync:{[] .z.ps (`upd;`trade;())}
+qlcfg:{[on] `procname`querylog!(`qltest;`enabled`flushtime!(on;86400))}
 
 teardownfixture:{[]
   system "rm -rf ",APPBASE;

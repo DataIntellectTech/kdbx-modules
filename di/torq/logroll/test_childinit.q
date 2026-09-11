@@ -5,7 +5,7 @@
 / intact to report results. Same "spawn a genuine separate process" precedent
 / di/torq/servers/test.q uses for its own similarly disruptive (self-connect) case.
 / usage: q di/torq/logroll/test_childinit.q -cfg <test.q config-builder fn name> -resultdir <dir>
-/ Assumes cwd is the TorqX repo root (same assumption test.q itself documents).
+/ Assumes cwd is the kdbx-modules repo root (same assumption test.q itself documents).
 
 args:.Q.opt .z.x;
 cfgname:first args`cfg;

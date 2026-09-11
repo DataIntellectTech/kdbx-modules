@@ -50,4 +50,27 @@ true,0,0,q,(enlist"7")~(.m.di.0torq.clioverrideparams[cliopts])`myrows,1,,kept o
 true,0,0,q,0=count .m.di.0torq.clioverrideparams[()!()],1,,an empty command line yields no overrides
 true,0,0,q,0=count .m.di.0torq.clioverrideparams[`proctype`p!((enlist"hdb");(enlist"5560"))],1,,a command line of only reserved flags yields no overrides
 
+comment,,,,,,,optional query logging - initquerylog wires di.querylog from a [querylog] settings section (init calls it last)
+run,0,0,q,.m.di.0torq.initquerylog[qlcfg 0b;r4`deps],1,,a [querylog] section with enabled=false is a silent no-op
+true,0,0,q,not .m.di.0torq.querylogwired,1,,nothing was wired while disabled
+run,0,0,q,.m.di.0torq.initquerylog[enlist[`procname]!enlist`qltest;r4`deps],1,,no [querylog] section at all is also a no-op
+true,0,0,q,not .m.di.0torq.querylogwired,1,,still nothing wired
+true,0,0,q,"(`upd;`.u.upd;""upd"";"".u.upd"")~.m.di.0torq.qlignore (""upd"";"".u.upd"")",1,,toml ignorelist strings expand to both the symbol-head and string-head message shapes
+run,0,0,q,.m.di.0torq.initquerylog[qlcfg 1b;r4`deps],1,,enable with defaults - memory-only log plus the flush timer job
+true,0,0,q,.m.di.0torq.querylogwired,1,,the wired flag is set
+true,0,0,q,`querylogflush in exec id from (r4[`deps][`timer][`getactivejobs])[],1,,the in-memory flush job was scheduled on the injected timer
+run,0,0,q,n0:qlcompleted`pg,1,,baseline sync-query completions
+run,0,0,q,qlsync[],1,,one sync query through the wrapped .z.pg
+true,0,0,q,1=(qlcompleted`pg)-n0,1,,one sync query logs exactly one completion row
+run,0,0,q,upd:{[t;x]},1,,root upd stub so the ignored async message still evaluates
+run,0,0,q,n1:qlrowcount[],1,,baseline row count before an ignored async message
+run,0,0,q,qlasync[],1,,an async (`upd;t;x) message - the tickerplant-to-rdb shape
+true,0,0,q,n1=qlrowcount[],1,,upd is on the default ignorelist - the tick stream writes no rows at all
+run,0,0,q,.m.di.0torq.initquerylog[qlcfg 1b;r4`deps],1,,a second wiring attempt (e.g. di.torq.init re-run in the same process)
+run,0,0,q,n2:qlcompleted`pg,1,,baseline after the re-init
+run,0,0,q,qlsync[],1,,one more sync query
+true,0,0,q,1=(qlcompleted`pg)-n2,1,,re-init is guarded - still one row per query (di.querylog alone would double-wrap)
+run,0,0,q,.m.di.0torq.flushquerylog[],1,,the flush job body runs cleanly
+true,0,0,q,0<qlcompleted`pg,1,,rows younger than flushtime survive a flush
+
 after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file

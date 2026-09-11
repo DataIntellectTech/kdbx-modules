@@ -14,7 +14,7 @@ handle) as arguments; there is no `init` and no module-local state.
 
 `open` and `replay` restore state by running `-11!` over the log, which executes the
 **root-level `upd`** for each stored `(`upd;t;x)` message. **A caller must define a
-root `upd` before calling either.** `di.proc.tickerplant` publishes its `upd` at root during
+root `upd` before calling either.** `di.torq.proc.tickerplant` publishes its `upd` at root during
 `init`, before it opens the log; the RDB will do the same before calling `replay`.
 
 ## Functions

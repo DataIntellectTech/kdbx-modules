@@ -24,13 +24,13 @@ interactive:{"tty"~@[{first system"sh -c \"test -t 0 && echo tty || echo notty\"
 
 / resolves a dir setting to a plain string path - absolute if it starts with "/",
 / else joined against TORQXAPPHOME. String-based (not symbol/hsym), since this
-/ feeds `system"1 ..."`/`ln -sf` shell commands, not a q file load - di/proc/hdb/hdb.q's
+/ feeds `system"1 ..."`/`ln -sf` shell commands, not a q file load - di/torq/proc/hdb/hdb.q's
 / resolvedir is the symbol-based equivalent for mounting a database directory.
 resolvedir:{[dir]
   dir:$[10h=abs type dir;dir;string dir];
   / a symbol-sourced value (old .q-style settings) stringifies with its leading
   / handle colon still attached (e.g. `:/tmp/foo` -> ":/tmp/foo") - strip it before
-  / checking absolute-ness, same normalization di.proc.hdb's resolvedir needs (1_string).
+  / checking absolute-ness, same normalization di.torq.proc.hdb's resolvedir needs (1_string).
   dir:$[(0<count dir) and ":"=first dir;1_dir;dir];
   $[dir like "/*";dir;getenv[`TORQXAPPHOME],"/",dir]
   }

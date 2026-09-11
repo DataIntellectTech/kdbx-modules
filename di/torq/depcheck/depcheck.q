@@ -24,7 +24,7 @@ contracts:`di.util.log`di.timer`di.torq.handlers!(
 / The kdb-x `use` loader keys a module `vendor.a.b` under a NESTED namespace: `di.timer` -> `.m.di.0timer`,
 / `di.torq.handlers` -> `.m.di.0torq.0handlers`, `di.util.log` -> `.m.di.0util.0log`. So every segment after the
 / vendor gets a `0` prefix and the segments nest. (Generalised from the original flat single-dot assumption during
-/ the TorqX consolidation, which introduced the di.torq.*/di.util.*/di.proc.* hierarchy.)
+/ the TorqX consolidation, which introduced the di.torq.*/di.util.*/di.torq.proc.* hierarchy.)
 
 shortmod:{[modname]
   / di.torq.handlers -> `0handlers - the leaf short name, the key a module sits under within its PARENT namespace
@@ -227,7 +227,7 @@ checkdepversion:{[dep;minver]
   / but keep it out of `export` because their getapimeta contract test asserts the exact export set. The file is
   / the same source of truth the pre-load checkversiongraph reads, so a peer that is present and correctly
   / versioned must not fail this audit just because of where its version is published. Without this, every
-  / process whose manifest declares such a module (di.proc.{rdb,wdb,gateway} all declare di.torq.servers) dies
+  / process whose manifest declares such a module (di.torq.proc.{rdb,wdb,gateway} all declare di.torq.servers) dies
   / here AFTER a fully successful init - see depcheck.md
   if[0=count ver;
     dir:resolvemodule dep;
@@ -338,7 +338,7 @@ checkgraph:{[]
 / Grafted from TorqX di.torq.depcheck during the consolidation. Where checkdeps/checkgraph audit the LOADED session
 / (post-load introspection), these run at the very START of di.torq.init - BEFORE any module is `use`d - resolving
 / each declared dependency on QPATH and reading its VERSION file, so a peer-version mismatch is caught up front (the
-/ "customer bumped di.proc.gateway but not the di.serverselect it now needs" scenario) rather than mid-startup.
+/ "customer bumped di.torq.proc.gateway but not the di.serverselect it now needs" scenario) rather than mid-startup.
 / Pure on-disk reads (resolvemodule + VERSION file + di.util.toml manifest parse) - no `use` of the checked modules.
 
 readversion:{[dir]
@@ -383,7 +383,7 @@ raisefails:{[fails]
   };
 
 checkversiongraph:{[entries]
-  / PRE-LOAD version graph from a set of entry module names (e.g. a built-in proctype's di.proc.* entry module).
+  / PRE-LOAD version graph from a set of entry module names (e.g. a built-in proctype's di.torq.proc.* entry module).
   / Walks each entry's on-disk manifest transitively, version-checking every declared peer. Raises on any failure.
   acc:`visited`fails!(`symbol$();());
   raisefails (({[acc;e] visitversion[acc;e]}/[acc;entries])`fails)

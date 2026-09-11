@@ -5,7 +5,7 @@ fetch the schema + log details, define the tables locally, replay the pre-subscr
 log **exactly once**, then let live updates flow through the root `upd`.
 
 Ported and simplified from `TorQ/code/common/subscriptions.q` (`.sub`), but written
-against `di.proc.tickerplant`'s clean single-call `subdetails` protocol rather than the
+against `di.torq.proc.tickerplant`'s clean single-call `subdetails` protocol rather than the
 classic standard-TP `.u.i`/`.u.L`/`.u.d` global reads.
 
 ## Dependency
@@ -49,7 +49,7 @@ A `use`-loaded module **cannot create or populate ROOT tables via bare symbols**
 in di.tplogmgr's module context) lands in the module's *private* namespace, not root. So:
 
 - table creation uses `@[`.;name;:;schema]` (explicit root);
-- **the caller's root `upd` must be root-namespace-safe** — di.proc.rdb's `upd` appends via
+- **the caller's root `upd` must be root-namespace-safe** — di.torq.proc.rdb's `upd` appends via
   `@[`.;t;…]`. A bare `upd:insert` would, under replay, insert into the wrong namespace
   and silently capture nothing. (Reads are safe: a bare `value t` falls through to root.)
 

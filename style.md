@@ -143,5 +143,4 @@ Unless it is unavoidable lines of code should not exceed 150 characters.
 - **Reserved names bite at load time, not just runtime.** Beyond "don't use q reserved names":
   the ones that have actually broken things are `log`, `ss`, `sv`, `string`, `cut`, `tables`. A
   local or parameter named after a builtin may fail to shadow it and can throw when the file is
-  *loaded* (e.g. `sv:...` → `'sv`). Pick a distinct name (`srv` not `sv`, `lg` not `log`). Full
-  list of q traps in `CLAUDE.md`.
+  *loaded* (e.g. `sv:...` → `'sv`). Pick a distinct name (`srv` not `sv`, `lg` not `log`).

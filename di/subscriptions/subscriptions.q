@@ -1,9 +1,9 @@
-/ di.subscriptions - subscribe a process (e.g. di.proc.rdb) to a tickerplant. In one flow it
+/ di.subscriptions - subscribe a process (e.g. di.torq.proc.rdb) to a tickerplant. In one flow it
 / fetches the schema + log details via the TP's .u.subdetails, defines the tables locally,
 / replays the pre-subscription log EXACTLY once (via di.tplogmgr.replayupto, using the
 / rowcount the TP reported at subscription time), then lets live updates flow through the
 / root `upd`. Ported/simplified from TorQ/code/common/subscriptions.q (.sub), written
-/ against di.proc.tickerplant's clean single-call subdetails protocol rather than the classic
+/ against di.torq.proc.tickerplant's clean single-call subdetails protocol rather than the classic
 / standard-TP .u.i/.u.L/.u.d global reads.
 / ---
 / Scope (v1, critical path): connect+subscribe+replay for a co-located subscriber (it
@@ -36,7 +36,7 @@ runreplay:{[lf;n] .[{[m;lf;n](m`replayupto)[lf;n]};(.z.m.tp;lf;n);{[e](`replayer
 / the subscribed tables/syms. NB module-namespace boundary: a `use`-loaded module cannot
 / create/populate ROOT tables via bare symbols (they land in the module's private
 / namespace) - so table creation uses @[`.;name;:;..] and replay drives the ROOT `upd`
-/ (which di.proc.rdb sets to `insert` at root). For the common all/all subscription we don't
+/ (which di.torq.proc.rdb sets to `insert` at root). For the common all/all subscription we don't
 / wrap upd at all; for a narrowed subscription we temporarily install a root-level filter
 / wrapper (built from replayfilter) and restore the original after.
 doreplay:{[sd;tabs;syms]
@@ -55,7 +55,7 @@ doreplay:{[sd;tabs;syms]
     .z.m.log[`error][`subscriptions;"replay failed for ",(string lf),": ",last r]];
   }
 
-/ subscribe over an already-open tickerplant handle `tph` (di.proc.rdb obtains it via
+/ subscribe over an already-open tickerplant handle `tph` (di.torq.proc.rdb obtains it via
 / di.torq.servers). tabs/syms: ` for all, else a list. replay: 1b to replay the tp log.
 / Returns the subscription-details dict (tables/schemas/logfile/rowcount/date).
 subscribe:{[tph;tabs;syms;replay]
@@ -70,7 +70,7 @@ subscribe:{[tph;tabs;syms;replay]
   sd
   }
 
-/ are we currently subscribed to anything? (di.proc.rdb's connectivity check)
+/ are we currently subscribed to anything? (di.torq.proc.rdb's connectivity check)
 subscribed:{[] 0<count .z.m.SUBSCRIPTIONS}
 
 / the active-subscriptions registry (introspection)

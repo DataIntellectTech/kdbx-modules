@@ -23,13 +23,12 @@ In order to use the modules from this repo:
   ```bash
   $ export QPATH=${QPATH}:~/kdbx-modules-main/
   ```
-4. Run KDB-X and use `use` keyword to import modules - all modules begin with `di.` e.g. `di.usage`
+4. Run KDB-X and use `use` keyword to import modules - all modules begin with `di.` e.g. `di.querylog`
   ```bash
   $ q
   KDB-X 0.1.2 2025.10.18 Copyright (C) 1993-2025 Kx Systems
-  l64/ 64()core 385394MB jmcmurray homer.aquaq.co.uk 127.0.1.1 EXPIRE 2026.03.26 dataintellect.com KXMS #95155
 
-  q)usage:use`di.usage
+  q)querylog:use`di.querylog
   ```
 
 ## Module layout

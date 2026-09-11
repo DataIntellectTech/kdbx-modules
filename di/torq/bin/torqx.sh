@@ -1,6 +1,6 @@
 #!/bin/bash
 # TorqX process orchestrator - start/stop/restart/status across process.csv.
-# Lives once in the TorqX framework checkout (never copied into a project),
+# Lives once in the kdbx-modules checkout (never copied into a project),
 # invoked from a project directory: cd myproject && $TORQXHOME/di/torq/bin/torqx.sh start
 #
 # Deliberately thin: reads process.csv only to ENUMERATE rows (which processes

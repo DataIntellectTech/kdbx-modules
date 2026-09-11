@@ -165,21 +165,23 @@ reads only, loads no module code). A missing `deps.toml` is a silent no-op, so a
 incremental. This catches "upgraded one module but not the peer it now needs" as a clear startup
 error instead of a cryptic runtime one.
 
-## Module namespace hierarchy  *(agreed — RFC-0001, phased rollout)*
+## Module namespace hierarchy  *(agreed — RFC-0001, phased rollout; process tier folded under `di.torq` 2026-09-11)*
 
 TorqX groups modules into a namespace hierarchy rather than flat `di.*`:
 
-- `di.proc.*` — deployable process types (hdb, rdb, wdb, tickerplant, gateway)
-- `di.torq.*` — the orchestrator plus the framework machinery it owns (config, depcheck, servers,
-  handlers, logroll)
+- `di.torq.*` — the orchestrator plus everything it owns:
+  - `di.torq.{config,depcheck,servers,handlers,logroll}` — the framework machinery
+  - `di.torq.proc.{hdb,rdb,wdb,tickerplant,gateway}` — the deployable process types (`di/torq/proc/`
+    is a plain parent directory, not a module)
 - `di.util.*` — standalone utilities usable outside a di.torq app (toml, log)
 - flat `di.*` — the reusable library layer and all vendored / upstream modules
 
 kdb-x supports this: `di.a.b` resolves to `di/a/b/`, and a parent (`di.torq`) can be both a
 loadable module and a parent of children (loading a child does not load the parent).
 
-> **Status:** the hierarchy is the **agreed** target scheme (RFC-0001). Rollout is **phased**:
-> new framework/process modules (`di.torq.*`, `di.proc.*`, `di.util.*`) land in the hierarchy now;
+> **Status:** the hierarchy is the **agreed** target scheme (RFC-0001, with the process tier
+> subsequently moved from `di.proc.*` to `di.torq.proc.*`). Rollout is **phased**:
+> new framework/process modules (`di.torq.*`, `di.torq.proc.*`, `di.util.*`) land in the hierarchy now;
 > the existing flat utility modules migrate in one coordinated change later (RFC phase 5), *after*
 > the in-flight branches are drained/rebased. So flat and hierarchical names coexist for now — do
 > **not** pre-emptively rename existing flat modules or open branches ahead of phase 5.

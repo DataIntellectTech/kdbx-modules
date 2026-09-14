@@ -1,0 +1,89 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,st:use`di.torq.proc.segmentedtp,1,,load module
+before,0,0,q,system "l di/torq/proc/segmentedtp/test.q",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,create temp fixture dirs plus schema and custom csv files
+
+comment,,,,,,,exports and api metadata
+true,0,0,q,(asc (key st) except `init`getapimeta`version)~asc exec name from st.getapimeta[],1,,getapimeta documents exactly the callable exports (plumbing and version omitted)
+true,0,0,q,not any `init`getapimeta in exec name from st.getapimeta[],1,,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols st.getapimeta[],1,,getapimeta rows carry the registry columns
+true,0,0,q,versionok[],1,,version is exported (di.torq.depcheck reads it there) and holds a clean major.minor.patch
+
+comment,,,,,,,init - dependency and config validation (each asserts the error names the reason; bad schema first while root holds no schema tables)
+true,0,0,q,initbadschema[],1,,a schema with no time/sym table fails init
+true,0,0,q,initnotdict[],1,,deps that are not a dict are rejected
+true,0,0,q,initnolog[],1,,a missing log dependency is rejected
+true,0,0,q,initnotimer[],1,,a missing timer dependency is rejected
+true,0,0,q,initnohandlers[],1,,a missing handlers dependency is rejected
+true,0,0,q,initlogkeys[],1,,a log dependency without an error function is rejected
+true,0,0,q,initnokdbtplog[],1,,kdbtplog is required
+true,0,0,q,"initrejects[`multilog;`hourly;""multilog must be one of""]",1,,an unrecognised multilog fails init (fix 8)
+true,0,0,q,"initrejects[`batchmode;`sometimes;""batchmode must be one of""]",1,,an unrecognised batchmode fails init (fix 8)
+true,0,0,q,"initrejects[`replayperiod;`prior;""replayperiod must be one of""]",1,,an unrecognised replayperiod fails init - prior was never implemented (fix 8)
+true,0,0,q,badmsgnames[],1,,each fix 8 error names the setting at fault
+true,0,0,q,"initrejects[`multilogperiod;0D;""multilogperiod must be""]",1,,a non-positive multilogperiod fails init
+true,0,0,q,"initrejects[`tickinterval;0;""tickinterval must be""]",1,,a non-positive tickinterval fails init
+true,0,0,q,fix7[],1,,an init that threw part-way is not treated as initialised and the retry registers once with no leaked handle (fix 7)
+true,0,0,q,reinit[],1,,a second init tears down first and leaves one job and one handler and one open handle per file
+true,0,0,q,defaults[],1,,every config default reached module state
+true,0,0,q,jobok[],1,,the tick job is scheduled every tickinterval seconds in mode 1 under the module's own id and survives a failing run
+true,0,0,q,tickprotected[],1,,a throw inside the tick job is caught and logged rather than propagated to di.timer
+true,0,0,q,stringconfig[],1,,string and numeric settings (toml / command line) are parsed into the right types
+true,0,0,q,handlerok[],1,,.z.exit is registered through the handlers dependency as a simple event
+true,0,0,q,forced[],1,,singular and tabular force a daily period and custom does not
+true,0,0,q,tzconfigok[],1,,rolltimezone / datatimezone / rolltimeoffset settings reach di.eodtime and init succeeds
+true,0,0,q,tzstringok[],1,,a string rolltimeoffset is parsed and an unparseable one is dropped with a warning - never silently
+true,0,0,q,prefixok[],1,,logprefix defaults to the process name from config and an explicit logprefix still wins
+true,0,0,q,prefixempty[],1,,an empty logprefix is rejected
+true,0,0,q,logdictwiring[],1,,init wires from di.util.log's logdict joined with the other deps
+
+comment,,,,,,,log naming modes
+true,0,0,q,nameok[`tabperiod],1,,tabperiod opens one log per table stamped with the period start
+true,0,0,q,nameok[`tabular],1,,tabular opens one log per table stamped with the day start
+true,0,0,q,nameok[`singular],1,,singular opens one shared log stamped with the day start
+true,0,0,q,nameok[`periodic],1,,periodic opens one shared log stamped with the period start
+true,0,0,q,sharedhandle[],1,,tables in a singular log share one handle
+true,0,0,q,customnames[],1,,custom opens logs under each table's own mode
+
+comment,,,,,,,batch modes and updates
+true,0,0,q,immediateok[],1,,immediate logs and publishes every update
+true,0,0,q,defaultok[],1,,defaultbatch logs straight away and publishes on the flush with counts pending until then
+true,0,0,q,memoryok[],1,,memorybatch buffers then logs the whole buffer as one message on the flush
+true,0,0,q,stampok[],1,,updates are timestamped unless already stamped and table and multi-table messages are accepted
+true,0,0,q,stringtablename[],1,,a string table name from a feed is accepted as the symbol
+true,0,0,q,errmodeok[],1,,errmode diverts failed updates to the error log as upderr messages
+true,0,0,q,noerrmode[],1,,without errmode an update for an unknown table throws back to the feed
+true,0,0,q,nologsok[],1,,createlogs off publishes and counts without opening any log (fix 9)
+true,0,0,q,unlistedok[],1,,a custom-mode table missing from the csv publishes without a log (fix 9)
+
+comment,,,,,,,corruption / roll guard / error log / metatable / replay lists
+true,0,0,q,fix1[],1,,a corrupt log is never opened blind - its good prefix is kept in .good and used across restarts (fix 1)
+true,0,0,q,shortfile[],1,,a log truncated inside its header is recovered as an empty .good instead of throwing at init
+true,0,0,q,fix2[],1,,a period guard trip disables only this module's timer job and the next good roll re-enables it (fix 2)
+true,0,0,q,fix3[],1,,a day roll closes the old error log's file descriptor along with every table log (fix 3)
+true,0,0,q,fix4resume[],1,,a restart after an unclean exit resumes the same segment rows instead of repeating them (fix 4)
+true,0,0,q,fix4orphan[],1,,an open row for a file not reopened is closed with a null message count (fix 4)
+true,0,0,q,fix5[],1,,the period replay list has one pair per physical file counting every table in it (fix 5)
+true,0,0,q,fix6[],1,,custom mode writes one metatable row per physical file - shared for singular (fix 6)
+
+comment,,,,,,,period and day rolls
+true,0,0,q,periodroll[],1,,end of period closes the segment and rolls to a new file and notifies subscribers and lists the day
+true,0,0,q,dayroll[],1,,end of day notifies subscribers and moves to the next day's directory and closes every segment
+
+comment,,,,,,,subscriber surface / custom mode / lifecycle
+true,0,0,q,subdetailsok[],1,,subdetails returns schemas and replay pairs and rowcounts and date and logdir
+true,0,0,q,subbad[],1,,subdetails for only unknown tables throws
+true,0,0,q,tablelistok[],1,,tablelist returns the publishable tables
+true,0,0,q,readcsvok[],1,,readcustomcsv reads a table/mode csv from a string or symbol path
+true,0,0,q,readcsvmissing[],1,,readcustomcsv rejects a missing file
+true,0,0,q,readcsvbadmode[],1,,readcustomcsv rejects an unrecognised mode
+true,0,0,q,readcsvbadheader[],1,,readcustomcsv rejects a csv without a table/mode header
+true,0,0,q,setcustomok[],1,,setcustommode applies a new layout at runtime and reopens logs under it
+true,0,0,q,setcustomnotcustom[],1,,setcustommode is rejected outside custom mode
+true,0,0,q,setcustomunknown[],1,,setcustommode rejects tables that are not publishable
+true,0,0,q,setcustombadmode[],1,,setcustommode rejects an unrecognised mode
+true,0,0,q,exitok[],1,,a bad exit leaves logs alone and a clean exit flushes and closes them
+true,0,0,q,teardownok[],1,,teardown flushes and closes every file and removes the job and handler
+true,0,0,q,afterteardown[],1,,exported functions and the root upd reject calls after teardown
+
+after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

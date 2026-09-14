@@ -304,9 +304,10 @@ regression test asserting the corrected behaviour.
 - **End-of-period payload shape.** `di.pubsub.callendofperiod` is monadic, so subscribers receive
   `endofperiod[(currentperiod;nextperiod;data)]` — one list argument — where TorQ sent three
   arguments. Likewise `callendofday` sends `endofday[date]` without TorQ's data dict.
-- **`di.pubsub` assigns `.z.pc` directly.** It overwrites whatever `di.torq.handlers` had bound
-  (including di.torq.servers' cleanup) when it is first `use`d. Inherited from di.pubsub by every
-  consumer; not worked around here.
+- **`di.pubsub`'s `.z.pc` binding** — resolved on this branch: di.pubsub no longer binds `.z.pc`
+  at load (it replaced the `di.torq.handlers` dispatcher, and di.torq.servers' cleanup with it,
+  moments after di.torq installed it). This module registers pubsub's `closesub` on `.z.pc`
+  through `handlers` in `init` and removes it in `teardown`.
 - **Corrupt-log recovery shells out to `mv`** (as `di.torq.proc.tickerplant` uses `mkdir -p`);
   paths are shell-quoted.
 - **`msgcount` in a closed metatable row is informative only.** It counts what this process wrote

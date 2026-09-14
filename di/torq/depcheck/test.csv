@@ -50,7 +50,7 @@ true,0,0,q,"$[@[{use`di.util.log;1b};`;0b];.m.di.0torq.0depcheck.checkonedep[`di
 comment,,,,,,,VERSION-file fallback - a loaded module may ship a VERSION file but withhold `version` from its export
 comment,,,,,,,dict because its getapimeta contract test asserts the exact export set (di.util.toml and
 comment,,,,,,,di.torq.servers both do). checkdepversion falls back to the on-disk file rather than failing the audit.
-comment,,,,,,,REGRESSION: di.proc.rdb/wdb/gateway all declare di.torq.servers and every one of them died here after
+comment,,,,,,,REGRESSION: di.torq.proc.rdb/wdb/gateway all declare di.torq.servers and every one of them died here after
 comment,,,,,,,a fully successful init - caught only by booting a real stack. See depcheck.q/depcheck.md
 true,0,0,q,"$[.dc.havetoml;0=count .m.di.0torq.0depcheck.checkonedep[`di.util.toml;""0.1.0""];1b]",1,,di.util.toml exports no version but ships VERSION 0.1.0 - satisfied from the file
 true,0,0,q,"$[.dc.havetoml;.m.di.0torq.0depcheck.checkonedep[`di.util.toml;""9.9.9""]~enlist ""di.util.toml requires minimum version 9.9.9, found 0.1.0"";1b]",1,,the file-sourced version is really compared - an unmeetable minimum still fails against it

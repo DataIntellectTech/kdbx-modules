@@ -15,7 +15,7 @@ logname:{[dir;date] `$":",dir,"/tp",string date}
 /   (`upd;t;x) message, restoring in-memory state; return (handle;replayed-count).
 / A corrupt log is a FAIL-FAST error here - a tickerplant must not silently continue on
 / a bad log. The replay/RDB side uses `replay` (below), which repairs instead. The
-/ caller must have a root-level `upd` defined before calling (di.proc.tickerplant publishes
+/ caller must have a root-level `upd` defined before calling (di.torq.proc.tickerplant publishes
 / one in its init, ahead of opening the log).
 open:{[dir;date]
   L:logname[dir;date];
@@ -53,7 +53,7 @@ replay:{[logfile]
 
 / replay only the FIRST n messages of a log through root `upd` (repair-aware). Used by a
 / subscriber on startup: it replays exactly the messages the tickerplant had logged at
-/ the instant it subscribed (the `rowcount` returned by di.proc.tickerplant.subdetails), so
+/ the instant it subscribed (the `rowcount` returned by di.torq.proc.tickerplant.subdetails), so
 / live messages that arrive AFTER subscription - which are also delivered over the live
 / feed - are not double-processed. Whole-file `replay` would reprocess them. Returns the
 / replayed count. n>=good-count replays the whole (repaired) log.

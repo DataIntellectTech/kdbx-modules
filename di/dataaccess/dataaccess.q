@@ -5,7 +5,7 @@
 / SCATTERS the shards via di.asyncdispatch, then GATHERS and MAP-REDUCES the results back to
 / the client. This is the "generic getdata that handles the rdb-has-no-date-column problem".
 / ---
-/ MERGE of two implementations (see docs/reconciliation/dataaccess.md). The structure - routing,
+/ MERGE of two implementations. The structure - routing,
 / scatter/gather/reduce, requests/shardresults bookkeeping, the postback/timeout/deferred-sync
 / request lifecycle - is kdbx-modules feature-dataaccess's, kept. On top of it:
 /   (1) queries are also built FUNCTIONALLY (?[t;wc;b;a]) rather than only by string rewriting -
@@ -21,7 +21,7 @@
 /   execquery             - arbitrary query STRING, time-sharded, caller-supplied joinfn
 / ---
 / Hard deps (use): di.asyncdispatch (dispatch), di.serverselect (which servertypes are live) -
-/ SHARED (idempotent use) with di.proc.gateway, so it reuses the gateway's registered servers +
+/ SHARED (idempotent use) with di.torq.proc.gateway, so it reuses the gateway's registered servers +
 / callbacks. Injected via init: log, timer (required) + optional config.
 / Scope: count/sum/min/max/avg + wavg/vwap aggs (avg & the weighted pair map-reduce correctly via a
 / component split - see aggspecs); `date` + plain by-columns; a single time-range filter. Coverage is
@@ -265,7 +265,7 @@ getdatafull:{[tablename;starttime;endtime;by;aggs;postback;timeout;sync]
   };
 
 / simple form: no postback, no timeout, async. Delegates to getdatafull - same pairing convention
-/ as di.proc.gateway's asyncexec/asyncexecjpt, so existing 5-arg .gw.getdata callers are unaffected.
+/ as di.torq.proc.gateway's asyncexec/asyncexecjpt, so existing 5-arg .gw.getdata callers are unaffected.
 / NB must be defined AFTER getdatafull: a module-local name is rewritten to the module namespace at
 / COMPILE time, so a forward reference here silently falls through to root and throws 'type on call.
 getdata:{[tablename;starttime;endtime;by;aggs]
@@ -278,7 +278,7 @@ execquery:{[query;starttime;endtime;joinfn;postback;timeout;sync]
   / recombine with the caller's joinfn. Complements getdata: getdata is typed, date-normalising and
   / map-reducing but only builds the query shapes it knows; execquery takes any query string but
   / cannot normalise `date (the rdb has no date column) and leaves recombination to the caller.
-  / Distinct from di.proc.gateway's .gw.asyncexecjpt, which sends one query to chosen servertypes
+  / Distinct from di.torq.proc.gateway's .gw.asyncexecjpt, which sends one query to chosen servertypes
   / with no time-range routing at all - this shards a raw string across the time partitions.
   if[not `log in key .z.m;'"di.dataaccess: init must be called before execquery"];
   checksync[`execquery;sync];

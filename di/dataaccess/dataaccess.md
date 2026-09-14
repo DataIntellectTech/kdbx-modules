@@ -15,7 +15,7 @@ map-reduce vs a bare `raze`).
 ## Dependencies
 
 - **Hard** (`use`): `di.asyncdispatch` (dispatch), `di.serverselect` (which servertypes are
-  live). Both are **shared** with di.proc.gateway (idempotent `use`), so getdata dispatches through
+  live). Both are **shared** with di.torq.proc.gateway (idempotent `use`), so getdata dispatches through
   the gateway's already-registered servers and callbacks.
 - **Injected** (`init` deps dict): `log`, `timer` (required) + optional `partitions`,
   `timecolumn` (default `` `time ``), `partitioncolumn` (default `` `date ``), `cp`,
@@ -55,7 +55,7 @@ Deferred-sync from a client: `neg[gw](`.gw.getdata; `trade; st; et; `date`sym; (
 partitions:([] servertype:`rdb`hdb; coverfrom:(`timestamp$.z.d; -0Wp); coverto:(0Wp; -1+`timestamp$.z.d))
 ```
 `coverfrom`/`coverto` are timestamps (`-0Wp`/`0Wp` for open ends); **keep them non-overlapping**
-or a slice is double-counted. di.proc.gateway builds this from `.z.d` at init (rdb = today onward,
+or a slice is double-counted. di.torq.proc.gateway builds this from `.z.d` at init (rdb = today onward,
 hdb = before today) and **refreshes it at rollover** by calling `setpartitions[parts]` from its EOD
 `reloadend` handler — after the wdb has moved the just-ended day's partition into the hdb, `.z.d`
 has advanced, so the rolled day now correctly routes to the hdb instead of the rdb (which dropped it).
@@ -63,7 +63,7 @@ has advanced, so the rolled day now correctly routes to the hdb instead of the r
 ## `setpartitions[parts]`
 
 Swap the routing coverage table at runtime (same-shape table as above; columns validated). Published
-as a module export; di.proc.gateway calls it at EOD `reloadend`. Call it yourself if your stack rolls
+as a module export; di.torq.proc.gateway calls it at EOD `reloadend`. Call it yourself if your stack rolls
 partitions on a schedule the gateway doesn't drive.
 
 ## Scope / deferred

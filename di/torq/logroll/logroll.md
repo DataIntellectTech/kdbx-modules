@@ -30,7 +30,7 @@ per-process-type code changes needed anywhere.
 ### `resolvedir[dir]`
 
 String-based (not symbol/`hsym`, since this feeds `system"1 ..."`/`ln -sf` shell
-commands, not a q file load) - `di/proc/hdb/hdb.q`'s `resolvedir` is the symbol-based
+commands, not a q file load) - `di/torq/proc/hdb/hdb.q`'s `resolvedir` is the symbol-based
 equivalent for mounting a database directory. Absolute if the (string-normalized)
 value starts with `/`, else joined against `TORQXAPPHOME`. A symbol-sourced value
 (old `.q`-style settings, e.g. `` `:/var/log/myapp ``) stringifies with its leading
@@ -44,7 +44,7 @@ reassignment - and, if `alias` is non-empty, points a stable `ln -sf` symlink at
 `rollnow` builds this roll's timestamp-stamped `out_`/`err_` filenames and calls
 `redirect` for both handles. Published at a real root name, `.logroll.rollnow`, so
 it's callable manually (ops forcing an immediate roll without waiting for the
-schedule) - same "publish at a real root name" convention `di.proc.hdb`'s
+schedule) - same "publish at a real root name" convention `di.torq.proc.hdb`'s
 `.hdb.reload` uses, needed because `use` mangles a module's own namespace.
 
 ### Interactive sessions (the TTY guard)
@@ -77,7 +77,7 @@ an interactive session.
 ### `init[config;deps]`
 
 Requires `log` and `timer` in the injected `deps` (same validation style as
-`di/proc/hdb/hdb.q:21`). When enabled: calls `rollnow[]` once immediately, then
+`di/torq/proc/hdb/hdb.q:21`). When enabled: calls `rollnow[]` once immediately, then
 schedules the recurring roll via the injected timer contract - `period=86400`
 (seconds/day), `mode=1h` (`kdbx-modules` `di.timer`'s "x seconds after previously
 scheduled start" - fixed-rate, no drift), with `opts.startattime` overriding just
@@ -119,7 +119,7 @@ way, and `WorkingDirectory`/`TORQXAPPHOME` already being absolute means
 
 ## Dependency
 
-Requires `log` and `timer` injected (Tier-2-ish, alongside `di.proc.hdb`/`di.torq.handlers`) - not
+Requires `log` and `timer` injected (Tier-2-ish, alongside `di.torq.proc.hdb`/`di.torq.handlers`) - not
 a hard `use`-imported module dependency beyond that.
 
 ## Usage

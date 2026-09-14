@@ -1,4 +1,4 @@
-/ fixture helpers for di.subscriptions' tests. Assumes cwd is the TorqX repo root.
+/ fixture helpers for di.subscriptions' tests. Assumes cwd is the kdbx-modules repo root.
 / The tickerplant "handle" is mocked as a FUNCTION: subscribe calls tph(`.u.subdetails;..),
 / and `h(msg)` applies h to the message whether h is an int handle (real IPC) or a
 / function (here). The mock answers with a canned subdetails dict that points at a REAL
@@ -16,10 +16,10 @@ mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 mocklog:{[] `info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;])}
 deps:{[] enlist[`log]!enlist mocklog[]}
 
-/ the trade schema a TP would return (g# on sym, as di.proc.tickerplant applies)
+/ the trade schema a TP would return (g# on sym, as di.torq.proc.tickerplant applies)
 tradeschema:{[] ([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$())}
 
-/ the root-namespace-safe upd di.proc.rdb uses: append to the ROOT table t, handling a table
+/ the root-namespace-safe upd di.torq.proc.rdb uses: append to the ROOT table t, handling a table
 / payload (live) or a list-of-columns payload (replay). @[`.;..] targets root explicitly
 / so it works even when di.tplogmgr's -11! replay executes upd from a module context (a bare
 / `insert` would resolve the table symbol in di.tplogmgr's namespace, not root).

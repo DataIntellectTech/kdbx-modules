@@ -4,7 +4,7 @@
 
 / version is read from the VERSION file (init.q); di.torq.depcheck reads that file for the manifest graph
 / NOTE: `transform` phase (chained result rewrite between exec and post) is a TorqX addition on top
-/ of the upstream feature-handlers design - see docs/reconciliation/handlers.md. Fed back to that PR.
+/ of the upstream feature-handlers design. Fed back to that PR.
 
 / ============================================================
 / constants (load-time)

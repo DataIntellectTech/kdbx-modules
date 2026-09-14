@@ -1,7 +1,7 @@
 # di.torq
 
 The process orchestrator - the single entry point every TorqX process goes through,
-whether it's a built-in process type (a `di.*` module, like `di.proc.hdb`) or a custom one
+whether it's a built-in process type (a `di.*` module, like `di.torq.proc.hdb`) or a custom one
 (a plain file under the app's own `code/processes/`). Resolves who this process is,
 builds its config from the settings cascade, builds its injected dependencies, and
 starts the right process type - all through one call: `init[proctype;procname;
@@ -10,7 +10,7 @@ overrides]`.
 This is TorqX's analogue of legacy TorQ's `torq.q`, but narrower in scope: the
 launcher-side responsibilities (parsing a command line, actually starting a q
 process, supervising start/stop across a whole `process.csv`) live in
-`TorqX/di/torq/bin/torqx_init.q` and `TorqX/di/torq/bin/torqx.sh` instead - two deliberately thin
+`di/torq/bin/torqx_init.q` and `di/torq/bin/torqx.sh` instead - two deliberately thin
 files that call into `di.torq.init` rather than duplicating what it does. Everything
 below is `di.torq`'s own job; see the note at the end for how the launcher fits in.
 
@@ -57,7 +57,7 @@ Three independent, explicitly-set env vars - not derived from each other:
 |---|---|---|
 | `TORQXHOME` | the `di.torq`/framework checkout | builtin settings root (`$TORQXHOME/di/torq/settings`) |
 | `TORQXAPPCONFIG` | the app's `appconfig/` directory | app settings root (`$TORQXAPPCONFIG/settings`) and `process.csv` |
-| `TORQXAPPHOME` | the app's own project root | `code/processes/{proctype}.q` (custom proctypes), and where `di.proc.hdb`'s relative `dir:` settings resolve against |
+| `TORQXAPPHOME` | the app's own project root | `code/processes/{proctype}.q` (custom proctypes), and where `di.torq.proc.hdb`'s relative `dir:` settings resolve against |
 
 ### Config cascade
 
@@ -84,7 +84,7 @@ expects.
 A small built-in registry maps proctype → module name:
 
 ```q
-builtin:(enlist`hdb)!enlist`di.proc.hdb
+builtin:(enlist`hdb)!enlist`di.torq.proc.hdb
 ```
 
 If `proctype` is in `builtin`, `startbuiltin` `use`-loads that module and calls its
@@ -142,7 +142,7 @@ runhook:{[proctype;overrides]
 ```
 
 If the process type published a `` .{proctype}.run `` function - the same
-"publish at a real root name" convention `di.proc.hdb` uses for `.hdb.reload` - it gets
+"publish at a real root name" convention `di.torq.proc.hdb` uses for `.hdb.reload` - it gets
 called automatically, with no proctype-specific knowledge anywhere in `di.torq`
 itself, the launcher, or `torqx.sh`. This exists so a process type can have its own
 one-shot startup action (the sample loader's `loadall` - aliased as `run:loadall` in
@@ -151,12 +151,69 @@ init) without the generic launcher needing to know that loaders, specifically, n
 an extra call after `init` that hdb processes don't. Skipped entirely if
 `overrides[`norun]` is set - see `di/torq/bin/torqx_init.q`'s `-norun` flag.
 
+### Query logging (optional)
+
+> ⚠️ **Known limitation — read this before adding anything that binds `.z.*`.** Query logging wraps the `.z.*` handlers
+> by **direct assignment**, because that is how `di.querylog` (used unmodified from kdbx-modules
+> `main`) works; it does not register through `di.torq.handlers`. `di.torq.init` therefore wires it
+> **last**, after the process module and app code have bound their handlers. That works today
+> because no built-in process type owns `.z.pg` or `.z.ps`.
+>
+> **If anything claims a phased event's `exec` after startup, logging for that event silently drops
+> to zero, with no error.** That includes a permissions module, a gateway auth layer, or app code
+> registering `.z.pg` through `di.torq.handlers` at runtime: `di.torq.handlers` rebinds the event
+> over the wrapper. Removing an `exec` owner has the same effect, because the event is `\x`-restored
+> to the kdb+ default. After any change to what binds `.z.*`, check that every event is still
+> logging:
+>
+> ```q
+> q)select count i by zcmd from (use`di.querylog)[`getusage][]
+> ```
+>
+> The proper fix is to log through `di.torq.handlers`, which needs a way to observe `exec` failures
+> and to attach to an event nobody owns. That is an open design question for `di.torq.handlers`,
+> not something implemented here.
+
+Off by default. A process opts in with a `[querylog]` section in its `.toml` settings. Flat `.q`
+settings files can't express a section, which is the same restriction `[logroll]` has.
+
+```toml
+[querylog]
+enabled = true            # default false; a missing section or enabled=false is a silent no-op
+level = 3                 # 0 none, 1 errors, 2 + completions/opens/closes, 3 + a "before" row per query
+logtomemory = true        # in-memory table: (use`di.querylog)[`getusage][]
+logtodisk = false         # pipe-delimited querylog_<procname>_<date>.log
+dir = "logs"              # disk-log dir, relative to TORQXAPPHOME or absolute
+localtime = false         # UTC (.z.p), matching the tickerplant's time stamping
+ignorelist = ["upd", ".u.upd"]   # async (.z.ps) message heads that are NOT logged
+flushtime = 86400         # seconds of in-memory history kept; 0 disables the flush job
+flushinterval = 1800      # seconds between flushes (a job on the injected timer)
+```
+
+- **Events wrapped:** `.z.pw .z.po .z.pc .z.wo .z.wc .z.ws .z.pg .z.ps .z.ph .z.pp .z.exit`. `.z.pi` is
+  not wrapped, unlike TorQ's `.usage`.
+- **`ignorelist` applies to async (`.z.ps`) messages only**, which is `di.querylog`'s own rule. The
+  default covers the tickerplant→rdb/wdb stream of `` (`upd;t;x) `` messages. Without it every tick
+  message would be logged, twice at level 3. Each name matches both a symbol head (`` `upd ``, what
+  `di.pubsub` sends) and a string head (`".u.upd"`, what a feed may send). A feed that publishes
+  **synchronously** goes through `.z.pg` and **is** logged. For example, a feed that calls
+  `h(".u.upd";…)` on a sync handle has every batch logged when query logging is on for its tickerplant.
+- **Wiring happens once per process.** `di.querylog`'s own `init` isn't idempotent (a second call
+  wraps its own wrappers and every query logs twice), so if `di.torq.init` runs again in the same
+  process it logs a message and skips wiring.
+- **The disk log is opened once and not rolled daily**, because `di.querylog` doesn't export its roll
+  function. In-memory rows are trimmed by the flush job.
+- **Reading it:** inside the process run `` (use`di.querylog)[`getusage][] ``, or send that
+  expression over IPC as a query string.
+- **Differences from TorQ's `.usage`:** off by default (TorQ turns it on), no
+  `proctype`/`procname` columns, `.z.pi` not logged, and no daily disk-log roll.
+
 ## Usage
 
 ```q
 q)tq:use`di.torq
 q)r:tq.init[`hdb;`hdb;()!()]
-2026.07.09D12:48:40.352242000 INFO hdb mounting hdb from :/Users/jgrant/git/TorqX-POC/hdb
+2026.07.09D12:48:40.352242000 INFO hdb mounting hdb from :/opt/torqx/app/hdb
 2026.07.09D12:48:40.355727000 INFO hdb loaded tables: trade
 q)r`proctype
 `hdb
@@ -173,7 +230,7 @@ Auto-detected identity, once the session is listening on the right port:
 ```q
 q)system "p 5560"
 q)r:tq.init[`;`;()!()]
-2026.07.09D12:48:48.864626000 INFO hdb mounting hdb from :/Users/jgrant/git/TorqX-POC/hdb
+2026.07.09D12:48:48.864626000 INFO hdb mounting hdb from :/opt/torqx/app/hdb
 2026.07.09D12:48:48.864819000 INFO hdb loaded tables: trade
 q)r`proctype
 `hdb
@@ -232,6 +289,9 @@ freshly-started process. tmux mode is for local development; production stays on
 
 ## Known gaps (v1)
 
+- **Query logging (`[querylog]`) wraps `.z.*` by direct assignment.** If a phased event's `exec`
+  is claimed after startup, logging for that event silently drops to zero with no error. See
+  [Query logging](#query-logging-optional).
 - The builtin registry has exactly one entry (`` `hdb ``) so far - every other
   proctype in a real deployment would be custom, until more `di.*` process-type
   modules exist.
@@ -244,7 +304,7 @@ freshly-started process. tmux mode is for local development; production stays on
 ## Testing
 
 `test.csv`/`test.q` (k4unit) deliberately use the **real** `di.util.log`/`di.timer`/
-`di.torq.handlers`/`di.proc.hdb` rather than mocks - each of those is already covered by its own
+`di.torq.handlers`/`di.torq.proc.hdb` rather than mocks - each of those is already covered by its own
 module's tests, and `di.torq`'s actual job is wiring them together correctly, which
 mocking them away wouldn't exercise. Only `TORQXAPPCONFIG`/`TORQXAPPHOME` are
 repointed at a temp fixture (a scratch settings tree, `process.csv`, and a throwaway

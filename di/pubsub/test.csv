@@ -5,6 +5,7 @@ run,0,0,q,system"q -p 5010 -q &",1,,start server in background
 run,0,0,q,system"sleep 1",1,,wait for server to initialize
 run,0,0,q,h:hopen`::5010,1,,open handle h on client for testing
 run,0,0,q,h"pubsub:use`di.pubsub",,initialize pubsub module
+run,0,0,q,h".z.pc:pubsub.closesub",1,,bind closesub to .z.pc on the server (the module no longer binds it itself)
 true,0,0,q,h>0,1,,verify client connected to server
 run,0,0,q,h"trade:([]time:\"p\"$();`g#sym:`$();price:\"f\"$();tsize:\"i\"$());",1,,define trade table on server
 run,0,0,q,h"quote:([]time:\"p\"$();`g#sym:`$();bid:\"f\"$();bidsize:\"i\"$();ask:\"f\"$();asksize:\"i\"$());",1,,define quote table on server

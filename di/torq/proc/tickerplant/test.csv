@@ -12,6 +12,8 @@ true,0,0,q,`upd in key `.,1,,feed entry point published at root
 true,0,0,q,`sub in key `.u,1,,subscriber entry point published as .u.sub
 true,0,0,q,scheduled[`tpeodcheck],1,,the eod-roll check job was scheduled
 true,0,0,q,not scheduled[`tpflush],1,,immediate mode schedules no flush job
+true,0,0,q,pcregistered[],1,,pubsub closesub is registered on .z.pc through the handlers dependency
+fail,0,0,q,(tk`init)[immcfg[];`log`timer#deps[]],1,,init without the handlers dependency fails
 
 run,0,0,q,feedtrades[2],1,,feed two trades in immediate mode
 true,0,0,q,0=count trade,1,,immediate mode retains no local rows

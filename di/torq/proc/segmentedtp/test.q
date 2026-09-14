@@ -130,7 +130,7 @@ fix7:{[]
     notdone;
     mv`initdone;
     1=count select from tcalls where fn=`addjob;
-    1=count select from hcalls where fn=`register;
+    1=count select from hcalls where fn=`register,arg~\:(`.z.exit;`;`segmentedtp);
     (exec first i from tcalls where fn=`deletejobs)<exec first i from tcalls where fn=`addjob;
     1=fdcount fileof`trade)
   };
@@ -140,7 +140,7 @@ reinit:{[]
   doinit cfg["tplog/reinit";()!()];
   chk `onejob`onehandler`removed`onefd!(
     1=count select from tcalls where fn=`addjob;
-    1=count select from hcalls where fn=`register;
+    1=count select from hcalls where fn=`register,arg~\:(`.z.exit;`;`segmentedtp);
     `remove in exec fn from hcalls;
     1=fdcount fileof`trade)
   };
@@ -203,7 +203,7 @@ stringtablename:{[]
   upd["trade";(`A;1.0)];
   1=cnt[`trade;`msgcount]
   };
-handlerok:{[] (`.z.exit;`;`segmentedtp)~exec first arg from hcalls where fn=`register};
+handlerok:{[] all ((`.z.exit;`;`segmentedtp);(`.z.pc;`;`pubsub)) in exec arg from hcalls where fn=`register};
 
 forced:{[]
   doinit cfg["tplog/forceds";`multilog`multilogperiod!(`singular;0D00:10)];
@@ -624,7 +624,7 @@ teardownok:{[]
     0=fdcount e;
     all not null (metaof dir)`end;
     (enlist`segmentedtp)~exec last arg from tcalls where fn=`deletejobs;
-    (`.z.exit;`;`segmentedtp)~exec last arg from hcalls where fn=`remove;
+    all ((`.z.exit;`;`segmentedtp);(`.z.pc;`;`pubsub)) in exec arg from hcalls where fn=`remove;
     not mv`initdone)
   };
 

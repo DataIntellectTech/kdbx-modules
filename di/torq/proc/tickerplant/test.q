@@ -19,7 +19,12 @@ resettimer:{[] `timercalls set ([]id:`symbol$();period:`int$();mode:`short$()); 
 mockaddjob:{[id;func;params;period;mode;opts] `timercalls insert (id;`int$period;mode); }
 mocktimer:{[] enlist[`addjob]!enlist mockaddjob}
 
-deps:{[] `log`timer!(mocklog[];mocktimer[])}
+/ mock handlers - records (event;name) registrations with di.torq.handlers' register shape
+hcalls:([]event:`symbol$();name:`symbol$())
+resethandlers:{[] `hcalls set ([]event:`symbol$();name:`symbol$()); }
+mockhandlers:{[] `register`remove!({[ev;ph;nm;pri;fn] `hcalls insert (ev;nm);};{[ev;ph;nm]})}
+
+deps:{[] `log`timer`handlers!(mocklog[];mocktimer[];mockhandlers[])}
 
 setupfixture:{[]
   system "rm -rf ",BASE;
@@ -54,7 +59,7 @@ flushperiodok:{[] 2=first exec period from timercalls where id=`tpflush}
 rolledfile:{[sub;date] not ()~key hsym`$BASE,"/",sub,"/tp",string date}
 
 / init helpers that store handles / state for assertions
-doinit:{[cfg] resetcalls[]; resettimer[]; (tk`init)[cfg;deps[]]; }
+doinit:{[cfg] resetcalls[]; resettimer[]; resethandlers[]; (tk`init)[cfg;deps[]]; }
 initbad:{[] (tk`init)[badcfg[];deps[]]; }   / expected to throw (used by a fail row)
 
 scheduled:{[id] id in exec id from timercalls}
@@ -73,3 +78,6 @@ subdetailsok:{[]
       98h=type sd[`schemas]`trade;
       sd[`logfile]~hsym`$BASE,"/subdlog/tp",string sd`date)
   }
+
+/ pubsub's subscriber cleanup is registered on .z.pc through the handlers dep (not bound by di.pubsub at load)
+pcregistered:{[] (`.z.pc;`pubsub) in flip value flip hcalls}

@@ -18,7 +18,7 @@ TorQ's chained variant (`sctp.q`, which subscribes *to* a parent TP) is out of s
 | `timer` | injected | `` `addjob`deletejobs`enablejobs`disablejobs `` (di.timer contract) — required |
 | `handlers` | injected | `` `register`remove `` (di.torq.handlers contract) — required |
 | `servers` | injected | passed by `di.torq`, deliberately unread (no connection needs), as in `di.torq.proc.tickerplant` |
-| `di.pubsub` | `use` | subscribe / publish / end-of-period and end-of-day broadcast |
+| `di.pubsub` | `use` | subscribe / publish / end-of-period and end-of-day broadcast; its `closesub` is registered on `.z.pc` through `handlers` (di.pubsub no longer binds `.z.pc` at load) |
 | `di.eodtime` | `use` | roll date, next roll time, data-timezone adjustment |
 | `di.tplogmgr` | `use` | `write` only — see "Why log handling is self-implemented" |
 
@@ -78,7 +78,8 @@ sp.init[`kdbtplog`multilog`batchmode!("tplog";`singular;`immediate);`log`timer`h
    `tptype:`segmented` (what TorQ's `.sub.subscribe` reads to choose its protocol);
 4. opens the day's directory `<kdbtplog>/<logprefix>_<date>`, its logs, error log and metatable;
 5. schedules the timer job `` `segmentedtp `` every `tickinterval` seconds and registers
-   `.z.exit` through `handlers` as a simple event;
+   `.z.exit` (name `` `segmentedtp ``) and di.pubsub's `closesub` on `.z.pc` (name `` `pubsub ``) through
+   `handlers` as simple events;
 6. sets its initialised flag as the **literal last statement**, so a throw anywhere above leaves
    the module uninitialised and a retry runs a full `init`.
 
@@ -98,7 +99,7 @@ called before `init`. All post-`init` errors are logged at `error` before being 
 | `readcustomcsv[path]` | reads a `table,mode` csv into a `table!mode` dict; touches no state, callable before `init` |
 | `setcustommode[dict]` | replaces the custom assignment at runtime (custom mode only) |
 | `getcounts[]` | `` `seqnum`tables `` — per-table `msgcount`/`rowcount` (logged and published) and `pendingmsgcount`/`pendingrowcount` (in the unflushed batch) |
-| `teardown[]` | flush, close every segment and file, remove the timer job and `.z.exit` handler |
+| `teardown[]` | flush, close every segment and file, remove the timer job and the `.z.exit` and `.z.pc` handlers |
 | `getapimeta[]` | api metadata for `di.torq` to register with `di.api` (callable functions only) |
 | `version` | the `VERSION` file's contents |
 

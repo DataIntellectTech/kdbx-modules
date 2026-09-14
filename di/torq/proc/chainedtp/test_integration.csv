@@ -1,0 +1,28 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration test - a real child di.torq.proc.tickerplant upstream and a real child di.torq.proc.chainedtp wired to di.timer / di.torq.handlers / di.util.log / di.torq.servers; this process is the downstream subscriber
+comment,,,,,,,requires QPATH resolving the di.* modules (the children run the same kdb-x binary as this session); skips cleanly if no child comes up
+comment,,,,,,,child ports are OS-assigned; every child pid is killed by the after row; run from the repo root in a fresh q session
+
+before,0,0,q,system "l di/torq/proc/chainedtp/test_integration.q",1,,load integration helpers
+before,0,0,q,setupintegration[],1,,fixture dir and schema; TORQXAPPHOME/TORQXDATAHOME for the children
+before,0,0,q,if[not probe[];killall[];exit 0],1,,skip cleanly when no child kdb-x process can be started
+
+comment,,,,,,,relay through a real upstream
+true,0,0,q,relay[],1,,ticks fed to the upstream reach this downstream through the chained tp as tables - its own log and counts hold them - connected - the servers / chainedtp / pubsub .z.pc handlers all coexist
+true,0,0,q,startupticks[],1,,ticks arriving before / during / after the chained tp's start (replaying with a cleared log) reach its log exactly once; a downstream replaying that log then following live sees each once
+true,0,0,q,batched[],1,,batched mode buffers and the real timer flushes one message to the downstream
+true,0,0,q,narrowed[],1,,a table-narrowed subscription relays and logs only that table
+true,0,0,q,volume[],1,,2000 ten-row batches relay exactly once in each publish mode; the batched buffer copes with the burst
+
+comment,,,,,,,the consumers the surface exists for
+true,0,0,q,rdbdownstream[],1,,a real di.torq.proc.rdb subscribes through di.subscriptions - replays the chained tp's log - follows live - and ends its day on the chained tp's broadcast
+true,0,0,q,chainoftwo[],1,,tp -> ctp1 -> ctp2: the second hop subscribes to the first by proctype - replays from its log - relays live - and the end of day travels the chain
+
+comment,,,,,,,end of day and upstream loss
+true,0,0,q,eod[],1,,the upstream's end of day reaches this downstream through the chained tp - which rolls its log into the next date
+true,0,0,q,upstreamloss[],1,,a kill -9 of the upstream makes the chained tp log the loss and exit 0
+
+comment,,,,,,,a real di.torq boot through torqx_init.q with a settings cascade for both process types
+true,0,0,q,stackboot[],1,,di.torq launches tp1 and ctp1 from process.csv + the proctype tomls - identity and settings reach the module - relay works - clean exits
+
+after,0,0,q,killall[],1,,kill every child and remove the fixture dir

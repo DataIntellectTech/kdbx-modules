@@ -1,6 +1,6 @@
 / di.torq.proc.tickerplant - real-time capture root. Orchestrates three hard deps in their own
 / init idioms (none use init[config;deps]): di.pubsub (sub/pub, kdbx-modules), di.tplogmgr
-/ (log lifecycle, TorqX), di.eodtime (roll timing, vendored). Injected deps: log, timer.
+/ (log lifecycle, TorqX), di.eodtime (roll timing, vendored). Injected deps: log, timer, handlers.
 / Ported from the tick/log/EOD logic inline in TorQ/code/processes/tickerplant.q; the
 / pure pubsub half is di.pubsub. Both publish modes supported: `immediate (publish each
 / update straight away) and `batched (buffer per table, flush on a timer period).
@@ -105,8 +105,10 @@ eoddeps:{[config;logdep]
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.tickerplant: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.tickerplant: timer dependency is required - see di.timer"];
+  if[not `handlers in key deps;'"di.torq.proc.tickerplant: handlers dependency is required - see di.torq.handlers"];
   .z.m.log:deps`log;
   .z.m.timer:deps`timer;
+  .z.m.handlers:deps`handlers;
   .z.m.cfg:config;
   .z.m.publishmode:$[`publishmode in key config;astz config`publishmode;`immediate];
   .z.m.pubperiod:$[`pubperiod in key config;"j"$config`pubperiod;1];
@@ -127,10 +129,14 @@ init:{[config;deps]
   {@[x;`sym;`g#]} each tabs;
   .z.m.tables:tabs;
 
-  / pubsub: set the subscribable table list, then build its schema state from root tables
+  / pubsub: set the subscribable table list, then build its schema state from root tables.
+  / its subscriber cleanup (closesub) is bound to .z.pc through the handlers dep, as a simple
+  / event alongside di.torq.servers' hook - di.pubsub no longer assigns .z.pc itself at load,
+  / which used to replace the di.torq.handlers dispatcher installed moments earlier by di.torq
   .z.m.ps:use`di.pubsub;
   (.z.m.ps`setsubtables)[tabs];
   (.z.m.ps`init)[];
+  (.z.m.handlers`register)[`.z.pc;`;`pubsub;0;.z.m.ps`closesub];
 
   / eodtime: single merged dict (log + tz config)
   .z.m.eod:use`di.eodtime;

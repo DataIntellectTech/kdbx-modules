@@ -605,12 +605,13 @@ exithandler:{[code]
   };
 
 teardown:{[]
-  / stop the module: flush, close every segment and file, remove the tick job and the .z.exit handler
+  / stop the module: flush, close every segment and file, remove the tick job and the .z.exit and .z.pc handlers
   requireinit`teardown;
   .z.m.flushfn[];
   closeday .z.p+(.z.m.eod`getdailyadj)[];
   (.z.m.timer`deletejobs)[enlist jobid];
   (.z.m.handlers`remove)[`.z.exit;`;jobid];
+  (.z.m.handlers`remove)[`.z.pc;`;`pubsub];
   .z.m.initdone:0b;
   .z.m.log[`info][`teardown;"stopped"];
   };
@@ -728,11 +729,15 @@ init:{[config;deps]
   releaselogs[];
   (.z.m.timer`deletejobs)[enlist jobid];
   (.z.m.handlers`remove)[`.z.exit;`;jobid];
+  (.z.m.handlers`remove)[`.z.pc;`;`pubsub];
   readconfig config;
   loadschema config;
   .z.m.ps:use`di.pubsub;
   (.z.m.ps`setsubtables)[.z.m.pubtabs];
   (.z.m.ps`init)[];
+  / di.pubsub's subscriber cleanup goes on .z.pc through the handlers dep (di.pubsub no longer binds .z.pc at load -
+  / that replaced the di.torq.handlers dispatcher, and di.torq.servers' hook with it, moments after di.torq installed it)
+  (.z.m.handlers`register)[`.z.pc;`;`pubsub;0;.z.m.ps`closesub];
   .z.m.eod:use`di.eodtime;
   (.z.m.eod`init)[eoddeps[config;.z.m.log]];
   .z.m.tp:use`di.tplogmgr;

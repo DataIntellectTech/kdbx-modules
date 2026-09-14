@@ -29,7 +29,7 @@ true,0,0,q,defaults[],1,,every config default reached module state
 true,0,0,q,jobok[],1,,the tick job is scheduled every tickinterval seconds in mode 1 under the module's own id and survives a failing run
 true,0,0,q,tickprotected[],1,,a throw inside the tick job is caught and logged rather than propagated to di.timer
 true,0,0,q,stringconfig[],1,,string and numeric settings (toml / command line) are parsed into the right types
-true,0,0,q,handlerok[],1,,.z.exit is registered through the handlers dependency as a simple event
+true,0,0,q,handlerok[],1,,.z.exit and pubsub closesub on .z.pc are registered through the handlers dependency as simple events
 true,0,0,q,forced[],1,,singular and tabular force a daily period and custom does not
 true,0,0,q,tzconfigok[],1,,rolltimezone / datatimezone / rolltimeoffset settings reach di.eodtime and init succeeds
 true,0,0,q,tzstringok[],1,,a string rolltimeoffset is parsed and an unparseable one is dropped with a warning - never silently

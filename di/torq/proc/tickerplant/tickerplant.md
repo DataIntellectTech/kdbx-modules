@@ -43,6 +43,11 @@ schemafile = "database.q"   # defaults to <TORQXAPPHOME>/database.q (schema is c
   the flush job.
 - **Subscriber entry** (`.u.sub[tabs;syms]`, published at root): delegates to
   `di.pubsub.subscribe` (syms=` → all data; a sym list → sym-filtered).
+- **Subscription details** (`.u.subdetails[tabs;syms]`, published at root): registers the caller
+  and returns tables/schemas/logfile/rowcount/date for a replaying subscriber. In batched mode the
+  buffer is **flushed to the existing subscribers first**: `rowcount` counts every logged message
+  and `upd` logs before it buffers, so a subscriber registered while rows sat unflushed would
+  replay them from the log and then receive them again in the next flush.
 - **Timer jobs** (via injected `di.timer`): an EOD-roll check every second; plus, in
   batched mode, a flush every `pubperiod` seconds (`di.pubsub.pubclear`).
 - **End of day** (`endofday`, published at root; fired by the roll-check job or via

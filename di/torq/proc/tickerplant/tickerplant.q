@@ -65,6 +65,10 @@ sub:{[tabs;syms] (.z.m.ps`subscribe)[tabs;syms]}
 / This is the clean single-call analogue of the segmented TP's `subdetails`, deliberately
 / NOT the classic standard-TP surface (.u.i/.u.L/.u.d global reads).
 subdetails:{[tabs;syms]
+  / batched: flush FIRST, to the subscribers that already exist. rowcount counts every message logged, and upd logs
+  / before it buffers - so a subscriber registered while rows sat in the buffer would replay them from the log and
+  / then receive the same rows again in the next flush. flushed before it registers, it sees them exactly once
+  if[.z.m.publishmode=`batched;(.z.m.ps`pubclear)[.z.m.tables]];
   sub:(.z.m.ps`subscribe)[tabs;syms];
   d:(.z.m.eod`getd)[];
   lf:$[0<count .z.m.tplogdir;(.z.m.tp`logname)[.z.m.tplogdir;d];`];

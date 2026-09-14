@@ -28,7 +28,7 @@ deps:{[] `log`timer`handlers!(mocklog[];mocktimer[];mockhandlers[])}
 
 setupfixture:{[]
   system "rm -rf ",BASE;
-  {system "mkdir -p ",BASE,"/",x} each ("log";"batchlog";"eodlog";"replog";"subdlog");
+  {system "mkdir -p ",BASE,"/",x} each ("log";"batchlog";"eodlog";"replog";"subdlog";"subdblog");
   setenv[`TORQXAPPHOME;BASE];
   / good schema: trade + quote, both time,sym first
   (hsym`$BASE,"/database.q") 0: (
@@ -46,6 +46,7 @@ nologcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/database.q")}
 badcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/badschema.q")}
 replaycfg:{[] `publishmode`tplogdir`schemafile!(`batched;BASE,"/replog";BASE,"/database.q")}
 subdcfg:{[] `publishmode`tplogdir`schemafile!(`immediate;BASE,"/subdlog";BASE,"/database.q")}
+subdbcfg:{[] `publishmode`pubperiod`tplogdir`schemafile!(`batched;2;BASE,"/subdblog";BASE,"/database.q")}
 
 / feed n trade rows through the published root upd (columns form, single record each)
 feedtrades:{[n] {upd[`trade;(.z.p;`$"S",string x;1.0*x;`int$x)]} each til n; }
@@ -81,3 +82,16 @@ subdetailsok:{[]
 
 / pubsub's subscriber cleanup is registered on .z.pc through the handlers dep (not bound by di.pubsub at load)
 pcregistered:{[] (`.z.pc;`pubsub) in flip value flip hcalls}
+
+/ batched: a subscriber arriving while 3 rows sit unflushed must not get them twice - from the log (rowcount includes
+/ them, as upd logs before it buffers) AND from the next flush. subdetails flushes to the existing subscribers before
+/ registering the caller, so the buffer is empty by the time it is registered and rowcount is what the log holds
+subdetailsbatchedok:{[]
+  doinit[subdbcfg[]]; feedtrades[3];
+  buffered:count trade;
+  sd:(tk`subdetails)[`;`];
+  (use`di.pubsub)[`closesub][0];
+  all(3=buffered;
+      0=count trade;
+      3=sd`rowcount)
+  }

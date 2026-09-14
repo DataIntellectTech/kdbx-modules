@@ -137,7 +137,7 @@ subscribes to a chained tickerplant exactly as it would to the origin, without k
 | --- | --- |
 | `upd` / `.u.upd` | the feed entry point — here fed by the upstream's publishes and log replay rather than a feed |
 | `.u.sub[tabs;syms]` | `di.pubsub.subscribe` |
-| `.u.subdetails[tabs;syms]` | registers the caller and returns `` `tables`schemas`logfile`rowcount`date `` — `logfile` is the own log (`` ` `` without one), `rowcount` the messages it holds, `date` the upstream's date. In batched mode the buffer is **flushed first**, to the subscribers that already exist: the new one replays those rows from the log, so its replay count never includes a row it would also receive in the next flush (a double-count `di.torq.proc.tickerplant` has) |
+| `.u.subdetails[tabs;syms]` | registers the caller and returns `` `tables`schemas`logfile`rowcount`date `` — `logfile` is the own log (`` ` `` without one), `rowcount` the messages it holds, `date` the upstream's date. In batched mode the buffer is **flushed first**, to the subscribers that already exist: the new one replays those rows from the log, so its replay count never includes a row it would also receive in the next flush (`di.torq.proc.tickerplant` had that double-delivery; fixed alongside this module) |
 | `endofday[d]` / `.u.end[d]` | what the upstream sends at its end of day (`di.pubsub.callendofday`'s `` (`endofday;d) ``): flush, `callendofday[d]` to this process's own subscribers — so the chain chains — then roll the own log into `d+1` and follow the date. A `d` **later** than the current date is followed with a `warn`; a `d` **earlier** than it — a day already ended — is ignored with a `warn` (rolling into `d+1` would reopen an older log and move the date backwards, and re-broadcasting would make every subscriber save that day down twice); a non-date is rejected |
 
 Note `endofday` here is **monadic** (`[d]`, what a subscriber receives) where `di.torq.proc.tickerplant`'s
@@ -226,7 +226,9 @@ every update: measured on this build, 20k single-row updates took 242ms and 40k 
 `.u.subdetails` flushes the batched buffer *before* registering the caller. `di.torq.proc.tickerplant`
 counts a message the moment it is logged, so a subscriber arriving while rows sit in the buffer replays
 them from the log and then receives them again in the next flush; flushing first (to the existing
-subscribers only) keeps the count exact without pending counters.
+subscribers only) keeps the count exact without pending counters. Building this exposed the same
+double-delivery in `di.torq.proc.tickerplant`'s own batched mode (its `upd` logs before it buffers and its
+`subdetails` registered the caller without flushing); it is fixed there the same way, with a test.
 
 ### Other divergences from TorQ's `chainedtp.q`
 

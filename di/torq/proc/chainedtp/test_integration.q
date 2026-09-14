@@ -387,7 +387,7 @@ startstack:{[app;proctype;procname;port]
   cmd:"QINIT=",torqxhome[],"/di/torq/bin/torqx_init.q ",QBIN," -q -p ",(string port),ident;
   pid:"J"$first system cmd," </dev/null >>",IBASE,"/stack_",(string procname),".log 2>&1 & echo $!";
   `PIDS set PIDS,pid;
-  `pid`port`h!(pid;port;waitopen[port;60])};
+  `pid`port`h!(pid;port;waitopen[port;120])};
 
 stackboot:{[]
   / kdb-x abandons a QINIT script silently at the first error and leaves the process at its prompt, so a boot failure

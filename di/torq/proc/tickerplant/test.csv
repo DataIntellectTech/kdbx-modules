@@ -20,6 +20,7 @@ true,0,0,q,0=count trade,1,,immediate mode retains no local rows
 true,0,0,q,loghas["log";2],1,,both feed messages were written to the tp log
 
 true,0,0,q,subdetailsok[],1,,subdetails returns rowcount + tables/schemas + logfile/date for a replaying subscriber
+true,0,0,q,subdetailsbatchedok[],1,,batched: subdetails flushes the buffer to existing subscribers before registering the caller - no replay-then-flush double delivery
 
 run,0,0,q,doinit[batchcfg[]],1,,re-init in batched mode
 true,0,0,q,scheduled[`tpflush],1,,batched mode schedules a flush job

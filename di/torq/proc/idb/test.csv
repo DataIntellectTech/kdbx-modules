@@ -1,0 +1,51 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,idb:use`di.torq.proc.idb,1,,load module
+before,0,0,q,system "l di/torq/proc/idb/test.q",1,,load mock log dependency and fixture helpers
+before,0,0,q,setupfixture[],1,,create fixed-date and today-dated fixture partitions
+
+fail,0,0,q,idb[`init][absdircfg[];()!()],1,,init without a log dependency must error
+fail,0,0,q,idb[`init][nosavedircfg[];mockdeps[]],1,,init without a savedir setting must error
+fail,0,0,q,idb[`init][nohdbdircfg[];mockdeps[]],1,,init without an hdbdir setting must error
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init with an absolute savedir + hdbdir + fixed partition override - bracket-indexed, not idb.init: dot-syntax on a use-loaded module dict breaks once a real enumerated (.Q.en) table exists at root, see idb.md's Testing note
+true,0,0,q,`widgets in tables[],1,,the fixture table was mounted
+true,0,0,q,3=count widgets,1,,mounted table has the expected row count
+true,0,0,q,0<count select from calls where lvl=`info,1,,init logged at least one info message
+true,0,0,q,`reload in key `.idb,1,,init published reload at the real root namespace .idb
+true,0,0,q,`a`b`c~sym,1,,init loaded the hdb's sym domain into the root `sym`
+true,0,0,q,all (`a`b`c)=exec name from widgets,1,,the enumerated `name` column resolves to real symbols, not raw indices
+
+run,0,0,q,delete widgets from `.,1,,drop the in-memory table to prove reload actually remounts it
+run,0,0,q,.idb.reload[],1,,call the published root-level reload entry point
+true,0,0,q,`widgets in tables[],1,,reload remounted the fixture table
+
+run,0,0,q,setenv[`TORQXAPPHOME;"/tmp"],1,,point TORQXAPPHOME so resolvedatadir can join a relative savedir against it
+run,0,0,q,delete widgets from `.,1,,drop it again before testing the relative-savedir init
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,idb[`init][reldircfg[];mockdeps[]],1,,init with a relative savedir - exercises resolvedatadir's TORQXAPPHOME join
+true,0,0,q,`widgets in tables[],1,,relative savedir correctly resolved against TORQXAPPHOME and mounted
+
+run,0,0,q,delete widgets from `.,1,,drop it again before testing string-typed (not symbol/date) savedir+partition
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,idb[`init][absdirstringcfg[];mockdeps[]],1,,init with savedir, hdbdir and partition as plain q strings - simulates .toml-sourced settings
+true,0,0,q,`widgets in tables[],1,,resolvedatadir/"D"$ normalized the strings internally and mounted correctly
+
+run,0,0,q,delete widgets from `.,1,,drop it again before testing the no-override default partition
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,idb[`init][nopartitioncfg[];mockdeps[]],1,,init with no partition override - must derive today's date
+true,0,0,q,`widgets in tables[],1,,the today-dated fixture partition was mounted by default
+
+run,0,0,q,delete widgets from `.,1,,drop it again before testing a partition with no directory on disk
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,idb[`init][missingpartitioncfg[];mockdeps[]],1,,init with a partition date that has no directory on disk must not throw
+true,0,0,q,not `widgets in tables[],1,,nothing was mounted - the directory did not exist
+true,0,0,q,0<count select from calls where lvl=`warn,1,,init logged a warning about the missing partition instead of erroring
+true,0,0,q,`reload in key `.idb,1,,init still published reload even though nothing was mounted
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,re-init with the real fixture partition present
+run,0,0,q,.idb.reload[],1,,reload should succeed normally once the wdb has produced data for the partition
+true,0,0,q,`widgets in tables[],1,,idb recovered and mounted correctly on the next reload
+
+after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

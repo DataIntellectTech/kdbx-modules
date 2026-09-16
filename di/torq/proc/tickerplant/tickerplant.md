@@ -16,8 +16,9 @@ latter, orchestrating three hard dependencies — none of which use the
 | `di.tplogmgr` | TorqX | log open / replay / append / roll | `open[dir;date]` (no init) |
 | `di.eodtime` | vendored (feature-eodtime) | roll timing, data-tz stamping | `init[merged dict]` |
 
-Injected deps (from `di.torq`): `log`, `timer`. (`handlers` is passed but unused —
-`di.pubsub` installs its own `.z.pc` for subscriber cleanup; see Notes.)
+Injected deps (from `di.torq`): `log`, `timer`, `handlers` — `di.pubsub`'s subscriber
+cleanup (`closesub`) is registered on `.z.pc` through `handlers` as a simple event, so it
+coexists with `di.torq.servers`' own `.z.pc` hook (see Notes).
 
 ## Config
 
@@ -42,6 +43,11 @@ schemafile = "database.q"   # defaults to <TORQXAPPHOME>/database.q (schema is c
   the flush job.
 - **Subscriber entry** (`.u.sub[tabs;syms]`, published at root): delegates to
   `di.pubsub.subscribe` (syms=` → all data; a sym list → sym-filtered).
+- **Subscription details** (`.u.subdetails[tabs;syms]`, published at root): registers the caller
+  and returns tables/schemas/logfile/rowcount/date for a replaying subscriber. In batched mode the
+  buffer is **flushed to the existing subscribers first**: `rowcount` counts every logged message
+  and `upd` logs before it buffers, so a subscriber registered while rows sat unflushed would
+  replay them from the log and then receive them again in the next flush.
 - **Timer jobs** (via injected `di.timer`): an EOD-roll check every second; plus, in
   batched mode, a flush every `pubperiod` seconds (`di.pubsub.pubclear`).
 - **End of day** (`endofday`, published at root; fired by the roll-check job or via
@@ -57,9 +63,10 @@ because `di.tplogmgr.open` replays via `-11!`, which executes the root-level `up
 
 ## Notes / known gaps
 
-- `di.pubsub` sets its own global `.z.pc` for subscriber cleanup, bypassing `di.torq.handlers`.
-  Fine in a TP process (nothing else claims `.z.pc` there); if client tracking is ever
-  added to a TP, `di.pubsub` should register through `di.torq.handlers` upstream instead.
+- `di.pubsub` used to assign `.z.pc` itself at load time, which silently replaced the
+  `di.torq.handlers` dispatcher (and with it `di.torq.servers`' cleanup hook, injected into
+  every process) the moment `use`di.pubsub` ran inside `init`. It no longer does; this module
+  registers `closesub` under the name `pubsub` through the injected `handlers` dependency.
 - A single malformed schema table (missing `time`/`sym`) is silently skipped rather
   than erroring (shape-filtering trade-off vs TorQ's strict assertion, chosen for
   robustness against ambient root tables).

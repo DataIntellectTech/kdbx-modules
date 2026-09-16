@@ -51,7 +51,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 | `pubsub.setsubtables`     | Set a specified list of tables that are available for subscription.          | 
 | `pubsub.callendofday`     | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
 | `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
-| `pubsub.closesub`         | Remove handle upon connection close.                                         | 
+| `pubsub.closesub`         | Remove handle upon connection close. Not bound to `.z.pc` by the module - the consumer binds it (see Notes). | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
 | `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas).  |
 ---
@@ -83,3 +83,4 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 - By default, all tables on top level of the process are available for subscription.
 - The user should define the `.u.sub` and the `.u.pub` functions within the process.
 - The module initializes with defined list of tables to subscribe to and fetches their schemas and columns for use. This is done via calling `init` function.
+- The module does **not** bind `closesub` to `.z.pc` itself. A load-time `.z.pc` assignment from a `use`-loaded module replaces whatever the process had already bound - in a `di.torq` process that is the `di.torq.handlers` dispatcher carrying `di.torq.servers`' cleanup hook - so the consumer binds it: `handlers.register[`.z.pc;`;`pubsub;0;pubsub.closesub]` through its injected handlers dependency, or `.z.pc:pubsub.closesub` in a bare process.

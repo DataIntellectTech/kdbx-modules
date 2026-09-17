@@ -66,13 +66,13 @@ addsymsub:{[table;syms]
   };
 
 closesub:{[h]
-  / remove handles upon connection close
+  / remove handles upon connection close. NOT bound to .z.pc here: a load-time .z.pc assignment from
+  / this module replaced whatever the process had already bound (e.g. the di.torq.handlers dispatcher
+  / carrying di.torq.servers' cleanup hook), so the consumer binds it - via its handlers dependency in
+  / a di.torq process, or .z.pc:pubsub.closesub in a bare one
   delhandle[;h]each key reqalldict;
   delete from .z.M.reqfilteredtbl where handle=h;
   };
-
-/ define .z.pc, add bespoke actions as needed
-.z.pc:{closesub[x]};
 
 / broadcast to all subscribers upon end of day, client needs to define endofday function
 callendofday:{[d](neg getallhandles[])@\:(`endofday;d)};

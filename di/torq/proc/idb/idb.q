@@ -55,31 +55,34 @@ partitiondir:{[] `$":",.z.m.savedir,"/",string currentpartition[]}
 / wdb enumerates every day's flushes against the same hdbdir/sym, it never rolls per-date).
 symfile:{[] `$":",.z.m.hdbdir,"/sym"}
 
-/ (re)load the hdb's sym domain into the root `sym`, so the mounted working-partition tables'
-/ enumerated columns resolve to real symbols instead of raw indices - mirrors legacy TorQ's
-/ loadsym (`TorQ/code/processes/idb.q`). Always reloads unconditionally rather than porting
-/ legacy's symfilehaschanged byte-size check - the file only grows and idb reloads are already
-/ infrequent, so the optimisation isn't worth the extra state (see idb.md's Known gaps). Same
-/ missing-is-not-fatal tolerance as domount[]: no wdb has flushed a new symbol yet (or ever run
-/ at all) is a normal startup window, not an error - warn and leave whatever `sym` already has.
-/ ---
-/ Extends `sym` via a plain set of the deduped union, not `insert` - `insert` is for tables, not
-/ a bare vector variable, and throws 'type on one (caught by direct testing, not by reading the
-/ code: this cost real debugging time - `insert` LOOKS right for "add these to that list" but
-/ is the wrong verb here). Reads the CURRENT root `sym` indirectly via `@[get;...]`, not a bare
-/ `sym` reference, and writes back via `@[`.;`sym;:;...]`, not a bare `sym set` - both guarantee
-/ landing on the true root `sym` regardless of the calling function's own (use-mangled)
-/ namespace, matching di.torq.proc.wdb's established `@[`.;...]` convention for root writes.
+/ size of the sym file as at the last load, as legacy TorQ's .idb.symsize. 0 is also what a
+/ missing file stats as, so a sym file appearing for the first time reads as changed.
+symsize:0
+
+/ legacy TorQ's symfilehaschanged. Size, not mtime: .Q.en only ever appends.
+/ hcount is trapped where legacy calls it bare - legacy's idb blocks on a wdb handshake so the
+/ file always exists by now; this one is config-driven and tolerates it missing.
+symfilehaschanged:{[]
+  $[.z.m.symsize<>c:@[hcount;symfile[];0];[.z.m.symsize:c;1b];0b]
+  }
+
+/ legacy TorQ's `load symfilepath` - it names the variable after the file, so it sets root `sym`
+/ even from inside a use-loaded module (verified). REPLACES rather than merges: the file is the
+/ enumeration domain and the on-disk columns are positions in it, so root sym must match its order
+/ exactly - a union against a reordered sym resolves every symbol column to the wrong value.
+readsym:{[f]
+  load f;
+  .z.m.log[`info][`loadsym;"loaded sym domain (",(string count get `sym),") from ",1_string f];
+  }
+
+/ force-load the sym domain; the caller decides whether to skip, as legacy splits loaddb from
+/ intradayreload. A missing file is logged and survived - symsize stays 0 so the next reload
+/ picks it up once a wdb has flushed.
 loadsym:{[]
   f:symfile[];
-  $[count key f;
-    [
-      new:get f;
-      cur:@[get;`sym;`symbol$()];
-      if[count new except cur;@[`.;`sym;:;distinct cur,new]];
-      .z.m.log[`info][`loadsym;"loaded sym domain (",(string count @[get;`sym;`symbol$()]),") from ",1_string f]
-    ];
-    .z.m.log[`warn][`loadsym;"no sym file at ",(1_string f)," yet - symbol columns may not resolve"]];
+  .z.m.log[`info][`loadsym;"loading the sym file from ",1_string f];
+  @[readsym;f;{[e] .z.m.log[`error][`loadsym;"failed to load sym file: ",e," - symbol columns may not resolve"]}];
+  .z.m.symsize:@[hcount;f;0];
   }
 
 / mount (or remount) whatever partitiondir[] currently points at. The dir can legitimately
@@ -96,6 +99,16 @@ domount:{[]
     .z.m.log[`warn][`domount;"no working partition at ",(1_string dir)," yet - nothing to mount"]];
   }
 
+reload:{[]
+  / legacy TorQ's intradayreload, which its root-level `reload` aliases. An unchanged file is
+  / silent. domount[] is deliberately NOT gated: legacy's wdb pre-creates every table dir
+  / (filldb), so only a new partition can appear and its partitioncounthaschanged[] suffices.
+  / Ours creates a table dir on its first flush, and a new table is invisible without a remount.
+  .z.m.log[`info][`reload;"reloading idb from ",string partitiondir[]];
+  if[symfilehaschanged[];loadsym[]];
+  domount[];
+  }
+
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.idb: log dependency is required - see di.util.log"];
   .z.m.log:deps`log;
@@ -106,16 +119,11 @@ init:{[config;deps]
   .z.m.fixedpartition:`partition in key config;
   if[.z.m.fixedpartition;.z.m.partition:$[-14h=type config`partition;config`partition;"D"$config`partition]];
   .z.m.log[`info][`init;"mounting idb from ",string partitiondir[]];
+  / force-loaded: a size recorded against a previous init's hdbdir says nothing about this file
   loadsym[];
   domount[];
   / publish the IPC-callable surface at a real root-level name - use-loading this file
   / compiles it into a private namespace (see di.torq.proc.hdb.init's identical note: a remote
   / `.idb.reload[]` call would otherwise hit an undefined-function error).
   set[`.idb.reload;reload];
-  }
-
-reload:{[]
-  .z.m.log[`info][`reload;"reloading idb from ",string partitiondir[]];
-  loadsym[];
-  domount[];
   }

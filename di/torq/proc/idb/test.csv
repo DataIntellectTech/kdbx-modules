@@ -48,4 +48,44 @@ run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,re-init with the real fixture pa
 run,0,0,q,.idb.reload[],1,,reload should succeed normally once the wdb has produced data for the partition
 true,0,0,q,`widgets in tables[],1,,idb recovered and mounted correctly on the next reload
 
+run,0,0,q,resetcalls[],1,,reset call log before the sym change-detection tests
+run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,re-init - init always reads the sym file it was just pointed at
+true,0,0,q,symreloaded[],1,,init reads the sym file unconditionally whatever a previous init recorded
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,.idb.reload[],1,,reload with the sym file untouched since the last load
+true,0,0,q,not symattempted[],1,,an unchanged sym file is detected by size and loadsym is not entered at all
+true,0,0,q,not symreloaded[],1,,so no read-and-merge happened on that reload
+true,0,0,q,`a`b`c~sym,1,,the already-loaded domain is left in place
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,growsym[`zzz],1,,grow the hdb sym domain the way a wdb flush of a new symbol does
+run,0,0,q,.idb.reload[],1,,reload after the sym file has actually grown
+true,0,0,q,symreloaded[],1,,a grown sym file is detected and re-read
+true,0,0,q,`zzz in sym,1,,the new symbol reached the root sym domain
+true,0,0,q,`a`b`c~3#sym,1,,the existing domain order is preserved - indices already on disk stay valid
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,setupfixture[],1,,restore the normal fixture
+run,0,0,q,pollutesym[],1,,put root sym out of step with the file on disk
+run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init force-loads the sym domain
+true,0,0,q,sym~symfilecontents[],1,,root sym is REPLACED by the file - its order is what the on-disk enum indices index into
+true,0,0,q,all (`a`b`c)=exec name from widgets,1,,and the enumerated column still resolves correctly
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,setupnosymfixture[],1,,an hdb dir with no sym file yet - before a wdb has ever flushed
+run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init against a missing sym file must not throw
+true,0,0,q,symfailed[],1,,the failed read is logged as an error rather than killing the process
+true,0,0,q,`reload in key `.idb,1,,init still completed and published reload
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,.idb.reload[],1,,reload while the sym file is still missing must not throw either
+true,0,0,q,not symattempted[],1,,a file that has never existed stats as 0 - unchanged against symsize 0
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,createsymfile[],1,,the first wdb flush creates hdbdir/sym
+run,0,0,q,.idb.reload[],1,,the very next reload must pick it up
+true,0,0,q,symreloaded[],1,,a sym file appearing for the first time reads as changed
+true,0,0,q,`a`b`c~sym,1,,and its domain reached the root sym
+
 after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

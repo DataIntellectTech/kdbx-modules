@@ -63,3 +63,29 @@ nohdbdircfg:{[] `savedir`partition!(`$":",FIXTUREDIR;TESTDATE)}
 / intraday flush recreates it. init/reload must warn, not throw.
 MISSINGDATE:2019.01.01
 missingpartitioncfg:{[] `savedir`hdbdir`partition!(`$":",FIXTUREDIR;`$":",FIXTUREHDBDIR;MISSINGDATE)}
+
+/ --- sym-file change detection (legacy TorQ's symfilehaschanged) ---
+
+/ an unchanged sym file is silent, so a skip is proven by the absence of the entry log
+symattempted:{[] 0<count select from calls where lvl=`info,msg like "loading the sym file*"}
+symreloaded:{[] 0<count select from calls where lvl=`info,msg like "loaded sym domain*"}
+symfailed:{[] 0<count select from calls where lvl=`error,msg like "failed to load sym file*"}
+
+/ .Q.en with an unseen symbol rewrites FIXTUREHDBDIR/sym, making it strictly bigger
+growsym:{[s] .Q.en[hsym `$FIXTUREHDBDIR;([]id:enlist 0;name:enlist s)];}
+
+/ no sym file yet - the startup window legacy TorQ cannot reach, since its idb blocks on a wdb
+setupnosymfixture:{[]
+  system "rm -rf ",FIXTUREDIR;
+  system "rm -rf ",FIXTUREHDBDIR;
+  system "mkdir -p ",FIXTUREHDBDIR;
+  system "mkdir -p ",FIXTUREDIR,"/",string TESTDATE;
+  }
+
+/ the first wdb flush creates hdbdir/sym
+createsymfile:{[] .Q.en[hsym `$FIXTUREHDBDIR;([]id:1 2 3;name:`a`b`c)];}
+
+/ root sym deliberately out of step with the file on disk - a union-merge would keep this order
+/ and silently resolve every enum column wrongly
+pollutesym:{[] @[`.;`sym;:;`x`y`a`b`c];}
+symfilecontents:{[] get hsym `$FIXTUREHDBDIR,"/sym"}

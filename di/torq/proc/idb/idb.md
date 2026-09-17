@@ -44,28 +44,68 @@ are true kdb+ enumerations (foreign keys) against `hdbdir/sym`, and reading them
 correctly requires that **same** `sym` domain to exist in idb's own session - without it, a
 symbol column reads back as raw integer indices instead of symbols. `symfile[]` is the fixed
 path to that file (not partition-scoped, unlike `partitiondir[]` - the wdb enumerates every
-day against the same `hdbdir/sym`); `loadsym[]` reads it and merges it into the root `sym`,
-called from both `init` and `reload[]`, before `domount[]` (matching legacy TorQ's own
-`loadsym`-before-`loadidb` order in `loaddb`).
+day against the same `hdbdir/sym`); `loadsym[]` reads it into the root `sym`,
+called from `init` (always) and from `reload[]` (only when the file has changed - see
+`symfilehaschanged[]` below), in both cases before `domount[]`, matching legacy TorQ's own
+`loadsym`-before-`loadidb` order in `loaddb`.
 
-Two things about `loadsym[]`'s implementation are worth flagging for the next person who
-touches it, both found by testing, not by reading kdb+ docs:
+### `symfilehaschanged[]`
 
-- **It merges via a plain `set` of the deduped union (`` @[`.;`sym;:;distinct cur,new] ``),
-  never `` `sym insert ... ``.** `insert` is a table/keyed-structure verb; used on a bare
-  vector variable (which `sym` is) it throws `'type`, even on a variable with nothing to do
-  with the enum domain. It reads as the natural verb for "add these values to that list", but
-  it's the wrong one here.
-- **It reads the current domain via `` @[get;`sym;`symbol$()] ``, never a bare `sym`
-  reference, and writes via `` @[`.;`sym;:;...] ``, never a bare `` `sym set ``.** Both forms
-  explicitly anchor to the true root namespace regardless of the calling function's own
-  (`use`-mangled) namespace - the same reasoning `di.torq.proc.wdb`'s header comment gives for
-  its own `@[`.;..]` writes, and the same category of "tooling rough edge" `di.torq`'s own
-  `buildlogdep` comment flags for dot-syntax on a freshly-`use`d module.
-- Only the **first** load (root `sym` doesn't exist yet) needs the guard `@[get;...]` provides
-  a default for; every load after that is a genuine extend of an already-live domain, which is
-  exactly the case a plain reassignment can't handle (see above) but a deduped-union `set`
-  can, safely, whether or not anything actually changed.
+The wdb calls `.idb.reload[]` after **every** intraday flush that wrote anything, but `.Q.en`
+only rewrites `hdbdir/sym` when it meets a symbol the domain doesn't already have. On a busy
+day the overwhelming majority of those reloads therefore have nothing new to read, so
+**`reload[]` gates its `loadsym[]` call** on `symfilehaschanged[]` - a port of legacy TorQ's
+function of the same name (`TorQ/code/processes/idb.q`), including its
+record-the-new-size-on-detect behaviour. It turns the common case from a full read of a
+domain that grows all day into a `hcount` stat.
+
+The gate lives in the **caller**, not in `loadsym[]`, which stays an unconditional force-load -
+the same split legacy TorQ has between `loaddb` (force: startup and rollover) and
+`intradayreload` (gated). `loadsym[]` records the size it just read on the way out, so the next
+check compares against what is actually in the root `sym` rather than against whatever a
+previous `init` recorded. `domount[]` is *not* gated - see "Mounting vs legacy"
+below.
+
+It compares **size**, not modification time: the sym file only ever grows (`.Q.en` appends), so
+a size change is exactly a content change, while mtime granularity can miss two writes within
+the same second. `hcount` is trapped to `0` rather than left to throw, and the guard is checked
+*after* `loadsym[]`'s existence test - so a sym file appearing for the first time is always
+read, since a missing file stats as `0`, which is also `symsize`'s initial value.
+
+`init` calls `loadsym[]` directly, so it always reads the file it has just been pointed at
+rather than trusting a size recorded against a previous init's `hdbdir`.
+
+`loadsym[]` uses legacy TorQ's plain `load`, which **replaces** root `sym` with the file's
+contents rather than merging into it. The file is the enumeration domain and the on-disk columns
+are integer positions in it, so root `sym` has to match its order exactly; a union against a `sym`
+that had drifted out of step would keep the wrong order and resolve every symbol column to the
+wrong value, silently.
+
+`load` is one of the few writes that does **not** need the `` @[`.;...] `` root anchoring the rest
+of this tier uses - it names the variable after the file, and lands at root even when called from
+inside a `use`-loaded module (verified directly; `sym` never appears in the module's private
+namespace).
+
+### Mounting vs legacy
+
+Legacy TorQ gates its mount too - `` if[partitioncounthaschanged[];loadidb[]] `` - and in
+`default` writedown mode that check is hard-wired to `0b` while a single partition exists, so it
+effectively never remounts intraday; it just clears the row-count cache (`.Q.pn`). It can afford
+that because it mounts the **db root** (`savedir`) as a partitioned database, and because its wdb
+calls `filldb`/`initmissingtables` to pre-create every table's directory at partition start, so
+no new table ever appears mid-day.
+
+`di.torq.proc.idb` mounts the single **date directory** (`savedir/<date>`), which gives plain
+splayed tables at root, not a partitioned db - so there is no `.Q.pn` to invalidate. And
+`di.torq.proc.wdb`'s `flushtable` creates a table's directory on its **first** flush, so tables do
+appear mid-day. That is why `domount[]` runs unconditionally. Measured, for a mounted date dir:
+
+| change on disk | visible without remount? |
+| --- | --- |
+| rows appended to an already-mounted table | **yes** |
+| a table directory appearing for the first time | **no** |
+
+So the unconditional remount is doing real work exactly in the case legacy engineered away.
 
 ### `currentpartition[]` / `partitiondir[]`
 
@@ -165,11 +205,12 @@ same absolute path) is what makes it see that wdb's intraday writes.
   helpers for querying a `partbyenum`/`partbyfirstchar`-mapped sym column. Moot while
   `di.torq.proc.wdb` only implements the classic `default` writedown mode (see wdb.md, "Not
   included") - would need porting together if wdb ever grows the advanced modes.
-- **No sort/attribute awareness.** The idb mounts whatever is on disk, unsorted, exactly as
-  the wdb wrote it (matching `di.dbwrite`'s appended-not-sorted intraday writes) - there is
-  no equivalent of legacy TorQ's `partitioncounthaschanged`/`symfilehaschanged` change
-  detection or row-count-cache invalidation (`.Q.pn` reset). A reload always does a full
-  remount.
+- **No sort/attribute awareness.** The idb mounts whatever is on disk, unsorted, exactly as the
+  wdb wrote it (matching `di.dbwrite`'s appended-not-sorted intraday writes).
+- **`domount[]` is never gated**, unlike legacy TorQ's `loadidb`, and there is no `.Q.pn`
+  row-count-cache reset. Both follow from mounting a single date directory of splayed tables
+  rather than a partitioned db root - see "Mounting vs legacy" above. The remount is cheap
+  (`\l` of one directory) and a reload is driven by the wdb, not a timer.
 - **Read-during-write race.** The wdb's per-table flush (create-or-append) is not atomic
   from a reader's point of view; a reload that lands mid-flush could see a partially
   appended table. Same class of risk legacy TorQ's idb accepts for intraday data - only the

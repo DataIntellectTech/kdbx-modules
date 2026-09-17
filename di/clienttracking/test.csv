@@ -1,0 +1,172 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load di.torq.handlers + di.clienttracking and init against the real di.util.log + di.torq.handlers
+before,0,0,q,handlers:use`di.torq.handlers,1,1,load the real di.torq.handlers module
+before,0,0,q,ct:use`di.clienttracking,1,1,load di.clienttracking module
+before,0,0,q,logger:use`di.util.log,1,1,load the real di.util.log module
+before,0,0,q,logdep:logger.logdict`log,1,1,di.util.log's info..fatal level dict (superset of info/warn/error)
+before,0,0,q,handlers.init[enlist[`log]!enlist logdep],1,1,init di.torq.handlers with the real di.util.log
+before,0,0,q,"hdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list)",1,1,build the handlers injectable dict
+before,0,0,q,"deps:`log`handlers!(logdep;hdep)",1,1,the standard deps dict
+before,0,0,q,.ct.c:{enlist[`clienttracking]!enlist x},1,1,helper - wrap a settings dict under the module's config section
+before,0,0,q,"ct.init[()!();deps]",1,1,init di.clienttracking with an empty config and the real log + handlers deps
+
+comment,,,,,,,init - signature and dependency validation
+true,0,0,q,2=count (value ct.init) 1,1,1,init is init[config;deps] - a one-arg call would return a projection silently
+fail,0,0,q,"ct.init[()!();(::)]",1,1,init rejects a non-dict deps
+fail,0,0,q,"ct.init[()!();()!()]",1,1,init rejects missing log key
+fail,0,0,q,"ct.init[()!();enlist[`log]!enlist 42]",1,1,init rejects a non-dict log value
+fail,0,0,q,"ct.init[()!();enlist[`log]!enlist `info`warn!(logdep`info;logdep`warn)]",1,1,init rejects a log dict missing the error key
+fail,0,0,q,"ct.init[()!();enlist[`log]!enlist logdep]",1,1,init rejects missing handlers key
+fail,0,0,q,"ct.init[()!();`log`handlers!(logdep;42)]",1,1,init rejects a non-dict handlers value
+fail,0,0,q,"ct.init[()!();`log`handlers!(logdep;enlist[`register]!enlist{})]",1,1,init rejects a handlers dict missing remove/list keys
+run,0,0,q,".ct.errstr:@[{ct.init[()!();(::)]};(::);{x}]",1,1,capture the error string from a bad init
+true,0,0,q,.ct.errstr like "di.clienttracking:*",1,1,init error is prefixed di.clienttracking:
+run,0,0,q,"ct.init[()!();`log`handlers`timer!(logdep;hdep;42)]",1,1,init accepts and ignores other injectables di.torq passes (timer/servers)
+
+comment,,,,,,,init - config section validation
+fail,0,0,q,"ct.init[(::);deps]",1,1,init rejects a non-dict config
+fail,0,0,q,"ct.init[enlist[`clienttracking]!enlist 42;deps]",1,1,init rejects a non-dict clienttracking section
+fail,0,0,q,"ct.init[.ct.c enlist[`maxidle]!enlist 5;deps]",1,1,init rejects a non-timespan maxidle
+fail,0,0,q,"ct.init[.ct.c enlist[`retain]!enlist 5;deps]",1,1,init rejects a non-timespan retain
+fail,0,0,q,"ct.init[.ct.c enlist[`trackusage]!enlist 1;deps]",1,1,init rejects a non-boolean trackusage
+fail,0,0,q,"ct.init[.ct.c enlist[`enabled]!enlist 1;deps]",1,1,init rejects a non-boolean enabled
+run,0,0,q,"ct.init[()!();deps]",1,1,re-init cleanly for the remaining tests
+
+comment,,,,,,,init - an absent config section means every default and every key reaches module state
+true,0,0,q,"all (key .m.di.0clienttracking.configdefaults) in key .m.di.0clienttracking",1,1,every config key reached module state
+true,0,0,q,.m.di.0clienttracking.enabled,1,1,enabled defaults to 1b (TorQ's .clients.enabled)
+true,0,0,q,0D~.m.di.0clienttracking.maxidle,1,1,maxidle defaults to 0D - idle reaping OFF (TorQ's config/settings/default.q MAXIDLE)
+true,0,0,q,0D02:00:00~.m.di.0clienttracking.retain,1,1,retain defaults to 2 hours (TorQ's config/settings/default.q RETAIN)
+true,0,0,q,.m.di.0clienttracking.trackusage,1,1,trackusage defaults to 1b (TorQ's opencloseonly:0b)
+run,0,0,q,"ct.init[.ct.c `maxidle`retain!(0D01:00:00;0D00:00:30);deps]",1,1,re-init with an explicit section
+true,0,0,q,0D01:00:00~.m.di.0clienttracking.maxidle,1,1,a section value overrides the maxidle default
+true,0,0,q,0D00:00:30~.m.di.0clienttracking.retain,1,1,a section value overrides the retain default
+run,0,0,q,"ct.init[.ct.c enlist[`unknownkey]!enlist 1;deps]",1,1,an unrecognised section key is ignored rather than rejected
+run,0,0,q,"ct.init[()!();deps]",1,1,restore the defaults for the remaining tests
+
+comment,,,,,,,idle reaping is suspended (with a warning) until the usage watcher is live - lastp cannot advance otherwise
+before,0,0,q,"warns:([]ctx:`symbol$();msg:())",1,1,capture table for warn-level log calls
+before,0,0,q,"caplog:logdep,enlist[`warn]!enlist {[c;m] `warns insert (c;m)}",1,1,a logger whose warn captures into the table
+run,0,0,q,"ct.init[.ct.c `maxidle`trackusage!(0D00:15:00;0b);`log`handlers!(caplog;hdep)]",1,1,init with reaping on and usage counting off
+true,0,0,q,"0<count select from warns where msg like ""*idle reaping is suspended*""",1,1,init warned that reaping is suspended with trackusage off
+true,0,0,q,not .m.di.0clienttracking.usageactive,1,1,usage is not live so cleanup will skip the idle-reap branch
+run,0,0,q,"delete from `warns",1,1,clear the capture table
+run,0,0,q,"ct.init[.ct.c `maxidle`trackusage!(0D00:15:00;1b);`log`handlers!(caplog;hdep)]",1,1,init with reaping on and usage counting on but no exec owner anywhere yet
+true,0,0,q,"0<count select from warns where msg like ""*idle reaping is suspended*""",1,1,init warned that reaping is suspended while no query event has an exec owner
+true,0,0,q,not .m.di.0clienttracking.usageactive,1,1,usage is still not live - nothing owns exec yet
+run,0,0,q,"delete from `warns",1,1,clear the capture table
+run,0,0,q,"ct.init[.ct.c enlist[`maxidle]!enlist 0D;`log`handlers!(caplog;hdep)]",1,1,init with reaping off
+true,0,0,q,"0=count select from warns where msg like ""*idle reaping is suspended*""",1,1,no suspension warning when maxidle is 0D
+run,0,0,q,"ct.init[()!();deps]",1,1,restore the standard logger and defaults
+
+comment,,,,,,,init - timespan settings also arrive as strings from a .toml settings file
+run,0,0,q,"ct.init[.ct.c `maxidle`retain!(""0D00:15:00"";""1D"");deps]",1,1,init accepts the string form of a timespan
+true,0,0,q,0D00:15:00~.m.di.0clienttracking.maxidle,1,1,a string maxidle was parsed into a timespan
+true,0,0,q,1D~.m.di.0clienttracking.retain,1,1,a string retain was parsed into a timespan
+fail,0,0,q,"ct.init[.ct.c enlist[`maxidle]!enlist ""900"";deps]",1,1,a bare number string is rejected rather than silently read as 09:00 hours
+fail,0,0,q,"ct.init[.ct.c enlist[`maxidle]!enlist ""garbage"";deps]",1,1,an unparseable string is rejected
+fail,0,0,q,"ct.init[.ct.c enlist[`maxidle]!enlist 0Nn;deps]",1,1,a null timespan is rejected
+fail,0,0,q,"ct.init[.ct.c enlist[`retain]!enlist -0D00:00:01;deps]",1,1,a negative timespan is rejected
+fail,0,0,q,"ct.init[.ct.c enlist[`maxidle]!enlist 0Wn;deps]",1,1,an infinite timespan is rejected
+run,0,0,q,"ct.init[()!();deps]",1,1,restore the defaults
+
+comment,,,,,,,module metadata - exported version
+true,0,0,q,10h=type ct.version,1,1,version is a string
+true,0,0,q,3=count "." vs ct.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any ct.version in ""\n\r""",1,1,no stray newline came through from the file
+
+comment,,,,,,,init wires the four connection-lifecycle observers on di.torq.handlers
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.po],1,1,.z.po observer registered
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.pc],1,1,.z.pc observer registered
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.wo],1,1,.z.wo observer registered
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.wc],1,1,.z.wc observer registered
+
+comment,,,,,,,getclients exposes the session schema
+true,0,0,q,`w`ipa`u`a`startp`endp`lastp`hits`sz~cols ct.getclients[],1,1,tracking table has the expected columns
+true,0,0,q,98h=type ct.getclients[],1,1,the session table is unkeyed (one row per session; a reconnecting handle gets a new row)
+
+comment,,,,,,,lifecycle via real di.torq.handlers dispatch - proves cross-module callback resolution
+run,0,0,q,(value `.z.po) 8001i,1,1,drive .z.po through the installed dispatcher with a synthetic handle
+true,0,0,q,"1=count select from ct.getclients[] where w=8001i,null endp",1,1,an open session row was added for the handle
+run,0,0,q,(value `.z.pc) 8001i,1,1,drive .z.pc through the installed dispatcher for the same handle
+true,0,0,q,not null first exec endp from ct.getclients[] where w=8001i,1,1,close stamped endp on the session (module state written from di.torq.handlers dispatch)
+run,0,0,q,(value `.z.wo) 8003i,1,1,drive .z.wo through the installed dispatcher with a synthetic websocket handle
+true,0,0,q,"1=count select from ct.getclients[] where w=8003i,null endp",1,1,an open session row was added for the websocket handle
+run,0,0,q,(value `.z.wc) 8003i,1,1,drive .z.wc through the installed dispatcher for the same handle
+true,0,0,q,not null first exec endp from ct.getclients[] where w=8003i,1,1,websocket close stamped endp on the session
+run,0,0,q,(value `.z.po) 8005i,1,1,open a handle
+run,0,0,q,(value `.z.po) 8005i,1,1,the OS reuses the handle number after a close this module never saw
+true,0,0,q,"1=count select from ct.getclients[] where w=8005i,null endp",1,1,handle reuse: the stale open row was closed so exactly one open row carries the handle
+true,0,0,q,"2=count select from ct.getclients[] where w=8005i",1,1,handle reuse: the earlier session is kept as a closed row rather than overwritten
+run,0,0,q,(value `.z.pc) 8005i,1,1,close it again
+
+comment,,,,,,,addclient - manual add and input validation
+run,0,0,q,ct.addclient[8002i],1,1,manually record a handle
+true,0,0,q,"1=count select from ct.getclients[] where w=8002i,null endp",1,1,addclient created an open session row
+fail,0,0,q,ct.addclient[`notanint],1,1,addclient rejects a non-int handle
+fail,0,0,q,ct.addclient[8002],1,1,addclient rejects a long (handles are ints)
+
+comment,,,,,,,cleanup - open rows for dead handles get reaped and expired closed rows are purged
+run,0,0,q,ct.cleanup[],1,1,run a cleanup sweep
+true,0,0,q,"0=count select from ct.getclients[] where null endp,not w in key .z.W",1,1,no open session remains for a handle that is not live
+run,0,0,q,"ct.init[.ct.c enlist[`retain]!enlist 0D00:00:00.000000001;deps]",1,1,re-init with a 1ns retention so closed rows expire immediately
+run,0,0,q,ct.cleanup[],1,1,run a cleanup sweep under the tiny retention
+true,0,0,q,0=count select from ct.getclients[] where not null endp,1,1,every closed session was purged once past retain
+run,0,0,q,"ct.init[()!();deps]",1,1,restore the default retention
+
+comment,,,,,,,usage counting is deferred until a query event has an exec owner
+true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,no post handler on .z.pg while it is unowned
+
+comment,,,,,,,usage counting activates once an exec owner exists and a request is served
+run,0,0,q,handlers.register[`.z.pg;`exec;`dummy;0;{value x}],1,1,register a dummy query owner on .z.pg
+run,0,0,q,handlers.register[`.z.ps;`exec;`dummy;0;{value x}],1,1,register a dummy async owner on .z.ps
+run,0,0,q,ct.enableusage[],1,1,(re)wire usage counting now that owners exist
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.pg] where phase=`post,1,1,usage post handler now registered on .z.pg
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.ps] where phase=`post,1,1,usage post handler now registered on .z.ps
+true,0,0,q,0=count select from handlers.list[`.z.ws] where name=`clienttracking,1,1,.z.ws still has no owner so no post handler there
+true,0,0,q,.m.di.0clienttracking.usageactive,1,1,usage counting is now live so idle reaping is no longer suspended
+run,0,0,q,ct.addclient[0i],1,1,record the console handle (.z.w is 0i) as an open session
+run,0,0,q,"(value `.z.pg) ""2+2""",1,1,drive a query through di.torq.handlers - exec then usage post
+true,0,0,q,"0<first exec hits from ct.getclients[] where w=0i,null endp",1,1,the served request bumped the client hit count
+true,0,0,q,"(-22!4)=first exec sz from ct.getclients[] where w=0i,null endp",1,1,the served request added the serialised size of the bare result
+run,0,0,q,"(value `.z.ps) ""til 1000""",1,1,drive an async message through di.torq.handlers - its handler result is never sent back
+true,0,0,q,"2=first exec hits from ct.getclients[] where w=0i,null endp",1,1,the async message counted as a hit
+true,0,0,q,"(-22!4)=first exec sz from ct.getclients[] where w=0i,null endp",1,1,the async message added no bytes - nothing was returned to the client
+
+comment,,,,,,,usage counting measures the FINAL (post-transform) result - see clienttracking.md
+run,0,0,q,handlers.register[`.z.pg;`transform;`envelope;0;{[r] `wrapped`payload!(1b;r)}],1,1,register a transform that rewrites the result
+run,0,0,q,ct.addclient[0i],1,1,re-record the console handle so the open row starts from zero bytes (a sweep reaps 0i - it is never in .z.W)
+run,0,0,q,"szbefore:first exec sz from ct.getclients[] where w=0i,null endp",1,1,capture the byte count before the request
+run,0,0,q,"(value `.z.pg) ""2+2""",1,1,drive another query - exec then transform then usage post
+true,0,0,q,"(first exec sz from ct.getclients[] where w=0i,null endp)>szbefore+(-22!4)",1,1,recorded bytes reflect the wrapped (post-transform) result not the bare exec result
+true,0,0,q,"(first exec sz from ct.getclients[] where w=0i,null endp)=szbefore+(-22!`wrapped`payload!(1b;4))",1,1,recorded bytes equal the serialised size of exactly what the caller received
+run,0,0,q,handlers.remove[`.z.pg;`transform;`envelope],1,1,remove the transform handler again
+
+comment,,,,,,,re-init preserves the existing session table (first-init guard)
+run,0,0,q,ct.addclient[7007i],1,1,record a client before re-init
+run,0,0,q,"ct.init[()!();deps]",1,1,re-init the module
+true,0,0,q,"1=count select from ct.getclients[] where w=7007i,null endp",1,1,the existing session survived the re-init
+true,0,0,q,1=count select from handlers.list[`.z.po] where name=`clienttracking,1,1,re-init reclaimed the observer in place rather than registering a second one
+
+comment,,,,,,,re-init with trackusage:0b removes the usage post-handlers
+run,0,0,q,"ct.init[.ct.c enlist[`trackusage]!enlist 0b;deps]",1,1,re-init with usage tracking disabled
+true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,usage post handler removed on re-init
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.po],1,1,the lifecycle observers stay registered with usage off
+run,0,0,q,"ct.init[()!();deps]",1,1,restore the default init for the remaining tests
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.pg] where phase=`post,1,1,usage post handler comes back on a default re-init
+
+comment,,,,,,,re-init with enabled:0b unhooks everything and a later default re-init hooks it all back
+run,0,0,q,"ct.init[.ct.c enlist[`enabled]!enlist 0b;deps]",1,1,re-init disabled
+true,0,0,q,not .m.di.0clienttracking.enabled,1,1,enabled reached module state as 0b
+true,0,0,q,0=count select from handlers.list[`.z.po] where name=`clienttracking,1,1,disabled init removed the .z.po observer
+true,0,0,q,0=count select from handlers.list[`.z.pc] where name=`clienttracking,1,1,disabled init removed the .z.pc observer
+true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,disabled init removed the usage post handler
+true,0,0,q,"1=count select from ct.getclients[] where w=7007i,null endp",1,1,the session table is left intact when disabled
+run,0,0,q,"ct.init[()!();deps]",1,1,re-init enabled again
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.po],1,1,observers registered again after re-enabling
+true,0,0,q,`clienttracking in exec name from handlers.list[`.z.pg] where phase=`post,1,1,usage post handler registered again after re-enabling
+
+comment,,,,,,,api metadata - callable exports documented and plumbing omitted
+true,0,0,q,"(asc (key ct) except `init`getapimeta`version)~asc exec name from ct.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing/version omitted)
+true,0,0,q,not any `init`getapimeta`version in exec name from ct.getapimeta[],1,1,framework plumbing/version is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols ct.getapimeta[],1,1,getapimeta rows carry the registry columns

@@ -153,15 +153,11 @@ reloadrdbs:{[pt]
   {[wh;pt] @[neg wh;(`reload;pt);{[e] .z.m.log[`error][`wdb;"rdb reload send failed: ",e]}]}[;pt] each h;
   }
 
-/ tell every idb of these types to reload (remount their savedir - picks up the new day's
-/ partition, or a table that only just appeared). Sync, mirroring reloadhdbs - di.torq.proc.idb's
-/ reload[] is niladic like di.torq.proc.hdb's, not dated like the rdb's. `pt` is unused - kept
-/ so the doreload dispatch below can call every reload*[pt] uniformly. Also called directly by
-/ savetodisk after an intraday flush (the per-flush notify leg), where `pt` is just whatever
-/ savetodisk happens to pass through - still unused, for the same reason.
+/ async as legacy's notifyidbs - this fires after every intraday flush so it must not block,
+/ which is also why the trap only sees send failures.
 reloadidbs:{[pt]
   h:raze {exec w from (.z.m.svc`getservers)[x]} each .z.m.idbtypes;
-  {[wh] @[wh;".idb.reload[]";{[e] .z.m.log[`error][`wdb;"idb reload failed: ",e]}]} each h;
+  {[wh] @[neg wh;".idb.reload[]";{[e] .z.m.log[`error][`wdb;"idb reload send failed: ",e]}]} each h;
   }
 
 / reload downstream in the configured order (default `hdb`rdb: hdb first so it sees the new

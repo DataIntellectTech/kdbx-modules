@@ -88,4 +88,26 @@ run,0,0,q,.idb.reload[],1,,the very next reload must pick it up
 true,0,0,q,symreloaded[],1,,a sym file appearing for the first time reads as changed
 true,0,0,q,`a`b`c~sym,1,,and its domain reached the root sym
 
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,setupfixture[],1,,restore the normal fixture
+run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init records the size of the sym file it loaded
+run,0,0,q,corruptsymfile[],1,,the sym file changes to something load cannot read
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,.idb.reload[],1,,the change is detected and the read fails
+true,0,0,q,symfailed[],1,,the failed read is logged rather than thrown
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,.idb.reload[],1,,a failed read records no size - the next reload must try again
+true,0,0,q,symattempted[],1,,loadsym is retried rather than skipped as unchanged
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,setupfixture[],1,,a readable sym file again - same contents so the same size
+run,0,0,q,.idb.reload[],1,,restored to its ORIGINAL size it reads as unchanged and is skipped
+true,0,0,q,`a`b`c~sym,1,,harmless - the failed read never damaged root sym so it is already correct
+
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,growsym[`recovered],1,,a wdb flushes a new symbol - the size now differs from the last good one
+run,0,0,q,.idb.reload[],1,,and loading resumes with no restart
+true,0,0,q,symreloaded[],1,,the module recovered from the failed read
+true,0,0,q,`recovered in sym,1,,and picked up the new symbol
+
 after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

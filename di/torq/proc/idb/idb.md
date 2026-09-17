@@ -54,16 +54,25 @@ called from `init` (always) and from `reload[]` (only when the file has changed 
 The wdb calls `.idb.reload[]` after **every** intraday flush that wrote anything, but `.Q.en`
 only rewrites `hdbdir/sym` when it meets a symbol the domain doesn't already have. On a busy
 day the overwhelming majority of those reloads therefore have nothing new to read, so
-**`reload[]` gates its `loadsym[]` call** on `symfilehaschanged[]` - a port of legacy TorQ's
-function of the same name (`TorQ/code/processes/idb.q`), including its
-record-the-new-size-on-detect behaviour. It turns the common case from a full read of a
+**`reload[]` gates its `loadsym[]` call** on `symfilehaschanged[]` - after legacy TorQ's function
+of the same name (`TorQ/code/processes/idb.q`). It turns the common case from a full read of a
 domain that grows all day into a `hcount` stat.
+
+Unlike legacy, the check is a **pure predicate**: the new size is recorded by `readsym[]`, only
+once the `load` has actually succeeded. Legacy stamps the size the moment it detects a change, so
+a read that then fails is never retried and root `sym` stays stale until the file changes again.
+Recording on success instead means a failed read leaves `symsize` alone and the next reload tries
+again.
 
 The gate lives in the **caller**, not in `loadsym[]`, which stays an unconditional force-load -
 the same split legacy TorQ has between `loaddb` (force: startup and rollover) and
-`intradayreload` (gated). `loadsym[]` records the size it just read on the way out, so the next
-check compares against what is actually in the root `sym` rather than against whatever a
-previous `init` recorded. `domount[]` is *not* gated - see "Mounting vs legacy"
+`intradayreload` (gated). `init` additionally clears `symsize` before force-loading: a size
+recorded against a previous `init`'s `hdbdir` says nothing about the file this one was handed,
+and since a failed read records nothing, it could otherwise carry over indefinitely.
+
+One consequence worth knowing: if a read fails and the file is later restored to **exactly** the
+size of the last good one, the reload is skipped. That is harmless - a failed `load` never
+modifies root `sym`, so the domain still in memory is the one that file holds. `domount[]` is *not* gated - see "Mounting vs legacy"
 below.
 
 It compares **size**, not modification time: the sym file only ever grows (`.Q.en` appends), so

@@ -63,7 +63,7 @@ symsize:0
 / hcount is trapped where legacy calls it bare - legacy's idb blocks on a wdb handshake so the
 / file always exists by now; this one is config-driven and tolerates it missing.
 symfilehaschanged:{[]
-  $[.z.m.symsize<>c:@[hcount;symfile[];0];[.z.m.symsize:c;1b];0b]
+  .z.m.symsize<>@[hcount;symfile[];0]
   }
 
 / legacy TorQ's `load symfilepath` - it names the variable after the file, so it sets root `sym`
@@ -73,6 +73,7 @@ symfilehaschanged:{[]
 readsym:{[f]
   load f;
   .z.m.log[`info][`loadsym;"loaded sym domain (",(string count get `sym),") from ",1_string f];
+  .z.m.symsize:@[hcount;f;0];
   }
 
 / force-load the sym domain; the caller decides whether to skip, as legacy splits loaddb from
@@ -82,7 +83,6 @@ loadsym:{[]
   f:symfile[];
   .z.m.log[`info][`loadsym;"loading the sym file from ",1_string f];
   @[readsym;f;{[e] .z.m.log[`error][`loadsym;"failed to load sym file: ",e," - symbol columns may not resolve"]}];
-  .z.m.symsize:@[hcount;f;0];
   }
 
 / mount (or remount) whatever partitiondir[] currently points at. The dir can legitimately
@@ -119,7 +119,9 @@ init:{[config;deps]
   .z.m.fixedpartition:`partition in key config;
   if[.z.m.fixedpartition;.z.m.partition:$[-14h=type config`partition;config`partition;"D"$config`partition]];
   .z.m.log[`info][`init;"mounting idb from ",string partitiondir[]];
-  / force-loaded: a size recorded against a previous init's hdbdir says nothing about this file
+  / force-loaded, and symsize cleared first: a size recorded against a previous init's hdbdir says
+  / nothing about this file, and readsym only records on success so a failed load leaves it stale
+  .z.m.symsize:0;
   loadsym[];
   domount[];
   / publish the IPC-callable surface at a real root-level name - use-loading this file

@@ -89,3 +89,7 @@ createsymfile:{[] .Q.en[hsym `$FIXTUREHDBDIR;([]id:1 2 3;name:`a`b`c)];}
 / and silently resolve every enum column wrongly
 pollutesym:{[] @[`.;`sym;:;`x`y`a`b`c];}
 symfilecontents:{[] get hsym `$FIXTUREHDBDIR,"/sym"}
+
+/ a sym file that exists but cannot be read back as a symbol vector - load signals on it, so the
+/ size is never recorded and the next reload must try again
+corruptsymfile:{[] (hsym `$FIXTUREHDBDIR,"/sym") 0: enlist "not a serialised symbol vector";}

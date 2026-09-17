@@ -114,6 +114,14 @@ run,0,0,q,ct.cleanup[],1,1,run a cleanup sweep under the tiny retention
 true,0,0,q,0=count select from ct.getclients[] where not null endp,1,1,every closed session was purged once past retain
 run,0,0,q,"ct.init[()!();deps]",1,1,restore the default retention
 
+comment,,,,,,,retain:0D is not "keep forever" - unlike maxidle:0D it does not disable purging; endp<now-0D reduces to endp<now so a closed row is eligible on the very next sweep
+run,0,0,q,"ct.init[.ct.c enlist[`retain]!enlist 0D;deps]",1,1,re-init with retain explicitly set to 0D
+run,0,0,q,(value `.z.po) 8009i,1,1,open a handle to close and purge
+run,0,0,q,(value `.z.pc) 8009i,1,1,close it - the row is now eligible for purge on the very next sweep
+run,0,0,q,ct.cleanup[],1,1,run a cleanup sweep with retain:0D
+true,0,0,q,0=count select from ct.getclients[] where w=8009i,1,1,retain:0D purged the closed row on the next sweep rather than keeping it forever
+run,0,0,q,"ct.init[()!();deps]",1,1,restore the default retention
+
 comment,,,,,,,usage counting is deferred until a query event has an exec owner
 true,0,0,q,0=count select from handlers.list[`.z.pg] where name=`clienttracking,1,1,no post handler on .z.pg while it is unowned
 

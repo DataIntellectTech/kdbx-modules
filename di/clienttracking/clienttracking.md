@@ -99,7 +99,7 @@ All keys live under the `` `clienttracking `` section. Defaults are TorQ's **eff
 |---|---|---|---|
 | `enabled` | boolean | `1b` | register the lifecycle observers at all. `0b` wires the log, unhooks anything a previous init registered, and stops |
 | `maxidle` | timespan, or string `"nDhh:mm:ss"` (the `D` is mandatory — `"900"` is rejected, not read as 9 hours) | `0D` | force-close a live handle whose `lastp` is older than this. `0D` (the default) disables reaping — see the warning below |
-| `retain` | timespan, or string `"nDhh:mm:ss"` (same rule) | `0D02:00:00` | delete a closed session this long after its `endp` |
+| `retain` | timespan, or string `"nDhh:mm:ss"` (same rule) | `0D02:00:00` | delete a closed session this long after its `endp`. `0D` does **not** mean "keep forever" — see below |
 | `trackusage` | boolean | `1b` | attach the usage watcher to `.z.pg`/`.z.ps`/`.z.ws`. `0b` is TorQ's `opencloseonly` |
 
 The two timespans may also be given as **strings in q's `nDhh:mm:ss` literal form** (`"0D00:15:00"`,
@@ -127,6 +127,14 @@ config cascade does not deep-merge sections.
 > ten seconds later, and the pair would have churned every sweep. That is TorQ's `MAXIDLE`
 > semantics faithfully reproduced, and why the default is `0D`. Set `maxidle` only on processes
 > whose clients all make requests.
+>
+> **`retain:0D` does not mean "keep forever" — unlike `maxidle:0D`, it is not a disable value.**
+> `cleanup` purges with `delete from … where not null endp,endp<now-retain`; with `retain:0D` that
+> condition reduces to `endp<now`, which is true of essentially every closed row by the time the
+> next sweep runs. So `retain:0D` means "purge a closed session on the very next `cleanup` sweep",
+> not "never purge". (`maxidle:0D` really does disable idle reaping — that branch is explicitly
+> gated on `0D<maxidle`, and `retain` has no equivalent gate.) There is no config value that
+> retains closed rows indefinitely; set `retain` to something very large if that is what you want.
 
 ## The session table
 

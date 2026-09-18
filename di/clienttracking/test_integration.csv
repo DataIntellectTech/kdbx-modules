@@ -1,0 +1,82 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration test - exercises the idle-reap branch (force-close + endp stamp) on a REAL live handle
+comment,,,,,,,this is the one path the hermetic suite cannot cover - it needs a handle actually in .z.W
+comment,,,,,,,stands up a child q server, tracks the outgoing handle to it, then reaps it as idle
+comment,,,,,,,requires a q binary via QHOME (or q on PATH); skips cleanly if the child never comes up
+comment,,,,,,,child self-exits when its connection drops and is also killed by PID - robust to mid-suite failure
+
+before,0,0,q,handlers:use`di.torq.handlers,1,1,load di.torq.handlers
+before,0,0,q,ct:use`di.clienttracking,1,1,load di.clienttracking
+before,0,0,q,logger:use`di.util.log,1,1,load the real di.util.log
+before,0,0,q,logdep:logger.logdict`log,1,1,di.util.log level dict
+before,0,0,q,handlers.init[enlist[`log]!enlist logdep],1,1,init di.torq.handlers
+before,0,0,q,"hdep:`register`remove`list!(handlers.register;handlers.remove;handlers.list)",1,1,handlers injectable
+before,0,0,q,"deps:`log`handlers!(logdep;hdep)",1,1,the standard deps dict
+before,0,0,q,"ct.init[()!();deps]",1,1,init di.clienttracking with default settings
+before,0,0,q,qcands:$[count qh:getenv[`QHOME];(raze(qh;"/bin/q");raze(qh;"/";string .z.o;"/q"));()],1,1,candidate q binary locations
+before,0,0,q,qbin:$[count ex:qcands where {not ()~key hsym `$x} each qcands;first ex;"q"],1,1,pick an existing binary else q on PATH
+before,0,0,q,.it.wait:{[p;n] $[n<=0;0Ni;not null h:@[{hopen(`$"" sv (":localhost:";string x);500)};p;0Ni];h;[system"sleep 0.3";.it.wait[p;n-1]]]},1,1,poll for the child to accept
+before,0,0,q,.it.spawn:{[qbin;n] if[n<=0;:(0Ni;0N;0N)];system"p 0W";p:system"p";system"p 0";pid:"J"$last system "" sv (qbin;" -q -p ";string p;" </dev/null >/dev/null 2>&1 & echo $!");h:.it.wait[p;20];ok:$[null h;0b;pid=@[h;".z.i";{0N}]];$[ok;(h;pid;p);[if[not null h;@[hclose;h;::]];@[{system "" sv ("kill -9 ";string pid)};::;{}];.it.spawn[qbin;n-1]]]},1,1,bind a free port and confirm via PID we reached our own child (retries past a stolen port)
+before,0,0,q,sp:.it.spawn[qbin;5],1,1,spawn the child with up to five attempts
+before,0,0,q,h:sp 0,1,1,the confirmed outgoing handle to the child
+before,0,0,q,cpid:sp 1,1,1,the confirmed child PID
+before,0,0,q,if[null h;exit 0],1,1,skip cleanly if no confirmed child came up
+before,0,0,q,@[{h ".z.pc:{exit 0}"};::;{x}],1,1,backstop - child self-exits when its connection drops
+before,0,0,q,roundtrip:@[{4=h"2+2"};::;{0b}],1,1,a real synchronous round-trip works
+comment,,,,,,,inbound leg - the CHILD hosts a second instance of the module and THIS process is its real client
+comment,,,,,,,(the child services its event loop between our calls; this process cannot - a dial-back would deadlock in a sync wait)
+before,0,0,q,"cinit:@[{h ""hz:use`di.torq.handlers;lg:use`di.util.log;hz[`init][lg`logdict];ct:use`di.clienttracking"";1b};::;{0b}]",1,1,load handlers/log/clienttracking in the child over IPC
+before,0,0,q,"cinit2:@[{h ""ct[`init][()!();`log`handlers!(lg[`logdict]`log;`register`remove`list!(hz`register;hz`remove;hz`list))]"";1b};::;{0b}]",1,1,init the child's instance with default settings
+before,0,0,q,"cowner:@[{h ""hz[`register][`.z.pg;`exec;`owner;0;{value x}];ct[`enableusage][]"";1b};::;{0b}]",1,1,give the child's .z.pg an exec owner so its usage watcher goes live
+before,0,0,q,"@[{h ""ct[`addclient][.z.w]""};::;{x}]",1,1,our handle predates the child's init so register it there by hand (.z.w is our handle on the child)
+before,0,0,q,"h2:@[hopen;hsym `$"":localhost:"",string sp 2;0Ni]",1,1,a second connection - a REAL .z.po on the child
+before,0,0,q,"crows:@[{h ""select w,ipa,u,hits from ct[`getclients][] where null endp""};::;{0#([]w:`int$();ipa:`symbol$();u:`symbol$();hits:`long$())}]",1,1,the child's open sessions as it sees them
+before,0,0,q,"cmaxidle:@[{h ""ct[`init][enlist[`clienttracking]!enlist enlist[`maxidle]!enlist 0D00:00:00.000000001;`log`handlers!(lg[`logdict]`log;`register`remove`list!(hz`register;hz`remove;hz`list))]"";1b};::;{0b}]",1,1,re-init the child's instance with a 1ns idle threshold - every session there is now idle
+before,0,0,q,system"sleep 0.2",1,1,let time pass beyond the idle threshold
+before,0,0,q,"selfreap:@[{(::)~h ""ct[`cleanup][]""};::;{0b}]",1,1,call cleanup[] on the child over our own (idle) handle - it must not be closed under us
+before,0,0,q,"stillopen:@[{h ""1=count select from ct[`getclients][] where w=.z.w,null endp""};::;{0b}]",1,1,our session on the child is still open after that sweep
+before,0,0,q,"h2reaped:@[{h ""not null first exec endp from ct[`getclients][] where w<>.z.w,w>0i""};::;{0b}]",1,1,the other (genuinely idle) session was reaped by that same sweep
+before,0,0,q,"h2closed:@[{h ""not any (exec w from ct[`getclients][] where w<>.z.w,w>0i) in key .z.W""};::;{0b}]",1,1,and the child really did hclose it - that handle is gone from the child's .z.W
+before,0,0,q,"@[hclose;h2;::]",1,1,tidy the second handle either way
+comment,,,,,,,outbound leg - the idle-reap branch on the real outgoing handle
+before,0,0,q,"ct.init[enlist[`clienttracking]!enlist enlist[`maxidle]!enlist 0D00:00:00.000000001;deps]",1,1,re-init this process's instance with a 1ns idle threshold - but nothing owns .z.pg here yet
+before,0,0,q,ct.addclient[h],1,1,track the real live outbound handle
+before,0,0,q,system"sleep 0.2",1,1,let time pass beyond the idle threshold
+before,0,0,q,ct.cleanup[],1,1,sweep while usage counting is NOT live - the idle-reap branch must be suspended
+before,0,0,q,"suspended:(h in key .z.W) and 0<count select from ct.getclients[] where w=h,null endp",1,1,capture that the idle handle survived: still live and still an open session
+before,0,0,q,handlers.register[`.z.pg;`exec;`owner;0;{value x}],1,1,now give this process's .z.pg an exec owner so its usage watcher (and therefore idle reaping) can go live
+before,0,0,q,ct.enableusage[],1,1,attach the usage watcher here
+before,0,0,q,"tracked:0<count select from ct.getclients[] where w=h,null endp",1,1,capture that the live handle is tracked and open
+before,0,0,q,livebefore:h in key .z.W,1,1,capture that the handle is genuinely live before the sweep
+before,0,0,q,system"sleep 0.2",1,1,let time pass beyond the idle threshold
+before,0,0,q,ct.cleanup[],1,1,run the sweep from the console - the idle-reap branch should force-close and stamp the handle
+before,0,0,q,reaped:not null first exec endp from ct.getclients[] where w=h,1,1,capture that endp was stamped on the reaped session
+before,0,0,q,closed:not h in key .z.W,1,1,capture that the idle handle was actually force-closed
+before,0,0,q,@[{system "" sv ("kill -9 ";string cpid)};::;{x}],1,1,forceful child kill as a belt in case self-exit did not take
+before,0,0,q,system"sleep 0.3",1,1,give the OS a moment to reap the child
+before,0,0,q,gone:0=count @[{system "" sv ("ps -p ";string cpid;" -o pid=")};::;{()}],1,1,verify the child is gone
+
+comment,,,,,,,a real IPC round-trip works while the tracker is loaded
+true,0,0,q,roundtrip,1,1,synchronous query to the real child returned the expected result
+comment,,,,,,,the child hosts its own instance - this process is a real client of it
+true,0,0,q,cinit and cinit2 and cowner,1,1,the child loaded and initialised di.clienttracking over IPC (use resolves it on QPATH there too)
+true,0,0,q,not null h2,1,1,the second connection to the child opened
+true,0,0,q,2=count crows,1,1,the child saw both of our connections as open sessions (addclient + a real .z.po)
+true,0,0,q,all crows[`ipa]=`127.0.0.1,1,1,the child recorded our loopback address
+true,0,0,q,all crows[`u]=.z.u,1,1,the child recorded our user
+true,0,0,q,0<max crows`hits,1,1,the child's usage watcher counted our earlier request(s) on the first handle
+true,0,0,q,cmaxidle,1,1,the child's instance re-initialised with a 1ns idle threshold
+true,0,0,q,selfreap,1,1,a stale client calling cleanup[] over IPC got its reply - its own handle was not closed mid-request
+true,0,0,q,stillopen,1,1,our session on the child is still open after the sweep we triggered
+true,0,0,q,h2reaped,1,1,the genuinely idle session was stamped closed by that sweep
+true,0,0,q,h2closed,1,1,the child force-closed the idle handle - it is gone from the child's .z.W
+comment,,,,,,,idle reaping stays suspended on a real handle until usage counting is live
+true,0,0,q,suspended,1,1,a sweep with maxidle set but no usage watcher live did not touch the idle handle
+comment,,,,,,,the live handle was tracked and genuinely open before the sweep
+true,0,0,q,tracked,1,1,addclient recorded the real handle as an open session
+true,0,0,q,livebefore,1,1,the handle was in .z.W before the idle sweep
+comment,,,,,,,the idle-reap branch force-closed the handle and stamped its session closed
+true,0,0,q,reaped,1,1,cleanup stamped endp on the idle session
+true,0,0,q,closed,1,1,cleanup force-closed the idle handle
+comment,,,,,,,the child process is fully cleaned up
+true,0,0,q,gone,1,1,the child process is gone after the test

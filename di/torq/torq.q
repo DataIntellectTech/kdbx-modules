@@ -141,6 +141,17 @@ startcustom:{[proctype;config;deps]
   initfunc[config;deps]
   }
 
+/ --- config coercion ------------------------------------------------------------------------
+/ a setting arrives typed from a .q settings file but as a STRING from .toml and from a
+/ command-line override (.Q.opt). strings must be parsed, not cast: "j"$"1800" is the four
+/ character codes and `boolean$"true" is a boolean LIST (which throws 'type in the if/$ reading it)
+tolong:{[x]
+  r:$[10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.torq: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
+  r
+  };
+tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]};
+
 / --- application code cascade (TorQ-style) ------------------------------------------------
 / Loads add-on q scripts the APP drops under $TORQXAPPHOME/code/<dir>/ for a process, mirroring
 / torq.q's .proc.reloadallcode but scaled to the SINGLE app code root: the TorqX framework ships
@@ -153,7 +164,7 @@ startcustom:{[proctype;config;deps]
 / choose - a bare app query file like code/rdb/examplequeries.q (no \d) lands at ROOT, callable as
 / countbysym[...]. This is the same load mechanism startcustom already uses for code/processes/.
 / (parentproctype - torq.q's 4th tier, for wdb/sort sharing - is omitted: no sort-worker tier yet.)
-optflag:{[config;k;dflt] $[k in key config;`boolean$config k;dflt]}
+optflag:{[config;k;dflt] $[k in key config;tobool config k;dflt]}
 
 / load every q/k file in one dir at root: an optional order.txt lists files to load first, then
 / the rest alphabetically. Absent/empty dir -> no-op (key on a missing path returns empty).
@@ -211,15 +222,15 @@ flushquerylog:{[] ((use`di.querylog)`flushusage)[.z.m.qlflushtime];}
 
 initquerylog:{[config;deps]
   sect:$[`querylog in key config;config`querylog;()!()];
-  if[not $[`enabled in key sect;`boolean$sect`enabled;0b];:()];
+  if[not $[`enabled in key sect;tobool sect`enabled;0b];:()];
   / di.querylog's own init is not idempotent - a second call wraps its own wrappers and every query logs twice
   if[.z.m.querylogwired;deps[`log][`info][`torq;"query logging already wired in this process - not re-wrapping"];:()];
   opt:{[s;k;d] $[k in key s;s k;d]}[sect];
   cfg:`logtomemory`logtodisk`level`localtime`ignore`ignorelist!(
-    `boolean$opt[`logtomemory;1b];
-    `boolean$opt[`logtodisk;0b];
-    "j"$opt[`level;3];
-    `boolean$opt[`localtime;0b];
+    tobool opt[`logtomemory;1b];
+    tobool opt[`logtodisk;0b];
+    tolong opt[`level;3];
+    tobool opt[`localtime;0b];
     1b;
     qlignore opt[`ignorelist;`upd`.u.upd]);
   if[cfg`logtodisk;
@@ -228,10 +239,10 @@ initquerylog:{[config;deps]
     cfg:cfg,`logdir`logname!(dir;string config`procname)];
   ((use`di.querylog)`init)[cfg];
   .z.m.querylogwired:1b;
-  ft:"j"$opt[`flushtime;86400];
+  ft:tolong opt[`flushtime;86400];
   if[ft>0;
     .z.m.qlflushtime:ft*0D00:00:01;
-    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];1h;()!()]];
+    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();tolong opt[`flushinterval;1800];1h;()!()]];
   msg:"query logging on (level ",(string cfg`level),", memory=",(string cfg`logtomemory),", disk=",(string cfg`logtodisk),")";
   deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
   }

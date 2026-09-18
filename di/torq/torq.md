@@ -68,6 +68,12 @@ Three independent, explicitly-set env vars - not derived from each other:
 can find out who it is just by looking at its own `config` dict - no global to reach
 for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
 
+A setting arrives **typed** from a `.q` settings file but as a **string** from a `.toml` value
+and from a command-line override (`.Q.opt` hands every `-flag value` over as a string), so any
+consumer coerces at the point of use - `tolong`/`tobool` here, the same pair in the proc
+modules. Strings have to be *parsed*, not cast: `"j"$"1800"` is the four character codes, and
+`` `boolean$"true" `` is a boolean *list* that then throws `'type` in the `if`/`$` reading it.
+
 ### Dependency building
 
 `buildlogdep`/`buildtimerdep`/`buildhandlersdep` each build one of the three DI
@@ -368,7 +374,8 @@ there. Covers: `reqenv` erroring on a missing var, both auto-detect failure mode
 (no match, ambiguous), explicit-identity init for both a built-in and a custom
 proctype, config-cascade/deps reaching the started process type correctly, the
 `.run` hook firing by default and being skipped when `norun` is set, successful
-auto-detection once the ambiguity is resolved, and the discovery
+auto-detection once the ambiguity is resolved, the config coercion helpers
+(`tolong`/`tobool`, on a typed value and on a string), and the discovery
 auto-subscribe block - opt-in by either key, the job registering exactly once across
 re-inits, `discoverywant` narrowing, self-exclusion on a discovery instance, and a
 broken registry entry degrading to a warning rather than failing the boot (asserted

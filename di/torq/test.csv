@@ -142,3 +142,11 @@ true,0,0,q,0<qlcompleted`pg,1,,rows younger than flushtime survive a flush
 
 after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file
 
+true,0,0,q,1800~.m.di.0torq.tolong "1800",1,,tolong PARSES a string setting (toml / command-line override)
+true,0,0,q,1800~.m.di.0torq.tolong 1800,1,,tolong passes a native long through unchanged
+true,0,0,q,1b~.m.di.0torq.tobool "true",1,,tobool parses a string setting to a boolean ATOM (`boolean$ would give a list)
+true,0,0,q,0b~.m.di.0torq.tobool 0b,1,,tobool passes a native boolean through unchanged
+
+fail,0,0,q,.m.di.0torq.tolong "not-a-number",1,,tolong rejects unparseable text rather than returning null (a null period silently busy-loops di.timer)
+fail,0,0,q,.m.di.0torq.tolong "",1,,tolong rejects an empty string
+true,0,0,q,0<count (@[.m.di.0torq.tolong;"3.5";{[e] e}]) ss "3.5",1,,tolong error text names the OFFENDING STRING itself - not a stype signal (string is atomic over a char vector; naive (string x) on an already-string x fans out per character)

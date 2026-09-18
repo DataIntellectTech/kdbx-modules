@@ -40,6 +40,11 @@ reloadorder = "hdb rdb"           # order to reload at EOD (hdb first, then rdb)
 # sortcsv (optional) -> di.dbwrite sort/attribute config; else dbwrite's default (time asc)
 ```
 
+Every value above is read through a coercion helper at the point of use, so it is accepted
+typed (a `.q` settings file), as a string (a `.toml` value) or as a command-line override
+(`-numrows 500000`, which `.Q.opt` hands over as a string). Strings are **parsed**, not cast:
+`"j"$"100000"` would be the six character codes and `` `boolean$"true" `` a boolean *list*.
+
 The schema comes from the **tickerplant** (via `subdetails`), not a local `database.q` —
 di.subscriptions defines the tables at root from what the TP returns.
 

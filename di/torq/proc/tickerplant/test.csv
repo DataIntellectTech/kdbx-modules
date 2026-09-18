@@ -45,3 +45,10 @@ run,0,0,q,endofday[],1,,force an end-of-day roll
 true,0,0,q,rolledfile["replog";ROLLDATE+1],1,,the roll opened the next day's log file
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs
+
+true,0,0,q,1~.m.di.0torq.0proc.0tickerplant.tolong "1",1,,tolong PARSES a string setting (toml / command-line override)
+true,0,0,q,10~.m.di.0torq.0proc.0tickerplant.tolong 10,1,,tolong passes a native long through unchanged
+
+fail,0,0,q,.m.di.0torq.0proc.0tickerplant.tolong "not-a-number",1,,tolong rejects unparseable text rather than returning null (a null period silently busy-loops di.timer)
+fail,0,0,q,.m.di.0torq.0proc.0tickerplant.tolong "",1,,tolong rejects an empty string
+true,0,0,q,0<count (@[.m.di.0torq.0proc.0tickerplant.tolong;"3.5";{[e] e}]) ss "3.5",1,,tolong error text names the OFFENDING STRING itself - not a stype signal (string is atomic over a char vector; naive (string x) on an already-string x fans out per character)

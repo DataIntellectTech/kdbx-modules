@@ -24,9 +24,17 @@
 / (bare reads fall through to root) but WRITTEN/cleared via @[`.;..] (a bare write from a
 / use-loaded module, or under -11! replay, lands in the module's private namespace).
 
-/ config coercion (values are symbols from .q settings or strings from .toml)
+/ config coercion (values are symbols from .q settings, or strings from .toml and command-line
+/ overrides). strings must be PARSED, not cast: "j"$"100000" is the six character codes and
+/ `boolean$"true" is a boolean LIST (which then throws 'type in the if/$ that reads it)
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
+tolong:{[x]
+  r:$[10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.torq.proc.wdb: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
+  r
+  }
+tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]}
 
 / a token-list config (e.g. reloadorder): accept a space-separated string ("hdb rdb"), a
 / single symbol, a symbol list, or a list of strings -> always a symbol list.
@@ -173,14 +181,14 @@ init:{[config;deps]
   .z.m.ignorelist:$[`ignorelist in key config;aslist assym config`ignorelist;`heartbeat`logmsg];
   .z.m.hdbdir:hsym `$$[`hdbdir in key config;resolvedir[datahome[];config`hdbdir];datahome[],"/hdb"];
   .z.m.savedir:hsym `$$[`savedir in key config;resolvedir[datahome[];config`savedir];datahome[],"/wdb"];
-  .z.m.numrows:$[`numrows in key config;"j"$config`numrows;100000];
+  .z.m.numrows:$[`numrows in key config;tolong config`numrows;100000];
   .z.m.numtab:$[`numtab in key config;config`numtab;(`symbol$())!`long$()];
-  .z.m.immediate:$[`immediate in key config;`boolean$config`immediate;0b];
-  settimer:$[`settimer in key config;"j"$config`settimer;10];
+  .z.m.immediate:$[`immediate in key config;tobool config`immediate;0b];
+  settimer:$[`settimer in key config;tolong config`settimer;10];
   subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
-  replaylog:$[`replaylog in key config;`boolean$config`replaylog;1b];
-  timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
+  replaylog:$[`replaylog in key config;tobool config`replaylog;1b];
+  timeout:$[`tpwaittimeout in key config;tolong config`tpwaittimeout;30000];
 
   / v1 uses today's date as the partition; the tp log date is checked against it after
   / subscribe. Cross-date replay (log date != today, needing the written working data moved to

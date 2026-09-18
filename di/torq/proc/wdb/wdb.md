@@ -25,6 +25,8 @@ di.torq.proc.rdb). No kx.log install is required.
 tickerplanttypes = "tickerplant"   # proctype(s) to subscribe to
 hdbtypes = "hdb"                   # proctype(s) to move partitions to / reload at EOD
 rdbtypes = "rdb"                   # proctype(s) to reload[date] at EOD (drop their prior day)
+idbtypes = "idb"                   # proctype(s) notified: after every flush that wrote something, and (if
+                                    # opted into reloadorder) at EOD too (remount the new day's partition)
 gatewaytypes = "gateway"           # proctype(s) to block/unblock during reload (none in POC)
 savedir = "wdb"                   # wdb working-data root (relative to TORQXDATAHOME, or absolute)
 hdbdir = "hdb"                    # HDB root to move sorted partitions into (relative to TORQXDATAHOME)
@@ -33,7 +35,7 @@ settimer = 10                     # seconds between flush checks (di.timer mode 
 immediate = false                 # true: flush every table on every timer tick (ignore numrows)
 replaylog = true                  # replay the tp log on startup
 tpwaittimeout = 30000             # ms to block waiting for the tickerplant
-reloadorder = "hdb rdb"           # order to reload at EOD (hdb first, then rdb)
+reloadorder = "hdb rdb"           # order to reload at EOD; add "idb" to also reload idbs (opt-in)
 # subscribeto / subscribesyms omitted -> all tables, all syms
 # ignorelist omitted -> `heartbeat`logmsg (not written)
 # numtab (optional) -> per-table row thresholds; overrides numrows for those tables
@@ -51,12 +53,35 @@ di.subscriptions defines the tables at root from what the TP returns.
   whole day in RAM. After replay the root `upd` is swapped to a plain accumulate.
 - **Intraday** (`savetodisk`, timer job every `settimer`s): flush any table over its threshold
   (or every table, if `immediate`) to the working partition — **create on first write, append
-  after**, enumerating syms against the **HDB** sym file, then clear it in memory.
-- **End of day** (`endofday[date]`, published at root, also `.u.end`): the tickerplant
+  after**, enumerating syms against the **HDB** sym file, then clear it in memory. If that
+  flushed at least one table, every connected `idbtypes` process is notified
+  (`` .idb.intradayreload[] ``, async, no partition — the idb mounts the savedir root and finds
+  the day itself) — an all-skipped tick (nothing over threshold) stays silent. This is
+  unconditional on `reloadorder`; it only needs an idb to be connected.
+- **End of day** (`endofday[date]`, published at root): the tickerplant
   broadcasts `(`endofday;date)` at roll (the same trigger as di.torq.proc.rdb). di.torq.proc.wdb flushes what
   remains, sorts each working partition (`di.dbwrite.sort` — driven by `sortcsv` or the time-asc
   default), **moves** each table dir into `hdbdir/date/` (skipping any that already exist, to
-  never corrupt the hdb), then reloads downstream in `reloadorder`.
+  never corrupt the hdb), then reloads downstream in `reloadorder`. The hdb and rdb are given the
+  date just **closed**; an `idb` entry in `reloadorder` instead gets
+  `` .idb.rollover[date+1] `` — the partition the wdb has moved **on** to — which records the new
+  day and remounts. Both idb legs go through the one `notifyidbs[func;params]`, as legacy TorQ.
+
+## What the wdb publishes for the idb
+
+`init` publishes three root variables the idb reads at startup, the way legacy TorQ's
+`setparametersfromwdb` reads `.wdb.savedir` and friends:
+
+```q
+set[`.wdb.savedir;.z.m.savedir];
+set[`.wdb.hdbdir;.z.m.hdbdir];
+set[`.wdb.currentpartition;.z.m.currentpartition];
+```
+
+They are read with `` (each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition) ``, so the idb
+is not configured with the two directories by hand — one source of truth, no pair to keep in step.
+`endofday` republishes `currentpartition` after it advances; the other two are fixed for the life
+of the process.
 
 ## RDB / WDB interaction
 
@@ -93,7 +118,9 @@ grow an optional enum-dir param and absorb this.)
   v1 is `saveandsort` in-process only.
 - **Advanced writedown modes** (`partbyattr`/`partbyenum`/`partbyfirstchar`) and all of
   `merge.q`. v1 is `default` writedown only.
-- **IDB tier** (`notifyidbs`/`idbreload`/`filldb`/`initmissingtables`).
+- **`filldb`/`initmissingtables`** (legacy TorQ's other `notifyidbs`-adjacent EOD helpers - an
+  idb here just remounts its savedir wholesale on reload, see `di.torq.proc.idb`, so there is no
+  separate "fill" step to port). Per-flush notify itself **is** ported - see "Intraday" above.
 - **Compression** (`.z.zd`).
 - **Cross-date replay** (`fixpartition` — moving already-written temp data when the tp log date
   differs from today). v1 assumes same-day start; it logs a warning and uses the log date, but

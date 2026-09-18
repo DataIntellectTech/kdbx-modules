@@ -120,10 +120,8 @@ fail,0,0,q,idb[`init][cfg[];mockdeps[]],1,,no wdb within the timeout must fail i
 run,0,0,q,`WAITOK set 1b,1,,restore
 
 comment,,,,,,,a wdb that does not publish everything we ask for
-run,0,0,q,resetservercalls[],1,,reset the servers mock
-run,0,0,q,setwdbparams[],1,,publish all three first
-run,0,0,q,dropwdbvar[`hdbdir],1,,then remove one - an older wdb build
-fail,0,0,q,idb[`init][cfg[];mockdeps[]],1,,the failed read must fail init rather than mount nothing
-run,0,0,q,setwdbparams[],1,,restore
+true,0,0,q,initnovar[`savedir],1,,a wdb missing .wdb.savedir fails init naming that variable
+true,0,0,q,initnovar[`hdbdir],1,,a wdb missing .wdb.hdbdir fails init naming that variable
+true,0,0,q,initnovar[`currentpartition],1,,a wdb missing .wdb.currentpartition fails init naming that variable
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

@@ -254,6 +254,7 @@ init:{[config;deps]
   / swap to the live accumulate upd (the timer flushes over-threshold), publish EOD entries
   @[`.;`upd;:;updfn];
   @[`.;`endofday;:;endofday];
+  @[`.;`.u.end;:;endofday];
   / the idb reads these directly at startup, as legacy's setparametersfromwdb does. savedir and
   / hdbdir are fixed for the life of the process; currentpartition is republished whenever it
   / moves (see endofday), or the copy here goes stale from the first roll.

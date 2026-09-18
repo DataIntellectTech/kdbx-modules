@@ -31,8 +31,20 @@ setwdbparams:{[] setwdb hsym `$FIXTUREDIR;}
 / the wdb reports a savedir that is not on disk - the window before its first flush
 setwdbmissingdir:{[] setwdb `:/tmp/di_idb_k4unit_no_such_dir;}
 
-/ a wdb that does not publish one of them - an older build, say
+/ a wdb that does not publish one of them - an older build, say. test.q is loaded at root with
+/ system "l", not use'd, so this and setwdb both act on the same root .wdb
 dropwdbvar:{[v] ![`.wdb;();0b;enlist v];}
+
+/ init must fail NAMING the variable it could not read, not just fail somehow - a bare `fail`
+/ row would also pass on an unrelated error and prove nothing
+initnovar:{[v]
+  resetservercalls[];
+  setwdbparams[];
+  dropwdbvar v;
+  e:@[{idb[`init][cfg[];mockdeps[]]; ""};::;{x}];
+  setwdbparams[];
+  $[(10h=type e) and 0<count e;0<count e ss "could not read from the wdb: .wdb.",string v;0b]
+  }
 
 askedwdb:{[] `waitfortype in exec fn from scalls}
 

@@ -1,7 +1,11 @@
 / connection management and handle-by-type lookup for the modular torq world - the di.* analogue
-/ of TorQ's .servers (code/handlers/trackservers.q + servers.q), scoped down for v1: no discovery
-/ service, no password/access-list files, no non-torq process tracking, no FinSpace. process.csv
-/ is a static phone book (who to dial), NOT an identity source - self-identity comes from config.
+/ of TorQ's .servers (code/handlers/trackservers.q + servers.q): no password/access-list files, no
+/ FinSpace. process.csv is a static phone book (who to dial), NOT an identity source - self-identity
+/ comes from config. discovery is NOT implemented here and this module knows nothing about it: a
+/ discovery service (di.torq.proc.discovery) is just another process that dials out through its own
+/ injected servers instance and pushes what it finds into peers via the generic, root-published
+/ .torq.servers.addprocs / .torq.servers.removeprocs - so every process can receive pushed rows
+/ (and their later removal) whether or not anything pushes.
 / FRAMEWORK-tier module: no hard di.* deps; log, timer and handlers are injected (all required).
 / standard one-arg init[deps]: di.torq merges this process's config slice (proctype/procname,
 / connections, processcsv) into the same deps dict it passes the injectables in. conventions match
@@ -21,6 +25,7 @@ SERVERS:([]
   lastp:`timestamp$();
   endp:`timestamp$());
 
+/ default hopen timeout (ms); per-process override via a flat `hopentimeout config key (read at init)
 HOPENTIMEOUT:2000;
 
 self:`proctype`procname!``;
@@ -41,10 +46,11 @@ raiseerror:{[ctx;msg]
 
 init:{[deps]
   / wire the injected deps (log/timer/handlers - all required, no fallback) and this process's
-  / config (proctype/procname identity, connections, processcsv), and install the one-time side
-  / effects (a .z.pc cleanup observer via handlers + a 10s serversretry job via timer). config
-  / arrives in the SAME deps dict (the one-arg init convention - di.torq merges the config slice
-  / into it). idempotent (see `registered). does NOT open connections - that is startup's job.
+  / config (proctype/procname identity, connections, processcsv), install the one-time side
+  / effects (a .z.pc cleanup observer via handlers + a 10s serversretry job via timer), and publish
+  / the root IPC entry points .torq.servers.addprocs/removeprocs. config arrives in the SAME deps
+  / dict (the one-arg init convention - di.torq merges the config slice into it). idempotent (see
+  / `registered). does NOT open connections - that is startup's job.
   if[99h<>type deps;
     '"di.torq.servers: deps must be a dict of injectables + config"];
   if[not all `log`timer`handlers in key deps;
@@ -69,6 +75,14 @@ init:{[deps]
   .z.m.self:`proctype`procname!deps`proctype`procname;
   .z.m.connections:$[`connections in key deps;deps`connections;`symbol$()];
   .z.m.processcsv:$[`processcsv in key deps;deps`processcsv;""];
+  / hopentimeout applies to EVERY dial this instance makes - startup's first attempt and each retry
+  / redial - so a process that dials many possibly-down hosts (discovery) can be tuned tight
+  / (di/torq/settings/discovery.q ships 200, legacy config/settings/discovery.q parity)
+  .z.m.hopentimeout:$[`hopentimeout in key deps;aslong deps`hopentimeout;HOPENTIMEOUT];
+  if[not -7h=type .z.m.hopentimeout;
+    '"di.torq.servers: hopentimeout must be a single number of milliseconds"];
+  if[(null .z.m.hopentimeout) or not .z.m.hopentimeout>0;
+    '"di.torq.servers: hopentimeout must be a positive number of milliseconds; got ",.Q.s1 deps`hopentimeout];
   if[not .z.m.registered;
     / .z.pc is a SIMPLE (observer) event in di.torq.handlers - side-effect only, fan-out. registered via
     / the injected handlers dep with di.torq.handlers' register[event;phase;nm;pri;func] contract; phase
@@ -81,12 +95,21 @@ init:{[deps]
     (.z.m.timer[`addjob])[`serversretry;retry;();10;1;()!()];
     .z.m.registered:1b;
     ];
-  .z.m.loginfo[`init;"di.torq.servers initialised"];
+  / publish the IPC-callable push target at a REAL root name: use loads this file into a private
+  / namespace, so a peer's remote (`.torq.servers.addprocs;rows) would otherwise hit an undefined
+  / function. set is idempotent, so this runs on every init. (same idiom as .hdb.reload / .gw.*)
+  set[`.torq.servers.addprocs;addprocs];
+  set[`.torq.servers.removeprocs;removeprocs];
+  .z.m.loginfo[`init;"di.torq.servers initialised, hopentimeout ",(string .z.m.hopentimeout),"ms"];
   };
+
+tosym:{[x] $[11h=abs type x;x;`$x]};
+/ "J"$ PARSES text; "j"$ on a string would cast each char code
+aslong:{[x] $[10h=abs type x;"J"$(),x;-11h=type x;"J"$string x;"j"$x]};
 
 formathp:{[host;port;ipctype]
   / internal - build a connection-handle symbol for `tcp`/`tcps`/`unix. only `tcp is exercised by
-  / startup in v1; the others exist for a future SOCKETTYPE-style config.
+  / startup; the others exist for a future SOCKETTYPE-style config.
   h:string host;
   p:string port;
   $[ipctype=`tcp; lower `$":",h,":",p;
@@ -99,18 +122,77 @@ opencon:{[hpup]
   / open a connection, logging (not erroring) on failure - a downed peer isn't necessarily an
   / error at connect time; retry keeps trying. NOTE the timeout form is hopen[(handle;timeoutms)]
   / (a single 2-item list), not the dyadic hopen[handle;timeoutms], which throws 'rank.
-  r:@[{(hopen (x;.z.m.HOPENTIMEOUT);"")};hpup;{(0Ni;x)}];
+  r:@[{(hopen (x;.z.m.hopentimeout);"")};hpup;{(0Ni;x)}];
   if[null first r;.z.m.logwarn[`servers;"failed to open connection to ",(string hpup),": ",last r]];
   first r
   };
 
 readprocesscsv:{[path]
-  / internal - read the static process.csv phone book (host,port,proctype,procname). the PATH is
-  / supplied by the caller (from config`processcsv); di.torq.servers reads no env itself, holding
+  / internal - read a process.csv-format phone book (host,port,proctype,procname). the PATH is
+  / supplied by the caller (from config`processcsv, or any other file in the same format - a
+  / nontorqprocess.csv has the identical header); di.torq.servers reads no env itself, holding
   / di.torq.config's env-free boundary - di.torq resolves the path and puts it in config.
   fsym:`$":",path;
   if[0=count key fsym;raiseerror[`readprocesscsv;"process.csv not found at ",path]];
   ("SISS";enlist",") 0: fsym
+  };
+
+describerows:{[rows]
+  / internal - "name/type@hpup, ..." for log lines
+  ", " sv {string[x`procname],"/",string[x`proctype],"@",string x`hpup} each rows
+  };
+
+conflicts:{[rows]
+  / internal - boolean mask over SERVERS: rows sharing an hpup OR a (procname;proctype) with any of
+  / the incoming rows. used to find (and then delete) the rows an incoming row replaces.
+  (exec hpup from .z.m.SERVERS) in rows`hpup
+  };
+
+mergerows:{[rows]
+  / internal - the SINGLE merge path into SERVERS, shared by startup (process.csv rows) and
+  / addprocs (rows pushed by a peer). rows: a table with procname/proctype/hpup symbol columns.
+  / merge rule:
+  /   - an exact (procname;proctype;hpup) match is already known and is SKIPPED, connected or not
+  /     (reconnecting a known-dead row is retry's job, not the caller's - so startup and addprocs
+  /     can be called repeatedly without ever duplicating a row);
+  /   - a row sharing hpup OR (procname;proctype) with an existing row REPLACES it: the old handle
+  /     is closed and the old row deleted, so a port moved in process.csv, or a port re-used by a
+  /     different process, never leaves a ghost row behind to be dialled forever (legacy TorQ only
+  /     replaced on hpup and left the name/type ghost - trackservers.q addprocs).
+  / new rows land with w:0Ni; the caller dials them (startup) or leaves them to retry (addprocs).
+  / returns the rows actually appended.
+  rows:distinct select procname,proctype,hpup from rows;
+  / the same rule WITHIN one batch: the last row per name/type and per hpup wins, so an ambiguous
+  / phone book (one process listed on two ports) cannot seed two rows to be dialled forever
+  uniq:select procname,proctype,hpup from 0!select by procname,proctype from rows;
+  uniq:select procname,proctype,hpup from 0!select by hpup from uniq;
+  if[count[uniq]<count rows;
+    dropped:select from rows where not ([]procname;proctype;hpup) in uniq;
+    .z.m.logwarn[`servers;"dropped ",(string count dropped)," ambiguous row(s) sharing a name/type or hpup within one batch: ",describerows dropped]];
+  rows:select from uniq where not ([]procname;proctype;hpup) in select procname,proctype,hpup from .z.m.SERVERS;
+  if[0=count rows;:rows];
+  stale:(conflicts rows) or (select procname,proctype from .z.m.SERVERS) in select procname,proctype from rows;
+  if[any stale;
+    old:.z.m.SERVERS where stale;
+    @[hclose;;()] each exec w from old where not null w;
+    .z.m.loginfo[`servers;"replacing ",(string count old)," stale row(s): ",describerows old];
+    .z.m.SERVERS:.z.m.SERVERS where not stale];
+  new:update w:0Ni,hits:0i,startp:0Np,lastp:.z.p,endp:0Np from rows;
+  / catenate+reassign, NOT `tablename insert - a symbol-based insert into `.z.m.SERVERS` misses
+  / the compile-time module-local rewrite a source-level .z.m.SERVERS gets, silently targeting the
+  / wrong (literal) table.
+  .z.m.SERVERS:.z.m.SERVERS,new;
+  new
+  };
+
+dial:{[row]
+  / internal - open the connection for one freshly-merged SERVERS row and record the outcome on it
+  wh:opencon row`hpup;
+  if[not null wh;.z.m.loginfo[`servers;"connected to ",(string row`proctype),"/",(string row`procname)," at ",string row`hpup]];
+  / NOTE sp is computed OUTSIDE the qsql: a $[..] conditional inside a qsql expression throws 'rank
+  / from a use-loaded module (fine at root) - measured 2026-09-15 on kdb-x 5f 2026.01.22
+  sp:$[null wh;0Np;.z.p];
+  .z.m.SERVERS:update w:wh,startp:sp,lastp:.z.p from .z.m.SERVERS where procname=row`procname,proctype=row`proctype,hpup=row`hpup;
   };
 
 startup:{[config]
@@ -120,11 +202,15 @@ startup:{[config]
   / dials its tickerplant+hdb types, a gateway its backend types) and passes it in via its config
   / slice; di.torq cannot know that list at init time. a failed connection is logged (not raised) and
   / left as w:0Ni for retry. a no-op if no connections are configured.
+  / SAFE TO CALL REPEATEDLY: rows go through mergerows, so an already-known row is skipped (not
+  / re-dialled, not duplicated) and only genuinely new rows are dialled - a caller may re-run
+  / startup to pick up rows added to process.csv since the last call (di.torq.proc.discovery does,
+  / on every tick, and once more against a nontorqprocess.csv in the same format).
   / normalise connections to symbols to match process.csv's `proctype column (always a symbol via
   / the "S" spec): a .q settings file gives symbols already (`$ throws 'type on a symbol - it is
   / NOT idempotent, hence the type check); a .toml one gives plain strings (TOML has no symbol).
   conns:$[`connections in key config;config`connections;`symbol$()];
-  conns:$[11h=abs type conns;conns;`$conns];
+  conns:tosym conns;
   if[0=count conns;.z.m.loginfo[`servers;"no configured connections to make"];:()];
   if[not `processcsv in key config;raiseerror[`startup;"processcsv (path to process.csv) is required in config to open connections"]];
   procs:readprocesscsv[config`processcsv];
@@ -134,16 +220,61 @@ startup:{[config]
   procs:select from procs where not isme;
   procs:select from procs where proctype in conns;
   if[0=count procs;.z.m.loginfo[`servers;"no process.csv rows match the configured connections"];:()];
-  {[row]
-    hpup:formathp[row`host;row`port;`tcp];
-    w:opencon[hpup];
-    if[not null w;.z.m.loginfo[`servers;"connected to ",(string row`proctype),"/",(string row`procname)," at ",string hpup]];
-    / catenate+reassign, NOT `tablename insert - a symbol-based insert into `.z.m.SERVERS` misses
-    / the compile-time module-local rewrite a source-level .z.m.SERVERS gets, silently targeting the
-    / wrong (literal) table.
-    newrow:([]procname:enlist row`procname;proctype:enlist row`proctype;hpup:enlist hpup;w:enlist w;hits:enlist 0i;startp:enlist $[null w;0Np;.z.p];lastp:enlist .z.p;endp:enlist 0Np);
-    .z.m.SERVERS:.z.m.SERVERS,newrow;
-    } each 0!procs;
+  / hpup computed outside the qsql (module-local formathp is not resolvable inside one)
+  hp:formathp'[procs`host;procs`port;`tcp];
+  rows:update hpup:hp from select procname,proctype from procs;
+  new:mergerows rows;
+  if[count[rows]>count new;.z.m.loginfo[`servers;(string count[rows]-count new)," process.csv row(s) already known - skipped"]];
+  dial each new;
+  };
+
+checkrows:{[ctx;rows]
+  / internal - validate an externally-supplied procname/proctype/hpup table (addprocs/removeprocs)
+  / and return just those three columns normalised to symbols
+  if[not 98h=type rows;raiseerror[ctx;"rows must be a table with procname, proctype and hpup columns"]];
+  if[not all `procname`proctype`hpup in cols rows;raiseerror[ctx;"rows need procname, proctype, hpup columns; got: ",", " sv string cols rows]];
+  / NOTE module-local functions are not resolvable inside a qsql expression (names there resolve at
+  / root), so normalise via @ on the columns rather than a select
+  rows:@[select procname,proctype,hpup from rows;`procname`proctype`hpup;tosym];
+  if[not all 11h=type each rows`procname`proctype`hpup;raiseerror[ctx;"procname, proctype and hpup must be symbol columns"]];
+  rows
+  };
+
+addprocs:{[rows]
+  / merge externally-supplied rows (a table with procname/proctype/hpup columns) into SERVERS. this
+  / is the generic IPC push target, published at root as .torq.servers.addprocs, that a discovery
+  / service calls on its subscribers - but it knows nothing about discovery: rows are simply
+  / "known", not connected (w:0Ni), and the serversretry job opens them on its normal 10s cycle,
+  / exactly as it does for a process.csv row whose first dial failed. an exact duplicate is a
+  / no-op and a conflicting row replaces the old one (see mergerows). self is dropped - a peer
+  / must never be told to dial itself (a self-connect yields pseudo-handle 0, not a socket).
+  / returns the number of rows added.
+  rows:checkrows[`addprocs;rows];
+  pt:.z.m.self`proctype;
+  pn:.z.m.self`procname;
+  rows:select from rows where not (proctype=pt)&procname=pn;
+  new:mergerows rows;
+  / quiet when nothing changed: a discovery service re-pushes the same live rows every tick
+  if[count new;.z.m.loginfo[`servers;"addprocs: ",(string count new)," row(s) added, ",(string count[rows]-count new)," already known"]];
+  count new
+  };
+
+removeprocs:{[rows]
+  / remove rows (exact procname/proctype/hpup match - the same identity mergerows dedups on) from
+  / SERVERS, closing a live handle first: removal means the process is DECOMMISSIONED, not merely
+  / down (a down process stays, for retry). the counterpart of addprocs: published at root as
+  / .torq.servers.removeprocs so a discovery service can tell a subscriber a row is gone, AND in
+  / the injected dict so a process can evict from its own registry. a row that is not known is
+  / ignored. returns the number of rows removed.
+  rows:distinct checkrows[`removeprocs;rows];
+  hit:(select procname,proctype,hpup from .z.m.SERVERS) in rows;
+  old:.z.m.SERVERS where hit;
+  if[count old;
+    @[hclose;;()] each exec w from old where not null w;
+    .z.m.SERVERS:.z.m.SERVERS where not hit;
+    .z.m.loginfo[`servers;"removeprocs: ",(string count old)," row(s) removed: ",describerows old]];
+  if[count[rows]>count old;.z.m.loginfo[`servers;"removeprocs: ",(string count[rows]-count old)," row(s) not known - ignored"]];
+  count old
   };
 
 retryrows:{[rows]
@@ -175,6 +306,12 @@ getservers:{[pt]
   / every live (non-null handle) SERVERS row for a proctype.
   if[not -11h=type pt;raiseerror[`getservers;"proctype must be a symbol"]];
   select from .z.m.SERVERS where proctype=pt, not null w
+  };
+
+getallservers:{[]
+  / every SERVERS row - all proctypes, connected or not (getservers is per-proctype and live-only).
+  / the full registry view a discovery service reads back before deciding what to push.
+  select from .z.m.SERVERS
   };
 
 selector:{[tab;selection]
@@ -234,8 +371,11 @@ getapimeta:{[]
   / di.api. init/getapimeta are plumbing (di.torq calls them by convention) and are deliberately NOT
   / listed - the registry describes the callable api, not plumbing. names are bare (di.torq qualifies).
   :flip `name`public`descrip`params`return!flip(
-    (`startup;         1b; "open connections to the config's proctypes from process.csv (config carries connections + processcsv)"; "[dict: config with `connections + `processcsv]"; "null");
+    (`startup;         1b; "open connections to the config's proctypes from process.csv (repeat-safe)"; "[dict: config with `connections + `processcsv]"; "null");
+    (`addprocs;        1b; "merge pushed rows into SERVERS as known-not-connected (also at root as .torq.servers.addprocs)"; "[table: procname/proctype/hpup rows]";              "long: rows added");
+    (`removeprocs;     1b; "remove exact rows from SERVERS, closing live handles (also at root as .torq.servers.removeprocs)"; "[table: procname/proctype/hpup rows]";           "long: rows removed");
     (`getservers;      1b; "live SERVERS rows for a proctype";                                      "[symbol: proctype]";                              "table: live server rows");
+    (`getallservers;   1b; "every SERVERS row, all proctypes, connected or not";                    "[]";                                              "table: all server rows");
     (`gethandlebytype; 1b; "one live handle for a proctype via any/roundrobin/last selection";      "[symbol: proctype; symbol: selection]";           "int: handle, 0Ni if none");
     (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };

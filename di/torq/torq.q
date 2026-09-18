@@ -102,7 +102,12 @@ buildhandlersdep:{[overrides;logdep]
 / double-register the pc handler and the retry job (the exact fragility that motivated
 / promoting servers from a per-module `use`+init to an injected singleton). `startup` IS
 / exposed: it opens the actual connections and is called by each consumer with its own
-/ `connections` list, so connection-opening timing stays with the consumer.
+/ `connections` list, so connection-opening timing stays with the consumer. `getallservers`
+/ (servers >= 0.4.0) is the whole-registry read di.torq.proc.discovery needs to decide what to
+/ push; `removeprocs` (servers >= 0.5.0) is BOTH here (discovery evicts from its own registry
+/ through it) and root-published (.torq.servers.removeprocs, so a peer can be told a row is
+/ gone). `addprocs` is deliberately NOT in this dict - it is only ever the root-published IPC
+/ target (.torq.servers.addprocs) that OTHER processes call on this one, never a local call.
 / NB every process gets an init'd servers instance, even ones that never dial out
 / (hdb/tickerplant): harmless - the registry starts empty, the pc handler and the retry job
 / are no-ops on an empty SERVERS table, and startup (the part that opens sockets) is never
@@ -116,7 +121,7 @@ buildserversdep:{[overrides;config;logdep;timerdep;handlersdep]
   / one-arg init[deps] (kdbx convention, matching handlers/config/depcheck): merge the injectables into
   / this process's config slice - init reads log/timer/handlers + proctype/procname self-identity from it.
   (srv`init)[config,`log`timer`handlers!(logdep;timerdep;handlersdep)];
-  `startup`getservers`gethandlebytype`waitfortype!((srv`startup);(srv`getservers);(srv`gethandlebytype);(srv`waitfortype))
+  `startup`getservers`getallservers`removeprocs`gethandlebytype`waitfortype!((srv`startup);(srv`getservers);(srv`getallservers);(srv`removeprocs);(srv`gethandlebytype);(srv`waitfortype))
   }
 
 / starts a built-in process type, shipped as a di.* module

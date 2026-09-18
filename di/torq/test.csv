@@ -15,6 +15,7 @@ true,0,0,q,`hdb~r`proctype,1,,identity resolved from the explicit args
 true,0,0,q,`k4unittest~(r`config)`owner,1,,config cascade reached the app-level default.q
 true,0,0,q,`widgets in tables[],1,,the built-in hdb module actually mounted the fixture hdb dir
 true,0,0,q,(`handlers`log`servers`timer)~asc key r`deps,1,,all four core deps (incl injected servers) were built and passed through
+true,0,0,q,(`getallservers`gethandlebytype`getservers`removeprocs`startup`waitfortype)~asc key r[`deps]`servers,1,,the injected servers dict carries the documented contract incl getallservers+removeprocs (servers >= 0.5.0) and NOT addprocs (root IPC target only)
 
 run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
 true,0,0,q,`hdb~r2`proctype,1,,override path still resolves the same identity

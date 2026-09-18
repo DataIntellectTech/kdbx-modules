@@ -1,2 +1,0 @@
-savedir:`:wdb
-hdbdir:`:hdb

@@ -11,13 +11,9 @@
 / (partbyattr/partbyenum/partbyfirstchar) and all of merge.q; compression. REMOVED
 / (deprecated): finspace/aws and the .z.pd tempfix guards; the endofperiod STP stub.
 / ---
-/ idb (di.torq.proc.idb) is kept current two ways: at EOD like the hdb/rdb (reloadidbs, gated by
-/ idbtypes in reloadorder - opt-in, see doreload), and intraday - savetodisk calls reloadidbs
-/ again after any timer tick that actually flushed at least one table, porting legacy TorQ's
-/ per-flush notifyidbs. The intraday leg is unconditional on reloadorder (it only depends on
-/ idbtypes having a live connection - reloadidbs itself no-ops with no idbs connected), so an
-/ app just needs to run an idb to get intraday visibility; opting `idb` into reloadorder too is
-/ what additionally remounts a brand new table or the new day's partition at EOD.
+/ idb (di.torq.proc.idb) is notified through notifyidbs, as legacy TorQ: .idb.intradayreload after any
+/ intraday flush that wrote something, and .idb.rollover with the new partition at EOD (opt in by
+/ putting idb in reloadorder). No partition on the intraday leg - the idb mounts the savedir root.
 / ---
 / Why a working dir + move (not write-straight-to-hdb): the hdb partition only ever appears
 / complete AND sorted, after the move - a mid-day crash can't leave partial/unsorted data in
@@ -87,10 +83,10 @@ flushtable:{[force;t]
 / connected idb(s) IF that actually changed something on disk (flushtable returns 1b per table
 / it wrote, 0b for one it skipped as empty/under-threshold) - an all-skipped tick stays silent,
 / so an idle wdb doesn't spam idb reloads. This is the per-flush leg from the header note above;
-/ reloadidbs itself no-ops when no idb is connected, so this is safe to call unconditionally.
+/ notifyidbs no-ops when no idb is connected, so this is safe to call unconditionally.
 savetodisk:{[]
   changes:flushtable[.z.m.immediate;] each tablelist[];
-  if[any changes;reloadidbs[.z.m.currentpartition]];
+  if[any changes;notifyidbs[`.idb.intradayreload;enlist()]];
   }
 
 / remove any pre-existing working data for the current partition before replay (replay rebuilds
@@ -153,11 +149,13 @@ reloadrdbs:{[pt]
   {[wh;pt] @[neg wh;(`reload;pt);{[e] .z.m.log[`error][`wdb;"rdb reload send failed: ",e]}]}[;pt] each h;
   }
 
-/ async as legacy's notifyidbs - this fires after every intraday flush so it must not block,
-/ which is also why the trap only sees send failures.
-reloadidbs:{[pt]
+/ one path for both idb notifications, as legacy's notifyidbs. Async: the intraday leg fires after
+/ every flush, so it must not block; the trap therefore only sees send failures.
+notifyidbs:{[func;params]
   h:raze {exec w from (.z.m.svc`getservers)[x]} each .z.m.idbtypes;
-  {[wh] @[neg wh;".idb.reload[]";{[e] .z.m.log[`error][`wdb;"idb reload send failed: ",e]}]} each h;
+  if[0=count h;:()];
+  .z.m.log[`info][`notifyidbs;"notifying ",(string count h)," idb(s) with ",string func];
+  {[wh;func;params] @[neg wh;enlist[func],params;{[e] .z.m.log[`error][`wdb;"idb notify send failed: ",e]}]}[;func;params] each h;
   }
 
 / reload downstream in the configured order (default `hdb`rdb: hdb first so it sees the new
@@ -165,12 +163,13 @@ reloadidbs:{[pt]
 / `idb` is a valid reloadorder entry too (opt in by adding it, e.g. "hdb rdb idb") but is not
 / in the default order - existing apps that don't run an idb see no behaviour change here (the
 / separate, always-on intraday notify leg in savetodisk is unaffected by reloadorder either way).
+/ pt is the day just closed - the hdb and rdb want that; the idb wants the one now being written
 doreload:{[pt]
   informgateway[`reloadstart];
   {[pt;ptype]
     $[ptype in .z.m.hdbtypes;reloadhdbs[pt];
       ptype in .z.m.rdbtypes;reloadrdbs[pt];
-      ptype in .z.m.idbtypes;reloadidbs[pt];
+      ptype in .z.m.idbtypes;notifyidbs[`.idb.rollover;pt+1];
       .z.m.log[`warn][`wdb;"reloadorder entry ",(string ptype)," is neither an hdb, rdb, nor idb type - skipped"]]
     }[pt;] each .z.m.reloadorder;
   informgateway[`reloadend];
@@ -187,6 +186,7 @@ endofday:{[pt]
   movetohdb[pt];
   doreload[pt];
   .z.m.currentpartition:pt+1;
+  set[`.wdb.currentpartition;.z.m.currentpartition];
   .z.m.log[`info][`wdb;"end of day complete, wrote+moved: ",(", " sv string st)];
   }
 
@@ -254,7 +254,12 @@ init:{[config;deps]
   / swap to the live accumulate upd (the timer flushes over-threshold), publish EOD entries
   @[`.;`upd;:;updfn];
   @[`.;`endofday;:;endofday];
-  @[`.;`.u.end;:;endofday];
+  / the idb reads these directly at startup, as legacy's setparametersfromwdb does. savedir and
+  / hdbdir are fixed for the life of the process; currentpartition is republished whenever it
+  / moves (see endofday), or the copy here goes stale from the first roll.
+  set[`.wdb.savedir;.z.m.savedir];
+  set[`.wdb.hdbdir;.z.m.hdbdir];
+  set[`.wdb.currentpartition;.z.m.currentpartition];
 
   / timer job: check/flush to disk every settimer seconds (di.timer mode 1h period is seconds)
   (.z.m.timer`addjob)[`wdbsave;savetodisk;();settimer;1h;()!()];

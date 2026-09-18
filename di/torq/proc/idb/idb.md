@@ -19,42 +19,27 @@ alone can't answer "what happened so far today"; `di.torq.proc.idb` fills that g
 the wdb's working dir directly, accepting that data there may be unsorted and can, in the
 narrow window of an in-flight flush, be incompletely appended (see "Known gaps").
 
-### `resolvedatadir[dir]`
-
-Resolves a possibly-relative `savedir:`/`hdbdir:` setting to an absolute path: an absolute
-path is used as-is, a relative one is joined against `TORQXDATAHOME` (falling back to
-`TORQXAPPHOME`). Both values must resolve to the **same absolute paths** as the wdb's own
-`savedir`/`hdbdir` config - idb and wdb are pointed at the same two physical directories, not
-connected to each other over IPC. Unlike `di.torq.proc.wdb`'s own `resolvedir`, this doesn't
-take a `base` parameter - idb has no apphome-relative config (no `sortcsv` equivalent), so
-both its directory settings always resolve against `TORQXDATAHOME`. Its body is otherwise
-identical to `di.torq.proc.wdb`'s `resolvedir`, **not** `di.torq.proc.hdb`'s: the wdb's own
-`savedir`/`hdbdir` TOML values arrive as a plain string with no leading colon (e.g. `"wdb"`),
-unlike `di.torq.proc.hdb`'s `dir` convention (`":hdb_empty"`) - `resolvedatadir` strips a
-leading colon if present rather than assuming one, so it normalises a `.q`-settings symbol
-(`` `:wdb ``) and a colon-less `.toml` string (`"wdb"`) to the same result the wdb itself
-would resolve.
-
-### `symfile[]` / `loadsym[]`
+### `.z.m.symfilepath` / `loadsym[]`
 
 The wdb enumerates every flushed table's symbol columns against **its `hdbdir`**, not
 `savedir` (`di.torq.proc.wdb`'s `flushtable`, `` .Q.en[.z.m.hdbdir;...] ``) - live, on every
 flush, not just at EOD. So the working-partition tables idb mounts carry symbol columns that
 are true kdb+ enumerations (foreign keys) against `hdbdir/sym`, and reading them back
 correctly requires that **same** `sym` domain to exist in idb's own session - without it, a
-symbol column reads back as raw integer indices instead of symbols. `symfile[]` is the fixed
-path to that file (not partition-scoped, unlike `partitiondir[]` - the wdb enumerates every
-day against the same `hdbdir/sym`); `loadsym[]` reads it into the root `sym`,
-called from `init` (always) and from `reload[]` (only when the file has changed - see
+symbol column reads back as raw integer indices instead of symbols. `.z.m.symfilepath` is the fixed
+path to that file, derived once in `setparametersfromwdb[]` from the `hdbdir` the wdb reported,
+as legacy sets its `symfilepath`. It is not partition-scoped: the wdb enumerates every
+day against the same one. `loadsym[]` reads it into the root `sym`,
+called from `init` (always) and from `intradayreload[]` (only when the file has changed - see
 `symfilehaschanged[]` below), in both cases before `domount[]`, matching legacy TorQ's own
 `loadsym`-before-`loadidb` order in `loaddb`.
 
 ### `symfilehaschanged[]`
 
-The wdb calls `.idb.reload[]` after **every** intraday flush that wrote anything, but `.Q.en`
+The wdb calls `.idb.intradayreload[]` after **every** intraday flush that wrote anything, but `.Q.en`
 only rewrites `hdbdir/sym` when it meets a symbol the domain doesn't already have. On a busy
 day the overwhelming majority of those reloads therefore have nothing new to read, so
-**`reload[]` gates its `loadsym[]` call** on `symfilehaschanged[]` - after legacy TorQ's function
+**`intradayreload[]` gates its `loadsym[]` call** on `symfilehaschanged[]` - after legacy TorQ's function
 of the same name (`TorQ/code/processes/idb.q`). It turns the common case from a full read of a
 domain that grows all day into a `hcount` stat.
 
@@ -72,8 +57,8 @@ and since a failed read records nothing, it could otherwise carry over indefinit
 
 One consequence worth knowing: if a read fails and the file is later restored to **exactly** the
 size of the last good one, the reload is skipped. That is harmless - a failed `load` never
-modifies root `sym`, so the domain still in memory is the one that file holds. `domount[]` is *not* gated - see "Mounting vs legacy"
-below.
+modifies root `sym`, so the domain still in memory is the one that file holds. `domount[]` is
+*not* gated - see "Mounting" below.
 
 It compares **size**, not modification time: the sym file only ever grows (`.Q.en` appends), so
 a size change is exactly a content change, while mtime granularity can miss two writes within
@@ -95,70 +80,69 @@ of this tier uses - it names the variable after the file, and lands at root even
 inside a `use`-loaded module (verified directly; `sym` never appears in the module's private
 namespace).
 
-### Mounting vs legacy
+### Mounting
 
-Legacy TorQ gates its mount too - `` if[partitioncounthaschanged[];loadidb[]] `` - and in
-`default` writedown mode that check is hard-wired to `0b` while a single partition exists, so it
-effectively never remounts intraday; it just clears the row-count cache (`.Q.pn`). It can afford
-that because it mounts the **db root** (`savedir`) as a partitioned database, and because its wdb
-calls `filldb`/`initmissingtables` to pre-create every table's directory at partition start, so
-no new table ever appears mid-day.
+`domount[]` mounts **`savedir` itself** with a plain `\l`, as a partitioned database - the same
+thing legacy TorQ's idb does in `default` writedown mode (`idbdir::.Q.dd[savedir;`]`). The tables
+therefore carry a virtual `date` column, and the idb never has to know which date the wdb is on: a
+new day's partition simply appears under the root and the next reload sees it.
 
-`di.torq.proc.idb` mounts the single **date directory** (`savedir/<date>`), which gives plain
-splayed tables at root, not a partitioned db - so there is no `.Q.pn` to invalidate. And
-`di.torq.proc.wdb`'s `flushtable` creates a table's directory on its **first** flush, so tables do
-appear mid-day. That is why `domount[]` runs unconditionally. Measured, for a mounted date dir:
+That matters because the wdb's partition and the wall clock are not the same thing. At end of day
+the wdb moves to `pt+1` while `.z.d` is still `pt`, so any idb that derived its own date from the
+clock would spend the rest of the day mounting a directory that had just been moved into the hdb.
+Mounting the root sidesteps it entirely, with no date on the wire and no wdb handshake.
 
-| change on disk | visible without remount? |
-| --- | --- |
-| rows appended to an already-mounted table | **yes** |
-| a table directory appearing for the first time | **no** |
+The remount is unconditional. Measured on a root mount: rows appended to an existing partition are
+**not** visible without one, and neither is a new partition directory - so there is nothing to gate
+on. Legacy gates `loadidb` with `partitioncounthaschanged[]` and leans on `clearrowcountcache[]`
+(`.Q.pn` reset) for the append case; that does not hold up here - clearing `.Q.pn` left `count`
+stale, and only a remount refreshed it. `\l` of one directory is cheap and a reload is driven by
+the wdb, not a timer.
 
-So the unconditional remount is doing real work exactly in the case legacy engineered away.
+`loadsym[]` (see above), then `domount[]`, which mounts `savedir` **only if it currently exists**
+- otherwise it logs a warning and leaves whatever was already loaded in place. It legitimately
+does not exist at idb startup, if the idb comes up before the wdb has flushed anything at all.
+Without the guard, `system "l"` on a missing directory throws, which would crash `init` before it
+reached `` set[`.idb.intradayreload;intradayreload] `` - leaving no entry point to recover with.
+Guarding it means `init` always finishes and publishes, so the very next `intradayreload[]` (once
+the wdb produces data) picks it up normally.
 
-### `currentpartition[]` / `partitiondir[]`
-
-Unlike the hdb (one fixed dir, mounted once and reloaded in place), the wdb's `savedir` only
-ever holds the **current** day's not-yet-moved data - once a day is flushed and moved to the
-hdb, its directory under `savedir` is removed (`di.torq.proc.wdb`'s `movetohdb`/`endofday`). So
-the idb can't just remount a fixed directory; it re-derives which date directory to mount
-**every time** `init`/`reload[]` runs: a fixed `partition` config override if one was given,
-else `.z.d` evaluated fresh on that call. This means a long-lived idb process that gets
-reloaded - by the wdb, either after an intraday flush or at EOD (see wdb.md, "Intraday" /
-"End of day") - after midnight automatically starts looking at the new day's directory, with
-no restart needed.
-
-### `init[config;deps]` / `reload[]` / `domount[]`
-
-Requires only a `log` dependency (no timer/handlers registration of its own, matching
-`di.torq.proc.hdb`). Resolves `savedir` and `hdbdir`, then both `init` and `reload[]` call
-`loadsym[]` (see above), then the shared `domount[]`: it mounts `partitiondir[]` with
-`` system "l ",dir `` and logs the tables
-loaded **only if that directory currently exists** - otherwise it logs a warning and leaves
-whatever was already loaded in place. The directory legitimately doesn't exist in two normal
-windows: right after a wdb's EOD move (which `rm -rf`s the old day's now-empty working dir)
-and before the new day's first intraday flush recreates it, and at idb startup if it starts
-before the wdb has flushed anything at all yet. Without the guard, `system "l"` on a missing
-directory throws - which would crash `init` before it even reached `set[`.idb.reload;reload]`,
-leaving no reload entry point to recover with; guarding it means `init` always finishes and
-publishes `reload`, so the very next `reload[]` (once the wdb produces data) picks it up
-normally. Publishes `reload` at the real root name `.idb.reload` for the same reason
+`intradayreload` and `rollover` are published at real root names for the same reason
 `di.torq.proc.hdb` publishes `.hdb.reload` - `use`-loading this module compiles it into a private,
-mangled namespace, so a remote `` .idb.reload[] `` call needs a plain root-level entry point
-to exist (torq-developer skill, Rule E3). `reload[]` re-derives the partition dir (picking up
-a new day, or newly-flushed data for today) before remounting.
+mangled namespace, so a remote `` .idb.intradayreload[] `` call needs a plain root-level entry
+point to exist (torq-developer skill, Rule E3).
 
-## Dependency
+## The wdb handshake
 
-`log` only.
+`savedir` and `hdbdir` must resolve to the **same directories the wdb uses**. Rather than leave
+that to two config files kept in step by hand, `init` asks the wdb — `setparametersfromwdb[]`,
+named after legacy's function of the same job. It calls `servers` `startup` with a `wdbtypes`
+connection, blocks on `waitfortype`, then reads the wdb's own root variables:
+
+```q
+(each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition)
+```
+
+exactly as legacy reads `.wdb.savedir` and friends. It sets `savedir`, `symfilepath` and
+`partition` from the answer; nothing else in the module derives them.
+
+`savedir`/`hdbdir` are not settings the idb reads at all — the wdb is the only source — so
+`di/torq/settings/idb.q` is gone rather than empty.
+
+Failing to reach a wdb within the timeout **fails init**, naming the proctype. That is a real
+startup dependency the module did not previously have.
+
+## Dependencies
+
+- **Injected** (from di.torq): `log`, `servers`.
+- **`use`-imported**: none.
 
 ## Config
 
 | key | meaning |
 |---|---|
-| `savedir` | the wdb's working directory - relative (resolved against `TORQXDATAHOME`, falling back to `TORQXAPPHOME`) or absolute. Must match the wdb's own `savedir` config. |
-| `hdbdir` | the hdb directory the wdb enumerates symbols against - relative or absolute, same resolution as `savedir`. Must match the wdb's own `hdbdir` config. Used only to load `hdbdir/sym`; idb never mounts anything else under it. |
-| `partition` (optional) | fixed date to mount, overriding the default of "today" (`.z.d`, re-evaluated on every `init`/`reload[]`). Mainly for tests / point-in-time inspection of a specific day; a live idb normally omits this. |
+| `wdbtypes` | proctype(s) to ask for `savedir`/`hdbdir`. Default `` `wdb ``. |
+| `connecttimeoutms` | how long to wait for a wdb before failing init. Default 30000. |
 
 ## Usage
 
@@ -174,7 +158,7 @@ q)idb[`init][cfg;enlist[`log]!enlist logdep]
 q)tables[]
 ,`trade
 q)delete trade from `.
-q).idb.reload[]
+q).idb.intradayreload[]
 2026.07.09D12:41:24.703928000 INFO reload reloading idb from :/tmp/di_idb_readme_demo/2026.07.09
 q)tables[]
 ,`trade
@@ -182,7 +166,7 @@ q)tables[]
 
 (Called via `idb[`init]`, not `idb.init` - dot-syntax on a module dict returned by a `use` call
 in the same session/frame is unreliable in this kdb-x build; see `test.csv`'s comment and
-`di.torq`'s own `buildlogdep` note for the same caveat elsewhere. `.idb.reload[]` is unaffected
+`di.torq`'s own `buildlogdep` note for the same caveat elsewhere. `.idb.intradayreload[]` is unaffected
 - it's a plain root function, not accessed through the module dict.)
 
 In the real sample app, `di.torq` builds `config`/`deps` from the settings cascade and calls
@@ -193,16 +177,15 @@ same absolute path) is what makes it see that wdb's intraday writes.
 
 ## Known gaps (v1)
 
-- **No wdb handshake at startup.** Legacy TorQ's idb queries the wdb over IPC for its own
-  config (`setparametersfromwdb`: `savedir`/`hdbdir`/`currentpartition`/`writedownmode`) and
-  blocks startup on `` .servers.startupdepcycles[`wdb;...] `` until a wdb is reachable.
-  `di.torq.proc.idb` is config-driven only - its `savedir`/`partition` come from its own
-  settings, which must be kept in sync with the wdb's `savedir` by hand - and has no IPC
-  dependency on the wdb at all: it mounts whatever is on disk regardless of whether a wdb is
-  running (see `init[config;deps]` above).
+- **No `writedownmode` awareness in the handshake.** `setparametersfromwdb[]` takes `savedir` and `hdbdir`
+  from the wdb and records `currentpartition`, which nothing consumes yet - the root mount needs
+  no date. It is kept for gateway routing and for the partition-scoped writedown modes below,
+  either of which makes it load-bearing. It does not ask for `writedownmode`, which legacy uses
+  to choose between mounting the root and mounting a single partition. Moot while only `default`
+  writedown exists.
 - **No self-registration or attribute-based gateway routing.** Legacy TorQ's idb registers
   itself with the wdb (`` .servers.registerfromdiscovery ``) and publishes
-  `` .proc.getattributes `` (`` `partition`tables!(.idb.currentpartition;tables[]) ``) so a
+  `` .proc.getattributes `` (`` `partition`tables!(partition;tables[]) ``) so a
   gateway can route queries to whichever idb currently holds the relevant partition/tables.
   `di.torq.proc.idb` does neither: the wdb finds it the same static way it finds every other
   peer (`process.csv` + `idbtypes` in `CONNECTIONS`), and there is nothing to register with a
@@ -218,27 +201,27 @@ same absolute path) is what makes it see that wdb's intraday writes.
   wdb wrote it (matching `di.dbwrite`'s appended-not-sorted intraday writes).
 - **`domount[]` is never gated**, unlike legacy TorQ's `loadidb`, and there is no `.Q.pn`
   row-count-cache reset. Both follow from mounting a single date directory of splayed tables
-  rather than a partitioned db root - see "Mounting vs legacy" above. The remount is cheap
-  (`\l` of one directory) and a reload is driven by the wdb, not a timer.
+  see "Mounting" above - a remount is the only thing that refreshes either, so there is nothing
+  to gate on.
 - **Read-during-write race.** The wdb's per-table flush (create-or-append) is not atomic
   from a reader's point of view; a reload that lands mid-flush could see a partially
   appended table. Same class of risk legacy TorQ's idb accepts for intraday data - only the
   hdb (post-move) is guaranteed complete-or-absent.
-- **One directory, one mount** - no partitioned multi-database layout beyond what a plain
-  `` \l `` already gives (matching `di.torq.proc.hdb`'s equivalent gap).
+- **One directory, one mount** - no multi-database layout beyond what a plain `` \l `` already
+  gives (matching `di.torq.proc.hdb`'s equivalent gap).
 
 ## Testing
 
-`test.csv`/`test.q` (k4unit) cover: init failing without a `log` dependency, init failing
-without a `savedir` setting, init failing without an `hdbdir` setting, init with an absolute
-`savedir` + `hdbdir` + fixed `partition` override, the loaded root `sym` matching the fixture
-domain and the fixture's genuinely-enumerated `name` column resolving to real symbols (not raw
-indices - the exact failure mode `loadsym[]` exists to prevent), the published `.idb.reload[]`
-actually remounting after a table is dropped, init with a relative `savedir` (exercises
-`resolvedatadir`'s `TORQXAPPHOME` join), init with `savedir`/`hdbdir`/`partition` as plain q
-strings (simulates `.toml`-sourced settings), init with no `partition` override (must derive
-`.z.d`), and init/reload with a `partition` whose directory doesn't exist on disk (must warn,
-not throw, and recover on the next reload once data appears). The fixture's `widgets` table is
+`test.csv`/`test.q` (k4unit) cover: init failing without a `log` or `servers` dependency, init
+failing when no wdb answers within the timeout, the handshake being made and its `savedir`/
+`hdbdir`/`currentpartition` taken, `savedir`/`hdbdir` still set in config being ignored rather
+than used, the mount being partitioned with a virtual `date` column and both dated fixture
+partitions visible, the loaded root `sym` matching the fixture domain and the fixture's
+genuinely-enumerated `name` column resolving to real symbols (not raw indices - the exact failure
+mode `loadsym[]` exists to prevent), the published `.idb.intradayreload[]` actually remounting
+after a table is dropped, `.idb.rollover[pt]` recording the new partition and remounting, and a
+wdb reporting a `savedir` that is not on disk (must warn, not throw, and recover on the next
+reload once data appears). The fixture's `widgets` table is
 built with `.Q.en` and written with a trailing-slash path (`` ` sv (path;`) ``, matching
 `di.torq.proc.wdb`'s own `flushtable`) so it's a genuine splayed, enumerated table on disk, not
 a flat serialised file - a bare `` `:dir/widgets `` (no trailing slash) silently "worked" with

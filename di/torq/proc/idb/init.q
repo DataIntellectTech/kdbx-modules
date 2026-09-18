@@ -2,4 +2,4 @@
 
 version:first read0`:::VERSION
 
-export:([init;reload;version])
+export:([init;intradayreload;rollover;version])

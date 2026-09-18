@@ -1,113 +1,121 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,idb:use`di.torq.proc.idb,1,,load module
 before,0,0,q,system "l di/torq/proc/idb/test.q",1,,load mock log dependency and fixture helpers
-before,0,0,q,setupfixture[],1,,create fixed-date and today-dated fixture partitions
+before,0,0,q,setupfixture[],1,,create the two dated fixture partitions
+before,0,0,q,setwdbparams[],1,,the mock wdb reports the fixture dirs - the idb's only source for them
 
-fail,0,0,q,idb[`init][absdircfg[];()!()],1,,init without a log dependency must error
-fail,0,0,q,idb[`init][nosavedircfg[];mockdeps[]],1,,init without a savedir setting must error
-fail,0,0,q,idb[`init][nohdbdircfg[];mockdeps[]],1,,init without an hdbdir setting must error
+fail,0,0,q,idb[`init][cfg[];()!()],1,,init without a log dependency must error
+fail,0,0,q,"idb[`init][cfg[];enlist[`log]!enlist mockdeps[]`log]",1,,init without a servers dependency must error
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init with an absolute savedir + hdbdir + fixed partition override - bracket-indexed, not idb.init: dot-syntax on a use-loaded module dict breaks once a real enumerated (.Q.en) table exists at root, see idb.md's Testing note
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init with an absolute savedir + hdbdir - bracket-indexed, not idb.init: dot-syntax on a use-loaded module dict breaks once a real enumerated (.Q.en) table exists at root, see idb.md's Testing note
 true,0,0,q,`widgets in tables[],1,,the fixture table was mounted
-true,0,0,q,3=count widgets,1,,mounted table has the expected row count
+true,0,0,q,`widgets in .Q.pt,1,,the root mount is a PARTITIONED db - no date had to be supplied
+true,0,0,q,`date in cols widgets,1,,partitioned tables carry the virtual date column
+true,0,0,q,6=count widgets,1,,both dated partitions are visible - 3 rows each
 true,0,0,q,0<count select from calls where lvl=`info,1,,init logged at least one info message
-true,0,0,q,`reload in key `.idb,1,,init published reload at the real root namespace .idb
+true,0,0,q,`intradayreload in key `.idb,1,,init published reload at the real root namespace .idb
 true,0,0,q,`a`b`c~sym,1,,init loaded the hdb's sym domain into the root `sym`
-true,0,0,q,all (`a`b`c)=exec name from widgets,1,,the enumerated `name` column resolves to real symbols, not raw indices
+true,0,0,q,`a`b`c~asc distinct value exec name from select name from widgets,1,,the enumerated `name` column resolves to real symbols, not raw indices
 
 run,0,0,q,delete widgets from `.,1,,drop the in-memory table to prove reload actually remounts it
-run,0,0,q,.idb.reload[],1,,call the published root-level reload entry point
+run,0,0,q,.idb.intradayreload[],1,,call the published root-level reload entry point
 true,0,0,q,`widgets in tables[],1,,reload remounted the fixture table
 
-run,0,0,q,setenv[`TORQXAPPHOME;"/tmp"],1,,point TORQXAPPHOME so resolvedatadir can join a relative savedir against it
-run,0,0,q,delete widgets from `.,1,,drop it again before testing the relative-savedir init
+run,0,0,q,delete widgets from `.,1,,drop it again before testing a savedir that is not on disk
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,idb[`init][reldircfg[];mockdeps[]],1,,init with a relative savedir - exercises resolvedatadir's TORQXAPPHOME join
-true,0,0,q,`widgets in tables[],1,,relative savedir correctly resolved against TORQXAPPHOME and mounted
-
-run,0,0,q,delete widgets from `.,1,,drop it again before testing string-typed (not symbol/date) savedir+partition
-run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,idb[`init][absdirstringcfg[];mockdeps[]],1,,init with savedir, hdbdir and partition as plain q strings - simulates .toml-sourced settings
-true,0,0,q,`widgets in tables[],1,,resolvedatadir/"D"$ normalized the strings internally and mounted correctly
-
-run,0,0,q,delete widgets from `.,1,,drop it again before testing the no-override default partition
-run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,idb[`init][nopartitioncfg[];mockdeps[]],1,,init with no partition override - must derive today's date
-true,0,0,q,`widgets in tables[],1,,the today-dated fixture partition was mounted by default
-
-run,0,0,q,delete widgets from `.,1,,drop it again before testing a partition with no directory on disk
-run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,idb[`init][missingpartitioncfg[];mockdeps[]],1,,init with a partition date that has no directory on disk must not throw
-true,0,0,q,not `widgets in tables[],1,,nothing was mounted - the directory did not exist
-true,0,0,q,0<count select from calls where lvl=`warn,1,,init logged a warning about the missing partition instead of erroring
-true,0,0,q,`reload in key `.idb,1,,init still published reload even though nothing was mounted
+run,0,0,q,setwdbmissingdir[],1,,the wdb reports a savedir that does not exist yet
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init against a savedir that does not exist must not throw
+true,0,0,q,not `widgets in tables[],1,,nothing was mounted - the savedir did not exist
+true,0,0,q,0<count select from calls where lvl=`warn,1,,init logged a warning about the missing savedir instead of erroring
+true,0,0,q,`intradayreload in key `.idb,1,,init still published reload even though nothing was mounted
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,re-init with the real fixture partition present
-run,0,0,q,.idb.reload[],1,,reload should succeed normally once the wdb has produced data for the partition
+run,0,0,q,setwdbparams[],1,,the wdb reports the real fixture dirs again
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,re-init with the real fixture partition present
+run,0,0,q,.idb.intradayreload[],1,,reload should succeed normally once the wdb has produced data
 true,0,0,q,`widgets in tables[],1,,idb recovered and mounted correctly on the next reload
 
 run,0,0,q,resetcalls[],1,,reset call log before the sym change-detection tests
-run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,re-init - init always reads the sym file it was just pointed at
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,re-init - init always reads the sym file it was just pointed at
 true,0,0,q,symreloaded[],1,,init reads the sym file unconditionally whatever a previous init recorded
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,.idb.reload[],1,,reload with the sym file untouched since the last load
+run,0,0,q,.idb.intradayreload[],1,,reload with the sym file untouched since the last load
 true,0,0,q,not symattempted[],1,,an unchanged sym file is detected by size and loadsym is not entered at all
 true,0,0,q,not symreloaded[],1,,so no read-and-merge happened on that reload
 true,0,0,q,`a`b`c~sym,1,,the already-loaded domain is left in place
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,growsym[`zzz],1,,grow the hdb sym domain the way a wdb flush of a new symbol does
-run,0,0,q,.idb.reload[],1,,reload after the sym file has actually grown
+run,0,0,q,.idb.intradayreload[],1,,reload after the sym file has actually grown
 true,0,0,q,symreloaded[],1,,a grown sym file is detected and re-read
 true,0,0,q,`zzz in sym,1,,the new symbol reached the root sym domain
 true,0,0,q,`a`b`c~3#sym,1,,the existing domain order is preserved - indices already on disk stay valid
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,setupfixture[],1,,restore the normal fixture
-run,0,0,q,pollutesym[],1,,put root sym out of step with the file on disk
-run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init force-loads the sym domain
-true,0,0,q,sym~symfilecontents[],1,,root sym is REPLACED by the file - its order is what the on-disk enum indices index into
-true,0,0,q,all (`a`b`c)=exec name from widgets,1,,and the enumerated column still resolves correctly
-
-run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,setupnosymfixture[],1,,an hdb dir with no sym file yet - before a wdb has ever flushed
-run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init against a missing sym file must not throw
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init against a missing sym file must not throw
 true,0,0,q,symfailed[],1,,the failed read is logged as an error rather than killing the process
-true,0,0,q,`reload in key `.idb,1,,init still completed and published reload
+true,0,0,q,`intradayreload in key `.idb,1,,init still completed and published reload
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,.idb.reload[],1,,reload while the sym file is still missing must not throw either
+run,0,0,q,.idb.intradayreload[],1,,reload while the sym file is still missing must not throw either
 true,0,0,q,not symattempted[],1,,a file that has never existed stats as 0 - unchanged against symsize 0
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,createsymfile[],1,,the first wdb flush creates hdbdir/sym
-run,0,0,q,.idb.reload[],1,,the very next reload must pick it up
+run,0,0,q,.idb.intradayreload[],1,,the very next reload must pick it up
 true,0,0,q,symreloaded[],1,,a sym file appearing for the first time reads as changed
 true,0,0,q,`a`b`c~sym,1,,and its domain reached the root sym
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,setupfixture[],1,,restore the normal fixture
-run,0,0,q,idb[`init][absdircfg[];mockdeps[]],1,,init records the size of the sym file it loaded
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init records the size of the sym file it loaded
 run,0,0,q,corruptsymfile[],1,,the sym file changes to something load cannot read
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,.idb.reload[],1,,the change is detected and the read fails
+run,0,0,q,.idb.intradayreload[],1,,the change is detected and the read fails
 true,0,0,q,symfailed[],1,,the failed read is logged rather than thrown
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,.idb.reload[],1,,a failed read records no size - the next reload must try again
+run,0,0,q,.idb.intradayreload[],1,,a failed read records no size - the next reload must try again
 true,0,0,q,symattempted[],1,,loadsym is retried rather than skipped as unchanged
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,setupfixture[],1,,a readable sym file again - same contents so the same size
-run,0,0,q,.idb.reload[],1,,restored to its ORIGINAL size it reads as unchanged and is skipped
+run,0,0,q,.idb.intradayreload[],1,,restored to its ORIGINAL size it reads as unchanged and is skipped
 true,0,0,q,`a`b`c~sym,1,,harmless - the failed read never damaged root sym so it is already correct
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,growsym[`recovered],1,,a wdb flushes a new symbol - the size now differs from the last good one
-run,0,0,q,.idb.reload[],1,,and loading resumes with no restart
+run,0,0,q,.idb.intradayreload[],1,,and loading resumes with no restart
 true,0,0,q,symreloaded[],1,,the module recovered from the failed read
 true,0,0,q,`recovered in sym,1,,and picked up the new symbol
+
+comment,,,,,,,the wdb handshake - savedir/hdbdir come from the wdb, always
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,resetservercalls[],1,,reset the servers mock
+run,0,0,q,setupfixture[],1,,fixture on disk
+run,0,0,q,setwdbparams[],1,,the wdb will report the fixture dirs
+run,0,0,q,delete widgets from `.,1,,drop the table so the mount has to bring it back
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init must ask the wdb for the dirs
+true,0,0,q,askedwdb[],1,,it waited for a wdb and queried it
+true,0,0,q,TESTDATE~recordedpartition[],1,,and recorded the wdb's current partition
+true,0,0,q,`widgets in tables[],1,,and mounted the directory the wdb reported
+true,0,0,q,`widgets in .Q.pt,1,,still a partitioned root mount
+
+comment,,,,,,,rollover - the wdb pushes the new partition at eod
+run,0,0,q,.idb.rollover[TESTDATE+1],1,,the wdb rolls the idb to the next day
+true,0,0,q,(TESTDATE+1)~recordedpartition[],1,,the idb recorded it
+true,0,0,q,`widgets in tables[],1,,and remounted - the root mount is unaffected by the date
+
+run,0,0,q,resetservercalls[],1,,reset the servers mock
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,idb[`init][stalecfg[];mockdeps[]],1,,init with savedir/hdbdir still set in config
+true,0,0,q,askedwdb[],1,,the wdb is asked anyway - config is not a second source
+
+run,0,0,q,resetservercalls[],1,,reset the servers mock
+run,0,0,q,`WAITOK set 0b,1,,make the wdb unreachable
+fail,0,0,q,idb[`init][cfg[];mockdeps[]],1,,no wdb within the timeout must fail init naming the proctype
+run,0,0,q,`WAITOK set 1b,1,,restore
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

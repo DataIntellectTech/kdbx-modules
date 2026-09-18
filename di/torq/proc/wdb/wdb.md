@@ -54,17 +54,34 @@ di.subscriptions defines the tables at root from what the TP returns.
 - **Intraday** (`savetodisk`, timer job every `settimer`s): flush any table over its threshold
   (or every table, if `immediate`) to the working partition — **create on first write, append
   after**, enumerating syms against the **HDB** sym file, then clear it in memory. If that
-  flushed at least one table, every connected `idbtypes` process is told to reload too (`` .idb.reload[] ``,
-  same call as the EOD leg below) — an all-skipped tick (nothing over threshold) stays silent.
-  This is unconditional on `reloadorder`; it only needs an idb to be connected.
-- **End of day** (`endofday[date]`, published at root, also `.u.end`): the tickerplant
+  flushed at least one table, every connected `idbtypes` process is notified
+  (`` .idb.intradayreload[] ``, async, no partition — the idb mounts the savedir root and finds
+  the day itself) — an all-skipped tick (nothing over threshold) stays silent. This is
+  unconditional on `reloadorder`; it only needs an idb to be connected.
+- **End of day** (`endofday[date]`, published at root): the tickerplant
   broadcasts `(`endofday;date)` at roll (the same trigger as di.torq.proc.rdb). di.torq.proc.wdb flushes what
   remains, sorts each working partition (`di.dbwrite.sort` — driven by `sortcsv` or the time-asc
   default), **moves** each table dir into `hdbdir/date/` (skipping any that already exist, to
-  never corrupt the hdb), then reloads downstream in `reloadorder`. An `idb` entry in
-  `reloadorder` calls `` .idb.reload[] `` (sync, no args — `di.torq.proc.idb`'s reload is niladic
-  like the hdb's, not dated like the rdb's); this is what additionally picks up a brand new
-  table or the new day's partition, on top of the per-flush leg above.
+  never corrupt the hdb), then reloads downstream in `reloadorder`. The hdb and rdb are given the
+  date just **closed**; an `idb` entry in `reloadorder` instead gets
+  `` .idb.rollover[date+1] `` — the partition the wdb has moved **on** to — which records the new
+  day and remounts. Both idb legs go through the one `notifyidbs[func;params]`, as legacy TorQ.
+
+## What the wdb publishes for the idb
+
+`init` publishes three root variables the idb reads at startup, the way legacy TorQ's
+`setparametersfromwdb` reads `.wdb.savedir` and friends:
+
+```q
+set[`.wdb.savedir;.z.m.savedir];
+set[`.wdb.hdbdir;.z.m.hdbdir];
+set[`.wdb.currentpartition;.z.m.currentpartition];
+```
+
+They are read with `` (each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition) ``, so the idb
+is not configured with the two directories by hand — one source of truth, no pair to keep in step.
+`endofday` republishes `currentpartition` after it advances; the other two are fixed for the life
+of the process.
 
 ## RDB / WDB interaction
 

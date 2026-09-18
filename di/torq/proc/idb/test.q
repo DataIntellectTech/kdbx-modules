@@ -9,14 +9,35 @@ resetcalls:{[] `calls set ([]lvl:`symbol$();ctx:`symbol$();msg:()); }
 
 mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 
-mockdeps:{[] enlist[`log]!enlist `info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;])}
+/ the servers mock stands in for a reachable wdb: waitfortype succeeds and gethandlebytype hands
+/ back a handle that answers .wdb.getparams[] with WDBPARAMS
+WDBPARAMS:();
+WAITOK:1b;
+scalls:([]fn:`symbol$();arg:());
+mockstartup:{[c] `scalls set scalls upsert `fn`arg!(`startup;c);};
+mockwait:{[pt;t;p] `scalls set scalls upsert `fn`arg!(`waitfortype;pt); WAITOK};
+mockhandle:{[pt;sel] `scalls set scalls upsert `fn`arg!(`gethandlebytype;pt); {[q] WDBPARAMS}};
+mockgetservers:{[pt] ([]w:`int$())};
+mockservers:{[] `startup`getservers`gethandlebytype`waitfortype!(mockstartup;mockgetservers;mockhandle;mockwait)}
+
+mockdeps:{[] `log`servers!(`info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;]);mockservers[])}
+
+/ no savedir/hdbdir in config, so init must ask the wdb for them
+/ what (each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition) evaluates to on a real wdb:
+/ two hsyms the idb normalises itself, and the date
+setwdbparams:{[] `WDBPARAMS set (hsym `$FIXTUREDIR;hsym `$FIXTUREHDBDIR;TESTDATE);}
+
+/ the wdb reports a savedir that is not on disk - the window before its first flush
+setwdbmissingdir:{[] `WDBPARAMS set (`:/tmp/di_idb_k4unit_no_such_dir;hsym `$FIXTUREHDBDIR;TESTDATE);}
+askedwdb:{[] `waitfortype in exec fn from scalls}
+resetservercalls:{[] `scalls set ([]fn:`symbol$();arg:()); `WAITOK set 1b;}
 
 FIXTUREDIR:"/tmp/di_idb_k4unit_fixture"
 FIXTUREHDBDIR:"/tmp/di_idb_k4unit_hdb_fixture"
 TESTDATE:2020.01.01
 
-/ a trivial "database directory" - a fixed-date partition (for the `partition` override
-/ tests) plus a today-dated one (for the default, no-override -> .z.d test). `name` is
+/ a trivial partitioned "database directory" - two dated partitions, to prove the root mount
+/ sees both without being told a date. `name` is
 / genuinely enumerated (via .Q.en, against a fresh FIXTUREHDBDIR/sym - mirrors how the real
 / wdb enumerates against hdbdir, not savedir) so tests can assert it actually resolves to
 / real symbols, not raw indices - that's the exact failure mode loadsym[] exists to prevent.
@@ -41,28 +62,23 @@ teardownfixture:{[] system "rm -rf ",FIXTUREDIR; system "rm -rf ",FIXTUREHDBDIR;
 / config-dict builders - factored out so test.csv rows never need a raw "," (q string
 / concatenation) inline, which gets misread as a CSV field separator unless the whole
 / field is quoted-and-escaped. Simpler to just keep commas out of the CSV entirely.
-absdircfg:{[] `savedir`hdbdir`partition!(`$":",FIXTUREDIR;`$":",FIXTUREHDBDIR;TESTDATE)}
-reldircfg:{[] `savedir`hdbdir`partition!(`:di_idb_k4unit_fixture;`$":",FIXTUREHDBDIR;TESTDATE)}
+/ the idb takes savedir/hdbdir from the wdb, so config carries neither. setwdbparams decides
+/ what the mock wdb reports.
+cfg:{[] (enlist`wdbtypes)!enlist `wdb}
 
-/ savedir, hdbdir AND partition all as plain q STRINGS - simulates .toml-sourced settings
+/ config that still (wrongly) sets the dirs - init must ignore them and warn
+stalecfg:{[] `wdbtypes`savedir`hdbdir!(`wdb;`$":",FIXTUREDIR;`$":",FIXTUREHDBDIR)}
+
+/ savedir and hdbdir as plain q STRINGS - simulates .toml-sourced settings
 / (di.util.toml has no symbol/date type, see di/torq/proc/hdb's identical concern).
 / resolvedatadir/"D"$ must normalize these themselves.
-absdirstringcfg:{[] `savedir`hdbdir`partition!(":",FIXTUREDIR;":",FIXTUREHDBDIR;string TESTDATE)}
 
-/ no `partition` override - init/reload must derive .z.d fresh each time
-nopartitioncfg:{[] `savedir`hdbdir!(`$":",FIXTUREDIR;`$":",FIXTUREHDBDIR)}
+/ no `savedir` at all - init must error before looking at hdbdir
 
-/ no `savedir` at all - init must error before looking at hdbdir/partition
-nosavedircfg:{[] (enlist`partition)!enlist TESTDATE}
+/ savedir present, no `hdbdir` at all
 
-/ savedir present, no `hdbdir` at all - init must error before looking at partition
-nohdbdircfg:{[] `savedir`partition!(`$":",FIXTUREDIR;TESTDATE)}
-
-/ a partition date with NO corresponding directory under FIXTUREDIR - simulates the window
-/ right after a wdb EOD move (old day's dir just rm -rf'd) and before the new day's first
-/ intraday flush recreates it. init/reload must warn, not throw.
-MISSINGDATE:2019.01.01
-missingpartitioncfg:{[] `savedir`hdbdir`partition!(`$":",FIXTUREDIR;`$":",FIXTUREHDBDIR;MISSINGDATE)}
+/ a savedir that does not exist - the window before the wdb's first flush creates it.
+/ init/reload must warn, not throw.
 
 / --- sym-file change detection (legacy TorQ's symfilehaschanged) ---
 
@@ -85,11 +101,10 @@ setupnosymfixture:{[]
 / the first wdb flush creates hdbdir/sym
 createsymfile:{[] .Q.en[hsym `$FIXTUREHDBDIR;([]id:1 2 3;name:`a`b`c)];}
 
-/ root sym deliberately out of step with the file on disk - a union-merge would keep this order
-/ and silently resolve every enum column wrongly
-pollutesym:{[] @[`.;`sym;:;`x`y`a`b`c];}
-symfilecontents:{[] get hsym `$FIXTUREHDBDIR,"/sym"}
-
 / a sym file that exists but cannot be read back as a symbol vector - load signals on it, so the
 / size is never recorded and the next reload must try again
 corruptsymfile:{[] (hsym `$FIXTUREHDBDIR,"/sym") 0: enlist "not a serialised symbol vector";}
+
+/ the partition the module recorded. Not exposed by the module (nothing consumes it), so the tests
+/ reach into its private namespace rather than the module inventing an accessor for their benefit.
+recordedpartition:{[] get `.m.di.0torq.0proc.0idb.partition}

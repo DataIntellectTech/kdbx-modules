@@ -292,9 +292,11 @@ freshly-started process. tmux mode is for local development; production stays on
 - **Query logging (`[querylog]`) wraps `.z.*` by direct assignment.** If a phased event's `exec`
   is claimed after startup, logging for that event silently drops to zero with no error. See
   [Query logging](#query-logging-optional).
-- The builtin registry has exactly one entry (`` `hdb ``) so far - every other
-  proctype in a real deployment would be custom, until more `di.*` process-type
-  modules exist.
+- The builtin registry now covers `hdb`, `tickerplant`, `rdb`, `wdb`, `gateway`, `segmentedtp`,
+  `chainedtp` and `discovery` (`di.torq.proc.discovery` - the discovery service; it needs the
+  injected servers dep at >= 0.5.0 for `getallservers`/`removeprocs`, and ships a builtin
+  `settings/discovery.q` with `hopentimeout:200` - the first per-proctype builtin setting besides
+  `hdb.q`). Any other proctype is custom.
 - No `di.torq.depcheck`-style pre-flight dependency validation yet (next up per the
   modularisation plan).
 - `autodetect`'s host-matching has no `-procfile` override and no FinSpace-specific

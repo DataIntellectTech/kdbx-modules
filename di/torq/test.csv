@@ -2,6 +2,7 @@ action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,tq:use`di.torq,1,,load module
 before,0,0,q,system "l di/torq/test.q",1,,load fixture helpers
 before,0,0,q,setupfixture[],1,,create a temp app fixture: settings, process.csv, scratch hdb, custom proctype file
+before,0,0,q,spawndisc[],1,,launch a plain-q peer faking a discovery service (records every getservices subscribe by caller handle)
 
 fail,0,0,q,tq.reqenv[`DI_TORQ_TEST_NO_SUCH_VAR],1,,reqenv on a missing env var must error
 
@@ -17,6 +18,13 @@ true,0,0,q,`widgets in tables[],1,,the built-in hdb module actually mounted the 
 true,0,0,q,(`handlers`log`servers`timer)~asc key r`deps,1,,all four core deps (incl injected servers) were built and passed through
 true,0,0,q,(`getallservers`gethandlebytype`getservers`removeprocs`startup`waitfortype)~asc key r[`deps]`servers,1,,the injected servers dict carries the documented contract incl getallservers+removeprocs (servers >= 0.5.0) and NOT addprocs (root IPC target only)
 
+comment,,,,,,,discovery auto-subscribe - registered generically; silent for a process with no discovery connection
+true,0,0,q,not `discoverysubscribe in exec id from (r[`deps][`timer][`getactivejobs])[],1,,hdb (no discoverywant; no discovery in connections) has NOT opted in - no job is registered
+true,0,0,q,0=count .m.di.0torq.discoverysub`want,1,,...and the want is empty (disabled)
+true,0,0,q,0=count discsubs[],1,,nothing was sent to the fake discovery
+run,0,0,q,.m.di.0torq.resubscribe[],1,,the job body runs clean regardless
+true,0,0,q,0=count .m.di.0torq.lastdiscoveryhandles,1,,and records no subscribed handle
+
 run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
 true,0,0,q,`hdb~r2`proctype,1,,override path still resolves the same identity
 
@@ -25,6 +33,19 @@ true,0,0,q,TESTPROCNAME~r3`proctype,1,,identity resolved for the custom proctype
 true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reached the custom proctype's own settings file
 true,0,0,q,(`handlers`log`servers`timer)~asc key .k4unittestproc.captureddeps,1,,deps (incl injected servers) were passed through to the custom proctype's init exactly like a built-in one
 true,0,0,q,1=.k4unittestproc.runcalled,1,,the .run hook fired automatically after init - no launcher-side proctype knowledge needed
+comment,,,,,,,discovery auto-subscribe - a process whose connections include discovery is subscribed at init and re-subscribed idempotently
+true,0,0,q,1=count discsubs[],1,,the custom proctype (connections=discovery) subscribed on its live discovery handle at init - no 10s wait
+true,0,0,q,(enlist`ALL)~discwant[],1,,...asking for `ALL by default (opted in via connections alone)
+true,0,0,q,(enlist`ALL)~.m.di.0torq.discoverysub`want,1,,discoverywant absent -> `ALL
+true,0,0,q,1=count select from (r3[`deps][`timer][`getactivejobs])[] where id=`discoverysubscribe,1,,the job is registered exactly once across re-inits
+true,0,0,q,1=count .m.di.0torq.lastdiscoveryhandles,1,,one subscribed handle (with its connect time) recorded (log-on-change only)
+run,0,0,q,.m.di.0torq.resubscribe[],1,,run the job body again...
+run,0,0,q,.m.di.0torq.resubscribe[],1,,...and again
+true,0,0,q,1=count discsubs[],1,,a repeat subscribe on the same handle REPLACES - still exactly one entry (no handle tracking needed)
+true,0,0,q,(`rdb`hdb)~.m.di.0torq.astoklist "rdb hdb",1,,astoklist: a toml space-separated string
+true,0,0,q,(`rdb`hdb)~.m.di.0torq.astoklist ("rdb";"hdb"),1,,astoklist: a toml list of strings
+true,0,0,q,(enlist`rdb)~.m.di.0torq.astoklist `rdb,1,,astoklist: a single symbol
+true,0,0,q,(`rdb`hdb)~.m.di.0torq.astoklist `rdb`hdb,1,,astoklist: a symbol list
 
 run,0,0,q,r5:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with the norun override set (this reloads the proctype file, resetting runcalled to 0)
 true,0,0,q,0=.k4unittestproc.runcalled,1,,-norun skipped the hook - count stayed at 0 instead of incrementing to 1
@@ -35,6 +56,51 @@ true,0,0,q,not `APPNAME_LOADED in key `.,1,,procname-tier code/<procname>/ is OF
 run,0,0,q,enablenamecode[],1,,enable procname-tier loading via the procname settings tier
 run,0,0,q,r6:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with loadnamecode turned on in config
 true,0,0,q,`APPNAME_LOADED in key `.,1,,procname-tier code now loads when loadnamecode=1b
+
+comment,,,,,,,discovery auto-subscribe - discoverywant narrows the request; a broken registry degrades; a discovery instance never subscribes
+run,0,0,q,setdiscoverywant[],1,,set discoverywant:`rdb`hdb in the procname settings tier
+run,0,0,q,discsubs[],1,,flush the previous init's queued subscribe (a k4unit run never returns to the event loop; the job's drain guard would skip a handle with bytes queued)
+run,0,0,q,r7:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with the narrowed want
+true,0,0,q,(`rdb`hdb)~.m.di.0torq.discoverysub`want,1,,discoverywant landed
+true,0,0,q,(`rdb`hdb)~discwant[],1,,...and was what the fake discovery was asked for (the subscription is replaced with the narrowed one)
+true,0,0,q,1=count discsubs[],1,,still one entry for the handle
+run,0,0,q,setproctypeconns 0b,1,,the module no longer lists discovery in ITS connections (as every builtin proc module effectively does - they replace the flat key with a role list)
+run,0,0,q,discsubs[],1,,flush
+run,0,0,q,r7b:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init: discoverywant alone opts in
+true,0,0,q,`discovery in exec proctype from (r7b[`deps][`servers]`getservers)[`discovery],1,,di.torq dialled the discovery row ITSELF (the module's startup had no discovery connection)
+true,0,0,q,1=count discsubs[],1,,...and subscribed
+true,0,0,q,(`rdb`hdb)~discwant[],1,,...for the configured want
+run,0,0,q,cleardiscoverywant[],1,,neither key now
+run,0,0,q,discsubs[],1,,flush
+run,0,0,q,r7c:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with neither discoverywant nor discovery in connections
+true,0,0,q,0=count .m.di.0torq.discoverysub`want,1,,not opted in - disabled and silent (the row dialled earlier is still known; the job just never subscribes on it)
+run,0,0,q,setproctypeconns 1b,1,,restore the proctype settings...
+run,0,0,q,setdiscoverywant[],1,,...and the want
+run,0,0,q,breakregistry[],1,,drop the discovery entry from the builtin registry (a future rename/typo)
+run,0,0,q,r8:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init - must NOT throw
+true,0,0,q,0=count .m.di.0torq.discoverysub`want,1,,auto-subscribe degraded to disabled...
+run,0,0,q,.m.di.0torq.resubscribe[],1,,...and the job body is a no-op
+run,0,0,q,fixregistry[],1,,restore the registry
+run,0,0,q,discsubs[],1,,flush
+run,0,0,q,r9:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init
+true,0,0,q,(`rdb`hdb)~.m.di.0torq.discoverysub`want,1,,enabled again
+run,0,0,q,r10:tq.init[`discovery;`disc1;()!()],1,,init THIS process as a discovery instance (the real module - it dials the fixture rows incl the fake peer)
+true,0,0,q,0=count .m.di.0torq.discoverysub`want,1,,a discovery instance never subscribes to a sibling: want is empty...
+run,0,0,q,n0:count discsubs[],1,,remember the fake peer's subscription count
+run,0,0,q,.m.di.0torq.resubscribe[],1,,run the (already registered) job body under the discovery identity
+true,0,0,q,n0=count discsubs[],1,,...and the job sent nothing to the sibling
+run,0,0,q,discsubs[],1,,flush
+run,0,0,q,r11:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,back to the custom proctype
+true,0,0,q,(`rdb`hdb)~.m.di.0torq.discoverysub`want,1,,re-enabled by the identity change alone
+true,0,0,q,1=count discsubs[],1,,and subscribed again on re-init
+run,0,0,q,killdisc[],1,,the discovery service restarts (kill the fake peer...)
+run,0,0,q,spawndisc[],1,,...and bring it back on the same port - a NEW connection)
+run,0,0,q,pokedisc[],1,,let this process notice the dead handle (the event loop would; k4unit never yields to it)
+true,0,0,q,(r11[`deps][`servers]`waitfortype)[`discovery;8000;250],1,,this process's own servers retry reconnects (waitfortype drives it)
+true,0,0,q,0=count discsubs[],1,,the fresh discovery knows nothing yet
+run,0,0,q,.m.di.0torq.resubscribe[],1,,next job cycle
+true,0,0,q,1=count discsubs[],1,,re-subscribed on the new handle with nothing special - it is just another live handle
+true,0,0,q,(`rdb`hdb)~discwant[],1,,with the current want
 
 true,0,0,q,`hdb~r`proctype,1,,sanity: hdb (no .hdb.run published) still inited cleanly earlier with no hook and no error
 
@@ -75,3 +141,4 @@ run,0,0,q,.m.di.0torq.flushquerylog[],1,,the flush job body runs cleanly
 true,0,0,q,0<qlcompleted`pg,1,,rows younger than flushtime survive a flush
 
 after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file
+

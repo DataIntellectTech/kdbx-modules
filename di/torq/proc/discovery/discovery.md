@@ -294,6 +294,10 @@ locals and builtins (see di.torq.servers 0.4.0 for the measurement).
   book is warned about once rather than every tick.
 - Eviction is disabled (warned once) while `process.csv` does not list this process — a discovery
   run against a phone book that omits its own row never evicts.
+- The consumer side lives in **di.torq ≥ 0.6.0** (torq.md "Discovery auto-subscribe"): a process
+  opts in with `discoverywant` (or `discovery` in `connections`), di.torq dials discovery for it and
+  subscribes generically, re-subscribed every 10 s so a reconnect self-heals, and a discovery
+  instance never subscribes to a sibling. No proc module calls `getservices` itself.
 - **A discovered backend is not routed to by `di.torq.proc.gateway` until the gateway's own EOD
   reload or a restart — independent of discovery.** The gateway registers its backends into
   di.serverselect only at init and at EOD reload-end (`registerbackends`, gateway.q), so *any*

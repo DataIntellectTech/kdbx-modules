@@ -365,6 +365,69 @@ startstack:{[app;proctype;procname;port]
   `PIDS set PIDS,pid;
   `pid`port`h!(pid;port;waitopen[port;120])};
 
+autosubapp:{[]
+  / a second minimal app: a custom `sub proctype (its init only runs servers' startup with its own connections) that
+  / lists discovery in connections and narrows what it wants - the two-key consumer contract, zero module code
+  app:IBASE,"/app2";
+  system "mkdir -p ",app,"/appconfig/settings ",app,"/code/processes";
+  (hsym`$app,"/appconfig/settings/default.toml") 0: enlist "# app defaults";
+  (hsym`$app,"/appconfig/settings/discovery.toml") 0: ("retryperiod = 2";"tracknontorqprocess = false");
+  (hsym`$app,"/appconfig/settings/sub.toml") 0: ("connections = [\"discovery\"]";"discoverywant = \"rdb\"");
+  (hsym`$app,"/code/processes/sub.q") 0: ("\\d .sub";"init:{[config;deps] (deps[`servers]`startup)[config];};";"\\d .");
+  app
+  };
+
+subreg:{[c] c[`h]"select procname,proctype,hpup,w from (use`di.torq.servers)[`getallservers][]"};
+
+autosubscribe:{[]
+  / the consumer half, end to end through a real di.torq boot: a `sub process (connections=discovery, discoverywant=rdb)
+  / is subscribed on BOTH discovery instances by di.torq's generic job with nothing but config; the two discovery
+  / instances - which dial each other - never subscribe to one another (the load-bearing invariant of stateless
+  / eviction), re-checked after a full job cycle; a restarted discovery is re-subscribed with no intervention
+  app:autosubapp[];
+  setenv[`TORQXHOME;torqxhome[]];
+  setenv[`TORQXAPPCONFIG;app,"/appconfig"];
+  setenv[`TORQXAPPHOME;app];
+  setenv[`TORQXDATAHOME;app];
+  rp:freeport[]; d1p:freeport[]; d2p:freeport[]; sp:freeport[];
+  writecsvrows[app,"/appconfig/process.csv";((rp;`rdb;`rdb1);(d1p;`discovery;`disc1);(d2p;`discovery;`disc2);(sp;`sub;`sub1))];
+  rdb:startpeer["rdb1";rp];
+  d1:startstack[app;`discovery;`disc1;d1p];
+  d2:startstack[app;`discovery;`disc2;d2p];
+  if[any null (d1`h;d2`h);kill9 each (rdb;d1;d2);:chk enlist[`discoveryup]!enlist 0b];
+  s1:startstack[app;`sub;`sub1;sp];
+  if[null s1`h;kill9 each (rdb;d1;d2;s1);:chk enlist[`subup]!enlist 0b];
+  subs1:waitfor[{[d;x] 1=count discsubs d}[d1];40];
+  subs2:waitfor[{[d;x] 1=count discsubs d}[d2];40];
+  pushed:waitfor[{[s;x] `rdb1 in exec procname from subreg s}[s1];40];
+  connected:waitfor[{[s;x] not null first exec w from subreg s where procname=`rdb1}[s1];80];
+  system "sleep 13";                                                        / more than one full 10s job cycle
+  a:`subs1`subs2`want1`want2`pushed`connected`stillone1`stillone2`loggedonce`quiet!(
+    subs1;
+    subs2;
+    (enlist enlist`rdb)~exec proctypes from discsubs d1;
+    (enlist enlist`rdb)~exec proctypes from discsubs d2;
+    pushed;
+    connected;
+    1=count discsubs d1;
+    1=count discsubs d2;
+    1=logmatches["stack_sub1";"subscribed to discovery on 2 handle(s) for rdb"];
+    0=count (childlog "stack_sub1") where (childlog "stack_sub1") like "*ERROR] *");
+  / disc1 restarts: sub1's own servers retry reconnects (<=10s), then the next job cycle (<=10s) re-subscribes
+  kill9 d1;
+  d1b:startstack[app;`discovery;`disc1;d1p];
+  a[`resubscribed]:$[null d1b`h;0b;waitfor[{[d;x] 1=count discsubs d}[d1b];120]];
+  a[`rewant]:$[null d1b`h;0b;(enlist enlist`rdb)~exec proctypes from discsubs d1b];
+  a[`relogged]:2<=logmatches["stack_sub1";"subscribed to discovery on"];
+  a[`d2unaffected]:1=count discsubs d2;
+  {@[x`h;"exit 0";{}]} each (d1b;d2;s1);
+  system "sleep 1";
+  kill9 each (rdb;d1b;d2;s1);
+  setenv[`TORQXAPPHOME;IBASE];
+  setenv[`TORQXDATAHOME;IBASE];
+  chk a
+  };
+
 stackboot:{[]
   / kdb-x abandons a QINIT script silently at the first error and leaves the process at its prompt, so a boot failure
   / looks like a running process: assert the module's observable effects, never just "it came up"

@@ -236,6 +236,93 @@ initquerylog:{[config;deps]
   deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
   }
 
+/ --- discovery auto-subscribe -----------------------------------------------------------------
+/ The consumer half of service discovery, generically, for EVERY process type at once. A process opts
+/ in with config alone: a flat `discoverywant` key (symbol / list / toml string or list - the proctypes
+/ it wants told about; `ALL for everything), or `discovery in its `connections`. di.torq then dials the
+/ discovery row(s) of process.csv ITSELF through the injected servers (startup is repeat-safe, so a
+/ module that already dialled them pays nothing) - it has to: every builtin proc module replaces the
+/ flat `connections` with its own role list (rdb: tickerplant+hdb types, gateway: backendtypes...), so
+/ the flat key alone would never reach servers for them - and subscribes: one async
+/ .discovery.getservices[want;1b] on every live discovery handle, at init and then every 10s. From
+/ then on discovery pushes the live rows into this process's own root .torq.servers.addprocs. No proc
+/ module knows discovery exists and di.torq.servers is untouched. The 10s cycle is fixed (its cost is a few async messages on already-live handles - no knob),
+/ the result is discarded (the real answer arrives via discovery's push moments later), and there is
+/ NO handle tracking: a repeat call on the same handle REPLACES the subscription on the discovery
+/ side, so re-calling every live handle every cycle is idempotent, self-heals a reconnect (a new
+/ handle is just another live handle next cycle), and needs nothing reset on re-init.
+/ SELF-EXCLUSION IS LOAD-BEARING: a discovery instance dials every phone-book row including its
+/ sibling discovery instances (the redundancy model), so without it every instance would subscribe
+/ to every other and start RECEIVING pushes - breaking the invariant discovery's stateless eviction
+/ relies on (its registry holds only what it dialled itself). Guarded twice: no job is registered for
+/ a discovery instance, and the job body is a no-op whenever the current identity is one (want empty).
+/ The discovery proctype is derived from the builtin registry LAZILY (never at load time) so a broken
+/ registry entry can only disable this feature, warned - never stop an unrelated process booting.
+discoverysub:`servers`log`want`type!(()!();()!();`symbol$();`);
+discoveryjobregistered:0b;
+lastdiscoveryhandles:();
+
+/ the builtin proctype(s) backed by di.torq.proc.discovery (0 or 1 symbols)
+discoverytype:{[] where builtin=`di.torq.proc.discovery};
+
+/ a token-list setting: space-separated string, single symbol, symbol list, or list of strings
+/ (same shape as di.torq.proc.gateway's astoklist - kept local; di.torq must not depend on a proctype)
+astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]};
+
+/ the want when opted in: discoverywant if given, else `ALL (opted in via connections alone)
+discoverywant:{[config] $[`discoverywant in key config;astoklist config`discoverywant;enlist`ALL]};
+
+/ opted in? discoverywant present, or the discovery proctype among the flat connections
+discoveryoptin:{[config;dt]
+  $[`discoverywant in key config;1b;`connections in key config;dt in astoklist config`connections;0b]
+  };
+
+resubscribe:{[]
+  / the discoverysubscribe job body (see the block comment): re-call getservices[want;1b] on every
+  / live discovery handle. silent when there is none (the common case); logged only when the set
+  / of subscribed handles changes
+  want:.z.m.discoverysub`want;
+  if[0=count want;:()];
+  live:(.z.m.discoverysub[`servers]`getservers)[.z.m.discoverysub`type];
+  hs:exec w from live;
+  / async bytes sit in .z.W until the event loop flushes: skip a handle that is not draining
+  hs:hs where 0=0^.z.W hs;
+  {[wnt;h] @[{[wnt;h] (neg h)(`.discovery.getservices;wnt;1b)}[wnt];h;{}]}[want] each hs;
+  / log on change - keyed on (handle;connect time), not the handle alone: the OS reuses fd numbers,
+  / so a reconnect can come back on the same number, and servers stamps startp on every reconnect
+  k:select w,startp from live where w in hs;
+  if[k~.z.m.lastdiscoveryhandles;:()];
+  .z.m.lastdiscoveryhandles:k;
+  if[count hs;
+    msg:"subscribed to discovery on ",(string count hs)," handle(s) for ",", " sv string want;
+    .z.m.discoverysub[`log][`info][`torq;msg]];
+  };
+
+discoveryjobfail:{[e] .z.m.discoverysub[`log][`warn][`torq;"discovery subscribe cycle failed: ",e];};
+discoveryjob:{[] @[resubscribe;::;discoveryjobfail]};
+
+initdiscoverysub:{[proctype;config;deps]
+  / after the process module's init (its own startup may already hold a live discovery handle):
+  / record what to ask for, register the 10s job ONCE per process, and subscribe now
+  dt:discoverytype[];
+  if[0=count dt;
+    .z.m.discoverysub:`servers`log`want`type!(deps`servers;deps`log;`symbol$();`);
+    deps[`log][`warn][`torq;"discovery auto-subscribe disabled: no builtin registry entry maps to di.torq.proc.discovery"];
+    :()];
+  dt:first dt;
+  self:proctype=dt;
+  on:(not self) and discoveryoptin[config;dt];
+  .z.m.discoverysub:`servers`log`want`type!(deps`servers;deps`log;$[on;discoverywant config;`symbol$()];dt);
+  if[not on;:()];
+  / dial the discovery row(s) ourselves - repeat-safe if the module's own startup already did
+  @[deps[`servers]`startup;`connections`processcsv!(enlist dt;config`processcsv);
+    {[lg;e] lg[`warn][`torq;"discovery auto-subscribe: could not dial discovery: ",e]}[deps`log]];
+  if[not .z.m.discoveryjobregistered;
+    (deps[`timer][`addjob])[`discoverysubscribe;discoveryjob;();10;1h;enlist[`disableonfail]!enlist 0b];
+    .z.m.discoveryjobregistered:1b];
+  discoveryjob[];
+  };
+
 / reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
 / di.torq itself (identity, stack id, port, norun), NOT config settings. Everything else on the
 / command line is a candidate config override.
@@ -295,6 +382,8 @@ init:{[proctype;procname;overrides]
     startbuiltin[proctype;config;deps];
     startcustom[proctype;config;deps]
     ];
+  / the consumer half of discovery, generically (see the discovery auto-subscribe block)
+  initdiscoverysub[proctype;config;deps];
   / app-level add-on code (code/<common|proctype|procname>/*.q) - loaded AFTER the process
   / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
   / app file may define/override .<proctype>.run for the hook to pick up).

@@ -11,26 +11,34 @@ mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 
 / the servers mock stands in for a reachable wdb: waitfortype succeeds and gethandlebytype hands
 / back a handle that answers .wdb.getparams[] with WDBPARAMS
-WDBPARAMS:();
+LASTQ:();
 WAITOK:1b;
 scalls:([]fn:`symbol$();arg:());
 mockstartup:{[c] `scalls set scalls upsert `fn`arg!(`startup;c);};
 mockwait:{[pt;t;p] `scalls set scalls upsert `fn`arg!(`waitfortype;pt); WAITOK};
-mockhandle:{[pt;sel] `scalls set scalls upsert `fn`arg!(`gethandlebytype;pt); {[q] WDBPARAMS}};
+/ the handle EVALUATES the query, as a real wdb would, against the .wdb.* variables set below -
+/ so the test exercises the parse tree the idb actually builds rather than a canned answer
+mockhandle:{[pt;sel] `scalls set scalls upsert `fn`arg!(`gethandlebytype;pt); {[q] `LASTQ set q; value q}};
 mockgetservers:{[pt] ([]w:`int$())};
 mockservers:{[] `startup`getservers`gethandlebytype`waitfortype!(mockstartup;mockgetservers;mockhandle;mockwait)}
 
 mockdeps:{[] `log`servers!(`info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;]);mockservers[])}
 
-/ no savedir/hdbdir in config, so init must ask the wdb for them
-/ what (each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition) evaluates to on a real wdb:
-/ two hsyms the idb normalises itself, and the date
-setwdbparams:{[] `WDBPARAMS set (hsym `$FIXTUREDIR;hsym `$FIXTUREHDBDIR;TESTDATE);}
+/ the root variables a real wdb publishes, which the evaluated query reads
+setwdb:{[sd] set[`.wdb.savedir;sd]; set[`.wdb.hdbdir;hsym `$FIXTUREHDBDIR]; set[`.wdb.currentpartition;TESTDATE];}
+setwdbparams:{[] setwdb hsym `$FIXTUREDIR;}
 
 / the wdb reports a savedir that is not on disk - the window before its first flush
-setwdbmissingdir:{[] `WDBPARAMS set (`:/tmp/di_idb_k4unit_no_such_dir;hsym `$FIXTUREHDBDIR;TESTDATE);}
+setwdbmissingdir:{[] setwdb `:/tmp/di_idb_k4unit_no_such_dir;}
+
+/ a wdb that does not publish one of them - an older build, say
+dropwdbvar:{[v] ![`.wdb;();0b;enlist v];}
+
 askedwdb:{[] `waitfortype in exec fn from scalls}
-resetservercalls:{[] `scalls set ([]fn:`symbol$();arg:()); `WAITOK set 1b;}
+
+/ the query the idb actually sent, captured by the mock handle
+askedforvars:{[] LASTQ~(each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition)}
+resetservercalls:{[] `scalls set ([]fn:`symbol$();arg:()); `WAITOK set 1b; `LASTQ set ();}
 
 FIXTUREDIR:"/tmp/di_idb_k4unit_fixture"
 FIXTUREHDBDIR:"/tmp/di_idb_k4unit_hdb_fixture"

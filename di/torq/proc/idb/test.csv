@@ -99,6 +99,7 @@ run,0,0,q,setwdbparams[],1,,the wdb will report the fixture dirs
 run,0,0,q,delete widgets from `.,1,,drop the table so the mount has to bring it back
 run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init must ask the wdb for the dirs
 true,0,0,q,askedwdb[],1,,it waited for a wdb and queried it
+true,0,0,q,askedforvars[],1,,and asked for exactly .wdb.savedir/.wdb.hdbdir/.wdb.currentpartition
 true,0,0,q,TESTDATE~recordedpartition[],1,,and recorded the wdb's current partition
 true,0,0,q,`widgets in tables[],1,,and mounted the directory the wdb reported
 true,0,0,q,`widgets in .Q.pt,1,,still a partitioned root mount
@@ -117,5 +118,12 @@ run,0,0,q,resetservercalls[],1,,reset the servers mock
 run,0,0,q,`WAITOK set 0b,1,,make the wdb unreachable
 fail,0,0,q,idb[`init][cfg[];mockdeps[]],1,,no wdb within the timeout must fail init naming the proctype
 run,0,0,q,`WAITOK set 1b,1,,restore
+
+comment,,,,,,,a wdb that does not publish everything we ask for
+run,0,0,q,resetservercalls[],1,,reset the servers mock
+run,0,0,q,setwdbparams[],1,,publish all three first
+run,0,0,q,dropwdbvar[`hdbdir],1,,then remove one - an older wdb build
+fail,0,0,q,idb[`init][cfg[];mockdeps[]],1,,the failed read must fail init rather than mount nothing
+run,0,0,q,setwdbparams[],1,,restore
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

@@ -320,7 +320,7 @@ service a peer's call back into it — measured, it deadlocks):
 ```q
 / from the repository root, in a fresh q session, with this repo on QPATH
 k4unit:use`di.k4unit
-k4unit.moduletest`di.torq.proc.discovery      / 260 checks
+k4unit.moduletest`di.torq.proc.discovery      / 275 checks
 ```
 
 Integration suite (`test_integration.csv`, 9 scenarios): real child kdb-x processes — the

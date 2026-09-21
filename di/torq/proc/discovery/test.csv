@@ -249,6 +249,22 @@ run,0,0,q,firejob[`discoverytick],1,1,tick again with the handle drained
 true,0,0,q,"0=count mstate[""rmq""]",1,1,delivered and cleared
 true,0,0,q,"row3[`gw2;`gw;`:localhost:8]~last rmreceived[]",1,1,the peer got the queued removal on the retry
 true,0,0,q,"e0=errcount[""tick failed""]",1,1,no tick failed anywhere in the eviction push cycle (a failure there is logged - not raised - so check)
+comment,,,,,,,eviction push - two events on the SAME handle both queue before either is delivered; only the drain lets the union through
+run,0,0,q,e1:count rmreceived[],1,1,remember how many removals the peer has received so far (baseline for this block)
+run,0,0,q,firejob[`discoverytick],1,1,tick - a live push is queued on the (currently drained) handle; nothing reads it, so it is not flushed
+run,0,0,q,"fakerow[`gw3;`gw;`:localhost:13;13i]",1,1,servers holds a live gw3 that no phone book lists (eviction event A)
+run,0,0,q,firejob[`discoverytick],1,1,tick - gw3 is evicted and queued for the peer; the drain guard skips the push (bytes still queued from the priming tick)
+true,0,0,q,0=count select from FAKE where procname=`gw3,1,1,gw3 is gone from the registry (eviction event A recorded)
+run,0,0,q,"fakerow[`gw4;`gw;`:localhost:14;14i]",1,1,servers learns a second live row gw4 - also unlisted - before gw3's removal has been delivered (eviction event B)
+run,0,0,q,firejob[`discoverytick],1,1,tick - gw4 is evicted too; its removal is UNIONED into the same queued entry for the handle, which is still undrained
+true,0,0,q,0=count select from FAKE where procname=`gw4,1,1,gw4 is gone from the registry too (eviction event B recorded)
+true,0,0,q,"(row3[`gw3;`gw;`:localhost:13],row3[`gw4;`gw;`:localhost:14])~mstate[""rmq""][subhandle[]]",1,1,the queue for this handle holds BOTH removals - gw3 from the first eviction, gw4 unioned in by the second - neither delivered yet
+true,0,0,q,e1=count rmreceived[],1,1,the peer has received nothing new for gw3/gw4 yet (this sync read flushes the handle, as in the earlier drain-guard cases)
+run,0,0,q,firejob[`discoverytick],1,1,tick again with the handle now drained - the queued union is finally sent
+true,0,0,q,(e1+1)=count rmreceived[],1,1,exactly one more removeprocs call landed - the two queued events were delivered together, not as two separate deliveries
+true,0,0,q,"(row3[`gw3;`gw;`:localhost:13],row3[`gw4;`gw;`:localhost:14])~last rmreceived[]",1,1,...and it carried BOTH gw3 and gw4 - the subscriber was not left missing the first event
+true,0,0,q,"0=count mstate[""rmq""]",1,1,delivered and cleared - the queue does not retain stale handles once drained
+true,0,0,q,"e0=errcount[""tick failed""]",1,1,no tick failure anywhere in the double-eviction queue-then-drain cycle
 run,0,0,q,setupfixture[],1,1,restore the full phone book
 run,0,0,q,"fakerow'[`rdb1`rdb2;`rdb`rdb;`:localhost:1`:localhost:3;1 0Ni]",1,1,and servers re-learns rdb1 (live) and rdb2 (dead)
 run,0,0,q,firejob[`discoverytick],1,1,tick

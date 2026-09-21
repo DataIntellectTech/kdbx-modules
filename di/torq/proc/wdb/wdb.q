@@ -8,9 +8,12 @@
 / Scope (v1, classic saveandsort, in-process, `default` writedown mode - see the wdb.q
 / Chesterton's-Fence audit). NOT included (future/other-process): sort/sortworker as
 / separate processes (mode save/sort, .z.pd fan-out); advanced writedown modes
-/ (partbyattr/partbyenum/partbyfirstchar) and all of merge.q; the IDB tier
-/ (notifyidbs/idbreload/filldb); compression. REMOVED (deprecated): finspace/aws and the
-/ .z.pd tempfix guards; the endofperiod STP stub.
+/ (partbyattr/partbyenum/partbyfirstchar) and all of merge.q; compression. REMOVED
+/ (deprecated): finspace/aws and the .z.pd tempfix guards; the endofperiod STP stub.
+/ ---
+/ idb (di.torq.proc.idb) is notified through notifyidbs, as legacy TorQ: .idb.intradayreload after any
+/ intraday flush that wrote something, and .idb.rollover with the new partition at EOD (opt in by
+/ putting idb in reloadorder). No partition on the intraday leg - the idb mounts the savedir root.
 / ---
 / Why a working dir + move (not write-straight-to-hdb): the hdb partition only ever appears
 / complete AND sorted, after the move - a mid-day crash can't leave partial/unsorted data in
@@ -84,8 +87,15 @@ flushtable:{[force;t]
   1b
   }
 
-/ timer job: flush every table over threshold (or all of them when immediate)
-savetodisk:{[] flushtable[.z.m.immediate;] each tablelist[];}
+/ timer job: flush every table over threshold (or all of them when immediate), then notify any
+/ connected idb(s) IF that actually changed something on disk (flushtable returns 1b per table
+/ it wrote, 0b for one it skipped as empty/under-threshold) - an all-skipped tick stays silent,
+/ so an idle wdb doesn't spam idb reloads. This is the per-flush leg from the header note above;
+/ notifyidbs no-ops when no idb is connected, so this is safe to call unconditionally.
+savetodisk:{[]
+  changes:flushtable[.z.m.immediate;] each tablelist[];
+  if[any changes;notifyidbs[`.idb.intradayreload;enlist()]];
+  }
 
 / remove any pre-existing working data for the current partition before replay (replay rebuilds
 / it from the log, so stale data from a previous run would be double-counted). Scoped to the
@@ -101,17 +111,17 @@ clearwdbdata:{[]
 / EOD sort: sort + apply attributes on the working partition for table t (di.dbwrite, driven by
 / the sort config / its time-asc default). In-process, so the sym file this process enumerated
 / against is already current - no reloadsymfile needed (that is a separate-sort-worker concern).
-sortpart:{[date;t]
-  dir:` sv (.Q.par[.z.m.savedir;date;t];`);
+sortpart:{[pt;t]
+  dir:` sv (.Q.par[.z.m.savedir;pt;t];`);
   if[count key dir;(.z.m.dbw`sort)[t;dir]];
   }
 
 / move the working partition into the hdb, one table dir at a time. A table already present in the
 / hdb partition is skipped (never overwrite - that would corrupt the hdb), mirroring TorQ.
-movetohdb:{[date]
-  src:.Q.par[.z.m.savedir;date;`];
-  if[not count key src;.z.m.log[`warn][`wdb;"no working partition to move for ",string date];:()];
-  dst:.Q.par[.z.m.hdbdir;date;`];
+movetohdb:{[pt]
+  src:.Q.par[.z.m.savedir;pt;`];
+  if[not count key src;.z.m.log[`warn][`wdb;"no working partition to move for ",string pt];:()];
+  dst:.Q.par[.z.m.hdbdir;pt;`];
   srcs:1_string src; dsts:1_string dst;
   system "mkdir -p ",dsts;
   {[srcs;dsts;t]
@@ -132,38 +142,59 @@ informgateway:{[msg]
   {[wh;msg] @[neg wh;(`.gw.reload;msg);{[e] .z.m.log[`error][`wdb;"gateway inform failed: ",e]}]}[;msg] each h;
   }
 
-/ tell every hdb of these types to reload (pick up the just-moved partition)
-reloadhdbs:{[date]
+/ tell every hdb of these types to reload (pick up the just-moved partition). `pt` (the
+/ partition being reloaded) is unused - kept so the doreload dispatch below can call every
+/ reload*[pt] uniformly.
+reloadhdbs:{[pt]
   h:raze {exec w from (.z.m.svc`getservers)[x]} each .z.m.hdbtypes;
   {[wh] @[wh;".hdb.reload[]";{[e] .z.m.log[`error][`wdb;"hdb reload failed: ",e]}]} each h;
   }
 
-/ tell every rdb of these types to reload[date] (drop the prior day it was holding in memory).
-/ async - the rdb's root reload[date] does the dropfirstnrows (see di.torq.proc.rdb, reloadenabled=1b).
-reloadrdbs:{[date]
+/ tell every rdb of these types to reload[pt] (drop the prior day it was holding in memory).
+/ async - the rdb's root reload[pt] does the dropfirstnrows (see di.torq.proc.rdb, reloadenabled=1b).
+reloadrdbs:{[pt]
   h:raze {exec w from (.z.m.svc`getservers)[x]} each .z.m.rdbtypes;
-  {[wh;date] @[neg wh;(`reload;date);{[e] .z.m.log[`error][`wdb;"rdb reload send failed: ",e]}]}[;date] each h;
+  {[wh;pt] @[neg wh;(`reload;pt);{[e] .z.m.log[`error][`wdb;"rdb reload send failed: ",e]}]}[;pt] each h;
+  }
+
+/ one path for both idb notifications, as legacy's notifyidbs. Async: the intraday leg fires after
+/ every flush, so it must not block; the trap therefore only sees send failures.
+notifyidbs:{[func;params]
+  h:raze {exec w from (.z.m.svc`getservers)[x]} each .z.m.idbtypes;
+  if[0=count h;:()];
+  .z.m.log[`info][`notifyidbs;"notifying ",(string count h)," idb(s) with ",string func];
+  {[wh;func;params] @[neg wh;enlist[func],params;{[e] .z.m.log[`error][`wdb;"idb notify send failed: ",e]}]}[;func;params] each h;
   }
 
 / reload downstream in the configured order (default `hdb`rdb: hdb first so it sees the new
 / partition, then rdb so it drops the prior day), bracketed by the gateway block/unblock.
-doreload:{[date]
+/ `idb` is a valid reloadorder entry too (opt in by adding it, e.g. "hdb rdb idb") but is not
+/ in the default order - existing apps that don't run an idb see no behaviour change here (the
+/ separate, always-on intraday notify leg in savetodisk is unaffected by reloadorder either way).
+/ pt is the day just closed - the hdb and rdb want that; the idb wants the one now being written
+doreload:{[pt]
   informgateway[`reloadstart];
-  {[date;pt] $[pt in .z.m.hdbtypes;reloadhdbs[date];pt in .z.m.rdbtypes;reloadrdbs[date];.z.m.log[`warn][`wdb;"reloadorder entry ",(string pt)," is neither an hdb nor rdb type - skipped"]]}[date;] each .z.m.reloadorder;
+  {[pt;ptype]
+    $[ptype in .z.m.hdbtypes;reloadhdbs[pt];
+      ptype in .z.m.rdbtypes;reloadrdbs[pt];
+      ptype in .z.m.idbtypes;notifyidbs[`.idb.rollover;pt+1];
+      .z.m.log[`warn][`wdb;"reloadorder entry ",(string ptype)," is neither an hdb, rdb, nor idb type - skipped"]]
+    }[pt;] each .z.m.reloadorder;
   informgateway[`reloadend];
   }
 
-/ end of day: called by the tickerplant as endofday[date] (di.pubsub's dated broadcast, same
+/ end of day: called by the tickerplant as endofday[pt] (di.pubsub's dated broadcast, same
 / trigger as di.torq.proc.rdb). Flush what remains, sort each working partition, move it into the hdb, then
 / reload downstream. Advance the partition for the new day.
-endofday:{[date]
-  .z.m.log[`info][`wdb;"end of day for partition ",string date];
+endofday:{[pt]
+  .z.m.log[`info][`wdb;"end of day for partition ",string pt];
   flushtable[1b;] each tablelist[];                       / flush all remaining rows
   st:tablelist[];
-  sortpart[date] each st;
-  movetohdb[date];
-  doreload[date];
-  .z.m.currentpartition:date+1;
+  sortpart[pt] each st;
+  movetohdb[pt];
+  doreload[pt];
+  .z.m.currentpartition:pt+1;
+  set[`.wdb.currentpartition;.z.m.currentpartition];
   .z.m.log[`info][`wdb;"end of day complete, wrote+moved: ",(", " sv string st)];
   }
 
@@ -176,6 +207,7 @@ init:{[config;deps]
   .z.m.tptypes:$[`tickerplanttypes in key config;aslist assym config`tickerplanttypes;enlist`tickerplant];
   .z.m.hdbtypes:$[`hdbtypes in key config;aslist assym config`hdbtypes;enlist`hdb];
   .z.m.rdbtypes:$[`rdbtypes in key config;aslist assym config`rdbtypes;enlist`rdb];
+  .z.m.idbtypes:$[`idbtypes in key config;aslist assym config`idbtypes;enlist`idb];
   .z.m.gatewaytypes:$[`gatewaytypes in key config;aslist assym config`gatewaytypes;enlist`gateway];
   .z.m.reloadorder:$[`reloadorder in key config;astoklist config`reloadorder;`hdb`rdb];
   .z.m.ignorelist:$[`ignorelist in key config;aslist assym config`ignorelist;`heartbeat`logmsg];
@@ -207,7 +239,7 @@ init:{[config;deps]
   / (di.torq already ran init - shared once-init'd registry); we call only startup with our
   / own connection list, and use the lookup fns off the same injected instance.
   .z.m.svc:deps`servers;
-  sconfig:config,(enlist`connections)!enlist distinct .z.m.tptypes,.z.m.hdbtypes,.z.m.rdbtypes,.z.m.gatewaytypes;
+  sconfig:config,(enlist`connections)!enlist distinct .z.m.tptypes,.z.m.hdbtypes,.z.m.rdbtypes,.z.m.idbtypes,.z.m.gatewaytypes;
   (.z.m.svc`startup)[sconfig];
 
   / install the flushing replay upd at root BEFORE subscribing, so the -11! replay driven by
@@ -231,6 +263,12 @@ init:{[config;deps]
   @[`.;`upd;:;updfn];
   @[`.;`endofday;:;endofday];
   @[`.;`.u.end;:;endofday];
+  / the idb reads these directly at startup, as legacy's setparametersfromwdb does. savedir and
+  / hdbdir are fixed for the life of the process; currentpartition is republished whenever it
+  / moves (see endofday), or the copy here goes stale from the first roll.
+  set[`.wdb.savedir;.z.m.savedir];
+  set[`.wdb.hdbdir;.z.m.hdbdir];
+  set[`.wdb.currentpartition;.z.m.currentpartition];
 
   / timer job: check/flush to disk every settimer seconds (di.timer mode 1h period is seconds)
   (.z.m.timer`addjob)[`wdbsave;savetodisk;();settimer;1h;()!()];

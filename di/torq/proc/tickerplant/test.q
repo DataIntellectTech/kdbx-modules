@@ -19,11 +19,16 @@ resettimer:{[] `timercalls set ([]id:`symbol$();period:`int$();mode:`short$()); 
 mockaddjob:{[id;func;params;period;mode;opts] `timercalls insert (id;`int$period;mode); }
 mocktimer:{[] enlist[`addjob]!enlist mockaddjob}
 
-deps:{[] `log`timer!(mocklog[];mocktimer[])}
+/ mock handlers - records (event;name) registrations with di.torq.handlers' register shape
+hcalls:([]event:`symbol$();name:`symbol$())
+resethandlers:{[] `hcalls set ([]event:`symbol$();name:`symbol$()); }
+mockhandlers:{[] `register`remove!({[ev;ph;nm;pri;fn] `hcalls insert (ev;nm);};{[ev;ph;nm]})}
+
+deps:{[] `log`timer`handlers!(mocklog[];mocktimer[];mockhandlers[])}
 
 setupfixture:{[]
   system "rm -rf ",BASE;
-  {system "mkdir -p ",BASE,"/",x} each ("log";"batchlog";"eodlog";"replog";"subdlog");
+  {system "mkdir -p ",BASE,"/",x} each ("log";"batchlog";"eodlog";"replog";"subdlog";"subdblog");
   setenv[`TORQXAPPHOME;BASE];
   / good schema: trade + quote, both time,sym first
   (hsym`$BASE,"/database.q") 0: (
@@ -41,6 +46,7 @@ nologcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/database.q")}
 badcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/badschema.q")}
 replaycfg:{[] `publishmode`tplogdir`schemafile!(`batched;BASE,"/replog";BASE,"/database.q")}
 subdcfg:{[] `publishmode`tplogdir`schemafile!(`immediate;BASE,"/subdlog";BASE,"/database.q")}
+subdbcfg:{[] `publishmode`pubperiod`tplogdir`schemafile!(`batched;2;BASE,"/subdblog";BASE,"/database.q")}
 
 / feed n trade rows through the published root upd (columns form, single record each)
 feedtrades:{[n] {upd[`trade;(.z.p;`$"S",string x;1.0*x;`int$x)]} each til n; }
@@ -54,7 +60,7 @@ flushperiodok:{[] 2=first exec period from timercalls where id=`tpflush}
 rolledfile:{[sub;date] not ()~key hsym`$BASE,"/",sub,"/tp",string date}
 
 / init helpers that store handles / state for assertions
-doinit:{[cfg] resetcalls[]; resettimer[]; (tk`init)[cfg;deps[]]; }
+doinit:{[cfg] resetcalls[]; resettimer[]; resethandlers[]; (tk`init)[cfg;deps[]]; }
 initbad:{[] (tk`init)[badcfg[];deps[]]; }   / expected to throw (used by a fail row)
 
 scheduled:{[id] id in exec id from timercalls}
@@ -72,4 +78,20 @@ subdetailsok:{[]
       all `trade`quote in key sd`schemas;
       98h=type sd[`schemas]`trade;
       sd[`logfile]~hsym`$BASE,"/subdlog/tp",string sd`date)
+  }
+
+/ pubsub's subscriber cleanup is registered on .z.pc through the handlers dep (not bound by di.pubsub at load)
+pcregistered:{[] (`.z.pc;`pubsub) in flip value flip hcalls}
+
+/ batched: a subscriber arriving while 3 rows sit unflushed must not get them twice - from the log (rowcount includes
+/ them, as upd logs before it buffers) AND from the next flush. subdetails flushes to the existing subscribers before
+/ registering the caller, so the buffer is empty by the time it is registered and rowcount is what the log holds
+subdetailsbatchedok:{[]
+  doinit[subdbcfg[]]; feedtrades[3];
+  buffered:count trade;
+  sd:(tk`subdetails)[`;`];
+  (use`di.pubsub)[`closesub][0];
+  all(3=buffered;
+      0=count trade;
+      3=sd`rowcount)
   }

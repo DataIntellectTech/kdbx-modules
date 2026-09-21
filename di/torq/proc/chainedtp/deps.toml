@@ -1,0 +1,5 @@
+# Peer modules di.torq.proc.chainedtp `use`s (see di/torq/depcheck/depcheck.md).
+[dependencies]
+"di.pubsub" = "0.1.0"
+"di.subscriptions" = "0.1.0"
+"di.tplogmgr" = "0.1.0"

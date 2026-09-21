@@ -1,0 +1,78 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,ct:use`di.torq.proc.chainedtp,1,,load module
+before,0,0,q,system "l di/torq/proc/chainedtp/test.q",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,fixture dir and the upstream log; spawn the stub upstream process
+
+comment,,,,,,,api contract
+true,0,0,q,"(asc (key ct) except `init`getapimeta`version)~asc exec name from ct.getapimeta[]",1,,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,"not any `init`getapimeta in exec name from ct.getapimeta[]",1,,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols ct.getapimeta[],1,,getapimeta rows carry the registry columns
+true,0,0,q,versionok[],1,,version is exported from the VERSION file as a clean semver string
+
+comment,,,,,,,init validation - plain signals before anything is wired
+true,0,0,q,initnotdict[],1,,deps must be a dict
+true,0,0,q,initnolog[],1,,log dependency is required
+true,0,0,q,initnotimer[],1,,timer dependency is required even in immediate mode
+true,0,0,q,initnohandlers[],1,,handlers dependency is required
+true,0,0,q,initnoservers[],1,,servers dependency is required
+true,0,0,q,initlogkeys[],1,,a log dict missing a level is rejected naming the level
+true,0,0,q,initserverskeys[],1,,a servers dict missing a contract function is rejected naming it
+true,0,0,q,initnoupstream[],1,,upstreamtype is required
+true,0,0,q,"initrejects[`publishmode;`sometimes;""publishmode must be one of""]",1,,an unrecognised publishmode fails init naming the setting
+true,0,0,q,"initrejects[`pubperiod;0;""pubperiod must be""]",1,,a non-positive pubperiod is rejected
+true,0,0,q,"initrejects[`connecttimeoutms;-1;""connecttimeoutms must be""]",1,,a non-positive connect timeout is rejected
+true,0,0,q,"initrejects[`logprefix;"""";""logprefix must not be empty""]",1,,an empty logprefix is rejected
+true,0,0,q,initwaittimeout[],1,,no upstream within the timeout fails init naming the proctype - nothing subscribed
+true,0,0,q,fixpartway[],1,,an init that threw after connecting is not initialised and never subscribed; the retry subscribes once
+true,0,0,q,initfailslate[],1,,an init that fails after subscribing takes the root surface down again; the retry succeeds
+
+comment,,,,,,,config
+true,0,0,q,defaults[],1,,every default reaches module state; the date and tables come from the upstream
+true,0,0,q,stringconfig[],1,,string (toml / command-line) settings are parsed into the right types
+true,0,0,q,prefixok[],1,,the own log carries procname; an explicit logprefix wins
+true,0,0,q,emptylogdir[],1,,an empty tplogdir means no log
+true,0,0,q,logdictwiring[],1,,init accepts di.util.log's real logdict joined with the other deps - as di.torq wires it
+
+comment,,,,,,,wiring
+true,0,0,q,rootok[],1,,root surface published; own .z.pc and pubsub closesub registered through handlers; upstream dialled and waited for
+true,0,0,q,reinit[],1,,a second init is clean: no second dial while the handle lives - one subscription - flush job replaced
+
+comment,,,,,,,updates under both publish modes
+true,0,0,q,immediateok[],1,,immediate: nothing retained - every message logged - rows counted per table - no flush job
+true,0,0,q,immediatenolog[],1,,immediate without a log publishes and counts rows with no handle open
+true,0,0,q,batchedok[],1,,batched: rows buffer at root and are logged at once; the flush job is scheduled; flush publishes and clears
+true,0,0,q,batchednolog[],1,,batched without a log buffers without error
+true,0,0,q,payloadok[],1,,table - single record - batch and string table name payloads all land; the log holds vector columns
+true,0,0,q,unknowntable[],1,,a table not subscribed upstream - a symbol list - a non-symbol are each rejected with a logged error
+true,0,0,q,publishfailok[],1,,a publish that throws is logged at error and signalled
+true,0,0,q,earlytick[],1,,a tick arriving before the log is open is published and skipped by the log - never thrown
+
+comment,,,,,,,the upstream replay into the own log
+true,0,0,q,replayok[],1,,replay with a cleared log: the upstream's messages land in the own log and are counted per table; one subscription
+true,0,0,q,replaybatched[],1,,batched replay buffers the replayed rows at root
+true,0,0,q,replaynarrowed[],1,,a table-narrowed subscription replays only that table
+true,0,0,q,replaysyms[],1,,a sym-narrowed subscription replays only those syms
+true,0,0,q,replaynone[],1,,nothing logged upstream means no replay
+true,0,0,q,replaynofile[],1,,an upstream reporting messages but no log file fails init
+true,0,0,q,replayappendwarn[],1,,replay onto a non-empty log appends and warns
+true,0,0,q,existingcount[],1,,a restart counts the day's log without republishing it
+true,0,0,q,clearlogok[],1,,clearlogonsubscription truncates the log on init
+true,0,0,q,corruptok[],1,,a smashed log is recovered into .good with its good count - original untouched - and stays in use
+
+comment,,,,,,,the surface offered to this process's own subscribers
+true,0,0,q,subdetailsok[],1,,.u.subdetails returns the tickerplant-shaped dict with the own log file and message count
+true,0,0,q,subdetailsnolog[],1,,.u.subdetails without a log reports no file and zero to replay
+true,0,0,q,subdetailsflush[],1,,batched: the buffer is flushed before the caller is registered
+true,0,0,q,subbad[],1,,subscribing to an unknown table is rejected
+true,0,0,q,subok[],1,,.u.sub registers the caller and returns the schema
+true,0,0,q,eodok[],1,,the upstream's end of day is passed downstream - the own log rolls into the next date - a later date is followed with a warning - an earlier one is ignored
+true,0,0,q,eodnolog[],1,,end of day without a log advances the date and tells the subscribers
+true,0,0,q,eodbaddate[],1,,end of day rejects a non-date
+
+comment,,,,,,,connection loss and lifecycle
+true,0,0,q,connectedok[],1,,connected is true after init; a foreign handle closing is ignored; losing the upstream flips it and exits 0
+true,0,0,q,pcviahandlers[],1,,the handler registered through handlers is the module's own; the pubsub registration is closesub
+true,0,0,q,teardownok[],1,,teardown flushes - closes the log - removes the flush job and the own .z.pc handler - keeps pubsub's cleanup registered
+true,0,0,q,afterteardown[],1,,every api and root function signals after teardown
+
+after,0,0,q,teardownfixture[],1,,tear down the module; kill the stub upstream; remove the fixture dir

@@ -22,6 +22,26 @@
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
 
+/ boolean config. A raw `boolean$ cannot do this job: on a string it returns one boolean PER
+/ CHARACTER (`boolean$"false" is 11111b) and using that in a conditional throws 'type, and on a
+/ symbol it throws outright - so a replaylog or reloadenabled set from a .toml file or a command-line
+/ override could not be read at all. An unrecognised word SIGNALS rather than defaulting to false:
+/ a typo is a configuration error, and reading it as "off" silently is how a setting gets ignored
+truewords:`true`yes`on`t`y`1
+falsewords:`false`no`off`f`n`0
+
+tobool:{[x]
+  if[-1h=type x;:x];
+  if[type[x] in -4 -5 -6 -7 -8 -9h;:0<>x];
+  if[not type[x] in -11 -10 10h;
+    '"di.torq.proc.rdb: cannot read ",(-3!x)," as a boolean"];
+  w:`$lower $[-11h=type x;string x;(),x];
+  if[w in truewords;:1b];
+  if[w in falsewords;:0b];
+  '"di.torq.proc.rdb: cannot read ",(-3!x)," as a boolean; expected one of ",
+    ", " sv string truewords,falsewords
+  }
+
 / base dirs: CODE/CONFIG under TORQXAPPHOME, runtime DATA under TORQXDATAHOME (falls back to
 / TORQXAPPHOME when unset - fine for a sample app where they coincide).
 apphome:{getenv[`TORQXAPPHOME]}
@@ -34,6 +54,10 @@ resolvedir:{[base;dir]
   $[dir like "/*";dir;base,"/",dir]
   }
 
+/ a logged payload is either one column per field or one ATOM per field; enlist the atoms so both
+/ shapes flip into the table. Same test di.torq.proc.tickerplant applies before it publishes
+ascols:{[d] $[0>type first d;enlist each d;d]}
+
 / root-namespace-safe upd: append to the ROOT table t. Handles a table payload (live, from
 / di.pubsub), a list-of-columns payload and a single row of ATOMS (both from replay, via
 / di.tplogmgr's -11!). @[`.;..] targets root explicitly so it works from the module / -11! context.
@@ -41,10 +65,6 @@ resolvedir:{[base;dir]
 / stamp[] deliberately keeps it atomic (tickerplant.q: "$[0>type first x;a,x;...]") and LOGS it that
 / way, while enlisting it only on the publish path. So live delivery hides the shape and replay is
 / where it lands - `flip (cols tab)!d` on atoms throws 'rank, and a restart is exactly when replay runs
-/ a logged payload is either one column per field or one ATOM per field; enlist the atoms so both
-/ shapes flip into the table. Same test di.torq.proc.tickerplant applies before it publishes
-ascols:{[d] $[0>type first d;enlist each d;d]}
-
 updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!ascols d]}[;x]]}
 
 / save one root table down to the HDB partition (protected so one failure doesn't stop EOD)
@@ -117,11 +137,11 @@ init:{[config;deps]
   .z.m.hdbtypes:$[`hdbtypes in key config;aslist assym config`hdbtypes;enlist`hdb];
   .z.m.ignorelist:$[`ignorelist in key config;aslist assym config`ignorelist;`heartbeat`logmsg];
   .z.m.hdbdir:$[`hdbdir in key config;resolvedir[datahome[];config`hdbdir];datahome[],"/hdb"];
-  .z.m.reloadenabled:$[`reloadenabled in key config;`boolean$config`reloadenabled;0b];
+  .z.m.reloadenabled:$[`reloadenabled in key config;tobool config`reloadenabled;0b];
   .z.m.eodtabcount:()!();                       / prior-day snapshot, populated at EOD when reloadenabled
   subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
-  replaylog:$[`replaylog in key config;`boolean$config`replaylog;1b];
+  replaylog:$[`replaylog in key config;tobool config`replaylog;1b];
   timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
 
   / publish the root-safe upd BEFORE subscribing (replay drives it too)

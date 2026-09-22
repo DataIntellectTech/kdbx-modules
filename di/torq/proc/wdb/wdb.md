@@ -21,6 +21,13 @@ di.torq.proc.rdb). No kx.log install is required.
 
 ## Config
 
+> **Boolean settings.** Values may be booleans, symbols (a `.q` settings file), strings (`.toml` or
+> a command-line override) or numbers: `1b`, `` `true ``, `"true"`, `"t"`, `"yes"`, `"on"`, `1` and
+> their negatives all work, in any case. An **unrecognised** value fails `init` rather than silently
+> defaulting to false — a typo in a setting is a configuration error, and reading it as "off" is how
+> a safety setting gets disabled unnoticed. Every boolean in every deployed settings file was checked
+> before this change: all canonical `true`/`false`.
+
 ```toml
 tickerplanttypes = "tickerplant"   # proctype(s) to subscribe to
 hdbtypes = "hdb"                   # proctype(s) to move partitions to / reload at EOD

@@ -27,6 +27,10 @@ aslist:{[x] $[0>type x;enlist x;x]}
 / symbol it throws outright - so a replaylog or reloadenabled set from a .toml file or a command-line
 / override could not be read at all. An unrecognised word SIGNALS rather than defaulting to false:
 / a typo is a configuration error, and reading it as "off" silently is how a setting gets ignored
+/ NB the `1 and `0 words are LOAD-BEARING - do not trim them in a tidy-up. A command-line override
+/ arrives as a STRING, and di.torq.proc.chainedtp's integration suite passes `-replay 1
+/ -clearlogonsubscription 1` (test_integration.q:175,238) precisely to exercise that path, as
+/ test_integration_ctp.q:4-7 states. Two integration tests depend on "1" coercing to true.
 truewords:`true`yes`on`t`y`1
 falsewords:`false`no`off`f`n`0
 

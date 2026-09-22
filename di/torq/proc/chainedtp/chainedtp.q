@@ -51,6 +51,10 @@ cfgor:{[config;k;dflt] $[k in key config;config k;dflt]};
 / remained: it fell through to `boolean$ for a symbol, which throws, though a .q settings file is
 / exactly where symbols come from; and an unrecognised word silently read as FALSE. That now SIGNALS -
 / a typo is a configuration error, and reading it as "off" is how a safety setting gets disabled unnoticed
+/ NB the `1 and `0 words are LOAD-BEARING - do not trim them in a tidy-up. A command-line override
+/ arrives as a STRING, and di.torq.proc.chainedtp's integration suite passes `-replay 1
+/ -clearlogonsubscription 1` (test_integration.q:175,238) precisely to exercise that path, as
+/ test_integration_ctp.q:4-7 states. Two integration tests depend on "1" coercing to true.
 truewords:`true`yes`on`t`y`1;
 falsewords:`false`no`off`f`n`0;
 

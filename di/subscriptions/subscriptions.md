@@ -31,7 +31,12 @@ or numbers; they are coerced at the point of use, so `0b`, `` `false ``, `"false
 
 An **unrecognised** word signals rather than defaulting to false — a typo in a setting is a
 configuration error, and reading it as "off" silently is how a safety setting gets disabled without
-anyone noticing.
+anyone noticing. Every boolean in every deployed settings file was checked before this change: all
+canonical `true`/`false`.
+
+> The `` `1 ``/`` `0 `` words are load-bearing and must not be trimmed. A command-line override
+> arrives as a **string**, and `di.torq.proc.chainedtp`'s integration suite passes
+> `-replay 1 -clearlogonsubscription 1` specifically to exercise that path.
 
 `failonreplayerror` exists because both policies are legitimate and the right one depends on the
 consumer. An RDB is better off up with most of the day than refusing to start over one corrupt

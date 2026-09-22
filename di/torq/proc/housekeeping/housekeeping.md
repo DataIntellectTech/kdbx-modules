@@ -105,7 +105,8 @@ hk:use`di.torq.proc.housekeeping          / same instance init ran on - use is c
 ```
 
 `actionnames[]` returns the current set. A handler is called once per matched path, exactly like
-the built-ins, and is subject to the same per-file error trapping.
+the built-ins. `applyjob` traps it per path, so a handler that throws is logged and the run carries
+on — a custom handler needs no error handling of its own, and cannot take the schedule down.
 
 This is the front door for what legacy TorQ got from `wrapper` calling `value` on **any**
 root-level function the csv named — genuinely extensible, but unbounded: a csv naming `exit`, or
@@ -204,10 +205,13 @@ Roughly in the order they'd pay off:
 - **`tar` path noise.** Absolute paths make `tar` emit `Removing leading '/' from member names` to
   stderr on every archive. Harmless and matches legacy, but `-C` would silence it.
 
-One operational assumption worth testing rather than trusting: di.timer's `disableonfail` defaults
-to `1b`, so a job that *throws* is disabled and never runs again. `runjobs` traps its csv read and
-every per-file action, so it shouldn't throw — but nothing currently proves that, and the failure
-mode is silent (housekeeping simply stops, with `status 0b` in the timer table as the only clue).
+di.timer's `disableonfail` defaults to `1b`, so a job that *throws* is disabled and never runs
+again — silently, since di.timer logs that only when its own `debug` is set, leaving `status 0b` in
+the timer table as the only clue. `runjobs` therefore traps its csv read and each job, and
+`applyjob` traps every action per matched path, so the function di.timer calls does not throw; the
+suite proves it with a throwing action followed by a working one. `disableonfail` is deliberately
+left at its default rather than switched off — if something no trap anticipated ever does throw,
+stopping is the right response, and retrying it nightly forever is not.
 
 ## Security note
 

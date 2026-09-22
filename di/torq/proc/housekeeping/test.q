@@ -106,6 +106,15 @@ resetnoted:{[] `noted set `symbol$(); }
 / the handler an app would register - appends each matched path instead of deleting anything
 notinghandler:{[f] `noted set noted,`$f; }
 
+/ a custom handler that throws, as an app's own might
+throwinghandler:{[f] '"deliberate failure"}
+
+/ a throwing job followed by a working one: if the throw escapes applyjob the second job never
+/ runs, and di.timer's disableonfail would take the whole schedule down with it
+writethrowingcsv:{[]
+  writecsv "action,path,match,exclude,age,unit,dirs\nthrows,{DIHKFIXTURE}/custom/,*.dat,,10,d,0\nnoted,{DIHKFIXTURE}/custom/,*.dat,,10,d,0";
+  }
+
 / delete the job csv entirely - the run must log and abandon, not throw
 deletecsv:{[] system "rm -f ",FIXTUREDIR,"/appconfig/housekeeping.csv"; }
 

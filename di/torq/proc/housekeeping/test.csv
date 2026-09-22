@@ -86,6 +86,14 @@ run,0,0,q,(hk`addaction)[`noted;notinghandler],1,,re-registering an existing cus
 true,0,0,q,0<count select from calls where lvl=`warn,1,,but it warns rather than silently replacing
 
 run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,resetnoted[],1,,reset the custom handler's record
+run,0,0,q,(hk`addaction)[`throws;throwinghandler],1,,register a custom action that throws
+run,0,0,q,writethrowingcsv[],1,,a throwing job followed by a working one
+run,0,0,q,.housekeeping.runjobs[],1,,a throwing action must be trapped rather than propagate out of the run
+true,0,0,q,"0<count select from calls where lvl=`error,ctx=`applyjob",1,,the failing action was logged against applyjob
+true,0,0,q,1=count noted,1,,and the job after the throwing one still ran - an untrapped throw reaches di.timer whose disableonfail default kills the schedule for good
+
+run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,writeunknownactioncsv[],1,,point the csv at an action that does not exist
 run,0,0,q,.housekeeping.runjobs[],1,,an unknown action must be logged and skipped not thrown
 true,0,0,q,0<count select from calls where lvl=`error,1,,the unknown action was reported as an error

@@ -116,21 +116,23 @@ findmatches:{[j]
 / one handler per action, dispatched by the csv's `action` column. rm goes through di.os so it
 / picks the right call for a file vs a directory (and honours di.os's dry-run mode); gzip/tar
 / have no di.os equivalent and shell out directly - part of why this module is unix-only.
+/ None of these traps its own work: applyjob traps every action per match, so a handler here reads
+/ the same as one an app registers.
 actions:()!()
 
 actions[`rm]:{[f]
   .z.m.log[`info][`rm;"removing ",f];
-  @[$[(.z.m.os`isdir)f;.z.m.os`deldir;.z.m.os`del];f;{[f;e] .z.m.log[`error][`rm;"failed to remove ",f,": ",e]}[f]];
+  ($[(.z.m.os`isdir)f;.z.m.os`deldir;.z.m.os`del]) f;
   }
 
 actions[`gzip]:{[f]
   .z.m.log[`info][`gzip;"compressing ",f];
-  @[system;"gzip \"",f,"\"";{[f;e] .z.m.log[`error][`gzip;"failed to compress ",f,": ",e]}[f]];
+  system "gzip \"",f,"\"";
   }
 
 actions[`tar]:{[f]
   .z.m.log[`info][`tar;"archiving ",f];
-  @[system;"tar -czf \"",f,".tar.gz\" \"",f,"\" --remove-files";{[f;e] .z.m.log[`error][`tar;"failed to archive ",f,": ",e]}[f]];
+  system "tar -czf \"",f,".tar.gz\" \"",f,"\" --remove-files";
   }
 
 / the actions a job csv may name, for error messages and for an app to introspect
@@ -166,27 +168,33 @@ addaction:{[name;handler]
   .z.m.log[`info][`addaction;"registered action ",(string name),"; csv actions now: ",", " sv string key actions];
   }
 
-/ apply one job: find what it matches, then run its action over each match. An unknown action or
-/ a failing find is logged and skipped rather than aborting the whole run - one bad csv row
-/ should not stop the rest of the night's housekeeping.
+/ apply one job: find what it matches, then run its action over each match. An unknown action, a
+/ failing find and a throwing action are all logged and skipped rather than aborting the whole run -
+/ one bad csv row should not stop the rest of the night's housekeeping.
+/ ---
+/ The action is trapped HERE, per match, rather than left to each handler: an untrapped throw
+/ propagates through runjobs into di.timer, whose disableonfail defaults on, which disables this
+/ process's housekeeping job for good - and silently, as di.timer only logs that when its debug is
+/ set. A custom handler registered via addaction must not be able to cost every later run.
 applyjob:{[j]
   if[not (j`action) in key actions;
     .z.m.log[`error][`applyjob;"unknown action ",(string j`action),"; expected one of ",", " sv string key actions];
     :()];
   m:findmatches j;
   .z.m.log[`info][`applyjob;(string j`action)," ",(j`match)," in ",(expandenv j`path),": ",(string count m)," match(es)"];
-  actions[j`action] each m;
+  {[a;f] @[actions a;f;{[a;f;e] .z.m.log[`error][`applyjob;"action ",(string a)," failed on ",f,": ",e]}[a;f]]}[j`action;] each m;
   }
 
 / run every job in the csv once. Called by the timer, by runnow at startup, and by an operator
-/ or peer over IPC as .housekeeping.runjobs[]. A csv that is missing or malformed is logged and
-/ the run abandoned - the process stays up and tries again on the next schedule.
+/ or peer over IPC as .housekeeping.runjobs[]. A csv that is missing or malformed is logged and the
+/ run abandoned; a job that throws is logged and the remaining jobs still run. Between them this
+/ function does not throw, which is what keeps di.timer from disabling the schedule (see applyjob).
 runjobs:{[]
   requireinit[`runjobs];
   .z.m.log[`info][`runjobs;"housekeeping starting, reading ",.z.m.jobcsv];
   jobs:@[readjobs;.z.m.jobcsv;{[e] .z.m.log[`error][`runjobs;"cannot read job csv: ",e];()}];
   if[not count jobs;:()];
-  applyjob each jobs;
+  {[j] @[applyjob;j;{[j;e] .z.m.log[`error][`runjobs;"job ",(string j`action)," failed: ",e]}[j]]} each jobs;
   .z.m.log[`info][`runjobs;"housekeeping complete, ran ",(string count jobs)," job(s)"];
   }
 

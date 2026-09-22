@@ -282,7 +282,15 @@ subscribe:{[]
   / subscribed tables at root. replay is NOT asked of di.subscriptions - the own log must be open, for the date this
   / call returns, before any replayed message reaches upd - so the replay is driven here afterwards (see doreplay)
   sd:(.z.m.subs`subscribe)[.z.m.tph;.z.m.subscribeto;.z.m.subscribesyms;0b];
-  if[not all `tables`schemas`logfile`rowcount`date in key sd;raiseerror[`init;"upstream .u.subdetails returned ",-3!key sd]];
+  / what di.subscriptions hands back, for either upstream protocol. The four keys below are always
+  / present; the log details differ and are NOT normalised away - a standard upstream carries one
+  / `logfile, a segmented one a `logfilelist of (msgcount;file) pairs and no `logfile at all, which
+  / is deliberate: the absent key is the signal that the list is authoritative. This module never
+  / touches either - the shared replay consumes them - so it only asserts what it reads itself
+  if[not all `tables`schemas`rowcount`date in key sd;
+    raiseerror[`init;"upstream subdetails returned ",-3!key sd]];
+  if[not any `logfile`logfilelist in key sd;
+    raiseerror[`init;"upstream subdetails carries neither logfile nor logfilelist: ",-3!key sd]];
   .z.m.date:sd`date;
   .z.m.tables:sd`tables;
   .z.m.tabcols:(key sd`schemas)!cols each value sd`schemas;
@@ -295,36 +303,30 @@ subscribe:{[]
   sd
   };
 
-replayfilter:{[origupd;tabs;syms;t;x]
-  / installed as root upd during the replay of a narrowed subscription: the upstream log holds every table and sym,
-  / so drop what was not subscribed before the real upd sees it (as di.subscriptions' own replay does for an rdb)
-  if[not t in tabs;:()];
-  x:tocols x;
-  if[not syms~`;x:x@\:where x[1] in syms];
-  if[not count first x;:()];
-  origupd[t;x];
-  };
-
-runreplay:{[lf;n] .[{[m;lf;n] (m`replayupto)[lf;n]};(.z.m.tp;lf;n);{[e] (`replayerr;e)}]};
-
 doreplay:{[sd]
   / replay the messages the upstream had logged at subscription time through root upd - so they land in the own log
-  / and, in batched mode, the buffer. count-limited to rowcount, as live delivery has started
-  lf:sd`logfile;
-  n:sd`rowcount;
-  if[null lf;raiseerror[`replay;"upstream reports ",(string n)," logged message(s) but no log file"]];
-  narrowed:not (.z.m.subscribeto~`) and .z.m.subscribesyms~`;
-  origupd:`. `upd;
-  if[narrowed;@[`.;`upd;:;replayfilter[origupd;sd`tables;.z.m.subscribesyms]]];
-  r:runreplay[lf;n];
-  if[narrowed;@[`.;`upd;:;origupd]];
-  if[`replayerr~first r;raiseerror[`replay;"replay of ",(1_string lf)," failed: ",r 1]];
-  .z.m.log[`info][`replay;"replayed ",(string r)," of ",(string n)," message(s) from ",1_string lf];
+  / and, in batched mode, the buffer. Count-limited to what the upstream reported, as live delivery has started.
+  / ---
+  / This drove private copies of di.subscriptions' replayfilter/runreplay/doreplay until that module exported
+  / `replay`. The copies had drifted - two payload shapes were handled here and not there - which is how one
+  / atom-row defect stayed live in one of them after being fixed in the other. There is one implementation now.
+  / The ORDERING this function exists for is unchanged: init opens the own log for sd`date before calling here,
+  / so no replayed message reaches upd until that log can receive it.
+  / ---
+  / Works against a segmented upstream too: the shared replay takes the whole subdetails dict and speaks both
+  / protocols, so this needs no multi-file loop of its own (which would have been a third divergent copy).
+  n:(.z.m.subs`replay)[sd;.z.m.subscribeto;.z.m.subscribesyms];
+  / silent when there was nothing to replay, as di.subscriptions itself is - it logs per log file, so at zero
+  / files it says nothing, and a summary line reading "replayed 0" would be startup noise on every empty upstream
+  if[0<n;.z.m.log[`info][`replay;"replayed ",(string n)," message(s) from the upstream log"]];
   };
 
-warnappend:{[n]
-  / the upstream replay appends to whatever the own log already holds - legacy's clearlogonsubscription exists for this
-  msg:"replay will append ",(string n)," message(s) to a log already holding ",string .z.m.msgcount;
+warnappend:{[]
+  / the upstream replay appends to whatever the own log already holds - legacy's clearlogonsubscription exists for
+  / this. NB it no longer names the incoming count: that is not known up front for a segmented upstream, whose
+  / subdetails reports a 0W sentinel per closed segment rather than a total. What matters to the reader is what the
+  / own log already holds, which is known either way
+  msg:"the upstream replay will append to a log already holding ",(string .z.m.msgcount)," message(s)";
   .z.m.log[`warn][`init;msg," - set clearlogonsubscription to rebuild it instead"];
   };
 
@@ -441,8 +443,13 @@ finishinit:{[sd]
     mkdirfail:{[dir;e] raiseerror[`init;"cannot create the log directory ",dir,": ",e]}[.z.m.tplogdir];
     @[system;"mkdir -p ",shq .z.m.tplogdir;mkdirfail];
     openlog[.z.m.date;.z.m.clearlogonsubscription]];
-  if[.z.m.replay and 0<sd`rowcount;
-    if[.z.m.msgcount>0;warnappend[sd`rowcount]];
+  / no `0<sd`rowcount` guard: that key means different things per protocol. For a STANDARD upstream it is the
+  / count the tickerplant reported, so testing it worked. For a SEGMENTED one it is the count di.subscriptions
+  / actually replayed - and this module subscribes with replay OFF, so it is always 0 here and the guard would
+  / silently skip every segmented replay. The shared replay already treats "nothing logged" as a clean 0 rather
+  / than an error, so asking it unconditionally is both simpler and correct for either upstream
+  if[.z.m.replay;
+    if[.z.m.msgcount>0;warnappend[]];
     doreplay sd];
   if[.z.m.publishmode=`batched;(.z.m.timer`addjob)[jobid;flush;();.z.m.pubperiod;1h;()!()]];
   };
@@ -467,7 +474,13 @@ init:{[config;deps]
   readconfig config;
   .z.m.ps:use`di.pubsub;
   .z.m.subs:use`di.subscriptions;
-  (.z.m.subs`init)[config;deps];
+  / failonreplayerror is forced on, whatever the process config says. di.subscriptions defaults to
+  / logging a bad log file and carrying on, which is right for an rdb - better up with most of the day
+  / than refusing to start. It is wrong here: this process re-logs what it replays and serves that log
+  / to its own subscribers, so a silently partial replay would propagate a hole downstream to every
+  / one of them. That is the raise-on-failure behaviour chainedtp's own replay had before it shared
+  / di.subscriptions', preserved as config rather than as a second implementation
+  (.z.m.subs`init)[config,(enlist`failonreplayerror)!enlist 1b;deps];
   .z.m.tp:use`di.tplogmgr;
   / di.pubsub's subscriber cleanup goes on .z.pc through the handlers dep, a simple event alongside di.torq.servers'
   / hook and this module's own (di.pubsub does not bind .z.pc itself - that replaced the di.torq.handlers dispatcher)

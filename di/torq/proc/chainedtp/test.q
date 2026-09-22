@@ -126,6 +126,21 @@ writeuplog:{[]
 setstub:{[extra] STUBH (set;`SD;(`tables`schemas`logfile`rowcount`date!(`trade`quote;schemas[];UPLOG;4;UPDATE)),extra);};
 stubcalls:{[] STUBH "CALLS"};
 
+/ flip the stub to the SEGMENTED protocol: publish a root `tptype (what di.subscriptions probes for,
+/ and what makes it call the bare `subdetails name instead of `.u.subdetails), and answer with that
+/ protocol's dict - schemalist and a logfilelist of (msgcount;logfile) pairs, with NO `logfile key at
+/ all. One real log file is enough here: what is under test is that this module accepts and drives the
+/ shape, not di.subscriptions' multi-file loop, which has its own coverage
+setstubsegmented:{[]
+  STUBH (set;`tptype;`segmented);
+  STUBH (set;`SD;`schemalist`logfilelist`rowcounts`date`logdir!
+    (flip (`trade`quote;schemas[]`trade`quote);enlist(4;UPLOG);`trade`quote!4 0;UPDATE;`$BASE,"/upstream"));
+  };
+
+/ back to standard. tptype is SET to `standard rather than unset (q has no unset); the dispatch is
+/ identical to the undefined case every other test runs under - both take the `.u.subdetails branch
+setstubstandard:{[] STUBH (set;`tptype;`standard); setstub[()!()];};
+
 / --- fixture ---
 
 setupfixture:{[]
@@ -423,6 +438,22 @@ replaynone:{[]
   doinit cfg["tplog/replay0";enlist[`replay]!enlist 1b];
   setstub[()!()];
   chk `empty`noreplay!(0=msgs[];not logged[`info;`replay])
+  };
+
+segmentedupstream:{[]
+  / chained off a SEGMENTED tickerplant. Before di.subscriptions exported a shared replay this could not
+  / work at all: the subdetails assert here demanded a `logfile key that protocol does not carry, and this
+  / module's own replay read `logfile/`rowcount directly. Both now go through the shared replay, which
+  / speaks either protocol, so the upstream's shape stops being this module's concern.
+  setstubsegmented[];
+  doinit cfg["tplog/segup";enlist[`replay]!enlist 1b];
+  a:`replayed`date`tables!(4=msgs[];UPDATE=mv`date;(asc `trade`quote)~asc mv`tables);
+  / and it still presents the CLASSIC five-key dict to its own subscribers - consuming segmented does
+  / not make it segmented, because its own log is one file per date whatever it is chained off
+  sd:(.u.subdetails)[`;`];
+  (use`di.pubsub)[`closesub][0];
+  setstubstandard[];
+  chk a,(enlist`outwardshape)!enlist `tables`schemas`logfile`rowcount`date~key sd
   };
 
 replaynofile:{[]

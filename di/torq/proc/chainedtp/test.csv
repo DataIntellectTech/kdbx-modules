@@ -53,6 +53,7 @@ true,0,0,q,replaybatched[],1,,batched replay buffers the replayed rows at root
 true,0,0,q,replaynarrowed[],1,,a table-narrowed subscription replays only that table
 true,0,0,q,replaysyms[],1,,a sym-narrowed subscription replays only those syms
 true,0,0,q,replaynone[],1,,nothing logged upstream means no replay
+true,0,0,q,segmentedupstream[],1,,chained off a segmented tickerplant - replays it and still presents the classic dict
 true,0,0,q,replaynofile[],1,,an upstream reporting messages but no log file fails init
 true,0,0,q,replayappendwarn[],1,,replay onto a non-empty log appends and warns
 true,0,0,q,existingcount[],1,,a restart counts the day's log without republishing it

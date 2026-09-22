@@ -9,8 +9,15 @@ CALLS:0;
 .u.subdetails:{[tabs;syms]
   CALLS+:1;
   r:SD;
-  if[not tabs~`;
+  / a segmented reply carries schemalist, not tables/schemas - narrowing those would invent keys
+  if[(not tabs~`) and `schemas in key r;
     r[`tables]:(),tabs;
     r[`schemas]:((),tabs)#r`schemas];
   r
   };
+
+/ the same reply under the BARE root name a segmented tickerplant publishes. di.subscriptions decides
+/ which name to call from the root `tptype` it probes for, so the harness flips this stub between the
+/ two protocols by setting tptype over the handle - no second stub process needed. tptype is left
+/ UNDEFINED here, so the probe defaults to `standard and every existing test is unaffected.
+subdetails:.u.subdetails;

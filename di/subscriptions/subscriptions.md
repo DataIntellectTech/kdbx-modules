@@ -115,6 +115,29 @@ A **segmented** TP's dict is normalised to carry the same keys those consumers r
 No `logfile` key is synthesised for a segmented TP — its absence is the honest signal that
 `logfilelist` is authoritative.
 
+### `replayed` — added to **both** protocols
+
+`rowcount` keeps its protocol-native meaning, which differs: a standard TP's is the count it
+*claimed* at subscription time, a segmented TP's is the replayed total (there is no comparable
+claimed total, since closed segments report the `0W` sentinel and summing those is meaningless).
+
+`replayed` is always the number of messages that actually made it through the root `upd`. It
+exists because the default replay policy logs a failed file and continues, so without it a caller
+could not tell a clean replay from one where **every** file was skipped: a standard TP's dict
+would still report the tickerplant's claim while nothing at all had landed, and
+`di.torq.proc.rdb` would log that claim as fact. Compare `replayed` against `rowcount` (standard)
+or check it is non-zero to detect a degraded replay.
+
+### Nothing to replay is not a failure
+
+An empty history is normal and subscribes cleanly:
+
+- a standard TP with **logging disabled** (no `tplogdir`) reports `rowcount` 0 and `logfile` `` ` ``;
+- a segmented TP with nothing logged for the requested tables returns an **empty** `logfilelist`.
+
+Both yield `replayed` 0. A missing log file is only an error when the tickerplant *claims* it
+logged something — that contradiction is reported with the claimed count in the message.
+
 ## Notes / requirements (the module-namespace boundary)
 
 A `use`-loaded module **cannot create or populate ROOT tables via bare symbols** — a bare

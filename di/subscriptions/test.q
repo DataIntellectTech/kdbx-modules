@@ -24,11 +24,15 @@ logged:{[lv;s] 0<count select from calls where lvl=lv,{0<count x ss y}[;s] each 
 / the trade schema a TP would return (g# on sym, as di.torq.proc.tickerplant applies)
 tradeschema:{[] ([]time:`timestamp$();sym:`g#`symbol$();price:`float$();size:`int$())}
 
-/ the root-namespace-safe upd di.torq.proc.rdb uses: append to the ROOT table t, handling a table
-/ payload (live) or a list-of-columns payload (replay). @[`.;..] targets root explicitly
-/ so it works even when di.tplogmgr's -11! replay executes upd from a module context (a bare
-/ `insert` would resolve the table symbol in di.tplogmgr's namespace, not root).
-rootupd:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]}
+/ the root-namespace-safe upd di.torq.proc.rdb uses - kept equivalent to rdb.q/wdb.q's updfn,
+/ INCLUDING their ascols normalisation, so this fixture cannot quietly diverge from the real
+/ consumer and hide a payload shape the real one would meet. Appends to the ROOT table t, handling
+/ a table payload (live), a list-of-columns payload and a single row of ATOMS (both replay).
+/ @[`.;..] targets root explicitly so it works even when di.tplogmgr's -11! replay executes upd
+/ from a module context (a bare `insert` would resolve the table symbol in di.tplogmgr's
+/ namespace, not root).
+updascols:{[d] $[0>type first d;enlist each d;d]}
+rootupd:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!updascols d]}[;x]]}
 
 / build one real tp log per entry of `counts`, the i-th holding counts[i] single-row trade
 / messages. di.tplogmgr names one log per date, so consecutive dates stand in for a segmented
@@ -76,9 +80,33 @@ mocktph:{[tptype;pairs]
     }[tptype;pairs]
   }
 
-/ a mock that reports a rowcount but no log file (the standard TP's logging-disabled case)
+/ a mock that CLAIMS a logged count but reports no log file - a genuine fault, the TP contradicts itself
 mocknolog:{[] {[msg] if[100h=type first msg;:`standard];
     `tables`schemas`logfile`rowcount`date!(enlist`trade;(enlist`trade)!enlist tradeschema[];`;4;D)}}
+
+/ a standard TP with LOGGING DISABLED: no tplogdir, so msgcount never increments and logfile stays `.
+/ There is simply nothing to replay, and that must NOT be treated as the fault above
+mocklogoff:{[] {[msg] if[100h=type first msg;:`standard];
+    `tables`schemas`logfile`rowcount`date!(enlist`trade;(enlist`trade)!enlist tradeschema[];`;0;D)}}
+
+/ a segmented TP with nothing logged for the requested tables - getlogsday returns () in that case
+mockemptyseg:{[] {[msg] if[100h=type first msg;:`segmented];
+    `schemalist`logfilelist`rowcounts`date`logdir!
+      (enlist(`trade;tradeschema[]);();(enlist`trade)!enlist 0;D;`$BASE)}}
+
+/ a log holding ONE atom-row message - the shape a tickerplant writes when the feed sends a row of
+/ atoms, since stamp[] keeps it atomic and logs it that way. Returns the (msgcount;logfile) pair.
+/ Uses its own subdirectory, but buildlogs wipes BASE, so build this immediately before using it
+buildatomlog:{[]
+  d:BASE,"/atomrow";
+  system "rm -rf ",d;
+  system "mkdir -p ",d;
+  tp:use`di.tplogmgr;
+  h:first tp[`open][d;D];
+  tp[`write][h;(`upd;`trade;(D+0D00:00:01;`$"S0";1.0;1i))];
+  hclose h;
+  (1;tp[`logname][d;D])
+  }
 
 / a mock whose tptype is one di.subscriptions does not know
 mockbadtype:{[] {[msg] if[100h=type first msg;:`weird]; '"mocktp: should not get here"}}

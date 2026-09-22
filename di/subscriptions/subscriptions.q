@@ -82,8 +82,13 @@ getschemas:{[sd]
 / standard branch does (it builds enlist(.u`i`L)).
 getlogpairs:{[sd]
   if[`logfilelist in key sd; :sd`logfilelist];
+  / nothing logged yet, or logging disabled on the TP (tplogdir unset -> rowcount stays 0 and logfile
+  / is `): there is no history to replay and that is not an error. A missing log file is only a fault
+  / when the TP claims it logged something
+  if[0=sd`rowcount; :()];
   lf:sd`logfile;
-  if[null lf;raiseerror[`replay;"TP reports rowcount>0 but no log file - cannot replay"]];
+  if[null lf;
+    raiseerror[`replay;"TP reports ",(string sd`rowcount)," logged message(s) but no log file - cannot replay"]];
   enlist(sd`rowcount;lf)
   };
 
@@ -92,10 +97,18 @@ getlogpairs:{[sd]
 / log needs filtering to match a narrowed subscription. For a segmented TP this matters even
 / more - each physical file holds the messages of EVERY table written to it, including tables
 / outside this request, so the filter has to span the whole replay.
-/ x is the stamped payload: a list of columns with time first, sym second.
+/ x is the stamped payload: time first, sym second - either one column per field, or one ATOM per
+/ field. The atom form is not hypothetical: di.torq.proc.tickerplant's stamp[] deliberately keeps an
+/ atom row atomic and LOGS it that way, enlisting only on the publish path. Indexing an atom row's
+/ sym gives an atom, and `where` on an atom throws 'type - which runreplay would catch and report as
+/ a skipped file, losing the whole log silently. Normalise to columns before filtering.
+ascols:{[d] $[0>type first d;enlist each d;d]};
+
 replayfilter:{[origupd;tabs;syms;t;x]
   if[not $[tabs~`;1b;t in tabs]; :()];        / skip tables we didn't subscribe to
-  if[not syms~`; x:x@\:where x[1] in syms];   / keep only subscribed syms (col 1)
+  if[not syms~`;
+    x:ascols x;
+    x:x@\:where x[1] in syms];                / keep only subscribed syms (col 1)
   origupd[t;x];
   };
 
@@ -118,8 +131,10 @@ replayone:{[pair]
   r
   };
 
-/ every file in order; returns the total replayed
-replayall:{[pairs] sum replayone each pairs};
+/ every file in order; returns the total replayed. NB the count guard is load-bearing: `sum ()` is `()`,
+/ not 0, so an empty pair list (a segmented TP with nothing logged for the requested tables) would
+/ otherwise return a generic list and fail the -7h type check downstream
+replayall:{[pairs] $[count pairs;sum replayone each pairs;0]};
 
 / replay the pre-subscription history, filtered to the subscribed tables/syms. NB module-namespace
 / boundary: a `use`-loaded module cannot create/populate ROOT tables via bare symbols (they land in
@@ -137,16 +152,23 @@ doreplay:{[pairs;tabs;syms;alltabs]
   n
   };
 
-/ the dict subscribe returns. A standard TP's own dict is passed through untouched, so existing
-/ consumers (di.torq.proc.rdb, wdb, chainedtp - which asserts the full classic key set) are
-/ unaffected. A segmented TP's dict is normalised to carry the same `tables`schemas`rowcount`date
-/ those consumers read, plus its own extra keys. No `logfile` key is synthesised: its absence is
-/ the honest signal that `logfilelist` is authoritative. `rowcount` here is the number of messages
-/ ACTUALLY REPLAYED, where a standard TP's is the count it reported at subscription time.
+/ the dict subscribe returns. A standard TP's own dict is passed through, so existing consumers
+/ (di.torq.proc.rdb, wdb, chainedtp - which asserts the classic key set with `in`, so extra keys are
+/ fine) are unaffected. A segmented TP's dict is normalised to carry the same
+/ `tables`schemas`rowcount`date those consumers read, plus its own extra keys. No `logfile` key is
+/ synthesised: its absence is the honest signal that `logfilelist` is authoritative.
+/ ---
+/ `rowcount` keeps its protocol-native meaning - the count the TP REPORTED for a standard TP, the
+/ replayed total for a segmented one, where no comparable reported total exists (closed segments
+/ report the 0W sentinel, so summing them is meaningless).
+/ `replayed` is added for BOTH and is always the number of messages that actually made it through
+/ root `upd`. Without it a caller cannot distinguish a clean replay from one where every file was
+/ skipped: the default policy logs and continues, so a standard TP's dict would still report the
+/ TP's claim while nothing at all had landed, and di.torq.proc.rdb would log that claim as fact.
 normalisedetails:{[sd;schemas;replayed]
-  if[not `logfilelist in key sd; :sd];
-  `tables`schemas`rowcount`date`logfilelist`logdir`rowcounts!
-    (key schemas;schemas;replayed;sd`date;sd`logfilelist;sd`logdir;sd`rowcounts)
+  if[not `logfilelist in key sd; :sd,(enlist`replayed)!enlist replayed];
+  `tables`schemas`rowcount`date`logfilelist`logdir`rowcounts`replayed!
+    (key schemas;schemas;replayed;sd`date;sd`logfilelist;sd`logdir;sd`rowcounts;replayed)
   };
 
 / subscribe over an already-open tickerplant handle `tph` (di.torq.proc.rdb obtains it via

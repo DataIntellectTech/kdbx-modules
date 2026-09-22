@@ -75,6 +75,43 @@ fail,0,0,q,"sub.subscribe[mockmismatch[`segmented;`.u.subdetails];`;`;1b]",1,1,a
 fail,0,0,q,"sub.subscribe[mockmismatch[`standard;`subdetails];`;`;1b]",1,1,a standard TP is asked for .u.subdetails - not bare subdetails
 true,0,0,q,"@[{sub.subscribe[mockmismatch[`segmented;`.u.subdetails];`;`;1b];``};::;{[e] 0<count e ss ""no root subdetails""}]",1,1,and the name it actually sent was the bare one - not the .u. form
 
+comment,,,,,,,nothing to replay - must not be mistaken for a fault
+run,0,0,q,resettrade[],1,1,reset before the logging-disabled test
+run,0,0,q,"sdz:sub.subscribe[mocklogoff[];`;`;1b]",1,1,a standard TP with logging disabled has nothing to replay and must still subscribe
+true,0,0,q,0=sdz`replayed,1,1,nothing was replayed
+true,0,0,q,-7h=type sdz`replayed,1,1,replayed is a long not an empty list
+fail,0,0,q,"sub.subscribe[mocknolog[];`;`;1b]",1,1,but a TP that claims a logged count with no log file is still an error
+run,0,0,q,resettrade[],1,1,reset before the empty-segment-list test
+run,0,0,q,"sde:sub.subscribe[mockemptyseg[];`;`;1b]",1,1,a segmented TP with an empty logfilelist subscribes cleanly
+true,0,0,q,0=sde`replayed,1,1,an empty logfilelist replays nothing
+true,0,0,q,-7h=type sde`rowcount,1,1,rowcount is a long - summing an empty list would give a generic list
+run,0,0,q,resettrade[],1,1,reset before the narrowed empty-segment-list test
+run,0,0,q,"sden:sub.subscribe[mockemptyseg[];`;enlist`S0;1b]",1,1,and a narrowed subscription over it does not raise either
+true,0,0,q,0=sden`replayed,1,1,narrowed empty replay reports zero
+
+comment,,,,,,,atom-row payloads - what a tickerplant logs when the feed sends atoms
+run,0,0,q,PA:buildatomlog[],1,1,build a log holding one atom-row message
+run,0,0,q,resettrade[],1,1,reset before the atom-row test
+run,0,0,q,"sda:sub.subscribe[mocktph[`standard;enlist PA];`;`;1b]",1,1,replay an atom-row payload all/all
+true,0,0,q,1=count trade,1,1,the atom row landed
+run,0,0,q,resettrade[],1,1,reset before the narrowed atom-row test
+run,0,0,q,"sdan:sub.subscribe[mocktph[`standard;enlist PA];`;enlist`S0;1b]",1,1,replay an atom-row payload through the sym filter
+true,0,0,q,1=count trade,1,1,replayfilter normalised the atom row instead of throwing on where
+true,0,0,q,1=sdan`replayed,1,1,and it counted as replayed
+run,0,0,q,resettrade[],1,1,reset before the sym-miss test
+run,0,0,q,"sdam:sub.subscribe[mocktph[`standard;enlist PA];`;enlist`NOPE;1b]",1,1,an atom row for a sym we did not subscribe to
+true,0,0,q,0=count trade,1,1,filtered out of the table
+true,0,0,q,1=sdam`replayed,1,1,but the message still counted as replayed
+
+comment,,,,,,,replayed exposes a failed replay that the default policy swallows
+run,0,0,q,PB:buildatomlog[],1,1,rebuild a log so it can be destroyed
+run,0,0,q,corruptlog last PB,1,1,make it unreplayable
+run,0,0,q,resettrade[],1,1,reset before the failed-replay test
+run,0,0,q,"sdf2:sub.subscribe[mocktph[`standard;enlist PB];`;`;1b]",1,1,subscribe over a log that cannot be replayed
+true,0,0,q,0=sdf2`replayed,1,1,replayed reports the truth - nothing landed
+true,0,0,q,1=sdf2`rowcount,1,1,while rowcount still carries the tickerplant's own claim
+true,0,0,q,0=count trade,1,1,and the table really is empty
+
 comment,,,,,,,config - init reads it
 fail,0,0,q,sub.init[(::);deps[]],1,1,init rejects a non-dictionary config
 run,0,0,q,PF:buildlogs[2 3],1,1,two logs for the replay-failure policy tests

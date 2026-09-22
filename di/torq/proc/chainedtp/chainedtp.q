@@ -43,9 +43,28 @@ resolvedir:{[base;dir]
 / (a one-character string is a char atom in q, hence the abs types and the (),x)
 astz:{[x] $[11h=abs type x;x;`$(),x]};
 tostr:{[x] $[10h=abs type x;(),x;string x]};
-tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]};
 tolong:{[x] $[10h=abs type x;"J"$(),x;"j"$x]};
 cfgor:{[config;k;dflt] $[k in key config;config k;dflt]};
+
+/ boolean config. The enlisted single characters in the one-liner this replaces were already guarding
+/ one trap - a one-character string is a char ATOM, so "1"/"t"/"y" would otherwise never match. Two
+/ remained: it fell through to `boolean$ for a symbol, which throws, though a .q settings file is
+/ exactly where symbols come from; and an unrecognised word silently read as FALSE. That now SIGNALS -
+/ a typo is a configuration error, and reading it as "off" is how a safety setting gets disabled unnoticed
+truewords:`true`yes`on`t`y`1;
+falsewords:`false`no`off`f`n`0;
+
+tobool:{[x]
+  if[-1h=type x;:x];
+  if[type[x] in -4 -5 -6 -7 -8 -9h;:0<>x];
+  if[not type[x] in -11 -10 10h;
+    '"di.torq.proc.chainedtp: cannot read ",(-3!x)," as a boolean"];
+  w:`$lower $[-11h=type x;string x;(),x];
+  if[w in truewords;:1b];
+  if[w in falsewords;:0b];
+  '"di.torq.proc.chainedtp: cannot read ",(-3!x)," as a boolean; expected one of ",
+    ", " sv string truewords,falsewords
+  };
 
 / payloads arrive as a table (di.pubsub's live publish) or as a list of columns (log replay); normalise to a list of
 / vector columns, so a single record (atom columns) and a batch take the same path everywhere below

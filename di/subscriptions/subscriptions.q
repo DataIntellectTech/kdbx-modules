@@ -24,9 +24,37 @@
 / state so each name has one meaning (bare module-local names and .z.m are the same storage).
 registryschema:([]handle:`int$();tabs:();syms:();subtime:`timestamp$());
 
-/ config values arrive as symbols (.q settings) or strings (.toml, command-line overrides), so coerce
-/ at the point of use - a string reaching `boolean$ yields a boolean LIST, not an atom
-tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";"1";"t";"y";"yes");`boolean$x]};
+/ module state that exists before init has run
+initdone:0b;
+
+/ config values arrive as booleans, symbols (a .q settings file), strings (.toml or a command-line
+/ override) or numbers, so coerce at the point of use. Three traps this avoids:
+/   - `boolean$ on a string gives one boolean PER CHARACTER, and using that in a conditional throws
+/   - a single-character string is a char ATOM, so it never matches a multi-character word
+/   - `boolean$ on a symbol throws outright, though a .q settings file is exactly where symbols come from
+/ An unrecognised word SIGNALS rather than defaulting to false: a typo in a setting is a configuration
+/ error, and silently reading it as "off" is how a safety setting gets disabled unnoticed.
+truewords:`true`yes`on`t`y`1;
+falsewords:`false`no`off`f`n`0;
+
+tobool:{[x]
+  if[-1h=type x;:x];
+  if[type[x] in -4 -5 -6 -7 -8 -9h;:0<>x];
+  if[not type[x] in -11 -10 10h;
+    '"di.subscriptions: cannot read ",(-3!x)," as a boolean"];
+  w:`$lower $[-11h=type x;string x;(),x];
+  if[w in truewords;:1b];
+  if[w in falsewords;:0b];
+  '"di.subscriptions: cannot read ",(-3!x)," as a boolean; expected one of ",", " sv string truewords,falsewords
+  };
+
+requireinit:{[ctx]
+  / init is what wires the logger, so this cannot go through raiseerror - there is nothing to log
+  / through yet. Without it a pre-init call fails deep inside on an unset name, reporting a module
+  / internal (".m.di.0subscriptions.registry") rather than the actual mistake
+  if[not .z.m.initdone;
+    '"di.subscriptions: ",string[ctx],": init must be called before any other function"];
+  };
 
 init:{[config;deps]
   / wire the injected deps, read config and reset the subscription registry
@@ -40,6 +68,7 @@ init:{[config;deps]
   / state must faithfully mirror the tickerplant's - di.torq.proc.chainedtp raises today for exactly
   / this reason - cannot accept silently incomplete history
   .z.m.failonreplayerror:$[`failonreplayerror in key config;tobool config`failonreplayerror;0b];
+  .z.m.initdone:1b;                 / LAST - so a part-way failure leaves the module uninitialised
   };
 
 raiseerror:{[ctx;msg]
@@ -54,9 +83,12 @@ raiseerror:{[ctx;msg]
 / TorQ's probe. di.torq.proc.tickerplant and di.torq.proc.chainedtp define none; only
 / di.torq.proc.segmentedtp publishes one.
 gettptype:{[tph]
-  t:@[tph;({@[value;`tptype;`standard]};`);`];
-  if[null t;raiseerror[`subscribe;"could not determine tickerplant type"]];
-  t
+  r:@[tph;({@[value;`tptype;`standard]};`);{[e](`probeerr;e)}];
+  if[`probeerr~first r;
+    raiseerror[`subscribe;"could not read tptype from the tickerplant: ",last r]];
+  if[not -11h=type r;
+    raiseerror[`subscribe;"tickerplant reported a non-symbol tptype: ",-3!r]];
+  r
   };
 
 / the subscription call itself - the ROOT NAME differs by protocol, so this has to be decided
@@ -175,26 +207,65 @@ normalisedetails:{[sd;schemas;replayed]
 / di.torq.servers). tabs/syms: ` for all, else a list. replay: 1b to replay the tp log.
 / Returns the subscription-details dict (tables/schemas/rowcount/date, plus logfile for a
 / standard TP or logfilelist/logdir/rowcounts for a segmented one).
+/ define the subscribed tables at ROOT from the returned schemas (they carry g# etc.).
+/ @[`.;name;:;schema] targets root explicitly - a bare `name set schema` from inside this module
+/ would create the table in the module's private namespace instead.
+/ reset=1b (we are about to replay) clears the table first, so the replay lands in a clean table and
+/ cannot duplicate rows that are already there. reset=0b leaves an EXISTING table alone: a
+/ re-subscribe without replay would otherwise silently discard everything the process had
+/ accumulated, which is data loss with no way to notice it.
+definetables:{[schemas;reset]
+  nms:$[reset;key schemas;(key schemas) except tables[`.]];
+  {@[`.;x;:;y]}'[nms;schemas nms];
+  };
+
+/ registry rows for a handle. `~\:` rather than `=` because a handle need not be comparable with `=`
+/ (a test fixture passes a function), and matching never throws
+dropregistry:{[tph] .z.m.registry:.z.m.registry where not (.z.m.registry`handle)~\:tph;};
+
 subscribe:{[tph;tabs;syms;replay]
+  requireinit`subscribe;
   tptype:gettptype tph;
   sd:callsubdetails[tph;tptype;tabs;syms];
   schemas:getschemas sd;
-  / define the subscribed tables at ROOT from the returned schemas (they carry g# etc.).
-  / @[`.;name;:;schema] targets root explicitly - a bare `name set schema` from inside
-  / this module would create the table in the module's private namespace instead.
-  {@[`.;x;:;y]}'[key schemas;value schemas];
+  definetables[schemas;replay];
   n:$[replay;doreplay[getlogpairs sd;tabs;syms;key schemas];0];
+  / one row per handle - re-subscribing over the same handle replaces its row rather than adding a
+  / second, matching the idempotent-re-init convention the rest of the framework relies on
+  dropregistry tph;
   .z.m.registry:.z.m.registry,([]handle:enlist tph;tabs:enlist key schemas;syms:enlist syms;subtime:enlist .z.p);
   .z.m.log[`info][`subscriptions;
     "subscribed to ",(", " sv string key schemas)," on ",(string tptype)," tickerplant handle ",string tph];
   normalisedetails[sd;schemas;n]
   };
 
-/ are we currently subscribed to anything? (di.torq.proc.rdb's connectivity check)
-subscribed:{[] 0<count .z.m.registry};
+unsubscribe:{[tph]
+  / forget a subscription. The tickerplant is NOT told: di.pubsub drops a subscriber on .z.pc, so a
+  / closed handle deregisters itself there. What nothing else clears is OUR record, and a stale row
+  / makes subscribed[] answer 1b for a tickerplant that has gone away
+  requireinit`unsubscribe;
+  if[not any (.z.m.registry`handle)~\:tph;
+    raiseerror[`unsubscribe;"no subscription recorded on handle ",-3!tph]];
+  dropregistry tph;
+  .z.m.log[`info][`subscriptions;"unsubscribed handle ",-3!tph];
+  };
+
+teardown:{[]
+  / forget every subscription - for a process re-subscribing from scratch. Safe to call repeatedly
+  requireinit`teardown;
+  n:count .z.m.registry;
+  .z.m.registry:registryschema;
+  .z.m.log[`info][`subscriptions;"cleared ",(string n)," subscription record(s)"];
+  };
+
+/ is any subscription RECORDED? (di.torq.proc.rdb's connectivity check). NB this reports what this
+/ module was told, not what is live: nothing here watches .z.pc, so a tickerplant that has gone away
+/ still shows as subscribed until the consumer calls unsubscribe. Wiring that to a real disconnect
+/ needs the handlers dependency and is deferred with the rest of the reconnect work.
+subscribed:{[] requireinit`subscribed; 0<count .z.m.registry};
 
 / the active-subscriptions registry (introspection)
-getsubscriptions:{[] .z.m.registry};
+getsubscriptions:{[] requireinit`getsubscriptions; .z.m.registry};
 
 getapimeta:{[]
   / callable api for di.torq to register with di.api. init/getapimeta/version are plumbing di.torq
@@ -204,6 +275,10 @@ getapimeta:{[]
     (`subscribe;       1b; "subscribe over an open tickerplant handle and replay its log exactly once";
        "[int: tickerplant handle; symbol(list): tables (` for all); symbol(list): syms (` for all); boolean: replay]";
        "dict: tables, schemas, rowcount, date and the log details for the tickerplant's protocol");
+    (`unsubscribe;     1b; "forget the subscription recorded against a tickerplant handle";
+       "[int: tickerplant handle]";                                "null");
+    (`teardown;        1b; "forget every recorded subscription";
+       "[]";                                                       "null");
     (`subscribed;      1b; "is any subscription currently recorded?";
        "[]";                                                       "boolean: 1b if the registry is non-empty");
     (`getsubscriptions;1b; "the active-subscriptions registry";

@@ -25,8 +25,13 @@ modular single-call `subdetails` protocol rather than the classic standard-TP
 |---|---|---|
 | `failonreplayerror` | `0b` | `1b` makes an unreplayable log file **fatal** instead of logged-and-skipped |
 
-Values may be symbols (a `.q` settings file) or strings (`.toml`, command-line overrides); they are
-coerced at the point of use, so `"false"` and `0b` both work.
+Values may be booleans, symbols (a `.q` settings file), strings (`.toml`, command-line overrides)
+or numbers; they are coerced at the point of use, so `0b`, `` `false ``, `"false"`, `"f"`, `"no"`,
+`"off"` and `0` all work, in any case.
+
+An **unrecognised** word signals rather than defaulting to false — a typo in a setting is a
+configuration error, and reading it as "off" silently is how a safety setting gets disabled without
+anyone noticing.
 
 `failonreplayerror` exists because both policies are legitimate and the right one depends on the
 consumer. An RDB is better off up with most of the day than refusing to start over one corrupt
@@ -40,9 +45,33 @@ duplicate of this replay logic.
 |---|---|
 | `init[config;deps]` | validate config and the `log` dep, load di.tplogmgr, reset the registry |
 | `subscribe[tph;tabs;syms;replay]` | subscribe over an open TP handle; returns the subscription details |
+| `unsubscribe[tph]` | forget the subscription recorded against a handle |
+| `teardown[]` | forget every recorded subscription |
 | `subscribed[]` | `1b` if any subscription is recorded |
 | `getsubscriptions[]` | the active-subscriptions registry table |
 | `getapimeta[]` | api metadata rows for `di.torq` to register with `di.api` |
+
+Every one of these refuses to run before `init` and says so — without that guard a pre-init call
+fails deep inside on an unset name and reports a module internal
+(`.m.di.0subscriptions.registry`) rather than the actual mistake.
+
+### The registry records, it does not observe
+
+`subscribe` keeps **one row per handle** — re-subscribing over the same handle replaces its row
+rather than adding a second. Nothing here watches `.z.pc`, so a tickerplant that has gone away
+still shows as subscribed until the consumer calls `unsubscribe`; `subscribed[]` answers *"is a
+subscription recorded"*, not *"is the tickerplant reachable"*. Wiring it to a real disconnect needs
+the `handlers` dependency and is deferred with the rest of the reconnect work.
+
+`unsubscribe` clears only this module's record — it does not tell the tickerplant, because
+`di.pubsub` drops a subscriber on `.z.pc` and a closed handle therefore deregisters itself there.
+
+### `replay` decides whether the tables are reset
+
+`subscribe` defines the subscribed tables at root from the returned schemas. With `replay=1b` an
+existing table is **cleared first**, so the replay lands in a clean table and cannot duplicate rows
+already present. With `replay=0b` an existing table is **left alone** — a re-subscribe would
+otherwise silently discard everything the process had accumulated.
 
 ## Two tickerplant protocols
 

@@ -112,6 +112,56 @@ true,0,0,q,0=sdf2`replayed,1,1,replayed reports the truth - nothing landed
 true,0,0,q,1=sdf2`rowcount,1,1,while rowcount still carries the tickerplant's own claim
 true,0,0,q,0=count trade,1,1,and the table really is empty
 
+comment,,,,,,,registry lifecycle - dedup, unsubscribe, teardown
+run,0,0,q,sub.teardown[],1,1,start this section from an empty registry
+true,0,0,q,not sub.subscribed[],1,1,teardown cleared every recorded subscription
+run,0,0,q,PR:buildlogs[enlist 2],1,1,a two-message log to subscribe over
+run,0,0,q,"TPH:mocktph[`standard;PR]",1,1,one mock handle reused throughout
+run,0,0,q,resettrade[],1,1,reset before the first subscribe
+run,0,0,q,"sub.subscribe[TPH;`;`;1b]",1,1,first subscribe
+true,0,0,q,1=count sub.getsubscriptions[],1,1,one registry row
+run,0,0,q,"sub.subscribe[TPH;`;`;1b]",1,1,re-subscribe over the SAME handle
+true,0,0,q,1=count sub.getsubscriptions[],1,1,the row was replaced not duplicated
+fail,0,0,q,sub.unsubscribe[`nosuch],1,1,unsubscribing a handle we never subscribed is an error
+run,0,0,q,sub.unsubscribe[TPH],1,1,unsubscribe the real handle
+true,0,0,q,not sub.subscribed[],1,1,and the registry is empty again
+
+comment,,,,,,,re-subscribe must not silently discard accumulated rows
+run,0,0,q,resettrade[],1,1,reset before the re-subscribe test
+run,0,0,q,"sub.subscribe[TPH;`;`;1b]",1,1,subscribe and replay two messages
+true,0,0,q,2=count trade,1,1,two rows replayed
+run,0,0,q,"upd[`trade;(enlist D+0D01;enlist`LIVE;enlist 9.0;enlist 9i)]",1,1,a live update arrives
+true,0,0,q,3=count trade,1,1,three rows now held
+run,0,0,q,"sub.subscribe[TPH;`;`;0b]",1,1,re-subscribe WITHOUT replay
+true,0,0,q,3=count trade,1,1,the accumulated rows survived - no silent data loss
+run,0,0,q,"sub.subscribe[TPH;`;`;1b]",1,1,re-subscribe WITH replay
+true,0,0,q,2=count trade,1,1,replay resets the table first so it cannot duplicate rows
+
+comment,,,,,,,tobool - config coercion
+run,0,0,q,TB:.m.di.0subscriptions.tobool,1,1,reach the internal config coercion
+true,0,0,q,"all TB each (1b;""true"";""TRUE"";""yes"";""on"";""1"";""t"";""y"";`true;`on;1)",1,1,every truthy form coerces to true including single characters and symbols
+true,0,0,q,"not any TB each (0b;""false"";""no"";""off"";""0"";""f"";""n"";`false;`off;0)",1,1,every falsy form coerces to false
+fail,0,0,q,"TB ""banana""",1,1,an unrecognised word is a configuration error not a silent false
+fail,0,0,q,TB`banana,1,1,and so is an unrecognised symbol
+fail,0,0,q,"sub.init[enlist[`failonreplayerror]!enlist ""banana"";deps[]]",1,1,so a bad boolean in config fails init loudly
+run,0,0,q,sub.init[()!();deps[]],1,1,restore a clean init after the failed one
+
+comment,,,,,,,gettptype - a probe failure is reported not swallowed
+fail,0,0,q,"sub.subscribe[{[m] '""boom""};`;`;0b]",1,1,a tickerplant handle that throws on the tptype probe
+true,0,0,q,"@[{sub.subscribe[{[m] '""boom""};`;`;0b];``};::;{[e] 0<count e ss ""could not read tptype""}]",1,1,and the real reason reaches the message
+fail,0,0,q,"sub.subscribe[{[m] enlist`a`b};`;`;0b]",1,1,a non-symbol tptype is rejected rather than falling through
+
+comment,,,,,,,requireinit - public functions refuse to run before init
+run,0,0,q,"@[`.m.di.0subscriptions;`initdone;:;0b]",1,1,simulate a module whose init has not run
+fail,0,0,q,sub.subscribed[],1,1,subscribed refuses
+fail,0,0,q,sub.getsubscriptions[],1,1,getsubscriptions refuses
+fail,0,0,q,sub.teardown[],1,1,teardown refuses
+fail,0,0,q,sub.unsubscribe[1i],1,1,unsubscribe refuses
+fail,0,0,q,"sub.subscribe[{[m]`standard};`;`;0b]",1,1,subscribe refuses
+true,0,0,q,"@[{sub.subscribed[];``};::;{[e] 0<count e ss ""init must be called""}]",1,1,and says so plainly instead of naming a module internal
+run,0,0,q,sub.init[()!();deps[]],1,1,re-init for the remaining tests
+true,0,0,q,not sub.subscribed[],1,1,init works again after the forced reset
+
 comment,,,,,,,config - init reads it
 fail,0,0,q,sub.init[(::);deps[]],1,1,init rejects a non-dictionary config
 run,0,0,q,PF:buildlogs[2 3],1,1,two logs for the replay-failure policy tests

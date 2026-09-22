@@ -1,24 +1,90 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,sub:use`di.subscriptions,1,,load module
-before,0,0,q,system "l di/subscriptions/test.q",1,,load fixture helpers
-before,0,0,q,buildlog[4],1,,build a real 4-message tp log via di.tplogmgr
+before,0,0,q,sub:use`di.subscriptions,1,1,load module
+before,0,0,q,"system ""l di/subscriptions/test.q""",1,1,load fixture helpers
 
-fail,0,0,q,sub.init[()!();()!()],1,,init without the log dependency must error
+comment,,,,,,,init and module plumbing
+fail,0,0,q,sub.init[()!();()!()],1,1,init without the log dependency must error
+run,0,0,q,sub.init[()!();deps[]],1,1,init with a mock log dependency
+true,0,0,q,0=count sub.getsubscriptions[],1,1,init seeds an empty subscription registry
+true,0,0,q,not sub.subscribed[],1,1,nothing is subscribed before the first subscribe
+true,0,0,q,`version in key sub,1,1,version is still an export - di.depcheck reads it there
+true,0,0,q,"3=count ""."" vs sub.version",1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any sub.version in ""\n\r""",1,1,no stray newline came through from the VERSION file
 
-run,0,0,q,sub.init[()!();deps[]],1,,init with a mock log dependency
-run,0,0,q,`upd set rootupd,1,,define the root-namespace-safe upd the replay drives - as di.rdb does
-run,0,0,q,@[`.;`trade;:;0#tradeschema[]],1,,ensure no stale trade table before subscribing
-run,0,0,q,sd:sub.subscribe[mocktph[4];`;`;1b],1,,subscribe all/all with replay over the mock TP handle
+comment,,,,,,,getapimeta
+true,0,0,q,"(asc (key sub) except `init`getapimeta`version)~asc exec name from sub.getapimeta[]",1,1,getapimeta documents exactly the callable exports
+true,0,0,q,"not any `init`getapimeta in exec name from sub.getapimeta[]",1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols sub.getapimeta[],1,1,getapimeta rows carry the registry columns
 
-true,0,0,q,`trade in tables[],1,,subscribe created the trade table from the returned schema
-true,0,0,q,`g=attr trade`sym,1,,the schema's g# attribute on sym was preserved
-true,0,0,q,4=count trade,1,,all four logged messages were replayed into the table
-true,0,0,q,4=sd`rowcount,1,,subdetails reported the pre-subscription rowcount
-true,0,0,q,sub.subscribed[],1,,the subscription was recorded in the registry
+comment,,,,,,,standard tickerplant - regression, behaviour must be unchanged
+run,0,0,q,P1:buildlog[4],1,1,build a real 4-message tp log via di.tplogmgr
+run,0,0,q,`upd set rootupd,1,1,define the root-namespace-safe upd the replay drives - as di.torq.proc.rdb does
+run,0,0,q,resettrade[],1,1,ensure no stale trade table before subscribing
+run,0,0,q,"sd:sub.subscribe[mocktph[`standard;enlist P1];`;`;1b]",1,1,subscribe all/all with replay over a standard mock TP
+true,0,0,q,`trade in tables[],1,1,subscribe created the trade table from the returned schema
+true,0,0,q,`g=attr trade`sym,1,1,the schema's g# attribute on sym was preserved
+true,0,0,q,4=count trade,1,1,all four logged messages were replayed into the table
+true,0,0,q,4=sd`rowcount,1,1,subdetails reported the pre-subscription rowcount
+true,0,0,q,`logfile in key sd,1,1,a standard TP's dict is passed through untouched
+true,0,0,q,sub.subscribed[],1,1,the subscription was recorded in the registry
 
-run,0,0,q,`trade set 0#tradeschema[],1,,reset the table for the filtered-subscription test
-run,0,0,q,sdf:sub.subscribe[mocktph[4];`;enlist`S1;1b],1,,subscribe with a sym filter (only S1)
-true,0,0,q,1=count trade,1,,replay filtered to the single subscribed sym
-true,0,0,q,`S1=first trade`sym,1,,the replayed row is the subscribed sym
+comment,,,,,,,standard tickerplant - narrowed subscription
+run,0,0,q,resettrade[],1,1,reset the table for the filtered-subscription test
+run,0,0,q,"sdf:sub.subscribe[mocktph[`standard;enlist P1];`;enlist`S1;1b]",1,1,subscribe with a sym filter (only S1)
+true,0,0,q,1=count trade,1,1,replay filtered to the single subscribed sym
+true,0,0,q,`S1=first trade`sym,1,1,the replayed row is the subscribed sym
+run,0,0,q,resettrade[],1,1,reset before the table-filter test
+run,0,0,q,"sdt:sub.subscribe[mocktph[`standard;enlist P1];enlist`other;`;1b]",1,1,subscribe to a table the log does not carry
+true,0,0,q,0=count trade,1,1,replayfilter dropped every row for the unsubscribed table
 
-after,0,0,q,teardownfixture[],1,,remove the temp log dir
+comment,,,,,,,segmented tickerplant - multi-file replay
+run,0,0,q,PS:buildlogs[2 3 4],1,1,build three real tp logs holding 2 3 and 4 messages
+run,0,0,q,resettrade[],1,1,reset the table before the segmented subscribe
+run,0,0,q,"ss1:sub.subscribe[mocktph[`segmented;PS];`;`;1b]",1,1,subscribe all/all with replay over a segmented mock TP
+true,0,0,q,9=count trade,1,1,every message from all three segments was replayed exactly once
+true,0,0,q,9=count distinct trade`sym,1,1,no segment was replayed twice
+true,0,0,q,"(asc trade`time)~trade`time",1,1,the segments replayed in chronological order
+true,0,0,q,9=ss1`rowcount,1,1,rowcount reports the messages actually replayed
+true,0,0,q,`logfilelist in key ss1,1,1,the segmented dict keeps logfilelist
+true,0,0,q,"all `tables`schemas`rowcount`date in key ss1",1,1,the segmented dict is normalised to carry the keys rdb and wdb read
+true,0,0,q,not `logfile in key ss1,1,1,no misleading single logfile key is synthesised
+true,0,0,q,"(enlist`trade)~ss1`tables",1,1,tables was derived from schemalist
+true,0,0,q,`logdir in key ss1,1,1,logdir is carried through for a consumer of the segmented protocol
+
+comment,,,,,,,segmented tickerplant - narrowed subscription spans every file
+run,0,0,q,resettrade[],1,1,reset before the narrowed segmented test
+run,0,0,q,"ss2:sub.subscribe[mocktph[`segmented;PS];`;`S0`S8;1b]",1,1,subscribe to one sym from the first segment and one from the last
+true,0,0,q,2=count trade,1,1,the filter wrapper spanned the whole loop not just the first file
+true,0,0,q,"`S0`S8~asc trade`sym",1,1,both subscribed syms survived across separate files
+
+comment,,,,,,,a corrupt segment is logged and skipped not fatal
+run,0,0,q,PC:buildlogs[2 3 4],1,1,rebuild three logs for the corruption test
+run,0,0,q,corruptlog last PC 1,1,1,make the middle segment unreplayable
+run,0,0,q,resettrade[],1,1,reset before the corrupt-segment test
+run,0,0,q,resetcalls[],1,1,clear the captured log so the assertions below are about this subscribe
+run,0,0,q,"sc:sub.subscribe[mocktph[`segmented;PC];`;`;1b]",1,1,subscribe over a segmented TP whose middle segment is corrupt
+true,0,0,q,6=count trade,1,1,the two good segments still replayed - the subscriber came up with real data
+true,0,0,q,6=sc`rowcount,1,1,rowcount counts only what actually replayed
+true,0,0,q,"logged[`error;""replay failed""]",1,1,the failure was logged at error level
+true,0,0,q,"logged[`error;""tp"",string D+1]",1,1,the logged error names the segment that failed
+
+comment,,,,,,,dispatch and guard paths
+fail,0,0,q,"sub.subscribe[mockbadtype[];`;`;1b]",1,1,an unrecognised tptype is rejected
+fail,0,0,q,"sub.subscribe[mocknolog[];`;`;1b]",1,1,a rowcount with no log file is rejected
+fail,0,0,q,"sub.subscribe[mockmismatch[`segmented;`.u.subdetails];`;`;1b]",1,1,a segmented TP is asked for bare subdetails - not .u.subdetails
+fail,0,0,q,"sub.subscribe[mockmismatch[`standard;`subdetails];`;`;1b]",1,1,a standard TP is asked for .u.subdetails - not bare subdetails
+true,0,0,q,"@[{sub.subscribe[mockmismatch[`segmented;`.u.subdetails];`;`;1b];``};::;{[e] 0<count e ss ""no root subdetails""}]",1,1,and the name it actually sent was the bare one - not the .u. form
+
+comment,,,,,,,config - init reads it
+fail,0,0,q,sub.init[(::);deps[]],1,1,init rejects a non-dictionary config
+run,0,0,q,PF:buildlogs[2 3],1,1,two logs for the replay-failure policy tests
+run,0,0,q,corruptlog last PF 0,1,1,make the first of the two unreplayable
+run,0,0,q,"sub.init[enlist[`failonreplayerror]!enlist 1b;deps[]]",1,1,re-init with fail-fast replay
+run,0,0,q,resettrade[],1,1,reset before the fail-fast subscribe
+fail,0,0,q,"sub.subscribe[mocktph[`segmented;PF];`;`;1b]",1,1,a corrupt segment is fatal when failonreplayerror is set
+run,0,0,q,"sub.init[enlist[`failonreplayerror]!enlist ""false"";deps[]]",1,1,the string form a .toml or command-line override delivers
+run,0,0,q,resettrade[],1,1,reset before the skip-and-continue subscribe
+run,0,0,q,"sub.subscribe[mocktph[`segmented;PF];`;`;1b]",1,1,the string coerced to a boolean so the corrupt segment is skipped again
+true,0,0,q,3=count trade,1,1,the good segment still replayed after the bad one was skipped
+
+after,0,0,q,teardownfixture[],1,1,remove the temp log dir

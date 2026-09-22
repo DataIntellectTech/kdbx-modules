@@ -2,4 +2,4 @@
 
 version:first read0`:::VERSION
 
-export:([init;subscribe;subscribed;getsubscriptions;version])
+export:([init;subscribe;subscribed;getsubscriptions;getapimeta;version])

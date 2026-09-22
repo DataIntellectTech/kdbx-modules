@@ -1,0 +1,11 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,"system ""l di/subscriptions/test_integration.q""",1,1,load the integration harness
+before,0,0,q,setupintegration[],1,1,make the working dir and the schema file and point TORQXAPPHOME at them
+
+comment,,,,,,,real cross-process subscribe - both protocols
+true,0,0,q,standardreplay[],1,1,a real di.torq.proc.tickerplant replays through .u.subdetails and the singular dict
+true,0,0,q,segmentedreplay[],1,1,a real di.torq.proc.segmentedtp replays three real segments exactly once and in order
+true,0,0,q,exactlyonceacrossroll[],1,1,live delivery does not redeliver replayed messages and a restart lands on the same set
+true,0,0,q,corruptsegment[],1,1,an unreadable segment is logged and skipped and the other segments still arrive
+
+after,0,0,q,killall[],1,1,kill every child process and remove the working dir

@@ -88,3 +88,11 @@ true,0,0,q,teardownok[],1,,teardown flushes and closes every file and removes th
 true,0,0,q,afterteardown[],1,,exported functions and the root upd reject calls after teardown
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs
+
+comment,,,,,,,tobool - config coercion (a .toml or -flag value is a STRING or SYMBOL)
+run,0,0,q,TB:.m.di.0torq.0proc.0segmentedtp.tobool,1,,reach the internal config coercion
+true,0,0,q,"all TB each (1b;""true"";""TRUE"";""yes"";""on"";""1"";""t"";""y"";`true;`on;1)",1,,every truthy form coerces to true including single characters and symbols
+true,0,0,q,"not any TB each (0b;""false"";""no"";""off"";""0"";""f"";""n"";`false;`off;0)",1,,every falsy form coerces to false
+true,0,0,q,-1h=type TB"false",1,,the result is a boolean ATOM not one boolean per character
+fail,0,0,q,"TB ""banana""",1,,an unrecognised word is a configuration error not a silent false
+fail,0,0,q,TB`banana,1,,and so is an unrecognised symbol

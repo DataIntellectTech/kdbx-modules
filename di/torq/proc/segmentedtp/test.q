@@ -512,6 +512,30 @@ periodroll:{[]
     ((0W;old);(0;new))~day)
   };
 
+logorderbyseq:{[]
+  / getlogsday orders segments by the metatable's seq, not by row order, so they still replay chronologically when
+  / the rows are not in append order - loadmetatable reading a file back is the real case. periodroll covers the
+  / in-order path; this covers the reordered one. Reversing the rows must not change the answer
+  dir:"tplog/lorder";
+  doinit cfg[dir;enlist[`batchmode]!enlist`immediate];
+  feed[`trade;3];
+  old:fileof`trade;
+  `EOP set ();
+  (st`subdetails)[`;`];
+  np:.z.p+(mv[`eod]`getdailyadj)[]-0D00:00:01;
+  mset[`nextperiod;np];
+  mset[`nextendutc;.z.p-1];
+  (mv`tick)[];
+  (use`di.pubsub)[`closesub][0];
+  new:fileof`trade;
+  inorder:(mv`getlogsday) enlist`trade;
+  mset[`metatable;reverse mv`metatable];
+  reversed:(mv`getlogsday) enlist`trade;
+  chk `chronological`stableunderreorder!(
+    ((0W;old);(0;new))~inorder;
+    inorder~reversed)
+  };
+
 dayroll:{[]
   dir:"tplog/droll";
   doinit cfg[dir;enlist[`batchmode]!enlist`immediate];

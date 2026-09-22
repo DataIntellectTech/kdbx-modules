@@ -69,6 +69,7 @@ true,0,0,q,fix6[],1,,custom mode writes one metatable row per physical file - sh
 comment,,,,,,,period and day rolls
 true,0,0,q,periodroll[],1,,end of period closes the segment and rolls to a new file and notifies subscribers and lists the day
 true,0,0,q,dayroll[],1,,end of day notifies subscribers and moves to the next day's directory and closes every segment
+true,0,0,q,logorderbyseq[],1,,getlogsday orders segments by metatable seq not by row order
 
 comment,,,,,,,subscriber surface / custom mode / lifecycle
 true,0,0,q,subdetailsok[],1,,subdetails returns schemas and replay pairs and rowcounts and date and logdir

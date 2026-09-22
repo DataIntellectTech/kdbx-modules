@@ -268,16 +268,25 @@ reconcilemeta:{[]
 
 / --- replay lists for subscribers: (message count;log file) pairs, as -11! takes them ---
 
+/ NB both builders return the pairs in metatable `seq` order. A subscriber replays them in the order given, and
+/ replaying segments out of order leaves a non-ascending time column - breaking aj and any `s# assumption - while
+/ still producing the right row SET, so the fault is silent. Row order alone is only incidentally chronological:
+/ it is append order within one uninterrupted run, and whatever loadmetatable read back after a restart.
+
 getlogsperiod:{[ts]
   / the current period only: one pair per physical file, counting every table in it - not one pair per table,
-  / which double-counts a shared singular/periodic file
+  / which double-counts a shared singular/periodic file. currlog carries no ordering key (tbl/logname/handle
+  / only), so the order comes from the metatable; any logname with no metatable row keeps its place at the end
+  / rather than being dropped
   lns:exec distinct logname from .z.m.currlog where tbl in ts,not null handle;
+  ord:exec logname from `seq xasc select seq,logname from .z.m.metatable where logname in lns;
+  lns:distinct ord,lns except ord;
   flip (filecount each lns;lns)
   };
 
 getlogsday:{[ts]
   / the whole day from the metatable: closed segments replay in full (0W), open ones up to their current count
-  m:select logname,end from .z.m.metatable where any each tbls in\: ts;
+  m:`seq xasc select seq,logname,end from .z.m.metatable where any each tbls in\: ts;
   if[not count m;:()];
   flip (?[null m`end;filecount each m`logname;0W];m`logname)
   };

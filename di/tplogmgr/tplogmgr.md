@@ -35,6 +35,23 @@ root `upd` before calling either.** `di.torq.proc.tickerplant` publishes its `up
   twice — a naive `@[-11!;logfile;{…repair…}]` would partially replay before throwing
   and then replay again, double-processing. For consumers (e.g. RDB startup) that should
   recover rather than abort.
+- `replayupto[logfile;n]` → count. Replays only the **first `n`** messages through the root
+  `upd`, repairing first if corrupt (as `replay` does). This is what a *subscriber* uses on
+  startup: it replays exactly the messages the tickerplant had logged at the instant it
+  subscribed, so live messages arriving after that — which are **also** delivered over the
+  feed — are not double-processed. Whole-file `replay` would reprocess them.
+
+  Two properties consumers rely on:
+
+  - **`n >= good-count` replays the whole (repaired) log.** So a caller may pass a sentinel
+    rather than a real count — `di.torq.proc.segmentedtp` reports `0W` for a closed segment,
+    meaning "replay all of it", and needs no special case here.
+  - **It is repair-aware, where `open` is fail-fast.** A corrupt log is repaired and replayed
+    rather than aborting the process, because a subscriber should recover where a tickerplant
+    must not silently continue.
+
+  One call per file: a segmented tickerplant reports several `(msgcount;logfile)` pairs, and
+  the loop over them belongs in the caller (`di.subscriptions`), not here.
 - `check[logfile;lastmsgtoreplay]` / `repair[logfile]` — re-exported from
   `di.tplog`.
 
@@ -42,6 +59,10 @@ root `upd` before calling either.** `di.torq.proc.tickerplant` publishes its `up
 
 `di.tplog` (kdbx-modules), called per-invocation via `use` (idempotent, so cheap,
 and it sidesteps module-local dependency-variable resolution). No injected DI deps.
+
+Declared in `deps.toml` as well as here. Without a manifest `di.torq.depcheck` skips the
+module entirely rather than failing it (`depcheck.md`), so this edge would silently drop out
+of the transitive dependency graph for every consumer.
 
 ## Known gaps
 

@@ -1,0 +1,3 @@
+# Peer modules di.tplogmgr `use`s (see di/torq/depcheck/depcheck.md).
+[dependencies]
+"di.tplog" = "0.1.0"

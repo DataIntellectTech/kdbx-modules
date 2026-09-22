@@ -108,6 +108,12 @@ run,0,0,q,firejob[`discoverytick],1,1,tick with it absent...
 run,0,0,q,firejob[`discoverytick],1,1,...and again
 true,0,0,q,(n1+1)=count startupcalls,1,1,no startup call while the file is absent
 true,0,0,q,"2=warncount[""does not exist""]",1,1,the absence was warned ONCE more (it had reappeared in between) - not once per tick
+run,0,0,q,writentfile[],1,1,the file comes back with IDENTICAL content (its rows were evicted while it was gone)
+run,0,0,q,firejob[`discoverytick],1,1,tick
+true,0,0,q,(n1+2)=count startupcalls,1,1,a book that vanished is forgotten as seen - unchanged rows are dialled again on its return
+true,0,0,q,"(enlist`pricer)~last exec connections from startupcalls",1,1,...for that file's proctypes
+run,0,0,q,removentfile[],1,1,remove it again
+run,0,0,q,firejob[`discoverytick],1,1,tick with it absent
 run,0,0,q,"d.init[cfg[],enlist[`tracknontorqprocess]!enlist 0b;mockdeps[]]",1,1,re-init with non-TorQ tracking off
 run,0,0,q,writentfile[],1,1,file present but tracking is off
 run,0,0,q,firejob[`discoverytick],1,1,tick

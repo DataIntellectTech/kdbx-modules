@@ -117,7 +117,10 @@ cycle:
    unchanged file has nothing to gain from another call, and skipping it keeps "N rows already
    known" out of the log every tick. The rows are recorded as seen only **after** `startup`
    returns: servers re-reads the file itself, and if that second read catches a rewrite and
-   throws, the next tick retries rather than treating the change as handled. A garbage or short *line* parses to a row of nulls and is
+   throws, the next tick retries rather than treating the change as handled. A book that was not
+   read this tick (the optional non-TorQ file gone) is forgotten as seen, because its rows were
+   just evicted: if it comes back with identical content those rows are dialled again rather
+   than skipped as already known. A garbage or short *line* parses to a row of nulls and is
    dropped as undialable; a file with the wrong header — or a **0-byte file caught mid-rewrite** —
    is a clear logged error for that tick, recovered on the next. Both files fold into the one
    `SERVERS` registry — nothing is special about a non-TorQ row.
@@ -320,7 +323,7 @@ service a peer's call back into it — measured, it deadlocks):
 ```q
 / from the repository root, in a fresh q session, with this repo on QPATH
 k4unit:use`di.k4unit
-k4unit.moduletest`di.torq.proc.discovery      / 275 checks
+k4unit.moduletest`di.torq.proc.discovery      / 281 checks
 ```
 
 Integration suite (`test_integration.csv`, 9 scenarios): real child kdb-x processes — the

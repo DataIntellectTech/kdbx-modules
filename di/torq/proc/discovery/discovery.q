@@ -358,6 +358,9 @@ tickbody:{[]
   / one discovery cycle: read every phone book, evict what none of them lists any more, dial what
   / is new, then push (removals, then live rows) to the subscribers
   books:readbooks[];
+  / a book not read this tick (the optional non-TorQ file gone) is forgotten: its rows are evicted
+  / below, so if it comes back unchanged they must be dialled again, not skipped as already seen
+  .z.m.seen:(key[.z.m.seen] except key books) _ .z.m.seen;
   evict books;
   dialfrom'[key books;value books];
   pushall[];

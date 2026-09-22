@@ -257,6 +257,12 @@ nontorq:{[]
   system "rm -f ",dir,"/nontorqprocess.csv";
   evicted:waitfor[{[d;x] not `pricer1 in exec procname from d[`h]"registry[]"}[d];40];
   subevicted:waitfor[{[s;x] not `pricer1 in exec procname from subknown s}[s1];40];
+  / the SAME file comes back unchanged: its rows were evicted, so they must be dialled (live in the real
+  / registry, not just requested) and pushed again - not skipped as already seen
+  writecsvrows[dir,"/nontorqprocess.csv";enlist (pp;`pricer;`pricer1)];
+  returned:waitfor[{[d;x] `pricer1 in exec procname from disclive d}[d];40];
+  subreturned:waitfor[{[s;x] `pricer1 in exec procname from subknown s}[s1];40];
+  system "rm -f ",dir,"/nontorqprocess.csv";
   kill9 each (d;s1);
   / the file appears AFTER startup: warned once, then tracked from the tick it shows up
   dl:startdiscoverynamed[dir;dp;"disclate";""];
@@ -277,8 +283,8 @@ nontorq:{[]
   relfound:$[null d3`h;0b;waitfor[{[d;x] `pricer1 in exec procname from disclive d}[d3];40]];
   relpath:$[null d3`h;0b;(dir,"/other.csv")~d3[`h] SM,"ntfile"];
   kill9 each (d3;rdb;pricer);
-  chk `found`pushed`evicted`subevicted`warnedonce`latefound`stillonce`offignored`relfound`relpath!(
-    found;pushed;evicted;subevicted;warnedonce;latefound;stillonce;offignored;relfound;relpath)
+  chk `found`pushed`evicted`subevicted`returned`subreturned`warnedonce`latefound`stillonce`offignored`relfound`relpath!(
+    found;pushed;evicted;subevicted;returned;subreturned;warnedonce;latefound;stillonce;offignored;relfound;relpath)
   };
 
 subscriberleaves:{[]

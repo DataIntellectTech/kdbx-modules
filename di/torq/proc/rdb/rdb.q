@@ -35,9 +35,17 @@ resolvedir:{[base;dir]
   }
 
 / root-namespace-safe upd: append to the ROOT table t. Handles a table payload (live, from
-/ di.pubsub) and a list-of-columns payload (replay, from di.tplogmgr's -11!). @[`.;..] targets
-/ root explicitly so it works from the module / -11! context.
-updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]}
+/ di.pubsub), a list-of-columns payload and a single row of ATOMS (both from replay, via
+/ di.tplogmgr's -11!). @[`.;..] targets root explicitly so it works from the module / -11! context.
+/ NB the atom-row case is not hypothetical: a feed may send a row of atoms, di.torq.proc.tickerplant's
+/ stamp[] deliberately keeps it atomic (tickerplant.q: "$[0>type first x;a,x;...]") and LOGS it that
+/ way, while enlisting it only on the publish path. So live delivery hides the shape and replay is
+/ where it lands - `flip (cols tab)!d` on atoms throws 'rank, and a restart is exactly when replay runs
+/ a logged payload is either one column per field or one ATOM per field; enlist the atoms so both
+/ shapes flip into the table. Same test di.torq.proc.tickerplant applies before it publishes
+ascols:{[d] $[0>type first d;enlist each d;d]}
+
+updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!ascols d]}[;x]]}
 
 / save one root table down to the HDB partition (protected so one failure doesn't stop EOD)
 savefn:{[dir;date;t]

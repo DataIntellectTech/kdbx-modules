@@ -47,8 +47,11 @@ di.subscriptions defines the tables at root from what the TP returns.
   (`waitfortype`); `di.subscriptions.subscribe` registers for live data and replays the
   day's log up to the pre-subscription count.
 - **Accumulate** (`upd`, published at root): a **root-namespace-safe** append — upserts a
-  table payload (live) or a list-of-columns payload (replay) into the root table via
-  `@[`.;t;…]`. Set at root **before** subscribing so replay drives it too.
+  table payload (live), a list-of-columns payload or a single row of **atoms** (both replay) into
+  the root table via `@[`.;t;…]`. Set at root **before** subscribing so replay drives it too.
+  The atom-row case matters because `di.torq.proc.tickerplant`'s `stamp[]` deliberately keeps an
+  atom row atomic and **logs it that way**, enlisting only on the publish path — so live delivery
+  hides the shape and replay, i.e. restart, is where it lands.
 - **End of day** (`endofday[date]`, published at root, also `.u.end`): the tickerplant
   broadcasts `(`endofday;date)` at roll (see below). Behaviour depends on `reloadenabled`:
   - **standalone** (`0b`, default): saves every non-ignored root table to `hdbdir` for `date`

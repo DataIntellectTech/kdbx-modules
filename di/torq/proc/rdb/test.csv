@@ -7,3 +7,15 @@ fail,0,0,q,rdb.init[()!();(enlist`log)!enlist mlog],1,,init with log but no time
 
 true,0,0,q,`init`endofday`reload`version~key rdb,1,,module exports init/endofday/reload/version
 true,0,0,q,0<count rdb`version,1,,version string is present (e.g. 0.1.0)
+
+comment,,,,,,,updfn - every payload shape a subscriber can be handed
+run,0,0,q,"@[`.;`trade;:;([]time:`timestamp$();sym:`symbol$();price:`float$())]",1,,a root table for updfn to append to
+run,0,0,q,RU:.m.di.0torq.0proc.0rdb.updfn,1,,reach the internal root-safe upd
+run,0,0,q,"RU[`trade;(enlist .z.p;enlist`S0;enlist 1.0)]",1,,a list-of-columns payload - what an enlisting feed logs
+true,0,0,q,1=count trade,1,,the column payload appended one row
+run,0,0,q,"RU[`trade;(.z.p;`S1;2.0)]",1,,a single row of ATOMS - what the tp logs when the feed sends atoms
+true,0,0,q,2=count trade,1,,the atom row appended a row rather than throwing rank on flip
+true,0,0,q,"`S0`S1~trade`sym",1,,both replay payload shapes landed in the right columns
+run,0,0,q,"RU[`trade;([]time:enlist .z.p;sym:enlist`S2;price:enlist 3.0)]",1,,a table payload - live delivery from di.pubsub
+true,0,0,q,3=count trade,1,,the table payload appended one row
+true,0,0,q,"3=count distinct trade`time",1,,no payload shape collapsed or duplicated rows

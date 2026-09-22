@@ -138,13 +138,18 @@ getlogpairs:{[sd]
 / atom row atomic and LOGS it that way, enlisting only on the publish path. Indexing an atom row's
 / sym gives an atom, and `where` on an atom throws 'type - which runreplay would catch and report as
 / a skipped file, losing the whole log silently. Normalise to columns before filtering.
-ascols:{[d] $[0>type first d;enlist each d;d]};
+/ a table payload is also accepted, so the one function covers every shape a consumer can be handed
+/ (di.torq.proc.chainedtp's private twin of this did, and that difference is how the two drifted)
+ascols:{[d]
+  d:$[98h=type d;value flip d;d];
+  $[0>type first d;enlist each d;d]
+  };
 
 replayfilter:{[origupd;tabs;syms;t;x]
   if[not $[tabs~`;1b;t in tabs]; :()];        / skip tables we didn't subscribe to
-  if[not syms~`;
-    x:ascols x;
-    x:x@\:where x[1] in syms];                / keep only subscribed syms (col 1)
+  x:ascols x;
+  if[not syms~`; x:x@\:where x[1] in syms];   / keep only subscribed syms (col 1)
+  if[not count first x; :()];                 / the filter emptied the batch - nothing to forward
   origupd[t;x];
   };
 
@@ -207,8 +212,24 @@ normalisedetails:{[sd;schemas;replayed]
     (key schemas;schemas;replayed;sd`date;sd`logfilelist;sd`logdir;sd`rowcounts;replayed)
   };
 
+replay:{[sd;tabs;syms]
+  / replay a subscription's log(s) through the root `upd`, filtered to tabs/syms, and return the
+  / number of messages that actually landed. Takes the dict `subscribe` returned, so it speaks both
+  / protocols - one (msgcount;logfile) pair for a standard TP, several for a segmented one.
+  / ---
+  / EXPORTED so a consumer that must sequence its own work around the replay can drive it itself:
+  / di.torq.proc.chainedtp calls subscribe with replay off, opens its own log for the date subdetails
+  / returned, and only then replays - because a replayed message must not reach upd before that log
+  / is open, or the history never lands in it and no downstream can replay it in turn. subscribe
+  / cannot do that for it, and calling subdetails twice would double-register.
+  / `subscribe` uses this same function, so there is ONE replay path rather than two that drift -
+  / which is exactly how chainedtp's private copy came to handle payload shapes this one did not.
+  requireinit`replay;
+  doreplay[getlogpairs sd;tabs;syms;key getschemas sd]
+  };
+
 / subscribe over an already-open tickerplant handle `tph` (di.torq.proc.rdb obtains it via
-/ di.torq.servers). tabs/syms: ` for all, else a list. replay: 1b to replay the tp log.
+/ di.torq.servers). tabs/syms: ` for all, else a list. withreplay: 1b to replay the tp log.
 / Returns the subscription-details dict (tables/schemas/rowcount/date, plus logfile for a
 / standard TP or logfilelist/logdir/rowcounts for a segmented one).
 / define the subscribed tables at ROOT from the returned schemas (they carry g# etc.).
@@ -227,13 +248,15 @@ definetables:{[schemas;reset]
 / (a test fixture passes a function), and matching never throws
 dropregistry:{[tph] .z.m.registry:.z.m.registry where not (.z.m.registry`handle)~\:tph;};
 
-subscribe:{[tph;tabs;syms;replay]
+/ NB the boolean is `withreplay`, not `replay` - `replay` is now an exported function of this module,
+/ and a parameter of that name would shadow it inside this very function
+subscribe:{[tph;tabs;syms;withreplay]
   requireinit`subscribe;
   tptype:gettptype tph;
   sd:callsubdetails[tph;tptype;tabs;syms];
   schemas:getschemas sd;
-  definetables[schemas;replay];
-  n:$[replay;doreplay[getlogpairs sd;tabs;syms;key schemas];0];
+  definetables[schemas;withreplay];
+  n:$[withreplay;replay[sd;tabs;syms];0];
   / one row per handle - re-subscribing over the same handle replaces its row rather than adding a
   / second, matching the idempotent-re-init convention the rest of the framework relies on
   dropregistry tph;
@@ -279,6 +302,9 @@ getapimeta:{[]
     (`subscribe;       1b; "subscribe over an open tickerplant handle and replay its log exactly once";
        "[int: tickerplant handle; symbol(list): tables (` for all); symbol(list): syms (` for all); boolean: replay]";
        "dict: tables, schemas, rowcount, date and the log details for the tickerplant's protocol");
+    (`replay;          1b; "replay a subscription's log(s) through root upd, for a consumer driving its own sequencing";
+       "[dict: the subscription details subscribe returned; symbol(list): tables (` for all); symbol(list): syms (` for all)]";
+       "long: messages replayed");
     (`unsubscribe;     1b; "forget the subscription recorded against a tickerplant handle";
        "[int: tickerplant handle]";                                "null");
     (`teardown;        1b; "forget every recorded subscription";

@@ -151,6 +151,35 @@ fail,0,0,q,"sub.subscribe[{[m] '""boom""};`;`;0b]",1,1,a tickerplant handle that
 true,0,0,q,"@[{sub.subscribe[{[m] '""boom""};`;`;0b];``};::;{[e] 0<count e ss ""could not read tptype""}]",1,1,and the real reason reaches the message
 fail,0,0,q,"sub.subscribe[{[m] enlist`a`b};`;`;0b]",1,1,a non-symbol tptype is rejected rather than falling through
 
+comment,,,,,,,replay - the exported primitive a consumer drives itself
+run,0,0,q,PX:buildlogs[enlist 3],1,1,a three-message log
+run,0,0,q,"TPX:mocktph[`standard;PX]",1,1,a mock handle over it
+run,0,0,q,resettrade[],1,1,reset before the deferred-replay test
+run,0,0,q,"sdx:sub.subscribe[TPX;`;`;0b]",1,1,subscribe WITHOUT replay - the shape di.torq.proc.chainedtp needs
+true,0,0,q,0=count trade,1,1,nothing has been replayed yet
+true,0,0,q,0=sdx`replayed,1,1,and the returned dict says so
+run,0,0,q,"nx:sub.replay[sdx;`;`]",1,1,drive the replay explicitly afterwards
+true,0,0,q,3=count trade,1,1,the caller-driven replay landed the same rows
+true,0,0,q,3=nx,1,1,and returned the count that actually landed
+run,0,0,q,resettrade[],1,1,reset before the narrowed caller-driven replay
+run,0,0,q,"nxn:sub.replay[sdx;`;enlist`S1]",1,1,the same primitive filtered to one sym
+true,0,0,q,1=count trade,1,1,filtered to the subscribed sym
+true,0,0,q,"`S1=first trade`sym",1,1,and it is the right one
+true,0,0,q,3=nxn,1,1,the count is messages REPLAYED not rows kept - the filter drops rows downstream of it
+
+run,0,0,q,resettrade[],1,1,reset before the emptied-batch test
+run,0,0,q,`UPDCALLS set 0,1,1,count how often the real upd is actually reached
+run,0,0,q,"`upd set {[t;x] @[`.;`UPDCALLS;+;1]; rootupd[t;x]}",1,1,wrap the root upd with a counter
+run,0,0,q,"sub.replay[sdx;`;enlist`NOPE]",1,1,replay narrowed to a sym that matches nothing
+true,0,0,q,0=UPDCALLS,1,1,the filter short-circuited - the real upd is never called with an emptied batch
+run,0,0,q,`upd set rootupd,1,1,restore the plain root upd
+
+comment,,,,,,,ascols - every payload shape the shared filter can be handed
+run,0,0,q,AC:.m.di.0subscriptions.ascols,1,1,reach the payload normaliser
+true,0,0,q,"3=count AC (enlist D;enlist`S0;enlist 1.0)",1,1,a list-of-columns payload passes through unchanged
+true,0,0,q,"all 1=count each AC (D;`S0;1.0)",1,1,an atom row becomes one-element columns
+true,0,0,q,"all 1=count each AC ([]time:enlist D;sym:enlist`S0;price:enlist 1.0)",1,1,a table payload becomes columns too - the shape chainedtp's private twin handled and this one did not
+
 comment,,,,,,,requireinit - public functions refuse to run before init
 run,0,0,q,"@[`.m.di.0subscriptions;`initdone;:;0b]",1,1,simulate a module whose init has not run
 fail,0,0,q,sub.subscribed[],1,1,subscribed refuses
@@ -158,6 +187,7 @@ fail,0,0,q,sub.getsubscriptions[],1,1,getsubscriptions refuses
 fail,0,0,q,sub.teardown[],1,1,teardown refuses
 fail,0,0,q,sub.unsubscribe[1i],1,1,unsubscribe refuses
 fail,0,0,q,"sub.subscribe[{[m]`standard};`;`;0b]",1,1,subscribe refuses
+fail,0,0,q,"sub.replay[()!();`;`]",1,1,replay refuses
 true,0,0,q,"@[{sub.subscribed[];``};::;{[e] 0<count e ss ""init must be called""}]",1,1,and says so plainly instead of naming a module internal
 run,0,0,q,sub.init[()!();deps[]],1,1,re-init for the remaining tests
 true,0,0,q,not sub.subscribed[],1,1,init works again after the forced reset

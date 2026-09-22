@@ -31,6 +31,26 @@
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
 
+/ boolean config. A raw `boolean$ cannot do this job: on a string it returns one boolean PER
+/ CHARACTER (`boolean$"false" is 11111b) and using that in a conditional throws 'type, and on a
+/ symbol it throws outright - so an immediate or replaylog set from a .toml file or a command-line
+/ override could not be read at all. An unrecognised word SIGNALS rather than defaulting to false:
+/ a typo is a configuration error, and reading it as "off" silently is how a setting gets ignored
+truewords:`true`yes`on`t`y`1
+falsewords:`false`no`off`f`n`0
+
+tobool:{[x]
+  if[-1h=type x;:x];
+  if[type[x] in -4 -5 -6 -7 -8 -9h;:0<>x];
+  if[not type[x] in -11 -10 10h;
+    '"di.torq.proc.wdb: cannot read ",(-3!x)," as a boolean"];
+  w:`$lower $[-11h=type x;string x;(),x];
+  if[w in truewords;:1b];
+  if[w in falsewords;:0b];
+  '"di.torq.proc.wdb: cannot read ",(-3!x)," as a boolean; expected one of ",
+    ", " sv string truewords,falsewords
+  }
+
 / a token-list config (e.g. reloadorder): accept a space-separated string ("hdb rdb"), a
 / single symbol, a symbol list, or a list of strings -> always a symbol list.
 astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
@@ -53,6 +73,10 @@ maxrows:{[t] $[t in key .z.m.numtab;.z.m.numtab t;.z.m.numrows]}
 / tables the wdb is responsible for (root tables minus the ignore list)
 tablelist:{[] tables[`.] except .z.m.ignorelist}
 
+/ a logged payload is either one column per field or one ATOM per field; enlist the atoms so both
+/ shapes flip into the table. Same test di.torq.proc.tickerplant applies before it publishes
+ascols:{[d] $[0>type first d;enlist each d;d]}
+
 / root-namespace-safe accumulate: upsert into the ROOT table t. Handles a table payload
 / (live, from di.pubsub), a list-of-columns payload and a single row of ATOMS (both from replay,
 / via -11!). Identical to di.torq.proc.rdb's updfn - @[`.;..] targets root explicitly so it works
@@ -61,11 +85,6 @@ tablelist:{[] tables[`.] except .z.m.ignorelist}
 / stamp[] deliberately keeps it atomic and LOGS it that way, enlisting it only on the publish path. So
 / live delivery hides the shape and replay is where it lands - `flip (cols tab)!d` on atoms throws
 / 'rank, and a restart is exactly when replay runs
-
-/ a logged payload is either one column per field or one ATOM per field; enlist the atoms so both
-/ shapes flip into the table. Same test di.torq.proc.tickerplant applies before it publishes
-ascols:{[d] $[0>type first d;enlist each d;d]}
-
 updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!ascols d]}[;x]]}
 
 / replay-time upd (installed at root ONLY during subscribe/replay): accumulate, then flush if
@@ -217,11 +236,11 @@ init:{[config;deps]
   .z.m.savedir:hsym `$$[`savedir in key config;resolvedir[datahome[];config`savedir];datahome[],"/wdb"];
   .z.m.numrows:$[`numrows in key config;"j"$config`numrows;100000];
   .z.m.numtab:$[`numtab in key config;config`numtab;(`symbol$())!`long$()];
-  .z.m.immediate:$[`immediate in key config;`boolean$config`immediate;0b];
+  .z.m.immediate:$[`immediate in key config;tobool config`immediate;0b];
   settimer:$[`settimer in key config;"j"$config`settimer;10];
   subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
-  replaylog:$[`replaylog in key config;`boolean$config`replaylog;1b];
+  replaylog:$[`replaylog in key config;tobool config`replaylog;1b];
   timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
 
   / v1 uses today's date as the partition; the tp log date is checked against it after

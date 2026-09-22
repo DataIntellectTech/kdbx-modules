@@ -68,5 +68,12 @@ repairover:{[logfile;goodlogh;d]
   :@[d;`start`size;:;(ns;chunk)];       
  };
 
-export:([check;repair])
+/ read BEFORE the export line, which evaluates each name. di.torq.depcheck resolves a dependency's
+/ version from the export dict and falls back to the module's on-disk VERSION file; with neither, any
+/ manifest declaring di.tplog fails the dependency check outright - it is a failure, not a warning -
+/ and every process carrying that manifest dies at startup. di.tplogmgr declares it, so that is the
+/ tickerplant, chainedtp, segmentedtp and (via di.subscriptions) the rdb and wdb.
+version:first read0`:::VERSION
+
+export:([check;repair;version])
 

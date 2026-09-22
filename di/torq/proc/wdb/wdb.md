@@ -50,7 +50,10 @@ di.subscriptions defines the tables at root from what the TP returns.
 - **Startup**: connect (TP/HDB/RDB) via di.torq.servers; clear any stale working-partition data;
   install a **flushing replay `upd`** at root; block until a TP is up; subscribe + replay. The
   replay runs through that flushing `upd`, so it writes to disk past `numrows` and never holds a
-  whole day in RAM. After replay the root `upd` is swapped to a plain accumulate.
+  whole day in RAM. After replay the root `upd` is swapped to a plain accumulate. Both accept a
+  table payload (live), a list-of-columns payload or a single row of **atoms** — the last because
+  `di.torq.proc.tickerplant`'s `stamp[]` keeps an atom row atomic and **logs it that way**,
+  enlisting only on the publish path, so live delivery hides the shape and replay is where it lands.
 - **Intraday** (`savetodisk`, timer job every `settimer`s): flush any table over its threshold
   (or every table, if `immediate`) to the working partition — **create on first write, append
   after**, enumerating syms against the **HDB** sym file, then clear it in memory. If that

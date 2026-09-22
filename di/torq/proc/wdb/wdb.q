@@ -54,9 +54,19 @@ maxrows:{[t] $[t in key .z.m.numtab;.z.m.numtab t;.z.m.numrows]}
 tablelist:{[] tables[`.] except .z.m.ignorelist}
 
 / root-namespace-safe accumulate: upsert into the ROOT table t. Handles a table payload
-/ (live, from di.pubsub) and a list-of-columns payload (replay, from -11!). Identical to
-/ di.torq.proc.rdb's updfn - @[`.;..] targets root explicitly so it works under -11! / from the module.
-updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]}
+/ (live, from di.pubsub), a list-of-columns payload and a single row of ATOMS (both from replay,
+/ via -11!). Identical to di.torq.proc.rdb's updfn - @[`.;..] targets root explicitly so it works
+/ under -11! / from the module.
+/ NB the atom-row case is not hypothetical: a feed may send a row of atoms, di.torq.proc.tickerplant's
+/ stamp[] deliberately keeps it atomic and LOGS it that way, enlisting it only on the publish path. So
+/ live delivery hides the shape and replay is where it lands - `flip (cols tab)!d` on atoms throws
+/ 'rank, and a restart is exactly when replay runs
+
+/ a logged payload is either one column per field or one ATOM per field; enlist the atoms so both
+/ shapes flip into the table. Same test di.torq.proc.tickerplant applies before it publishes
+ascols:{[d] $[0>type first d;enlist each d;d]}
+
+updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!ascols d]}[;x]]}
 
 / replay-time upd (installed at root ONLY during subscribe/replay): accumulate, then flush if
 / over threshold - this is what bounds replay memory. After replay init swaps root upd -> updfn.

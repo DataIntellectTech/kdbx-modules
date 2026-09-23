@@ -17,6 +17,20 @@ true,0,0,q,10=first exec period from timercalls where id=`serversretry,1,1,retry
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,re-init must be idempotent
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,idempotent re-init did NOT add a second retry job
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,idempotent re-init did NOT re-register the pc handler
+comment,,,,,,,init - hopentimeout (per-instance dial timeout; applies to startup AND retry dials)
+true,0,0,q,2000=.m.di.0torq.0servers.hopentimeout,1,1,hopentimeout defaults to 2000ms when the config carries no key
+run,0,0,q,"svc.init[svrdeps[`otherproc`deadproc],enlist[`hopentimeout]!enlist ""250""]",1,1,re-init with a TEXT hopentimeout (a -flag override or a .toml string)
+true,0,0,q,250=.m.di.0torq.0servers.hopentimeout,1,1,a text value is PARSED (not char-cast) to 250
+true,0,0,q,"infologged[""hopentimeout 250ms""]",1,1,the effective hopentimeout is logged at init
+run,0,0,q,"svc.init[svrdeps[`otherproc`deadproc],enlist[`hopentimeout]!enlist 200]",1,1,re-init with a numeric hopentimeout
+true,0,0,q,200=.m.di.0torq.0servers.hopentimeout,1,1,a numeric value lands as-is
+true,0,0,q,dialwithin[200],1,1,a dial to a non-routable host gives up within the instance timeout (or fails instantly if the network rejects it)
+fail,0,0,q,"svc.init[svrdeps[`otherproc`deadproc],enlist[`hopentimeout]!enlist 0]",1,1,init rejects hopentimeout 0
+fail,0,0,q,"svc.init[svrdeps[`otherproc`deadproc],enlist[`hopentimeout]!enlist -5]",1,1,init rejects a negative hopentimeout
+fail,0,0,q,"svc.init[svrdeps[`otherproc`deadproc],enlist[`hopentimeout]!enlist ""abc""]",1,1,init rejects a non-numeric hopentimeout
+fail,0,0,q,"svc.init[svrdeps[`otherproc`deadproc],enlist[`hopentimeout]!enlist 1 2]",1,1,init rejects a list hopentimeout
+run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,re-init without the key for the rest of the suite
+true,0,0,q,2000=.m.di.0torq.0servers.hopentimeout,1,1,the default is restored (a re-init refreshes settings)
 comment,,,,,,,startup - connect to a live peer and a dead one (self excluded)
 run,0,0,q,svc.startup[svrdeps[`otherproc`deadproc]],1,1,open connections to otherproc (live) and deadproc (nothing listening) - connections+processcsv come from the config arg
 true,0,0,q,0=count svc.getservers[`selfproc],1,1,self is excluded even though it is in process.csv
@@ -37,6 +51,79 @@ true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
 comment,,,,,,,waitfortype - connected vs timeout
 true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
 true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
+comment,,,,,,,startup is repeat-safe (mergerows) - a second call skips known rows and dials nothing
+run,0,0,q,h0:svc.gethandlebytype[`otherproc;`any],1,1,remember the live otherproc handle before the repeat
+run,0,0,q,svc.startup[svrdeps[`otherproc`deadproc]],1,1,call startup AGAIN with the same config
+true,0,0,q,2=count svc.getallservers[],1,1,no duplicate rows - still exactly otherproc + deadproc
+true,0,0,q,"infologged[""already known - skipped""]",1,1,the repeat logged that it skipped the known rows
+true,0,0,q,h0=svc.gethandlebytype[`otherproc;`any],1,1,the live otherproc handle was left untouched (not re-dialled or replaced)
+comment,,,,,,,getallservers - the whole registry regardless of liveness
+true,0,0,q,(`deadproc`otherproc)~asc exec proctype from svc.getallservers[],1,1,getallservers spans every proctype
+true,0,0,q,"1=count select from svc.getallservers[] where proctype=`deadproc,null w",1,1,getallservers includes the dead (null-handle) row that getservers hides
+true,0,0,q,`procname`proctype`hpup`w`hits`startp`lastp`endp~cols svc.getallservers[],1,1,getallservers returns the full SERVERS shape
+comment,,,,,,,addprocs - merge semantics (skip exact / drop self / replace on hpup or name-type)
+true,0,0,q,1=svc.addprocs pushrows[],1,1,addprocs adds the pushed row and drops the self row (returns rows added)
+true,0,0,q,"1=count select from svc.getallservers[] where proctype=`pushedproc,null w",1,1,a pushed row lands known-but-not-connected (w:0Ni)
+true,0,0,q,0=count select from svc.getallservers[] where proctype=`selfproc,1,1,the self row was dropped - a peer is never told to dial itself
+true,0,0,q,0=svc.addprocs pushrows[],1,1,an exact duplicate push is a no-op
+true,0,0,q,"not infologged[""addprocs: 0 row(s) added""]",1,1,a no-op push is not logged (a discovery service re-pushes the same rows every tick)
+true,0,0,q,"1=svc.addprocs onerow[`pushed2;`pushedproc;DEADPORT+1]",1,1,a new name on a known hpup is added...
+true,0,0,q,"(enlist`pushed2)~exec procname from svc.getallservers[] where proctype=`pushedproc",1,1,...and REPLACES the old row on that hpup (no ghost)
+true,0,0,q,"infologged[""replacing 1 stale row""]",1,1,the replacement was logged
+true,0,0,q,"1=svc.addprocs onerow[`pushed2;`pushedproc;DEADPORT+2]",1,1,a known name/type on a NEW hpup is added...
+true,0,0,q,"(enlist pushhp DEADPORT+2)~exec hpup from svc.getallservers[] where proctype=`pushedproc",1,1,...and REPLACES the old row for that name/type (a moved port leaves no ghost)
+true,0,0,q,"1=svc.addprocs ([]procname:enlist""pushed3"";proctype:enlist""pushedproc"";hpup:enlist "":localhost:"",string DEADPORT+3)",1,1,string columns (a .toml-sourced caller) are normalised to symbols
+true,0,0,q,"2=count select from svc.getallservers[] where proctype=`pushedproc",1,1,a different name AND hpup does not conflict - both pushedproc rows kept
+true,0,0,q,"1=svc.addprocs ([]procname:`amb1`amb1`amb2;proctype:`amb`amb`amb;hpup:pushhp each DEADPORT+60 61 61)",1,1,an AMBIGUOUS batch (one name/type on two ports; one port under two names) collapses to one row - the last wins
+true,0,0,q,"(enlist pushhp DEADPORT+61)~exec hpup from svc.getallservers[] where proctype=`amb",1,1,...the surviving row is the last name/type row's hpup...
+true,0,0,q,"(enlist`amb2)~exec procname from svc.getallservers[] where proctype=`amb",1,1,...and the last name on that hpup
+true,0,0,q,"warnlogged[""dropped 2 ambiguous row(s)""]",1,1,the dropped rows were warned about
+fail,0,0,q,svc.addprocs 42,1,1,addprocs rejects a non-table
+fail,0,0,q,svc.addprocs ([]x:1 2),1,1,addprocs rejects a table without procname/proctype/hpup
+true,0,0,q,`addprocs in key `.torq.servers,1,1,addprocs is published at the ROOT name .torq.servers.addprocs (the IPC push target)
+true,0,0,q,"1=.torq.servers.addprocs onerow[`pushed4;`pushedproc;DEADPORT+4]",1,1,the root-published function is the same merge path
+comment,,,,,,,addprocs over IPC - a real kdb-x peer running di.torq.servers exposes .torq.servers.addprocs by name
+run,0,0,q,spawnmodpeer[],1,1,launch a kdb-x peer that has loaded di.torq.servers (identity modpeer/modpeer1)
+true,0,0,q,"1=svc.addprocs onerow[`modpeer1;`modpeer;MODPEERPORT]",1,1,push the live modpeer's row into OUR registry (known; not yet connected)
+run,0,0,q,firejob[`serversretry],1,1,fire the retry job - a pushed row is opened on the normal retry cycle
+true,0,0,q,1=count svc.getservers[`modpeer],1,1,retry connected the pushed row
+run,0,0,q,hm:svc.gethandlebytype[`modpeer;`any],1,1,get the handle to the kdb-x peer
+true,0,0,q,"2=hm ""1+1""",1,1,it is a live remote connection
+true,0,0,q,"1=hm(`.torq.servers.addprocs;onerow[`remote1;`remoteproc;1])",1,1,calling .torq.servers.addprocs BY NAME over the handle merges a row on the peer
+true,0,0,q,"1=count select from peerservers[hm] where proctype=`remoteproc,null w",1,1,the peer's own SERVERS now holds the pushed row (via its getallservers)
+true,0,0,q,"0=hm(`.torq.servers.addprocs;onerow[`remote1;`remoteproc;1])",1,1,a duplicate push over IPC is a no-op on the peer
+true,0,0,q,"0=hm(`.torq.servers.addprocs;onerow[`modpeer1;`modpeer;1])",1,1,the peer drops its OWN row when pushed to it
+comment,,,,,,,removeprocs - exact-identity removal that closes a live handle (also at root as .torq.servers.removeprocs)
+true,0,0,q,"1=svc.addprocs onerow[`rm1;`rmproc;DEADPORT+50]",1,1,push a fresh row to remove (its own port - the DEADPORT+n ports above overlap MOVEDPORT/MODPEERPORT)
+true,0,0,q,"0=svc.removeprocs onerow[`rm1;`rmproc;DEADPORT+51]",1,1,a known name/type on an UNKNOWN hpup is not removed - identity is the exact triple
+true,0,0,q,"infologged[""1 row(s) not known - ignored""]",1,1,an unknown row is logged as ignored
+true,0,0,q,"1=svc.removeprocs onerow[`rm1;`rmproc;DEADPORT+50]",1,1,the exact triple is removed (returns rows removed)
+true,0,0,q,0=count select from svc.getallservers[] where procname=`rm1,1,1,and it is gone from the registry
+true,0,0,q,"0=svc.removeprocs onerow[`rm1;`rmproc;DEADPORT+50]",1,1,removing it again is a no-op
+run,0,0,q,nbefore:count svc.getallservers[],1,1,remember the registry size
+true,0,0,q,"1=svc.removeprocs onerow[`modpeer1;`modpeer;MODPEERPORT]",1,1,remove the LIVE modpeer row
+true,0,0,q,not hm in key .z.W,1,1,its handle was closed - removal means decommissioned
+true,0,0,q,0=count svc.getservers[`modpeer],1,1,no live modpeer row remains
+true,0,0,q,nbefore=1+count svc.getallservers[],1,1,exactly one row left the registry
+true,0,0,q,"infologged[""removeprocs: 1 row(s) removed: modpeer1/modpeer@""]",1,1,the removal was logged with the row identity
+fail,0,0,q,svc.removeprocs 42,1,1,removeprocs rejects a non-table
+fail,0,0,q,svc.removeprocs ([]x:1 2),1,1,removeprocs rejects a table without procname/proctype/hpup
+true,0,0,q,`removeprocs in key `.torq.servers,1,1,removeprocs is published at the ROOT name .torq.servers.removeprocs
+true,0,0,q,"1=svc.addprocs onerow[`rm2;`rmproc;DEADPORT+52]",1,1,push another row for the root-name path
+true,0,0,q,"1=.torq.servers.removeprocs ([]procname:enlist""rm2"";proctype:enlist""rmproc"";hpup:enlist "":localhost:"",string DEADPORT+52)",1,1,the root-published function is the same path and normalises string columns
+comment,,,,,,,removeprocs over IPC - the kdb-x peer exposes .torq.servers.removeprocs by name
+run,0,0,q,"hm2:hopen (`$"":localhost:"",string MODPEERPORT;2000)",1,1,a fresh handle to the modpeer (the registry one was closed above)
+true,0,0,q,"1=hm2(`.torq.servers.removeprocs;onerow[`remote1;`remoteproc;1])",1,1,calling .torq.servers.removeprocs BY NAME over the handle removes the row pushed earlier
+true,0,0,q,0=count select from peerservers[hm2] where proctype=`remoteproc,1,1,the peer's own SERVERS no longer holds it
+true,0,0,q,"0=hm2(`.torq.servers.removeprocs;onerow[`remote1;`remoteproc;1])",1,1,a repeat removal over IPC is a no-op on the peer
+run,0,0,q,hclose hm2,1,1,drop the extra handle
+comment,,,,,,,startup replaces a moved port - operator edits process.csv and re-runs startup
+run,0,0,q,movepeerport[],1,1,rewrite the fixture with otherproc on a new (dead) port
+run,0,0,q,svc.startup[svrdeps[`otherproc`deadproc]],1,1,re-run startup against the edited phone book
+true,0,0,q,1=count select from svc.getallservers[] where proctype=`otherproc,1,1,still exactly one otherproc row - the old one was replaced not duplicated
+true,0,0,q,"(enlist pushhp MOVEDPORT)~exec hpup from svc.getallservers[] where proctype=`otherproc",1,1,the otherproc row now carries the new hpup
+true,0,0,q,0=count svc.getservers[`otherproc],1,1,the old live handle was closed with the replaced row; nothing listens on the new port yet
+true,0,0,q,not h0 in key .z.W,1,1,the replaced row's handle really was closed
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

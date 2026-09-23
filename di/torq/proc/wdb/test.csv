@@ -41,3 +41,13 @@ run,0,0,q,EP:.m.di.0torq.0proc.0wdb.endofperiod,1,,reach the endofperiod stub
 true,0,0,q,1=count value[EP]1,1,,endofperiod is MONADIC - di.pubsub.callendofperiod sends the (current;next;data) triple as ONE argument
 run,0,0,q,"EP[(2026.09.23D10:00:00;2026.09.23D10:05:00;`p`tbls!(2026.09.23D10:00:00;`trade))]",1,,a segmented tp period roll must not throw
 true,0,0,q,"0<count ss[last value .m.di.0torq.0proc.0wdb.init;""`endofperiod;:;endofperiod""]",1,,init PUBLISHES it at root - a period boundary is NOT a writedown trigger so the stub only logs
+true,0,0,q,30000~.m.di.0torq.0proc.0wdb.tolong "30000",1,,tolong PARSES a string setting (toml / command-line override)
+true,0,0,q,5~.m.di.0torq.0proc.0wdb.tolong enlist "5",1,,tolong handles a one-character string (a char atom in q)
+true,0,0,q,30000~.m.di.0torq.0proc.0wdb.tolong 30000,1,,tolong passes a native long through unchanged
+true,0,0,q,1b~.m.di.0torq.0proc.0wdb.tobool "true",1,,tobool parses a string setting to a boolean ATOM (`boolean$ would give a list)
+true,0,0,q,0b~.m.di.0torq.0proc.0wdb.tobool "false",1,,tobool parses a false string
+true,0,0,q,1b~.m.di.0torq.0proc.0wdb.tobool 1b,1,,tobool passes a native boolean through unchanged
+
+fail,0,0,q,.m.di.0torq.0proc.0wdb.tolong "not-a-number",1,,tolong rejects unparseable text rather than returning null (a null period silently busy-loops di.timer)
+fail,0,0,q,.m.di.0torq.0proc.0wdb.tolong "",1,,tolong rejects an empty string
+true,0,0,q,0<count (@[.m.di.0torq.0proc.0wdb.tolong;"3.5";{[e] e}]) ss "3.5",1,,tolong error text names the OFFENDING STRING itself - not a stype signal (string is atomic over a char vector; naive (string x) on an already-string x fans out per character)

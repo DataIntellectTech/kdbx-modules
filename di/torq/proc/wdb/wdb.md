@@ -52,6 +52,10 @@ reloadorder = "hdb rdb"           # order to reload at EOD; add "idb" to also re
 The tickerplant may be a **segmented** one: set `tickerplanttypes = "segmentedtp"`. No other change
 is needed — `di.subscriptions` probes which protocol the upstream speaks and replays every log file
 it reports, and the schema still comes from the tickerplant either way.
+Every value above is read through a coercion helper at the point of use, so it is accepted
+typed (a `.q` settings file), as a string (a `.toml` value) or as a command-line override
+(`-numrows 500000`, which `.Q.opt` hands over as a string). Strings are **parsed**, not cast:
+`"j"$"100000"` would be the six character codes and `` `boolean$"true" `` a boolean *list*.
 
 The schema comes from the **tickerplant** (via `subdetails`), not a local `database.q` —
 di.subscriptions defines the tables at root from what the TP returns.

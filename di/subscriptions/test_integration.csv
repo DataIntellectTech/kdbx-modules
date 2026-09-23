@@ -8,4 +8,7 @@ true,0,0,q,segmentedreplay[],1,1,a real di.torq.proc.segmentedtp replays three r
 true,0,0,q,exactlyonceacrossroll[],1,1,live delivery does not redeliver replayed messages and a restart lands on the same set
 true,0,0,q,corruptsegment[],1,1,an unreadable segment is logged and skipped and the other segments still arrive
 
+comment,,,,,,,the deployment path - a real rdb against a real segmented tickerplant
+true,0,0,q,rdbfromsegmented[],1,1,a real di.torq.proc.rdb replays a segmented TP over real IPC and then receives live
+
 after,0,0,q,killall[],1,1,kill every child process and remove the working dir

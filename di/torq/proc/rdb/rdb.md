@@ -45,6 +45,10 @@ reloadenabled = false             # false (default): save+clear own tables at EO
 Set `reloadenabled = true` **only** when a wdb is present in the stack — otherwise the EOD
 writedown is deferred to a wdb that never calls back, and the data is never persisted.
 
+The tickerplant may be a **segmented** one: set `tickerplanttypes = "segmentedtp"`. No other change
+is needed — `di.subscriptions` probes which protocol the upstream speaks and replays every log file
+it reports, and the schema still comes from the tickerplant either way.
+
 The **schema comes from the tickerplant** (via `subdetails`), not a local `database.q` —
 di.subscriptions defines the tables at root from what the TP returns.
 

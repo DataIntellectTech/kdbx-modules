@@ -94,6 +94,28 @@ cfeed:{[c;t;n;off]
 / a fresh subscriber: clear the tables this process holds, as a restarted rdb would come up empty
 resettables:{[] @[`.;`trade;:;([]time:`timestamp$();sym:`symbol$();price:`float$())]; };
 
+/ the phone book di.torq.servers dials, as di.torq writes it
+writecsvrows:{[path;rows]
+  (hsym`$path) 0: enlist["host,port,proctype,procname"],
+    {"localhost,",(string x 0),",",(string x 1),",",string x 2} each rows;
+  };
+
+/ a REAL di.torq.proc.rdb taking a segmented tickerplant as its tickerplant type. This is the one path
+/ the rest of the suite cannot reach - everywhere else THIS process is the subscriber, so the rdb module
+/ itself is never in the loop, and a failure here would otherwise surface first as someone's POC config
+startrdbchild:{[dir;stpport]
+  port:freeport[];
+  pcsv:dir,"/process.csv";
+  system "mkdir -p ",dir;
+  writecsvrows[pcsv;((stpport;`segmentedtp;`stp1);(port;`rdb;`rdb1))];
+  cmd:QBIN," ",(moddir[],"/test_integration_rdb.q")," -q -p ",(string port),
+    " -tickerplanttypes segmentedtp -hdbdir ",dir,"/hdb -processcsv ",pcsv,
+    " -proctype rdb -procname rdb1";
+  pid:"J"$first system cmd," </dev/null >>",IBASE,"/rdb.log 2>&1 & echo $!";
+  `PIDS set PIDS,pid;
+  `pid`port`h!(pid;port;waitopen[port;60])
+  };
+
 / the REAL di.torq.handlers, wired the way di.torq wires it. This suite drives real processes over
 / real sockets, so it injects the real dependency rather than a stand-in - which also means the
 / .z.pc registration di.subscriptions makes is a genuine one, and killing a child really does fire it
@@ -205,6 +227,32 @@ corruptsegment:{[]
     logged[`error;1_string bad];
     sd[`rowcount]=count trade);
   kill9 c2;
+  chk a
+  };
+
+rdbfromsegmented:{[]
+  / the whole point of this branch, end to end: a REAL di.torq.proc.rdb replaying from a REAL
+  / segmented tickerplant, over real IPC, with di.torq.servers resolving the handle from a phone book.
+  / This is the path a TorqX deployment takes; everything else in this suite stops one module short of it
+  dir:IBASE,"/rdbseg";
+  c:startchild[STPCHILD;"kdbtplog";dir;"-multilog periodic -batchmode immediate -multilogperiod 0D00:00:03 -replayperiod day"];
+  / history in more than one segment BEFORE the rdb starts, so there is a genuine multi-file replay to do
+  cfeed[c;`trade;2;0];
+  system "sleep 4";
+  cfeed[c;`trade;2;2];
+  r:startrdbchild[dir;c`port];
+  if[null r`h;kill9 c; :chk enlist[`rdbup]!enlist 0b];
+  replayed:r[`h]"count trade";
+  / then live delivery on the same subscription
+  cfeed[c;`trade;1;4];
+  system "sleep 1";
+  a:`replayedbothsegments`livearrived`exactlyonce`ascending!(
+    4=replayed;
+    5=r[`h]"count trade";
+    5=r[`h]"count distinct trade`sym";
+    r[`h]"(asc trade`time)~trade`time");
+  kill9 r;
+  kill9 c;
   chk a
   };
 

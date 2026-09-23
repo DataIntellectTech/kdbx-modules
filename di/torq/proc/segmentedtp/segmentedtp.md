@@ -304,10 +304,12 @@ regression test asserting the corrected behaviour.
 
 ## Known gaps
 
-- **No `di.subscriptions` consumer.** `di.subscriptions` replays exactly one `logfile`/`rowcount`
-  pair from `di.torq.proc.tickerplant`'s single-file `subdetails`. It has no path for this module's
-  `schemalist`/`logfilelist`/`rowcounts` shape, so no current TorqX subscriber can replay from a
-  segmented TP. Deferred, not designed: TorQ's own `.sub.subscribe` speaks this protocol.
+- ~~**No `di.subscriptions` consumer.**~~ **Closed** — `di.subscriptions` 0.2.0 speaks both
+  protocols, choosing between them by probing a root `tptype` over the handle, exactly as TorQ's own
+  `.sub.subscribe` does. A subscriber reaches a segmented TP by naming it as its tickerplant type
+  (`tickerplanttypes = "segmentedtp"` for `di.torq.proc.rdb` / `di.torq.proc.wdb`), and
+  `di.torq.proc.chainedtp` can chain off one. **Nothing in this module changed for it** — the
+  protocol it already published was consumed as-is, `0W` sentinel included.
 - **End-of-period payload shape.** `di.pubsub.callendofperiod` is monadic, so subscribers receive
   `endofperiod[(currentperiod;nextperiod;data)]` — one list argument — where TorQ sent three
   arguments. Likewise `callendofday` sends `endofday[date]` without TorQ's data dict.

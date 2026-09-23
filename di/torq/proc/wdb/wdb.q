@@ -9,7 +9,9 @@
 / Chesterton's-Fence audit). NOT included (future/other-process): sort/sortworker as
 / separate processes (mode save/sort, .z.pd fan-out); advanced writedown modes
 / (partbyattr/partbyenum/partbyfirstchar) and all of merge.q; compression. REMOVED
-/ (deprecated): finspace/aws and the .z.pd tempfix guards; the endofperiod STP stub.
+/ (deprecated): finspace/aws and the .z.pd tempfix guards. NOTE: the endofperiod STP stub was
+/ also removed here, and has since been RESTORED - di.torq.proc.segmentedtp sends it on every
+/ period roll and an undefined root callback throws. See endofperiod below.
 / ---
 / idb (di.torq.proc.idb) is notified through notifyidbs, as legacy TorQ: .idb.intradayreload after any
 / intraday flush that wrote something, and .idb.rollover with the new partition at EOD (opt in by
@@ -233,6 +235,18 @@ endofday:{[pt]
   .z.m.log[`info][`wdb;"end of day complete, wrote+moved: ",(", " sv string st)];
   }
 
+/ a segmented tickerplant broadcasts endofperiod to EVERY subscriber on each period roll
+/ (di.pubsub.callendofperiod). It is monadic, so the (currentperiod;nextperiod;data) triple
+/ arrives as ONE list - see segmentedtp.md "End-of-period payload shape". Log-only, exactly as
+/ legacy TorQ's stub (code/wdb/writedown.q:52): a period boundary is NOT a writedown trigger -
+/ this wdb flushes on its own row threshold (see the timer) and rolls the partition on
+/ endofday. This restores the stub the header records as REMOVED (deprecated): it was dropped
+/ when no segmented tickerplant existed, and without it the wdb throws 'endofperiod on every
+/ roll. A classic tickerplant simply never sends it.
+endofperiod:{[x]
+  .z.m.log[`info][`wdb;"received endofperiod, current/next period ",(string x 0),"/",(string x 1),", data ",.Q.s1 x 2];
+  }
+
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.wdb: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.wdb: timer dependency is required - see di.timer"];
@@ -298,6 +312,7 @@ init:{[config;deps]
   @[`.;`upd;:;updfn];
   @[`.;`endofday;:;endofday];
   @[`.;`.u.end;:;endofday];
+  @[`.;`endofperiod;:;endofperiod];        / only a SEGMENTED tp sends this, on every period roll
   / the idb reads these directly at startup, as legacy's setparametersfromwdb does. savedir and
   / hdbdir are fixed for the life of the process; currentpartition is republished whenever it
   / moves (see endofday), or the copy here goes stale from the first roll.

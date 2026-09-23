@@ -113,6 +113,16 @@ endofday:{[date]
   .z.m.log[`info][`rdb;"end of day complete, saved+cleared: ",(", " sv string st)];
   }
 
+/ a segmented tickerplant broadcasts endofperiod to EVERY subscriber on each period roll
+/ (di.pubsub.callendofperiod). It is monadic, so the (currentperiod;nextperiod;data) triple
+/ arrives as ONE list - see segmentedtp.md "End-of-period payload shape". Log-only, exactly as
+/ legacy TorQ's stub (code/rdb/endofperiod.q): the rdb holds the whole day in memory and rolls
+/ on endofday, so a period boundary needs no action. Without this the subscriber throws
+/ 'endofperiod on every roll - a classic tickerplant simply never sends it.
+endofperiod:{[x]
+  .z.m.log[`info][`rdb;"received endofperiod, current/next period ",(string x 0),"/",(string x 1),", data ",.Q.s1 x 2];
+  }
+
 / grab a col!attribute dict for the attributed columns of a root table (`_` drop loses attrs)
 grabattrs:{[t] exec c!a from (0!meta value t) where not null a}
 
@@ -186,9 +196,11 @@ init:{[config;deps]
   if[`sortcsv in key config;(.z.m.dbw`readcsv)[resolvedir[apphome[];config`sortcsv]]];
 
   / publish the EOD entry points at root (the TP calls endofday[date]; .u.end is the alias).
+  / endofperiod is only ever sent by a SEGMENTED tickerplant, on every period roll.
   / reload[date] is the wdb's IPC entry point when reloadenabled (harmless if never called).
   @[`.;`endofday;:;endofday];
   @[`.;`.u.end;:;endofday];
+  @[`.;`endofperiod;:;endofperiod];
   @[`.;`reload;:;reload];
   .z.m.log[`info][`rdb;"initialised, hdbdir=",.z.m.hdbdir,", reloadenabled=",string .z.m.reloadenabled];
   }

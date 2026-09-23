@@ -71,6 +71,14 @@ di.subscriptions defines the tables at root from what the TP returns.
   - **wdb-fronted** (`1b`): a wdb owns the writedown, so di.torq.proc.rdb only **snapshots** the
     per-table row counts (`.z.m.eodtabcount`) and escapes — the data stays live and
     queryable. No save, no clear, no HDB notify. It waits for the wdb's `reload[date]`.
+- **End of period** (`endofperiod[(current;next;data)]`, published at root): sent **only** by a
+  segmented tickerplant (`di.torq.proc.segmentedtp`), on **every** period roll — far more often
+  than end of day. `di.pubsub.callendofperiod` is monadic, so the `(currentperiod;nextperiod;data)`
+  triple arrives as **one list** argument, where legacy TorQ sent three (see segmentedtp.md,
+  "End-of-period payload shape"). Log-only — the rdb holds the whole day in memory and rolls on `endofday`, so a period
+  boundary needs no action, exactly as legacy TorQ's stub.
+  It must exist: an undefined root callback makes the subscriber throw `'endofperiod` on every
+  roll. A classic tickerplant never sends it, so the stub is inert there.
 - **Reload** (`reload[date]`, published at root): the IPC entry point the **wdb** calls once
   it has persisted the prior day. Drops exactly the snapshotted row count from each table
   (`n _`, keeping the new day's ticks that arrived since EOD), reapplies attributes (the drop

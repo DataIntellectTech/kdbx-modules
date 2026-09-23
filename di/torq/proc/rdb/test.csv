@@ -35,3 +35,9 @@ true,0,0,q,"30000=TL ""30000""",1,,a command-line override is a string and is PA
 true,0,0,q,"-7h=type TL ""30000""",1,,the result is a long ATOM - a raw j-cast would give one code per character
 fail,0,0,q,"TL ""banana""",1,,an unparseable number is a configuration error not a silent null
 
+comment,,,,,,,endofperiod - only a SEGMENTED tickerplant sends this and it fires on EVERY period roll
+run,0,0,q,.m.di.0torq.0proc.0rdb.log:mlog,1,,inject the mock log so the stub runs without a full init
+run,0,0,q,EP:.m.di.0torq.0proc.0rdb.endofperiod,1,,reach the endofperiod stub
+true,0,0,q,1=count value[EP]1,1,,endofperiod is MONADIC - di.pubsub.callendofperiod sends the (current;next;data) triple as ONE argument
+run,0,0,q,"EP[(2026.09.23D10:00:00;2026.09.23D10:05:00;`p`tbls!(2026.09.23D10:00:00;`trade))]",1,,a segmented tp period roll must not throw
+true,0,0,q,"0<count ss[last value .m.di.0torq.0proc.0rdb.init;""`endofperiod;:;endofperiod""]",1,,init PUBLISHES it at root - defining it module-locally alone would not stop the throw

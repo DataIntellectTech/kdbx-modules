@@ -81,6 +81,15 @@ di.subscriptions defines the tables at root from what the TP returns.
   `` .idb.rollover[date+1] `` — the partition the wdb has moved **on** to — which records the new
   day and remounts. Both idb legs go through the one `notifyidbs[func;params]`, as legacy TorQ.
 
+- **End of period** (`endofperiod[(current;next;data)]`, published at root): sent **only** by a
+  segmented tickerplant (`di.torq.proc.segmentedtp`), on **every** period roll — far more often
+  than end of day. `di.pubsub.callendofperiod` is monadic, so the `(currentperiod;nextperiod;data)`
+  triple arrives as **one list** argument, where legacy TorQ sent three (see segmentedtp.md,
+  "End-of-period payload shape"). Log-only — a period boundary is **not** a writedown trigger; the wdb
+  flushes on its own row threshold and rolls the partition on `endofday`, exactly as legacy TorQ's stub.
+  It must exist: an undefined root callback makes the subscriber throw `'endofperiod` on every
+  roll. A classic tickerplant never sends it, so the stub is inert there.
+
 ## What the wdb publishes for the idb
 
 `init` publishes three root variables the idb reads at startup, the way legacy TorQ's
@@ -140,7 +149,9 @@ grow an optional enum-dir param and absorb this.)
   differs from today). v1 assumes same-day start; it logs a warning and uses the log date, but
   does not relocate data already written under the wrong partition.
 - **Gateway** block/unblock is a no-op until a gateway is connected (di.torq.proc.gateway not built).
-- **FinSpace/AWS** and the `endofperiod` STP stub — stripped.
+- **FinSpace/AWS** — stripped. (The `endofperiod` STP stub was stripped here too, but has
+  been **restored** — see "End of period" above. It was dropped when no segmented tickerplant
+  existed; `di.torq.proc.segmentedtp` now sends it on every period roll.)
 
 ## Module-namespace notes
 

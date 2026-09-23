@@ -114,8 +114,10 @@ Two kinds of dependency, kept deliberately distinct:
   - `log` → `` `info`warn`error `` (each `{[ctx;msg]}`)
   - `timer` → `` `addjob`deletejobs`enablejobs`disablejobs`getactivejobs ``
   - `handlers` → `` `register`remove`list ``
-  - `servers` → `` `startup`getservers`gethandlebytype`waitfortype `` (its `init` is owned by
-    `di.torq`; consumers call `startup` with their own connection list)
+  - `servers` → `` `startup`getservers`getallservers`removeprocs`gethandlebytype`waitfortype `` (its `init` is
+    owned by `di.torq`; consumers call `startup` with their own connection list; `getallservers`
+    since di.torq.servers 0.4.0. Its root-published IPC target `.torq.servers.addprocs` is
+    deliberately *not* in the dict — other processes call it, never the owner)
 - **`use`-imported** (a real, greppable module dependency) — stateless / process-local
   **libraries** with no substitution need: e.g. `di.tplog`, `di.subscriptions`, `di.dataaccess`,
   `di.pubsub`, `di.dbwrite`.

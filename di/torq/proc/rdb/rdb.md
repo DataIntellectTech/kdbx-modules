@@ -35,6 +35,11 @@ reloadenabled = false             # false (default): save+clear own tables at EO
 # sortcsv (optional) -> di.dbwrite sort/attribute config; else dbwrite's default (time asc)
 ```
 
+Every value above is read through a coercion helper at the point of use, so it is accepted
+typed (a `.q` settings file), as a string (a `.toml` value) or as a command-line override
+(`-tpwaittimeout 30000`, which `.Q.opt` hands over as a string). Strings are **parsed**, not cast:
+`"j"$"30000"` would be the five character codes and `` `boolean$"true" `` a boolean *list*.
+
 Set `reloadenabled = true` **only** when a wdb is present in the stack — otherwise the EOD
 writedown is deferred to a wdb that never calls back, and the data is never persisted.
 

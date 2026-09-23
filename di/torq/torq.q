@@ -4,7 +4,7 @@
 / same init[config;deps] calling convention.
 
 / built-in process type registry: proctype -> di.* module name
-builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`housekeeping`segmentedtp`chainedtp!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.housekeeping`di.torq.proc.segmentedtp`di.torq.proc.chainedtp
+builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`discovery`housekeeping!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.discovery`di.torq.proc.housekeeping
 
 reqenv:{[e]
   v:getenv e;
@@ -102,7 +102,12 @@ buildhandlersdep:{[overrides;logdep]
 / double-register the pc handler and the retry job (the exact fragility that motivated
 / promoting servers from a per-module `use`+init to an injected singleton). `startup` IS
 / exposed: it opens the actual connections and is called by each consumer with its own
-/ `connections` list, so connection-opening timing stays with the consumer.
+/ `connections` list, so connection-opening timing stays with the consumer. `getallservers`
+/ (servers >= 0.4.0) is the whole-registry read di.torq.proc.discovery needs to decide what to
+/ push; `removeprocs` (servers >= 0.5.0) is BOTH here (discovery evicts from its own registry
+/ through it) and root-published (.torq.servers.removeprocs, so a peer can be told a row is
+/ gone). `addprocs` is deliberately NOT in this dict - it is only ever the root-published IPC
+/ target (.torq.servers.addprocs) that OTHER processes call on this one, never a local call.
 / NB every process gets an init'd servers instance, even ones that never dial out
 / (hdb/tickerplant): harmless - the registry starts empty, the pc handler and the retry job
 / are no-ops on an empty SERVERS table, and startup (the part that opens sockets) is never
@@ -116,7 +121,7 @@ buildserversdep:{[overrides;config;logdep;timerdep;handlersdep]
   / one-arg init[deps] (kdbx convention, matching handlers/config/depcheck): merge the injectables into
   / this process's config slice - init reads log/timer/handlers + proctype/procname self-identity from it.
   (srv`init)[config,`log`timer`handlers!(logdep;timerdep;handlersdep)];
-  `startup`getservers`gethandlebytype`waitfortype!((srv`startup);(srv`getservers);(srv`gethandlebytype);(srv`waitfortype))
+  `startup`getservers`getallservers`removeprocs`gethandlebytype`waitfortype!((srv`startup);(srv`getservers);(srv`getallservers);(srv`removeprocs);(srv`gethandlebytype);(srv`waitfortype))
   }
 
 / starts a built-in process type, shipped as a di.* module
@@ -136,6 +141,17 @@ startcustom:{[proctype;config;deps]
   initfunc[config;deps]
   }
 
+/ --- config coercion ------------------------------------------------------------------------
+/ a setting arrives typed from a .q settings file but as a STRING from .toml and from a
+/ command-line override (.Q.opt). strings must be parsed, not cast: "j"$"1800" is the four
+/ character codes and `boolean$"true" is a boolean LIST (which throws 'type in the if/$ reading it)
+tolong:{[x]
+  r:$[10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.torq: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
+  r
+  };
+tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]};
+
 / --- application code cascade (TorQ-style) ------------------------------------------------
 / Loads add-on q scripts the APP drops under $TORQXAPPHOME/code/<dir>/ for a process, mirroring
 / torq.q's .proc.reloadallcode but scaled to the SINGLE app code root: the TorqX framework ships
@@ -148,7 +164,7 @@ startcustom:{[proctype;config;deps]
 / choose - a bare app query file like code/rdb/examplequeries.q (no \d) lands at ROOT, callable as
 / countbysym[...]. This is the same load mechanism startcustom already uses for code/processes/.
 / (parentproctype - torq.q's 4th tier, for wdb/sort sharing - is omitted: no sort-worker tier yet.)
-optflag:{[config;k;dflt] $[k in key config;`boolean$config k;dflt]}
+optflag:{[config;k;dflt] $[k in key config;tobool config k;dflt]}
 
 / load every q/k file in one dir at root: an optional order.txt lists files to load first, then
 / the rest alphabetically. Absent/empty dir -> no-op (key on a missing path returns empty).
@@ -206,15 +222,15 @@ flushquerylog:{[] ((use`di.querylog)`flushusage)[.z.m.qlflushtime];}
 
 initquerylog:{[config;deps]
   sect:$[`querylog in key config;config`querylog;()!()];
-  if[not $[`enabled in key sect;`boolean$sect`enabled;0b];:()];
+  if[not $[`enabled in key sect;tobool sect`enabled;0b];:()];
   / di.querylog's own init is not idempotent - a second call wraps its own wrappers and every query logs twice
   if[.z.m.querylogwired;deps[`log][`info][`torq;"query logging already wired in this process - not re-wrapping"];:()];
   opt:{[s;k;d] $[k in key s;s k;d]}[sect];
   cfg:`logtomemory`logtodisk`level`localtime`ignore`ignorelist!(
-    `boolean$opt[`logtomemory;1b];
-    `boolean$opt[`logtodisk;0b];
-    "j"$opt[`level;3];
-    `boolean$opt[`localtime;0b];
+    tobool opt[`logtomemory;1b];
+    tobool opt[`logtodisk;0b];
+    tolong opt[`level;3];
+    tobool opt[`localtime;0b];
     1b;
     qlignore opt[`ignorelist;`upd`.u.upd]);
   if[cfg`logtodisk;
@@ -223,13 +239,100 @@ initquerylog:{[config;deps]
     cfg:cfg,`logdir`logname!(dir;string config`procname)];
   ((use`di.querylog)`init)[cfg];
   .z.m.querylogwired:1b;
-  ft:"j"$opt[`flushtime;86400];
+  ft:tolong opt[`flushtime;86400];
   if[ft>0;
     .z.m.qlflushtime:ft*0D00:00:01;
-    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];1h;()!()]];
+    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();tolong opt[`flushinterval;1800];1h;()!()]];
   msg:"query logging on (level ",(string cfg`level),", memory=",(string cfg`logtomemory),", disk=",(string cfg`logtodisk),")";
   deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
   }
+
+/ --- discovery auto-subscribe -----------------------------------------------------------------
+/ The consumer half of service discovery, generically, for EVERY process type at once. A process opts
+/ in with config alone: a flat `discoverywant` key (symbol / list / toml string or list - the proctypes
+/ it wants told about; `ALL for everything), or `discovery in its `connections`. di.torq then dials the
+/ discovery row(s) of process.csv ITSELF through the injected servers (startup is repeat-safe, so a
+/ module that already dialled them pays nothing) - it has to: every builtin proc module replaces the
+/ flat `connections` with its own role list (rdb: tickerplant+hdb types, gateway: backendtypes...), so
+/ the flat key alone would never reach servers for them - and subscribes: one async
+/ .discovery.getservices[want;1b] on every live discovery handle, at init and then every 10s. From
+/ then on discovery pushes the live rows into this process's own root .torq.servers.addprocs. No proc
+/ module knows discovery exists and di.torq.servers is untouched. The 10s cycle is fixed (its cost is a few async messages on already-live handles - no knob),
+/ the result is discarded (the real answer arrives via discovery's push moments later), and there is
+/ NO handle tracking: a repeat call on the same handle REPLACES the subscription on the discovery
+/ side, so re-calling every live handle every cycle is idempotent, self-heals a reconnect (a new
+/ handle is just another live handle next cycle), and needs nothing reset on re-init.
+/ SELF-EXCLUSION IS LOAD-BEARING: a discovery instance dials every phone-book row including its
+/ sibling discovery instances (the redundancy model), so without it every instance would subscribe
+/ to every other and start RECEIVING pushes - breaking the invariant discovery's stateless eviction
+/ relies on (its registry holds only what it dialled itself). Guarded twice: no job is registered for
+/ a discovery instance, and the job body is a no-op whenever the current identity is one (want empty).
+/ The discovery proctype is derived from the builtin registry LAZILY (never at load time) so a broken
+/ registry entry can only disable this feature, warned - never stop an unrelated process booting.
+discoverysub:`servers`log`want`type!(()!();()!();`symbol$();`);
+discoveryjobregistered:0b;
+lastdiscoveryhandles:();
+
+/ the builtin proctype(s) backed by di.torq.proc.discovery (0 or 1 symbols)
+discoverytype:{[] where builtin=`di.torq.proc.discovery};
+
+/ a token-list setting: space-separated string, single symbol, symbol list, or list of strings
+/ (same shape as di.torq.proc.gateway's astoklist - kept local; di.torq must not depend on a proctype)
+astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]};
+
+/ the want when opted in: discoverywant if given, else `ALL (opted in via connections alone)
+discoverywant:{[config] $[`discoverywant in key config;astoklist config`discoverywant;enlist`ALL]};
+
+/ opted in? discoverywant present, or the discovery proctype among the flat connections
+discoveryoptin:{[config;dt]
+  $[`discoverywant in key config;1b;`connections in key config;dt in astoklist config`connections;0b]
+  };
+
+resubscribe:{[]
+  / the discoverysubscribe job body (see the block comment): re-call getservices[want;1b] on every
+  / live discovery handle. silent when there is none (the common case); logged only when the set
+  / of subscribed handles changes
+  want:.z.m.discoverysub`want;
+  if[0=count want;:()];
+  live:(.z.m.discoverysub[`servers]`getservers)[.z.m.discoverysub`type];
+  hs:exec w from live;
+  / async bytes sit in .z.W until the event loop flushes: skip a handle that is not draining
+  hs:hs where 0=0^.z.W hs;
+  {[wnt;h] @[{[wnt;h] (neg h)(`.discovery.getservices;wnt;1b)}[wnt];h;{}]}[want] each hs;
+  / log on change - keyed on (handle;connect time), not the handle alone: the OS reuses fd numbers,
+  / so a reconnect can come back on the same number, and servers stamps startp on every reconnect
+  k:select w,startp from live where w in hs;
+  if[k~.z.m.lastdiscoveryhandles;:()];
+  .z.m.lastdiscoveryhandles:k;
+  if[count hs;
+    msg:"subscribed to discovery on ",(string count hs)," handle(s) for ",", " sv string want;
+    .z.m.discoverysub[`log][`info][`torq;msg]];
+  };
+
+discoveryjobfail:{[e] .z.m.discoverysub[`log][`warn][`torq;"discovery subscribe cycle failed: ",e];};
+discoveryjob:{[] @[resubscribe;::;discoveryjobfail]};
+
+initdiscoverysub:{[proctype;config;deps]
+  / after the process module's init (its own startup may already hold a live discovery handle):
+  / record what to ask for, register the 10s job ONCE per process, and subscribe now
+  dt:discoverytype[];
+  if[0=count dt;
+    .z.m.discoverysub:`servers`log`want`type!(deps`servers;deps`log;`symbol$();`);
+    deps[`log][`warn][`torq;"discovery auto-subscribe disabled: no builtin registry entry maps to di.torq.proc.discovery"];
+    :()];
+  dt:first dt;
+  self:proctype=dt;
+  on:(not self) and discoveryoptin[config;dt];
+  .z.m.discoverysub:`servers`log`want`type!(deps`servers;deps`log;$[on;discoverywant config;`symbol$()];dt);
+  if[not on;:()];
+  / dial the discovery row(s) ourselves - repeat-safe if the module's own startup already did
+  @[deps[`servers]`startup;`connections`processcsv!(enlist dt;config`processcsv);
+    {[lg;e] lg[`warn][`torq;"discovery auto-subscribe: could not dial discovery: ",e]}[deps`log]];
+  if[not .z.m.discoveryjobregistered;
+    (deps[`timer][`addjob])[`discoverysubscribe;discoveryjob;();10;1h;enlist[`disableonfail]!enlist 0b];
+    .z.m.discoveryjobregistered:1b];
+  discoveryjob[];
+  };
 
 / reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
 / di.torq itself (identity, stack id, port, norun), NOT config settings. Everything else on the
@@ -290,6 +393,8 @@ init:{[proctype;procname;overrides]
     startbuiltin[proctype;config;deps];
     startcustom[proctype;config;deps]
     ];
+  / the consumer half of discovery, generically (see the discovery auto-subscribe block)
+  initdiscoverysub[proctype;config;deps];
   / app-level add-on code (code/<common|proctype|procname>/*.q) - loaded AFTER the process
   / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
   / app file may define/override .<proctype>.run for the hook to pick up).

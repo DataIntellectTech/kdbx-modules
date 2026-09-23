@@ -68,6 +68,12 @@ Three independent, explicitly-set env vars - not derived from each other:
 can find out who it is just by looking at its own `config` dict - no global to reach
 for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
 
+A setting arrives **typed** from a `.q` settings file but as a **string** from a `.toml` value
+and from a command-line override (`.Q.opt` hands every `-flag value` over as a string), so any
+consumer coerces at the point of use - `tolong`/`tobool` here, the same pair in the proc
+modules. Strings have to be *parsed*, not cast: `"j"$"1800"` is the four character codes, and
+`` `boolean$"true" `` is a boolean *list* that then throws `'type` in the `if`/`$` reading it.
+
 ### Dependency building
 
 `buildlogdep`/`buildtimerdep`/`buildhandlersdep` each build one of the three DI
@@ -94,6 +100,57 @@ not `use` - custom proctypes aren't kdb-x modules, they're app code, so there's 
 namespace-mangling to work around) and calls `` .{proctype}.init[config;deps] ``.
 Both paths call the exact same `init[config;deps]` shape either way - a custom
 proctype is indistinguishable from a built-in one from `di.torq`'s point of view.
+
+### Discovery auto-subscribe
+
+The **consumer half of service discovery**, done once here for every process type. A process
+opts in with flat settings and no code — **either** key opts it in:
+
+| key | meaning |
+|---|---|
+| `discoverywant` | which proctypes to be told about — a symbol, symbol list, toml string (`"rdb hdb"`) or list of strings; `"ALL"` for everything. Passed straight through as `getservices`' first argument; discovery validates it. **The reliable opt-in for a builtin process type.** |
+| `connections` | including `discovery` also opts in (want defaults to `` `ALL ``). Only reaches `di.torq.servers` for a process type that honours the flat key (a custom proctype that calls `startup[config]`) — see the next paragraph. A consumer that wants resilience lists several `discovery` rows in `process.csv`. |
+
+**di.torq originates the discovery connection itself.** Every builtin proc module replaces the flat
+`connections` with its own role list before calling `startup` (rdb: tickerplant+hdb types, wdb: those
+plus rdb+gateway types, gateway: `backendtypes`, chainedtp: its upstream type), so a `discovery` entry
+in `connections` alone would never be dialled for them — found live against the POC. On opt-in,
+`initdiscoverysub` therefore calls the injected `startup` with `connections = <the discovery
+proctype>` **before** subscribing — synchronous, so a live handle exists for the immediate subscribe
+below; repeat-safe, so a module that already dialled it pays nothing. The row lands in the process's
+own `SERVERS` like any other; every proc module reads that table **by type** (`getservers[t]`), so an
+unrequested `discovery` row is inert to them (verified for gateway, rdb, wdb, chainedtp).
+
+After that dial, `initdiscoverysub` records the want, registers one `discoverysubscribe` timer job
+(**fixed 10 s** — its whole cost is a few async messages on already-live handles, so unlike
+discovery's own `retryperiod` there is no knob) and runs it once immediately so boot does not wait
+a cycle. Each cycle re-calls `(neg h)(`.discovery.getservices;want;1b)` on **every** live discovery
+handle, **async, result discarded** — a sync call would let a hung discovery block this process,
+and the real answer arrives via discovery's own push into this process's root
+`.torq.servers.addprocs` moments later. There is **no handle tracking**: a repeat call on the same
+handle *replaces* the subscription on the discovery side, so re-calling every live handle every
+cycle is idempotent, self-heals a reconnect (a new handle is just another live handle next cycle —
+discovery's `.z.pc` observer already forgot the old one), and needs nothing reset on re-init. The
+only state is the last handle set, for logging on change; a handle with bytes still queued from an
+earlier send (`.z.W`) is skipped that cycle. A process with no discovery connection does nothing
+and logs nothing.
+
+**Self-exclusion is load-bearing, not defensive.** A discovery instance dials every phone-book row
+— including its *sibling* discovery instances (the redundancy model). Without the guard every
+instance would subscribe to every other and start *receiving* `addprocs`/`removeprocs` pushes,
+breaking the invariant discovery's stateless eviction depends on: its registry holds only what it
+dialled itself. So the job is never registered for a process whose resolved identity is the
+discovery proctype, **and** the job body is a no-op whenever the current identity is one (the want
+is stored empty) — both, so an in-process re-init can never leak a sibling subscription. Tested
+end to end: two instances booted through `torqx_init.q` dial each other and never appear in each
+other's `getsubs[]`, re-checked after a full job cycle (discovery's integration suite,
+`autosubscribe`).
+
+The discovery proctype is derived from the `builtin` registry (the entry mapping to
+`di.torq.proc.discovery`), never a literal — and **lazily**, inside `initdiscoverysub`: a renamed or
+dropped registry entry disables auto-subscribe with a clear warning and never stops an unrelated
+process booting. `di.torq.servers` gains no new surface from any of this — di.torq only calls its
+existing injected `startup` and `getservers` — and no proc module knows discovery exists.
 
 ### Application code cascade
 
@@ -292,9 +349,12 @@ freshly-started process. tmux mode is for local development; production stays on
 - **Query logging (`[querylog]`) wraps `.z.*` by direct assignment.** If a phased event's `exec`
   is claimed after startup, logging for that event silently drops to zero with no error. See
   [Query logging](#query-logging-optional).
-- The builtin registry has exactly one entry (`` `hdb ``) so far - every other
-  proctype in a real deployment would be custom, until more `di.*` process-type
-  modules exist.
+- The builtin registry now covers `hdb`, `tickerplant`, `rdb`, `wdb`, `gateway`, `segmentedtp`,
+  `chainedtp` and `discovery` (`di.torq.proc.discovery` - the discovery service; it needs the
+  injected servers dep at >= 0.5.0 for `getallservers`/`removeprocs`, and ships a builtin
+  `settings/discovery.q` with `hopentimeout:200` - the first per-proctype builtin setting besides
+  `hdb.q`). Any other proctype is custom. The consumer side is the generic auto-subscribe above
+  (0.6.0) - `connections` + `discoverywant`, nothing per module.
 - No `di.torq.depcheck`-style pre-flight dependency validation yet (next up per the
   modularisation plan).
 - `autodetect`'s host-matching has no `-procfile` override and no FinSpace-specific
@@ -313,8 +373,13 @@ stays real, since `di.torq`'s own built-in settings and registry genuinely live
 there. Covers: `reqenv` erroring on a missing var, both auto-detect failure modes
 (no match, ambiguous), explicit-identity init for both a built-in and a custom
 proctype, config-cascade/deps reaching the started process type correctly, the
-`.run` hook firing by default and being skipped when `norun` is set, and successful
-auto-detection once the ambiguity is resolved. Run in a fresh q session (mutates
+`.run` hook firing by default and being skipped when `norun` is set, successful
+auto-detection once the ambiguity is resolved, the config coercion helpers
+(`tolong`/`tobool`, on a typed value and on a string), and the discovery
+auto-subscribe block - opt-in by either key, the job registering exactly once across
+re-inits, `discoverywant` narrowing, self-exclusion on a discovery instance, and a
+broken registry entry degrading to a warning rather than failing the boot (asserted
+against a fake discovery peer that records what it was asked for). Run in a fresh q session (mutates
 `system"p"` and `TORQXAPPCONFIG`/`TORQXAPPHOME`, don't interleave with other
 modules' tests):
 

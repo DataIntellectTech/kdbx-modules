@@ -15,7 +15,22 @@ calls:([]lvl:`symbol$();ctx:`symbol$();msg:())
 resetcalls:{[] `calls set ([]lvl:`symbol$();ctx:`symbol$();msg:()); }
 mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 mocklog:{[] `info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;])}
-deps:{[] enlist[`log]!enlist mocklog[]}
+
+/ mock handlers dep: records what was registered and lets a test FIRE the handler, which is the only
+/ way to observe .z.pc behaviour without closing a real socket. `register` keeps the function so
+/ firepc can call it; `remove` drops it, so a test can assert teardown gave the registration back
+hreg:()!()
+resethandlers:{[] `hreg set ()!(); }
+mockhandlers:{[]
+  `register`remove`list!(
+    {[ev;ph;nm;pri;f] @[`.;`hreg;:;hreg,(enlist nm)!enlist (ev;ph;pri;f)];};
+    {[ev;ph;nm] @[`.;`hreg;:;(enlist nm)_hreg];};
+    {[ev] hreg})
+  }
+/ fire the registered .z.pc handler for a handle, as a real disconnect would
+firepc:{[w] (hreg[`subscriptions] 3) w; }
+
+deps:{[] `log`handlers!(mocklog[];mockhandlers[])}
 
 / did anything get logged at level lv whose message contains s? (ss, not like - a multi-wildcard
 / like pattern throws 'nyi on this build)

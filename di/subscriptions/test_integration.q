@@ -94,11 +94,22 @@ cfeed:{[c;t;n;off]
 / a fresh subscriber: clear the tables this process holds, as a restarted rdb would come up empty
 resettables:{[] @[`.;`trade;:;([]time:`timestamp$();sym:`symbol$();price:`float$())]; };
 
+/ the REAL di.torq.handlers, wired the way di.torq wires it. This suite drives real processes over
+/ real sockets, so it injects the real dependency rather than a stand-in - which also means the
+/ .z.pc registration di.subscriptions makes is a genuine one, and killing a child really does fire it
+/ built fresh per scenario rather than memoised - di.torq.handlers' init is idempotent, and a cached
+/ dict here would need a `null` guard, which on a dict returns a dict and throws 'type inside if[]
+handlersdep:{[]
+  hz:use`di.torq.handlers;
+  hz[`init][enlist[`log]!enlist caplog[]];
+  `register`remove`list!(hz`register;hz`remove;hz`list)
+  };
+
 / wire the real module under test with a capturing logger
 freshsub:{[]
   resetcalls[];
   s:use`di.subscriptions;
-  s[`init][()!();enlist[`log]!enlist caplog[]];
+  s[`init][()!();`log`handlers!(caplog[];handlersdep[])];
   s
   };
 

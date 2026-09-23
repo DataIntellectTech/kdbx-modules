@@ -22,7 +22,11 @@
 
 / registry schema - the template init seeds the live registry from. Named apart from the live
 / state so each name has one meaning (bare module-local names and .z.m are the same storage).
-registryschema:([]handle:`int$();tabs:();syms:();subtime:`timestamp$());
+/ `active` mirrors TorQ's own .sub.SUBSCRIPTIONS column, and carries the same meaning: the handle this
+/ subscription was made over has not been seen to close. It is the load-bearing half of the reconnect
+/ design this module will grow - in TorQ, .sub.pc only ever WRITES it and three other functions read
+/ it (dedupe, retry selection, and GC of dead rows)
+registryschema:([]handle:`int$();tabs:();syms:();subtime:`timestamp$();active:`boolean$());
 
 / module state that exists before init has run
 initdone:0b;
@@ -60,13 +64,36 @@ requireinit:{[ctx]
     '"di.subscriptions: ",string[ctx],": init must be called before any other function"];
   };
 
+checkdep:{[deps;k;fns;hint]
+  / one injected dependency: present, a dict, and carrying the functions this module calls. Plain
+  / signals - init is what wires the logger, so there is nothing to log through yet. Matches the
+  / checkdep in di.torq.proc.segmentedtp and di.torq.proc.chainedtp
+  if[not k in key deps;'"di.subscriptions: ",(string k)," dependency is required - ",hint];
+  if[99h<>type deps k;'"di.subscriptions: ",(string k)," dependency must be a dict - ",hint];
+  if[count missing:fns except key deps k;
+    '"di.subscriptions: ",(string k)," dependency is missing ",", " sv string missing];
+  };
+
+/ .z.pc, registered through the injected handlers dep. The whole body, exactly as TorQ's .sub.pc:
+/ mark the subscription dead, nothing more. It deliberately does NOT resubscribe - there is no
+/ reconnect path in this stack yet, and half of one here would be worse than none. What it buys now
+/ is that subscribed[] stops answering 1b for a tickerplant that has gone away.
+pcfunc:{[w]
+  .z.m.registry:update active:0b from .z.m.registry where handle~\:w;
+  };
+
 init:{[config;deps]
   / wire the injected deps, read config and reset the subscription registry
   if[99h<>type config;'"di.subscriptions: config must be a dict"];
-  if[not `log in key deps;'"di.subscriptions: log dependency is required - see di.util.log"];
+  checkdep[deps;`log;`info`warn`error;"see di.util.log"];
+  checkdep[deps;`handlers;`register`remove;"see di.torq.handlers"];
   .z.m.log:deps`log;
+  .z.m.handlers:deps`handlers;
   .z.m.tp:use`di.tplogmgr;          / for replayupto (repair-aware, count-limited -11!)
   .z.m.registry:registryschema;
+  / a simple event, so the phase is ` (null) - di.torq.handlers rejects anything else for .z.pc.
+  / Re-registering the same name replaces it in place, so a repeat init is safe
+  (.z.m.handlers`register)[`.z.pc;`;`subscriptions;0;pcfunc];
   / a log file that cannot be replayed is logged and SKIPPED by default, so a subscriber comes up with
   / the data it can still get. Set failonreplayerror to make it fatal instead: a consumer whose own
   / state must faithfully mirror the tickerplant's - di.torq.proc.chainedtp raises today for exactly
@@ -260,7 +287,8 @@ subscribe:{[tph;tabs;syms;withreplay]
   / one row per handle - re-subscribing over the same handle replaces its row rather than adding a
   / second, matching the idempotent-re-init convention the rest of the framework relies on
   dropregistry tph;
-  .z.m.registry:.z.m.registry,([]handle:enlist tph;tabs:enlist key schemas;syms:enlist syms;subtime:enlist .z.p);
+  .z.m.registry:.z.m.registry,
+    ([]handle:enlist tph;tabs:enlist key schemas;syms:enlist syms;subtime:enlist .z.p;active:enlist 1b);
   .z.m.log[`info][`subscriptions;
     "subscribed to ",(", " sv string key schemas)," on ",(string tptype)," tickerplant handle ",string tph];
   normalisedetails[sd;schemas;n]
@@ -278,18 +306,21 @@ unsubscribe:{[tph]
   };
 
 teardown:{[]
-  / forget every subscription - for a process re-subscribing from scratch. Safe to call repeatedly
+  / forget every subscription and give back the .z.pc registration, matching the remove-what-you-
+  / registered convention in di.torq.proc.chainedtp and di.torq.proc.segmentedtp. The module is
+  / dormant afterwards - disconnects stop being tracked until init runs again, which re-registers.
+  / Safe to call repeatedly
   requireinit`teardown;
   n:count .z.m.registry;
   .z.m.registry:registryschema;
+  (.z.m.handlers`remove)[`.z.pc;`;`subscriptions];
   .z.m.log[`info][`subscriptions;"cleared ",(string n)," subscription record(s)"];
   };
 
-/ is any subscription RECORDED? (di.torq.proc.rdb's connectivity check). NB this reports what this
-/ module was told, not what is live: nothing here watches .z.pc, so a tickerplant that has gone away
-/ still shows as subscribed until the consumer calls unsubscribe. Wiring that to a real disconnect
-/ needs the handlers dependency and is deferred with the rest of the reconnect work.
-subscribed:{[] requireinit`subscribed; 0<count .z.m.registry};
+/ is any subscription LIVE? A dropped handle is marked inactive by the .z.pc handler, so this no
+/ longer answers 1b for a tickerplant that has gone away. What it still cannot tell you is whether a
+/ live-looking subscription is actually receiving data - only that its handle has not closed.
+subscribed:{[] requireinit`subscribed; 0<count select from .z.m.registry where active};
 
 / the active-subscriptions registry (introspection)
 getsubscriptions:{[] requireinit`getsubscriptions; .z.m.registry};

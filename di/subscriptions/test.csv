@@ -180,6 +180,38 @@ true,0,0,q,"3=count AC (enlist D;enlist`S0;enlist 1.0)",1,1,a list-of-columns pa
 true,0,0,q,"all 1=count each AC (D;`S0;1.0)",1,1,an atom row becomes one-element columns
 true,0,0,q,"all 1=count each AC ([]time:enlist D;sym:enlist`S0;price:enlist 1.0)",1,1,a table payload becomes columns too - the shape chainedtp's private twin handled and this one did not
 
+comment,,,,,,,liveness - a dropped handle is marked dead, not left looking subscribed
+run,0,0,q,sub.teardown[],1,1,start from an empty registry
+run,0,0,q,sub.init[()!();deps[]],1,1,re-init after teardown gave the .z.pc registration back
+true,0,0,q,`subscriptions in key hreg,1,1,init registered a .z.pc handler through the handlers dep
+true,0,0,q,"`.z.pc~hreg[`subscriptions;0]",1,1,on the right event
+true,0,0,q,null hreg[`subscriptions;1],1,1,with a null phase - .z.pc is a simple event and di.torq.handlers rejects any other
+run,0,0,q,PL:buildlogs[enlist 2],1,1,a log to subscribe over
+run,0,0,q,"TPL:mocktph[`standard;PL]",1,1,a mock handle
+run,0,0,q,resettrade[],1,1,reset
+run,0,0,q,"sub.subscribe[TPL;`;`;1b]",1,1,subscribe
+true,0,0,q,sub.subscribed[],1,1,subscribed reports live
+true,0,0,q,"all exec active from sub.getsubscriptions[]",1,1,and the row is marked active
+run,0,0,q,firepc[TPL],1,1,the handle closes - fire the registered handler as a real disconnect would
+true,0,0,q,not sub.subscribed[],1,1,subscribed now reports dead rather than still claiming the tickerplant
+true,0,0,q,"not any exec active from sub.getsubscriptions[]",1,1,the row was marked inactive
+true,0,0,q,1=count sub.getsubscriptions[],1,1,and kept - marking dead is not deleting
+run,0,0,q,firepc[`someoneelse],1,1,an unrelated handle closing
+true,0,0,q,1=count sub.getsubscriptions[],1,1,touches nothing
+run,0,0,q,"sub.subscribe[TPL;`;`;1b]",1,1,re-subscribing over the same handle
+true,0,0,q,sub.subscribed[],1,1,marks it live again
+run,0,0,q,sub.teardown[],1,1,teardown
+true,0,0,q,not `subscriptions in key hreg,1,1,gave the .z.pc registration back
+run,0,0,q,sub.init[()!();deps[]],1,1,re-init for the remaining tests
+
+comment,,,,,,,handlers is a required dependency
+fail,0,0,q,"sub.init[()!();enlist[`log]!enlist mocklog[]]",1,1,init without the handlers dep must error
+fail,0,0,q,"sub.init[()!();`log`handlers!(mocklog[];()!())]",1,1,and with a handlers dict missing register/remove
+fail,0,0,q,"sub.init[()!();`log`handlers!(mocklog[];42)]",1,1,and with a handlers value that is not a dict
+fail,0,0,q,"sub.init[()!();`log`handlers!(`notadict;mockhandlers[])]",1,1,the log dep is now type-checked too not just present
+fail,0,0,q,"sub.init[()!();`log`handlers!((enlist`info)!enlist {[c;m]};mockhandlers[])]",1,1,and checked for the keys this module calls
+run,0,0,q,sub.init[()!();deps[]],1,1,restore a good init
+
 comment,,,,,,,requireinit - public functions refuse to run before init
 run,0,0,q,"@[`.m.di.0subscriptions;`initdone;:;0b]",1,1,simulate a module whose init has not run
 fail,0,0,q,sub.subscribed[],1,1,subscribed refuses

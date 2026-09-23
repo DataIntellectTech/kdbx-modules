@@ -11,10 +11,20 @@ Ported and simplified from `TorQ/code/common/subscriptions.q` (`.sub`), written 
 modular single-call `subdetails` protocol rather than the classic standard-TP
 `.u.i`/`.u.L`/`.u.d` global reads.
 
-## Dependency
+## Dependencies
 
-`log` (required) — the injected di.torq logging dep. `init` also `use`s `di.tplogmgr`
-(for the repair-aware, count-limited replay).
+Both injected and both **required**, validated for presence, type and the keys this module calls:
+
+| Dep | Keys used | For |
+|---|---|---|
+| `log` | `` `info`warn`error `` | everything |
+| `handlers` | `` `register`remove `` | the `.z.pc` hook that marks a dropped subscription inactive |
+
+`init` also `use`s `di.tplogmgr` (for the repair-aware, count-limited replay).
+
+`handlers` became required when liveness tracking landed. Nothing broke: all three consumers
+(`di.torq.proc.rdb`, `wdb` and `chainedtp`) already forward their whole deps dict to this module's
+`init`, and `di.torq` injects `` `register`remove`list `` into every process.
 
 `init` takes `[config;deps]`, matching the `di.torq` proc-tier convention that
 `di.torq.startbuiltin` wires every module through.
@@ -48,11 +58,12 @@ duplicate of this replay logic.
 
 | Function | Description |
 |---|---|
-| `init[config;deps]` | validate config and the `log` dep, load di.tplogmgr, reset the registry |
-| `subscribe[tph;tabs;syms;replay]` | subscribe over an open TP handle; returns the subscription details |
+| `init[config;deps]` | validate config and the `log`/`handlers` deps, load di.tplogmgr, reset the registry, hook `.z.pc` |
+| `subscribe[tph;tabs;syms;withreplay]` | subscribe over an open TP handle; returns the subscription details |
+| `replay[sd;tabs;syms]` | replay a subscription's log(s) through root `upd`; returns the messages replayed |
 | `unsubscribe[tph]` | forget the subscription recorded against a handle |
-| `teardown[]` | forget every recorded subscription |
-| `subscribed[]` | `1b` if any subscription is recorded |
+| `teardown[]` | forget every record and give the `.z.pc` registration back |
+| `subscribed[]` | `1b` if any subscription is still **live** (its handle has not closed) |
 | `getsubscriptions[]` | the active-subscriptions registry table |
 | `getapimeta[]` | api metadata rows for `di.torq` to register with `di.api` |
 
@@ -60,18 +71,44 @@ Every one of these refuses to run before `init` and says so — without that gua
 fails deep inside on an unset name and reports a module internal
 (`.m.di.0subscriptions.registry`) rather than the actual mistake.
 
-### The registry records, it does not observe
+### The registry, and what `subscribed[]` actually means
 
 `subscribe` keeps **one row per handle** — re-subscribing over the same handle replaces its row
-rather than adding a second. Nothing here watches `.z.pc`, so a tickerplant that has gone away
-still shows as subscribed until the consumer calls `unsubscribe`; `subscribed[]` answers *"is a
-subscription recorded"*, not *"is the tickerplant reachable"*. Wiring it to a real disconnect needs
-the `handlers` dependency and is deferred with the rest of the reconnect work.
+rather than adding a second.
 
-`unsubscribe` clears only this module's record — it does not tell the tickerplant, because
+Each row carries an `active` flag. `init` registers a `.z.pc` handler through the injected
+`handlers` dependency whose whole body is to set `active:0b` for a handle that closes — exactly
+what TorQ's `.sub.pc` does. `subscribed[]` counts only active rows, so it no longer answers `1b`
+for a tickerplant that has gone away.
+
+What it still cannot tell you is whether a live-looking subscription is actually *receiving* data —
+only that its handle has not closed. A dead row is **kept, not deleted**: `active` is the
+load-bearing half of the reconnect design this module will grow, where it selects what to retry.
+
+`unsubscribe` clears this module's record for a handle. It does not tell the tickerplant, because
 `di.pubsub` drops a subscriber on `.z.pc` and a closed handle therefore deregisters itself there.
+`teardown` clears every record **and gives the `.z.pc` registration back**, leaving the module
+dormant until `init` runs again.
 
-### `replay` decides whether the tables are reset
+### `replay[sd;tabs;syms]` — driving the replay yourself
+
+`subscribe` replays for you when asked. `replay` is the same machinery exposed, for a consumer that
+must sequence its own work **around** the replay rather than inside one call.
+
+`di.torq.proc.chainedtp` is why it exists. It subscribes with `withreplay` off, opens its own log
+for the date `subdetails` returned, and only then replays — because a replayed message must not
+reach `upd` before that log is open, or the history never lands in it and nothing downstream can
+replay it in turn. Calling `subdetails` twice instead would register twice and double-process live
+ticks.
+
+`subscribe` calls this same function, so there is **one** replay path rather than a public one and
+a private twin free to diverge. That mattered: three private copies of this logic existed before it
+was exported, and they had drifted — a payload shape fixed in one was still broken in another.
+
+It returns the number of messages **replayed**, which is not the number of rows kept: the
+tables/syms filter drops rows downstream of the count.
+
+### `withreplay` decides whether the tables are reset
 
 `subscribe` defines the subscribed tables at root from the returned schemas. With `replay=1b` an
 existing table is **cleared first**, so the replay lands in a clean table and cannot duplicate rows

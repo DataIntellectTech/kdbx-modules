@@ -23,12 +23,6 @@
 / `boolean$"true" is a boolean LIST (which then throws 'type in the if/$ that reads it)
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
-tolong:{[x]
-  r:$[10h=abs type x;"J"$(),x;"j"$x];
-  if[null r;'"di.torq.proc.rdb: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
-  r
-  }
-tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]}
 
 / boolean config. A raw `boolean$ cannot do this job: on a string it returns one boolean PER
 / CHARACTER (`boolean$"false" is 11111b) and using that in a conditional throws 'type, and on a

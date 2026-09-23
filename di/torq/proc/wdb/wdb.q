@@ -55,6 +55,16 @@ tobool:{[x]
     ", " sv string truewords,falsewords
   }
 
+/ numeric config. Same trap as the boolean one, other half: a .toml bare number parses to a long,
+/ but a command-line override arrives as a STRING and `"j"$"30000"` is the five CHARACTER CODES
+/ 51 48 48 48 48, not 30000 - a list, silently wrong, which then reaches a timeout or a row
+/ threshold. Strings are parsed, not cast. Same shape as di.torq.proc.tickerplant's
+tolong:{[x]
+  r:$[10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.torq.proc.wdb: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
+  r
+  }
+
 / a token-list config (e.g. reloadorder): accept a space-separated string ("hdb rdb"), a
 / single symbol, a symbol list, or a list of strings -> always a symbol list.
 astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
@@ -238,14 +248,14 @@ init:{[config;deps]
   .z.m.ignorelist:$[`ignorelist in key config;aslist assym config`ignorelist;`heartbeat`logmsg];
   .z.m.hdbdir:hsym `$$[`hdbdir in key config;resolvedir[datahome[];config`hdbdir];datahome[],"/hdb"];
   .z.m.savedir:hsym `$$[`savedir in key config;resolvedir[datahome[];config`savedir];datahome[],"/wdb"];
-  .z.m.numrows:$[`numrows in key config;"j"$config`numrows;100000];
+  .z.m.numrows:$[`numrows in key config;tolong config`numrows;100000];
   .z.m.numtab:$[`numtab in key config;config`numtab;(`symbol$())!`long$()];
   .z.m.immediate:$[`immediate in key config;tobool config`immediate;0b];
-  settimer:$[`settimer in key config;"j"$config`settimer;10];
+  settimer:$[`settimer in key config;tolong config`settimer;10];
   subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
   replaylog:$[`replaylog in key config;tobool config`replaylog;1b];
-  timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
+  timeout:$[`tpwaittimeout in key config;tolong config`tpwaittimeout;30000];
 
   / v1 uses today's date as the partition; the tp log date is checked against it after
   / subscribe. Cross-date replay (log date != today, needing the written working data moved to

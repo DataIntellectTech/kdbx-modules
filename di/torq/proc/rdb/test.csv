@@ -27,3 +27,11 @@ true,0,0,q,"not any TB each (0b;""false"";""no"";""off"";""0"";""f"";""n"";`fals
 true,0,0,q,-1h=type TB"false",1,,the result is a boolean ATOM - a raw boolean$ cast would give one per character
 fail,0,0,q,"TB ""banana""",1,,an unrecognised word is a configuration error not a silent false
 fail,0,0,q,TB`banana,1,,and so is an unrecognised symbol
+
+comment,,,,,,,tolong - numeric config (a -flag override is a STRING)
+run,0,0,q,TL:.m.di.0torq.0proc.0rdb.tolong,1,,reach the internal numeric coercion
+true,0,0,q,"30000=TL 30000",1,,a .toml bare number is already a long and passes through
+true,0,0,q,"30000=TL ""30000""",1,,a command-line override is a string and is PARSED not cast
+true,0,0,q,"-7h=type TL ""30000""",1,,the result is a long ATOM - a raw j-cast would give one code per character
+fail,0,0,q,"TL ""banana""",1,,an unparseable number is a configuration error not a silent null
+

@@ -46,6 +46,16 @@ tobool:{[x]
     ", " sv string truewords,falsewords
   }
 
+/ numeric config. Same trap as the boolean one, other half: a .toml bare number parses to a long,
+/ but a command-line override arrives as a STRING and `"j"$"30000"` is the five CHARACTER CODES
+/ 51 48 48 48 48, not 30000 - a list, silently wrong, which then reaches a timeout or a row
+/ threshold. Strings are parsed, not cast. Same shape as di.torq.proc.tickerplant's
+tolong:{[x]
+  r:$[10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.torq.proc.rdb: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
+  r
+  }
+
 / base dirs: CODE/CONFIG under TORQXAPPHOME, runtime DATA under TORQXDATAHOME (falls back to
 / TORQXAPPHOME when unset - fine for a sample app where they coincide).
 apphome:{getenv[`TORQXAPPHOME]}
@@ -146,7 +156,7 @@ init:{[config;deps]
   subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
   replaylog:$[`replaylog in key config;tobool config`replaylog;1b];
-  timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
+  timeout:$[`tpwaittimeout in key config;tolong config`tpwaittimeout;30000];
 
   / publish the root-safe upd BEFORE subscribing (replay drives it too)
   @[`.;`upd;:;updfn];

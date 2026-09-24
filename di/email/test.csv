@@ -1,0 +1,200 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,email:use`di.email,1,1,load module into session
+before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
+before,0,0,q,"mocksend:{[frm;to;sub;body;att]}",1,1,define no-op mock send (no sendmail call)
+
+/ Test 0: init with defaults leaves email disabled and config empty
+run,0,0,q,"email.init[(::);`log`send!(mocklog;::)]",1,1,init with defaults and injected logger
+true,0,0,q,not .m.di.0email.enabled,1,1,email disabled by default
+true,0,0,q,"""torq@localhost""~.m.di.0email.mailfrom",1,1,default mailfrom is torq@localhost
+
+/ Test 1: init with custom config sets values correctly
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);`log`send!(mocklog;::)]",1,1,init with string mailfrom
+true,0,0,q,"""me@example.com""~.m.di.0email.mailfrom",1,1,mailfrom set from string
+run,0,0,q,"email.init[`mailfrom`enabled!(`$""me@example.com"";0b);`log`send!(mocklog;::)]",1,1,init with symbol mailfrom
+true,0,0,q,"""me@example.com""~.m.di.0email.mailfrom",1,1,symbol mailfrom converted to string
+
+/ Test 2: init wires injected logger into individual loginfo/logwarn/logerr slots
+run,0,0,q,"email.init[(::);`log`send!(mocklog;::)]",1,1,init with injected logger
+true,0,0,q,mocklog[`info]~.m.di.0email.loginfo,1,1,injected info function stored
+true,0,0,q,mocklog[`warn]~.m.di.0email.logwarn,1,1,injected warn function stored
+true,0,0,q,mocklog[`error]~.m.di.0email.logerr,1,1,injected error function stored
+
+/ Test 3: init errors when log dep not provided
+fail,0,0,q,email.init[(::);(::)],1,1,init without log dep throws an error
+fail,0,0,q,"email.init[(::);`log`send!(::;mocksend)]",1,1,init with log set to (::) throws an error
+
+/ Test 4: init wires injected send function
+run,0,0,q,"email.init[(::);`log`send!(mocklog;mocksend)]",1,1,init with injected send
+true,0,0,q,mocksend~.m.di.0email.send,1,1,injected send stored
+
+/ Test 5: init falls back to defaultsend when send dep not provided
+run,0,0,q,"email.init[(::);`log`send!(mocklog;::)]",1,1,init with log injected but no send dep
+true,0,0,q,.m.di.0email.defaultsend~.m.di.0email.send,1,1,default send used
+
+/ Test 6: senddefault returns -1 and logs disabled entry when email is disabled
+run,0,0,q,"email.init[(::);`log`send!(mocklog;::)]",1,1,reset to defaults (disabled)
+run,0,0,q,before:count email.getstatus[],1,1,capture history row count
+run,0,0,q,"res:email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,send while disabled
+true,0,0,q,-1~res,1,1,returns -1 when disabled
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
+true,0,0,q,`disabled~last exec status from email.getstatus[],1,1,status is disabled
+
+/ Test 7: senddefault with injected send returns 1b on success
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);`log`send!(mocklog;mocksend)]",1,1,init with mock send and enabled
+run,0,0,q,before:count email.getstatus[],1,1,capture history row count
+run,0,0,q,"res:email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,send with mock send
+true,0,0,q,1b~res,1,1,returns 1b on success
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
+true,0,0,q,`sent~last exec status from email.getstatus[],1,1,status is sent
+
+/ Test 8: senddefault with failing send returns 0b and logs failed status
+run,0,0,q,"failsend:{[frm;to;sub;body;att]'""smtp error""}",1,1,define failing send
+run,0,0,q,"email.init[(enlist`enabled)!enlist 1b;`log`send!(mocklog;failsend)]",1,1,init with failing send
+run,0,0,q,before:count email.getstatus[],1,1,capture count
+run,0,0,q,"res:email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,invoke send that throws
+true,0,0,q,0b~res,1,1,returns 0b on failure
+true,0,0,q,`failed~last exec status from email.getstatus[],1,1,status is failed
+
+/ Test 9: getstatus returns history table with expected columns and correct type
+run,0,0,q,h:email.getstatus[],1,1,fetch history
+true,0,0,q,`time`recipients`subject`status`bytes~cols h,1,1,correct column names
+true,0,0,q,98h=type h,1,1,history is a table
+
+/ Test 10: alert handler returns empty on empty result
+run,0,0,q,"email.init[(::);`log`send!(mocklog;::)]",1,1,reset
+run,0,0,q,"h:email.alert[0D00:02;""a@b.com""]",1,1,create alert handler
+run,0,0,q,"data:`procname`name`result`queryid!(`testproc;`testreport;([]messages:());1)",1,1,reporter data with empty result
+run,0,0,q,res:h[data],1,1,invoke handler
+true,0,0,q,()~res,1,1,empty result returns ()
+
+/ Test 11: alert handler attempts send on non-empty result
+run,0,0,q,"email.init[(enlist`enabled)!enlist 1b;`log`send!(mocklog;mocksend)]",1,1,init with mock send
+run,0,0,q,before:count email.getstatus[],1,1,capture count
+run,0,0,q,"h:email.alert[0D00:02;""a@b.com""]",1,1,fresh handler
+run,0,0,q,"data:`procname`name`result`queryid!(`testproc;`newreport;([]messages:enlist""mem high"");1)",1,1,non-empty result
+run,0,0,q,h[data],1,1,invoke handler
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one send attempt logged
+
+/ Test 12: alert handler respects cooldown for same procname+alertname
+run,0,0,q,before:count email.getstatus[],1,1,capture count
+run,0,0,q,h[data],1,1,second call within cooldown window
+true,0,0,q,before=count email.getstatus[],1,1,no send within cooldown window
+
+/ Test 13: alert handler allows send for different alertname
+run,0,0,q,before:count email.getstatus[],1,1,capture count
+run,0,0,q,"data2:`procname`name`result`queryid!(`testproc;`otheralert;([]messages:enlist""row low"");2)",1,1,different alert name
+run,0,0,q,h[data2],1,1,invoke handler with different name
+true,0,0,q,1=(count email.getstatus[])-before,1,1,separate cooldown per alertname
+
+/ Test 14: report handler writes file and logs send attempt
+run,0,0,q,temppath:system"cd",1,1,use cwd as temppath
+run,0,0,q,rh:email.report[temppath;"a@b.com";"testreport";"csv"],1,1,create report handler
+run,0,0,q,"rdata:`procname`name`result`queryid!(`testproc;`testreport;([]sym:`a`b;price:1.0 2.0);1)",1,1,reporter data dict
+run,0,0,q,before:count email.getstatus[],1,1,capture count
+run,0,0,q,rh[rdata],1,1,invoke handler
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one send attempt logged
+true,0,0,q,"not (hsym`$temppath,""/testreport.csv"") in key hsym`$temppath",1,1,temp file cleaned up
+
+/ Test 15: addtext wraps text in styled <p>
+run,0,0,q,"t:.m.di.0email.addtext ""hello""",1,1,build addtext result
+true,0,0,q,"""<p ""~3#t",1,1,addtext starts with <p tag
+true,0,0,q,"""</p>""~-4#t",1,1,addtext closes with </p>
+true,0,0,q,"0<count t ss ""hello""",1,1,addtext preserves text content
+
+/ Test 16: mailheading produces heading tags
+run,0,0,q,"h1:.m.di.0email.mailheading[""1"";""title""]",1,1,build h1 heading
+true,0,0,q,"""<h1 ""~4#h1",1,1,mailheading h1 opens with tag
+true,0,0,q,"""</h1>""~-5#h1",1,1,mailheading h1 closes
+true,0,0,q,"0<count h1 ss ""title""",1,1,mailheading contains heading text
+
+/ Test 17: mailbold and mailitalic produce inline tags
+run,0,0,q,"mbi:.m.di.0email.mailbold ""x""",1,1,build bold span
+true,0,0,q,"""<b ""~3#mbi",1,1,mailbold opens with <b tag
+true,0,0,q,"""</b>""~-4#mbi",1,1,mailbold closes with </b>
+run,0,0,q,"mii:.m.di.0email.mailitalic ""x""",1,1,build italic span
+true,0,0,q,"""<i ""~3#mii",1,1,mailitalic opens with <i tag
+true,0,0,q,"""</i>""~-4#mii",1,1,mailitalic closes with </i>
+
+/ Test 18: mailstring converts types to strings
+true,0,0,q,"""hello""~.m.di.0email.mailstring ""hello""",1,1,mailstring passes through string
+true,0,0,q,"""abc""~.m.di.0email.mailstring `abc",1,1,mailstring converts symbol to string
+
+/ Test 19: addcolor sets only color - no spurious font-size (mailcolors bug fix)
+run,0,0,q,"ac:.m.di.0email.addcolor[""red"";""text""]",1,1,build addcolor result
+true,0,0,q,"0<count ac ss ""color:red""",1,1,addcolor sets color property
+true,0,0,q,"0=count ac ss ""font-size:px""",1,1,addcolor does not produce invalid font-size:px
+
+/ Test 20: mailsize sets font-size with px suffix
+run,0,0,q,"ms:.m.di.0email.mailsize[""20"";""text""]",1,1,build mailsize result
+true,0,0,q,"0<count ms ss ""font-size:20px""",1,1,mailsize appends px to size value
+
+/ Test 21: mailbgcolor sets background-color
+run,0,0,q,"mbg:.m.di.0email.mailbgcolor[""#ffff00"";""text""]",1,1,build mailbgcolor result
+true,0,0,q,"0<count mbg ss ""background-color:#ffff00""",1,1,mailbgcolor sets background-color property
+
+/ Test 22: mailcolors sets all specified properties
+run,0,0,q,"mc:.m.di.0email.mailcolors[""blue"";""#ee"";""14"";""text""]",1,1,build mailcolors result
+true,0,0,q,"0<count mc ss ""color:blue""",1,1,mailcolors sets color
+true,0,0,q,"0<count mc ss ""font-size:14px""",1,1,mailcolors sets font-size
+true,0,0,q,"0<count mc ss ""display:inline""",1,1,mailcolors sets display
+
+/ Test 23: mailurl produces anchor tag with href
+run,0,0,q,"u:.m.di.0email.mailurl[""https://x.com"";""click""]",1,1,build mailurl
+true,0,0,q,"""<a ""~3#u",1,1,mailurl starts with <a tag
+true,0,0,q,"""</a>""~-4#u",1,1,mailurl closes with </a>
+true,0,0,q,"0<count u ss ""x.com""",1,1,mailurl embeds href url
+
+/ Test 24: setbookmark and getbookmark produce anchor elements
+run,0,0,q,"bm:.m.di.0email.setbookmark ""s1""",1,1,build anchor bookmark
+true,0,0,q,"0<count bm ss ""name=""",1,1,setbookmark has name attribute
+true,0,0,q,"0<count bm ss ""s1""",1,1,setbookmark embeds anchor id
+run,0,0,q,"gbm:.m.di.0email.getbookmark[""s1"";""go""]",1,1,build bookmark link
+true,0,0,q,"0<count gbm ss ""#s1""",1,1,getbookmark links to named anchor
+
+/ Test 25: mailtable produces html table with headers and data
+run,0,0,q,mt:.m.di.0email.mailtable[([]a:1 2;b:3 4)],1,1,build mailtable from kdb table
+true,0,0,q,0h=type mt,1,1,mailtable returns list of strings
+true,0,0,q,"""</table>""~last mt",1,1,mailtable closes with </table>
+true,0,0,q,"0<count(raze mt)ss ""<th """,1,1,mailtable has header cells
+true,0,0,q,"0<count(raze mt)ss ""<td """,1,1,mailtable has data cells
+true,0,0,q,"0=count(raze mt)ss ""#e6e6ff""",1,1,mailtable rows all same color no alternating
+
+/ Test 26: ztable produces alternating row colors
+run,0,0,q,zt:.m.di.0email.ztable[([]a:1 2 3 4;b:5 6 7 8)],1,1,build ztable
+true,0,0,q,"0<count(raze zt)ss ""#e6e6ff""",1,1,ztable has alternating odd row background
+
+/ Test 27: maildict renders key-value pairs as table rows
+run,0,0,q,"md:.m.di.0email.maildict[`k1`k2!(""v1"";""v2"")]",1,1,build maildict
+true,0,0,q,0h=type md,1,1,maildict returns list of strings
+true,0,0,q,"0<count(raze md)ss ""k1""",1,1,maildict renders key
+true,0,0,q,"0<count(raze md)ss ""v1""",1,1,maildict renders value
+
+/ Test 28: template0 has blank separator between headers and html body
+run,0,0,q,"tmpl:.m.di.0email.template0[""f"";""t"";""s"";enlist ""body""]",1,1,build template0
+true,0,0,q,"any """"~/:tmpl",1,1,template0 has blank separator line
+true,0,0,q,"any ""<html>""~/:tmpl",1,1,template0 has html open tag
+true,0,0,q,"(first where """"~/:tmpl)<first where ""<html>""~/:tmpl",1,1,blank separator comes before html body
+
+/ Test 29: dict2css produces semicolon-separated key:value css
+run,0,0,q,"css:.m.di.0email.dict2css[(`$""color"";`$""background-color"")!(""red"";""blue"")]",1,1,build css from two-key dict
+true,0,0,q,"0<count css ss ""color:red""",1,1,dict2css produces colon-separated key:val
+true,0,0,q,""";"" in css",1,1,dict2css separates properties with semicolon
+
+/ Test 30: getstyle returns correct css dict for each style key
+true,0,0,q,.m.di.0email.cssbody[]~.m.di.0email.getstyle[`body],1,1,getstyle body returns cssbody dict
+true,0,0,q,.m.di.0email.csstableall[]~.m.di.0email.getstyle[`table`all],1,1,getstyle table all
+true,0,0,q,.m.di.0email.csstableheader[]~.m.di.0email.getstyle[`table`header],1,1,getstyle table header
+
+/ Test 31: colornormalize scales and clamps values
+true,0,0,q,0.5~.m.di.0email.colornormalize[0f;10f;5f],1,1,colornormalize 5 on 0-10 scale is 0.5
+true,0,0,q,0f~.m.di.0email.colornormalize[0f;10f;-1f],1,1,colornormalize clamps below min to 0f
+true,0,0,q,1f~.m.di.0email.colornormalize[0f;10f;11f],1,1,colornormalize clamps above max to 1f
+
+/ Test 32: colorhsv2rgb converts hue-saturation-value to 3-byte rgb
+run,0,0,q,rgb:.m.di.0email.colorhsv2rgb[0f;1f;1f],1,1,convert pure red hsv to rgb
+true,0,0,q,3=count rgb,1,1,colorhsv2rgb returns 3 byte values
+true,0,0,q,rgb[0]=max rgb,1,1,colorhsv2rgb red hue has maximum red channel
+run,0,0,q,mono:.m.di.0email.colorizemono[`red;0f;100f;0 50 100f],1,1,colorize 3 values on red scale
+true,0,0,q,3=count mono,1,1,colorizemono returns one entry per input value
+true,0,0,q,all 3=count each mono,1,1,colorizemono each entry is 3 bytes

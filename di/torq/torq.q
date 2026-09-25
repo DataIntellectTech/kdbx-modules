@@ -4,7 +4,7 @@
 / same init[config;deps] calling convention.
 
 / built-in process type registry: proctype -> di.* module name
-builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`discovery`housekeeping!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.discovery`di.torq.proc.housekeeping
+builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`discovery!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.discovery
 
 reqenv:{[e]
   v:getenv e;

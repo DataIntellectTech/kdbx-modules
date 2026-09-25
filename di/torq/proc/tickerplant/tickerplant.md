@@ -30,11 +30,6 @@ schemafile = "database.q"   # defaults to <TORQXAPPHOME>/database.q (schema is c
 # rolltimezone / datatimezone / rolltimeoffset -> passed to di.eodtime (default GMT/GMT/0)
 ```
 
-A value is read through a coercion helper at the point of use, so it is accepted typed (a `.q`
-settings file), as a string (a `.toml` value) or as a command-line override (`-pubperiod 5`,
-which `.Q.opt` hands over as a string). Strings are **parsed**, not cast: `"j"$"1"` would be
-the character code 49.
-
 ## Behaviour
 
 - **Schema**: loads `schemafile` at root; the publishable tables are the **unkeyed**

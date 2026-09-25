@@ -25,7 +25,7 @@ handlersdep:`register`remove`list!(hz`register;hz`remove;hz`list);
 
 srv:use`di.torq.servers;
 srv[`init][cfg,`log`timer`handlers!(logdep;timerdep;handlersdep)];
-serversdep:`startup`getservers`getallservers`removeprocs`gethandlebytype`waitfortype!(srv`startup;srv`getservers;srv`getallservers;srv`removeprocs;srv`gethandlebytype;srv`waitfortype);
+serversdep:`startup`getservers`gethandlebytype`waitfortype!(srv`startup;srv`getservers;srv`gethandlebytype;srv`waitfortype);
 
 ctp:use`di.torq.proc.chainedtp;
 ctp[`init][cfg;`log`timer`handlers`servers!(logdep;timerdep;handlersdep;serversdep)];

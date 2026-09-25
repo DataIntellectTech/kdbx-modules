@@ -18,14 +18,8 @@ resolvedir:{[base;dir]
   $[dir like "/*";dir;base,"/",dir]
   }
 
-/ consumers coerce at point of use: config values may be symbols (.q) or strings (.toml /
-/ command-line overrides). strings are PARSED, not cast - "j"$"1" is the character code 49
+/ consumers coerce at point of use: config values may be symbols (.q) or strings (.toml)
 astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones, publishmode)
-tolong:{[x]
-  r:$[10h=abs type x;"J"$(),x;"j"$x];
-  if[null r;'"di.torq.proc.tickerplant: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
-  r
-  }
 
 / feed payloads may arrive as a table or as a list of columns; normalise to columns
 tocols:{[x] $[98h=type x;value flip x;x]}
@@ -121,7 +115,7 @@ init:{[config;deps]
   .z.m.handlers:deps`handlers;
   .z.m.cfg:config;
   .z.m.publishmode:$[`publishmode in key config;astz config`publishmode;`immediate];
-  .z.m.pubperiod:$[`pubperiod in key config;tolong config`pubperiod;1];
+  .z.m.pubperiod:$[`pubperiod in key config;"j"$config`pubperiod;1];
   .z.m.tplogdir:$[`tplogdir in key config;resolvedir[datahome[];config`tplogdir];""];
 
   / schema: load the schema file at root; publishable tables are the UNKEYED ones with

@@ -67,4 +67,5 @@ setupfixture:{[]
 teardownfixture:{[] killpeer[]; system "rm -rf ",FIXDIR;};
 
 / build the deps dict di.torq would assemble: injectables + this process's config slice.
-svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv!(mocklog;mocktimer;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv")};
+/ discovery off, so startup dials process.csv directly (trackservers.q's own defaults are 1b).
+svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv`discoveryregister`connectionsfromdiscovery!(mocklog;mocktimer;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv";0b;0b)};

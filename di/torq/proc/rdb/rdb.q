@@ -18,17 +18,9 @@
 / explicitly via @[`.;..] because a bare write from a use-loaded module (or under -11!)
 / lands in the module's private namespace.
 
-/ config coercion (values are symbols from .q settings, or strings from .toml and command-line
-/ overrides). strings must be PARSED, not cast: "j"$"30000" is the five character codes and
-/ `boolean$"true" is a boolean LIST (which then throws 'type in the if/$ that reads it)
+/ config coercion (values are symbols from .q settings or strings from .toml)
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
-tolong:{[x]
-  r:$[10h=abs type x;"J"$(),x;"j"$x];
-  if[null r;'"di.torq.proc.rdb: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
-  r
-  }
-tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]}
 
 / base dirs: CODE/CONFIG under TORQXAPPHOME, runtime DATA under TORQXDATAHOME (falls back to
 / TORQXAPPHOME when unset - fine for a sample app where they coincide).
@@ -117,12 +109,12 @@ init:{[config;deps]
   .z.m.hdbtypes:$[`hdbtypes in key config;aslist assym config`hdbtypes;enlist`hdb];
   .z.m.ignorelist:$[`ignorelist in key config;aslist assym config`ignorelist;`heartbeat`logmsg];
   .z.m.hdbdir:$[`hdbdir in key config;resolvedir[datahome[];config`hdbdir];datahome[],"/hdb"];
-  .z.m.reloadenabled:$[`reloadenabled in key config;tobool config`reloadenabled;0b];
+  .z.m.reloadenabled:$[`reloadenabled in key config;`boolean$config`reloadenabled;0b];
   .z.m.eodtabcount:()!();                       / prior-day snapshot, populated at EOD when reloadenabled
   subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
-  replaylog:$[`replaylog in key config;tobool config`replaylog;1b];
-  timeout:$[`tpwaittimeout in key config;tolong config`tpwaittimeout;30000];
+  replaylog:$[`replaylog in key config;`boolean$config`replaylog;1b];
+  timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
 
   / publish the root-safe upd BEFORE subscribing (replay drives it too)
   @[`.;`upd;:;updfn];

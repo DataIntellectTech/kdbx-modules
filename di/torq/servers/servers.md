@@ -120,7 +120,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 **Conversions** (legacy calls with no di equivalent):
 - `.lg.*` becomes the injected `log`.
 - `.dotz.set` on `.z.pc` becomes `handlers[`register]`.
-- `.timer.repeat` becomes `timer[`addjob]`, using mode 2 (legacy's default schedule) and the period in seconds.
+- `.timer.repeat` becomes `timer[`addjob]`, using mode 3 (legacy's default mode 2, next run counted from finish; legacy mode n is di.timer mode n+1) and the period in seconds.
 - `.proc.cp[]` becomes `.z.p`.
 - `.proc.procname`/`proctype` in `getdetails` become init's identity.
 - `.proc.readprocs` becomes `readprocesscsv`.

@@ -86,9 +86,9 @@ init:{[deps]
   if[not .z.m.registered;
     / trackservers.q l.385
     (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pc];
-    / trackservers.q l.387-389 (legacy .timer.repeat's default schedule is mode 2)
-    if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;2;()!()]];
-    if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;2;()!()]];
+    / trackservers.q l.387-389 (legacy .timer.repeat's default mode 2, from finish, is di.timer mode 3)
+    if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;3;()!()]];
+    if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;3;()!()]];
     .z.m.registered:1b;
     ];
   .z.m.loginfo[`init;"di.torq.servers initialised"];

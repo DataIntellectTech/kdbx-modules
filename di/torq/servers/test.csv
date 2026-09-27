@@ -14,6 +14,7 @@ run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,init with mock deps + confi
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,init registered its .z.pc observer via the handlers dep
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,init scheduled the retry job via the timer dep
 true,0,0,q,300=first exec period from timercalls where id=`serversretry,1,1,retry period is trackservers.q's RETRY 0D00:05 in seconds (di.timer period unit)
+true,0,0,q,3 3~exec mode from timercalls where id in `serversretry`discoveryretry,1,1,both jobs use di.timer mode 3 (legacy .timer.repeat default mode 2 - next run from finish)
 true,0,0,q,1=count select from timercalls where id=`discoveryretry,1,1,init scheduled trackservers.q's discoveryretry job (DISCOVERYRETRY>0)
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,re-init must be idempotent
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,idempotent re-init did NOT add a second retry job

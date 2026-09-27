@@ -10,12 +10,12 @@ mocklog:`info`warn`error!(
   {[c;m]`logrows upsert(`warn;c;m)};
   {[c;m]`logrows upsert(`error;c;m)});
 
-/ timer mock: records (id;period) for the wiring asserts AND captures each job's func by id, so a
+/ timer mock: records (id;period;mode) for the wiring asserts AND captures each job's func by id, so a
 / test can fire the retry cycle exactly as the real timer would (retry/cleanup are INTERNAL - not
 / exported - so they are driven only via this captured callback).
-timercalls:([]id:`symbol$();period:`long$());
+timercalls:([]id:`symbol$();period:`long$();mode:`long$());
 timerjobs:(`symbol$())!();
-mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] timerjobs[id]:func; `timercalls upsert (id;period);};
+mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] timerjobs[id]:func; `timercalls upsert (id;period;`long$mode);};
 
 / handlers mock: records (event;name) with di.torq.handlers' register[event;phase;nm;pri;func] shape. it
 / does NOT actually bind .z.pc - so the only cleanup path exercised here is the explicit retry->

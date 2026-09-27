@@ -105,6 +105,16 @@ Published at root by `init`, same bodies as legacy:
 | `.servers.pc` | l.383, run on `.z.pc` |
 | timers `discoveryretry` / `serversretry` | l.387–389 |
 
+Defined directly at root in a `\d .servers` section, for legacy `.sub` and chainedtp:
+
+| Name | trackservers.q |
+|---|---|
+| `.servers.attributematch` | l.64–68 |
+| `.servers.getservers` (legacy 5-arg; the exported 1-arg `getservers` is separate) | l.75–89 |
+| `.servers.connectcustom` (called by `retryrows`) | l.198 |
+| `.servers.reqprocsnotconn` / `.servers.reqprocnamesnotconn` | l.348–351, l.357 |
+| `.servers.startupdepcyclestypename` / `.servers.startupdepnamecycles` | l.360–373, l.379 |
+
 The discovery process (`di.torq.proc.discovery`) calls `addw`, `removerows`, `cleanup`,
 `startup`, reads `SERVERS`/`nontorqprocesstab`, and pushes `procupdate`/`autodiscovery` to
 peers. Peers call discovery's root `register` (as `` `..register ``) and `getservices`.
@@ -119,17 +129,18 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 - `.proc.getconfigfile` becomes `nontorqprocessfile`.
 - In `querydiscovery`, the 5-arg `getservers[`proctype;`discovery;()!();0b;0b]` becomes its result:
   live discovery rows.
+- In `startupdepcyclestypename`, `.servers.startup[]` becomes `.servers.startup ()!()` (the stored
+  globals), `.proc.procname` becomes init's identity, and `.os.sleep` becomes `system "sleep "`.
 
 **Not ported** (discovery does not reach them):
 - passwords (`loadpassword`, `USERPASS`, `PASSWORDS`, `LOADPASSWORD`);
 - `SOCKETTYPE`/FinSpace (so `formathp`'s ipctype is always `` `tcp `` from `formatprocs`/`addhw`,
   and `retryrows` dials `hpup`);
-- the 5-arg `getservers`/`attributematch`/`getserverbytype`/`gethpbytype`;
+- `getserverbytype`/`gethpbytype`;
 - `names`/`types`/`unregistered`/`checkw`/`reset`;
-- the `connectcustom`/`addprocscustom` hooks;
+- the `addprocscustom` hook;
 - `refreshattributes`;
-- `startupdep*`;
-- `enabled`.
+- `reqproctypesnotconn`/`startupdepcycles`/`startupdependent`.
 
 **Legacy behaviour that differs from di.torq.servers 0.3.0:**
 - `startup` no longer excludes this process's own row.

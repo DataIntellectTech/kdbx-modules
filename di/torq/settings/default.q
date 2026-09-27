@@ -8,6 +8,7 @@ discoveryretry:0D00:05         / how often to retry discovery; 0D means never
 discovery:enlist`              / discovery services to use if not in process.csv
 
 / connections
+enabled:1b                     / track servers
 hopentimeout:2000              / hopen timeout in milliseconds
 retry:0D00:05                  / how often to retry dead connections; 0D means never
 tracknontorqprocess:1b         / track and register non-TorQ processes

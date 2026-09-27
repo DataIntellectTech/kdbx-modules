@@ -175,7 +175,7 @@ register:{[connectiontab;proc;connect]
 querydiscovery:{[procs]
   if[0=count procs;:()];
   .z.m.loginfo[`conn;"querying discovery services for processes of types "," " sv string procs,()];
-  h:exec w from .servers.SERVERS where proctype=`discovery,.dotz.liveh w;
+  h:exec w from .servers.getservers[`proctype;`discovery;()!();0b;0b];
   $[0=count h;
     [.z.m.loginfo[`conn;"no discovery services available"];()];
     raze @[;(`getservices;procs;.servers.SUBSCRIBETODISCOVERY);()] each h]}

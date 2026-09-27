@@ -19,8 +19,9 @@ self:`proctype`procname!``;
 / always refreshed; only the one-time registrations are guarded.
 registered:0b;
 
-/ trackservers.q l.13-28: flat config key -> (.servers global;trackservers default)
-settings:`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery!(
+/ trackservers.q l.12-28: flat config key -> (.servers global;trackservers default)
+settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery!(
+  (`.servers.enabled;1b);
   (`.servers.CONNECTIONS;`);
   (`.servers.DISCOVERYREGISTER;1b);
   (`.servers.CONNECTIONSFROMDISCOVERY;1b);
@@ -86,9 +87,10 @@ init:{[deps]
   if[not .z.m.registered;
     / trackservers.q l.385
     (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pc];
-    / trackservers.q l.387-389 (legacy .timer.repeat's default mode 2, from finish, is di.timer mode 3)
-    if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;3;()!()]];
-    if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;3;()!()]];
+    / retry timers
+    if[.servers.enabled;
+      if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;3;()!()]];
+      if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;3;()!()]]];
     .z.m.registered:1b;
     ];
   .z.m.loginfo[`init;"di.torq.servers initialised"];
@@ -169,7 +171,9 @@ retryrows:{[rows]
   a:{$[not null x;@[x;({.proc.getattributes[]};::);()!()];()!()]};
   handles:opencon each exec hpup from .servers.SERVERS where i in rows;
   update lastp:.z.p,w:handles from`.servers.SERVERS where i in rows;
-  update attributes:a each w,startp:?[null w;0Np;.z.p] from`.servers.SERVERS where i in rows;}
+  update attributes:a each w,startp:?[null w;0Np;.z.p] from`.servers.SERVERS where i in rows;
+  if[count connectedrows:select from`.servers.SERVERS where i in rows,.dotz.liveh0 w;
+    .servers.connectcustom[connectedrows]]}
 
 / close handles and remove rows from the table
 removerows:{[rows]
@@ -361,3 +365,56 @@ getapimeta:{[]
     (`gethandlebytype; 1b; "one live handle for a proctype via any/roundrobin/last selection";      "[symbol: proctype; symbol: selection]";           "int: handle, 0Ni if none");
     (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };
+
+/ trackservers.q l.64-89, 198, 348-379, at their legacy root names
+\d .servers
+
+/ match required attributes against advertised ones
+attributematch:{[req;avail]
+    vals:key[req] inter key avail;
+    notpresent:noval!(count noval:key[req] except key avail)#enlist(0b;());
+    notpresent,vals!{($[0>type y;x~y;all x in y];(x,()) inter y,())}'[req vals;avail vals]}
+
+/ servers matching types or names, optionally reopening closed handles
+getservers:{[nameortype;lookups;req;autoopen;onlyone]
+    r:$[`~lookups; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS;
+        nameortype~`proctype; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where proctype in lookups;
+        select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where procname in lookups];
+    if[0=count r;:update attributematch:attributes from r];
+    r:update alive:.dotz.liveh w from r;
+    if[autoopen;
+        if[(count r) > alivecount:sum r`alive;
+            if[(alivecount=0) or (not onlyone) or (any not exec max alive by agg:?[nameortype~`proctype;proctype;procname] from r);
+                retryrows exec index from r where not alive;
+                r:select procname,proctype,lastp,w,hpup,attributes,alive:.dotz.liveh w from .servers.SERVERS where i in r`index]]];
+    select procname,proctype,lastp,w,hpup,attributes,attribmatch:.servers.attributematch[req]each attributes from r where alive}
+
+/ run on (re)connected SERVERS rows
+connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}]
+
+/ are any required processes not connected
+reqprocsnotconn:{[requiredprocs;typeorname]
+    not all requiredprocs in ?[`.servers.SERVERS;enlist (`.dotz.liveh;`w);();typeorname]
+  };
+
+reqprocnamesnotconn:reqprocsnotconn[;`procname];
+
+/ block until all required processes are connected
+startupdepcyclestypename:{[requiredprocs;typeornamefunc;timeintv;cycles]
+  n:1;
+  .servers.startup ()!();
+  while[typeornamefunc requiredprocs;
+    if[n>cycles;
+      b:((),requiredprocs)except(),exec proctype from .servers.SERVERS where .dotz.liveh w;
+      .z.m.logerr[`connectionreport;s:string[.z.m.self`procname]," cannot connect to ",","sv string'[b]];
+      's;
+     ];
+    system "sleep ",string timeintv;
+    n+:1;
+    .servers.startup ()!();
+   ];
+ };
+
+startupdepnamecycles:startupdepcyclestypename[;.servers.reqprocnamesnotconn;;];
+
+\d .

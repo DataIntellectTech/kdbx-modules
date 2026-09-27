@@ -1,5 +1,7 @@
 / built-in framework defaults
 / Server connection details - legacy TorQ config/settings/default.q .servers section (flat keys)
+/ whether server tracking is enabled
+enabled:1b
 / whether to register with the discovery service (legacy DISCOVERYREGISTER:DISCOVERYCONNECT)
 discoveryregister:$[`lim in key`.Q;@[{$[0W=x[`conns][`lim];1b;0b]};.Q.lim[];1b];1b]
 / whether to get connection details from the discovery service (legacy CONNECTIONSFROMDISCOVERY:DISCOVERYREGISTER)

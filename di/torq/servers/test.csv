@@ -16,6 +16,7 @@ true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,init schedu
 true,0,0,q,300=first exec period from timercalls where id=`serversretry,1,1,retry period is trackservers.q's RETRY 0D00:05 in seconds (di.timer period unit)
 true,0,0,q,3 3~exec mode from timercalls where id in `serversretry`discoveryretry,1,1,both jobs use di.timer mode 3 (legacy .timer.repeat default mode 2 - next run from finish)
 true,0,0,q,1=count select from timercalls where id=`discoveryretry,1,1,init scheduled trackservers.q's discoveryretry job (DISCOVERYRETRY>0)
+true,0,0,q,"0~first ""J""$system (getenv[`QHOME]),""/bin/q di/torq/servers/test_enabled.q -q""",1,1,enabled:0b schedules neither retry job
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,re-init must be idempotent
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,idempotent re-init did NOT add a second retry job
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,idempotent re-init did NOT re-register the pc handler
@@ -34,11 +35,22 @@ run,0,0,q,"@[{h ""1+1""};();{[e]e}]",1,1,touch the dead handle so kdb+ drops it 
 run,0,0,q,firejob[`serversretry],1,1,fire the retry job (reopens every row whose handle is not live) exactly as the timer would
 true,0,0,q,0=count svc.getservers[`otherproc],1,1,retry's failed reopen marked the dead connection as gone
 run,0,0,q,spawnpeer[],1,1,bring a fresh peer up on the same port
+run,0,0,q,".servers.connectcustom:{[r] `ccrows set r}",1,1,record what retryrows passes to connectcustom
 run,0,0,q,firejob[`serversretry],1,1,fire retry again - should reconnect now a peer is listening
 true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
+true,0,0,q,(enlist`otherinst)~exec procname from ccrows,1,1,retryrows passed the reconnected row to .servers.connectcustom (trackservers.q l.184-185)
 comment,,,,,,,waitfortype - connected vs timeout
 true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
 true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
+comment,,,,,,,legacy trackservers.q l.12 64-89 348-379 at root .servers
+true,0,0,q,.servers.enabled,1,1,enabled defaults to 1b (trackservers.q l.12)
+true,0,0,q,"(enlist[`a]!enlist(1b;enlist 1))~.servers.attributematch[enlist[`a]!enlist 1;enlist[`a]!enlist 1 2]",1,1,attributematch reports a full match and the matched values
+true,0,0,q,"(enlist`otherproc)~exec proctype from .servers.getservers[`proctype;`otherproc;()!();0b;0b]",1,1,legacy 5-arg getservers returns the live row
+true,0,0,q,"`attribmatch in cols .servers.getservers[`proctype;`otherproc;()!();0b;0b]",1,1,legacy getservers adds attribmatch
+true,0,0,q,"0=count .servers.getservers[`proctype;`deadproc;()!();0b;0b]",1,1,legacy getservers drops dead rows
+run,0,0,q,".servers.startupdepnamecycles[`otherinst;0;1]",1,1,startupdepnamecycles returns once otherinst is connected
+fail,0,0,q,".servers.startupdepnamecycles[`nosuchinst;0;0]",1,1,startupdepnamecycles signals after its cycles are used up
+true,0,0,q,`connectionreport in exec ctx from logrows where lvl=`error,1,1,the failure was logged as legacy's connectionreport error
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

@@ -333,8 +333,8 @@ signalfound:{[pt]
 waitfortype:{[pt;timeoutms;pollms]
   / block until at least one LIVE connection to pt exists, or timeoutms elapses. the DI-scoped
   / analogue of legacy TorQ's startupdepcycles - "fail fast, but wait for a hard dependency to come
-  / up". startup must have run first (so a pt row exists to reattempt). polls retry between tries,
-  / sleeping pollms. returns 1b once connected, 0b on timeout - the CALLER decides if that is fatal.
+  / up". each poll re-runs startup (reaches a discovery service that came up late, and so the pt rows
+  / it names) then retry, sleeping pollms. returns 1b once connected, 0b on timeout - the CALLER decides if that is fatal.
   / NOTE the blocking system"sleep" is fine at startup (single-threaded; the injected timer's .z.ts
   / just doesn't fire during the sleep).
   if[not -11h=type pt;raiseerror[`waitfortype;"proctype must be a symbol"]];
@@ -343,6 +343,7 @@ waitfortype:{[pt;timeoutms;pollms]
   deadline:.z.p+`timespan$1000000*`long$timeoutms;
   .z.m.loginfo[`servers;"waiting up to ",(string timeoutms),"ms for a ",(string pt)," connection"];
   while[(0=count getservers pt) and .z.p<deadline;
+    startup ()!();
     retry[];
     if[0<count getservers pt;:signalfound pt];
     system "sleep ",string pollms%1000;

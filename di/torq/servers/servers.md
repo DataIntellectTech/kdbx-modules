@@ -69,7 +69,7 @@ h "1+1"
 | `startup` | `startup[config]` | Legacy `startup` (l.323–345). `config`connections`/`config`processcsv` stand in for `.servers.CONNECTIONS`/`.proc.file`. |
 | `getservers` | `getservers[proctype]` | Live (`w` non-null) `SERVERS` rows for a proctype. |
 | `gethandlebytype` | `gethandlebytype[proctype;selection]` | One live handle via `` `any``/`roundrobin`/`last``; `0Ni` if none. Bumps usage stats. |
-| `waitfortype` | `waitfortype[proctype;timeoutms;pollms]` | Block until a live connection exists or timeout; `1b`/`0b`. Caller decides if a timeout is fatal. `startup` must have run first. |
+| `waitfortype` | `waitfortype[proctype;timeoutms;pollms]` | Block until a live connection exists or timeout; `1b`/`0b`. Caller decides if a timeout is fatal. `startup` must have run first. Each poll re-runs `startup` then `retry`, so a discovery service that comes up during the wait is reached and the proctype it names is dialled. |
 | `getapimeta` | `getapimeta[]` | This module's api metadata, one row per **callable** API function (`init`/`getapimeta` plumbing omitted), for `di.torq` to register with `di.api`. |
 
 ## The `SERVERS` table
@@ -172,9 +172,10 @@ must be `` ` `` (null) — di.torq.handlers rejects a non-null phase on an obser
 
 ## Tests
 
-`test.q` + `test.csv` (36 checks) spawn a genuinely separate `q` peer and cover init validation,
+`test.q` + `test.csv` (43 checks) spawn a genuinely separate `q` peer and cover init validation,
 wiring and idempotency, `startup` against a live and a dead peer (discovery switched off in the
-fixture), `gethandlebytype`, retry recovering an ungraceful kill, `waitfortype`, input validation
+fixture), `gethandlebytype`, retry recovering an ungraceful kill, `waitfortype` (including a
+discovery stub that comes up after `startup`), input validation
 and `getapimeta`. The discovery protocol is exercised by `di.torq.proc.discovery`'s suite.
 
 Run in a fresh q session. Needs `QHOME` set to a q install whose `bin/q` can be launched (the

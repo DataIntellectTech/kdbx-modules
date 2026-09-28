@@ -39,6 +39,13 @@ true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
 comment,,,,,,,waitfortype - connected vs timeout
 true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
 true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
+comment,,,,,,,waitfortype - discovery comes up after startup
+run,0,0,q,setupdisc[],1,1,add a discovery row to process.csv and write a discovery stub naming a tpproc peer
+run,0,0,q,"svc.init[svrdeps[`tpproc],`discoveryregister`connectionsfromdiscovery!11b]",1,1,re-init taking connections from discovery
+run,0,0,q,svc.startup[svrdeps[`tpproc]],1,1,startup while discovery is down - the discovery row is registered dead
+true,0,0,q,0=count svc.getservers[`discovery],1,1,discovery is not live after startup
+run,0,0,q,spawndisc[],1,1,bring up the tpproc peer then discovery
+true,0,0,q,svc.waitfortype[`tpproc;3000;200],1,1,waitfortype reaches discovery and connects to the tpproc it names
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

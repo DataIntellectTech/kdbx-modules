@@ -1,14 +1,14 @@
 # di.torq.servers
 
 TorQ's `.servers` (`code/handlers/trackservers.q`) as a kdb-x module. The parts the discovery
-protocol uses are ported line for line and published at their legacy root names (`.servers.*`,
-`.dotz.liveh*`); the registry and settings are the legacy root `.servers.*` globals. No
+protocol uses are ported line for line and published at root names (`.servers.*`,
+`.dotz.liveh*`); the registry and settings are root `.servers.*` globals. No
 password/access-list files, no FinSpace. `log`, `timer` and `handlers` are injected (all required).
 
 ## init and config
 
 `init[deps]` takes the injectables and this process's config in one dict (di.torq merges them).
-It sets the `.servers.*` globals, publishes the legacy root names, and registers a `.z.pc`
+It sets the `.servers.*` globals, publishes the root names, and registers a `.z.pc`
 observer (via `handlers`) and the `discoveryretry`/`serversretry` timer jobs (via `timer`). A
 second call refreshes everything but registers nothing twice. It opens no connections.
 
@@ -122,7 +122,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 **Conversions** (legacy calls with no di equivalent):
 - `.lg.*` becomes the injected `log`.
 - `.dotz.set` on `.z.pc` becomes `handlers[`register]`.
-- `.timer.repeat` becomes `timer[`addjob]`, mode 3 (legacy mode 2: next run from finish), period in seconds.
+- `.timer.repeat` becomes `timer[`addjob]`, mode 3 (next run from finish), period in seconds.
 - `.proc.cp[]` becomes `.z.p`.
 - `.proc.procname`/`proctype` in `getdetails` become init's identity.
 - `.proc.readprocs` becomes `readprocesscsv`.
@@ -151,11 +151,12 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 
 ## Tests
 
-`test.q` + `test.csv` (43 checks) spawn real q peers. They cover:
+`test.q` + `test.csv` (54 checks) spawn real q peers. They cover:
 - init validation, wiring and idempotency;
 - `startup` against a live and a dead peer (discovery off);
 - `gethandlebytype`, and retry recovering an ungraceful kill;
 - `waitfortype`, including a discovery stub that comes up after `startup`;
+- the root `.servers` functions (`attributematch`, 5-arg `getservers`, `startupdepnamecycles`);
 - input validation and `getapimeta`.
 
 The rest of the discovery protocol is covered by `di.torq.proc.discovery`'s suite. Run in a fresh

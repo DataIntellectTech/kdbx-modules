@@ -1,4 +1,4 @@
-/ di.torq.servers - TorQ's .servers (code/handlers/trackservers.q) as a kdb-x module, at the legacy root names. See servers.md
+/ di.torq.servers - connection management; registry, config and protocol functions at root .servers.*. See servers.md
 
 / --- module-local state (initial values at load; read/written via .z.m at runtime) ---
 
@@ -7,7 +7,7 @@ self:`proctype`procname!``;
 / whether init has registered the .z.pc observer and timer jobs
 registered:0b;
 
-/ trackservers.q l.12-28: flat config key -> (.servers global;trackservers default)
+/ flat config key -> (.servers global;default)
 settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery!(
   (`.servers.enabled;1b);
   (`.servers.CONNECTIONS;`);
@@ -33,7 +33,7 @@ raiseerror:{[ctx;msg]
   };
 
 init:{[deps]
-  / wire deps and config, publish the legacy root names, register the .z.pc observer and timer jobs once
+  / wire deps and config, publish root names, register .z.pc and retry timers once
   if[99h<>type deps;
     '"di.torq.servers: deps must be a dict of injectables + config"];
   if[not all `log`timer`handlers in key deps;
@@ -57,19 +57,19 @@ init:{[deps]
   .z.m.handlers:deps`handlers;
   .z.m.self:`proctype`procname!deps`proctype`procname;
   .z.m.processcsv:$[`processcsv in key deps;deps`processcsv;""];
-  / trackservers.q l.10
+  / registry
   @[value;`.servers.SERVERS;{set[`.servers.SERVERS;([]procname:`symbol$();proctype:`symbol$();hpup:`symbol$();w:`int$();hits:`int$();startp:`timestamp$();lastp:`timestamp$();endp:`timestamp$();attributes:())]}];
-  / trackservers.q l.13-28
+  / config
   {[deps;k] set[first .z.m.settings k;$[k in key deps;deps k;last .z.m.settings k]]}[deps] each key .z.m.settings;
   set[`.servers.NONTORQPROCESSFILE;$[`nontorqprocessfile in key deps;hsym deps`nontorqprocessfile;hsym `$("/" sv -1_"/" vs .z.m.processcsv),"/nontorqprocess.csv"]];
-  / dotz.q l.8
+  / live-handle checks
   set[`.dotz.liveh;{x in key .z.W}];
   set[`.dotz.livehn;{x in 0Ni,key .z.W}];
   set[`.dotz.liveh0;{x in 0i,key .z.W}];
   pub:`opencon`cleanup`addnthawc`getdetails`addhw`addw`retry`retrydiscovery`autodiscovery`retryrows`removerows`register`querydiscovery`registerfromdiscovery`addprocs`procupdate`domainsocketsenabled`formathp`formatprocs`startup`pc!(opencon;cleanup;addnthawc;getdetails;addhw;addw;retry;retrydiscovery;autodiscovery;retryrows;removerows;register;querydiscovery;registerfromdiscovery;addprocs;procupdate;domainsocketsenabled;formathp;formatprocs;startup;pc);
   set'[` sv/:`.servers,/:key pub;value pub];
   if[not .z.m.registered;
-    / trackservers.q l.385
+    / .z.pc
     (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pc];
     / retry timers
     if[.servers.enabled;
@@ -117,13 +117,11 @@ getdetails:{(.z.f;.z.h;system"p";.z.m.self`procname;.z.m.self`proctype;@[value;(
 
 / add session behind a handle
 addhw:{[hpuP;W]
-  / Get the information around a process
   info:`f`h`port`procname`proctype`attributes!(@[W;({$[`getdetails in key`.servers;.servers.getdetails[];(.z.f;.z.h;system"p";`;`;$[`getattributes in key`.proc;.proc.getattributes[];()!()])]};`);(`;`;0Ni;`;`;()!())]);
   if[0Ni~info`port;'"remote call failed on handle ",string W];
   if[null name:info`procname;name:`$last("/"vs string info`f)except enlist""];
   if[0=count name;name:`default];
   if[null hpuP;hpuP:formathp[info`h;info`port;`tcp;info`proctype;info`procname]];
-  / If this handle already has an entry, delete the old entry
   delete from `.servers.SERVERS where w=W;
   addnthawc[name;info`proctype;hpuP;info`attributes;W;0b]}
 
@@ -136,7 +134,6 @@ retrydiscovery:{
   if[count d:exec i from `.servers.SERVERS where proctype=`discovery,not ({any .dotz.liveh0 x};w) fby hpup, i=(first;i) fby hpup;
     .z.m.loginfo[`conn;"attempting to connect to discovery services"];
     retryrows d;
-    / register with the newly opened discovery services
     if[.servers.DISCOVERYREGISTER and count h:exec w from .servers.SERVERS[d] where .dotz.liveh w;
       .z.m.loginfo[`conn;"registering with discovery services"];
       @[;(`..register;`);()] each neg h];
@@ -149,7 +146,6 @@ autodiscovery:{if[.servers.DISCOVERYRETRY>0; .servers.retrydiscovery[]]}
 
 / Attempt to make a connection for specified row ids
 retryrows:{[rows]
-  / a returns the remote .proc.getattributes[] for a live handle, else an empty dict
   a:{$[not null x;@[x;({.proc.getattributes[]};::);()!()];()!()]};
   handles:opencon each exec hpup from .servers.SERVERS where i in rows;
   update lastp:.z.p,w:handles from`.servers.SERVERS where i in rows;
@@ -166,12 +162,10 @@ removerows:{[rows]
 / Create some connections and optionally connect to them
 register:{[connectiontab;proc;connect]
   {addnthawc[x`procname;x`proctype;x`hpup;()!();0Ni;0b]}each distinct select from connectiontab where proctype=proc;
-  / automatically connect
   if[connect;
     $[`discovery=proc;retrydiscovery[];retry[]]]};
 
-/ Query a discovery service, and get the list of available services
-/ Does not attempt to re-open any discovery services
+/ services from the live discovery services
 querydiscovery:{[procs]
   if[0=count procs;:()];
   .z.m.loginfo[`conn;"querying discovery services for processes of types "," " sv string procs,()];
@@ -186,18 +180,14 @@ registerfromdiscovery:{[procs;connect]
   .z.m.loginfo[`conn;"requesting processes from discovery service"];
   res:querydiscovery[procs];
   if[0=count res; .z.m.loginfo[`conn;"no processes found"]; :()];
-  / add the processes
   addprocs[res;procs;connect];}
 
 addprocs:{[connectiontab;procs;connect]
   connectiontab:formatprocs[delete split from update host:hpup^`$last each -1 _' split, port:"I"$last each split from update split:{":" vs string x}each hpup from connectiontab];
-  / filter out any we already have - same name,type and hpup
   res:select from connectiontab where not ([]procname;proctype;hpup) in select procname,proctype,hpup from .servers.SERVERS;
-  / we've dropped some items - maybe there are updated attributes
   if[not count[res]=count connectiontab;
     if[`attributes in cols connectiontab;
       .servers.SERVERS:.servers.SERVERS lj 3!select procname,proctype,hpup,attributes from connectiontab where not ([]procname;proctype;hpup) in select procname,proctype,hpup from .servers.SERVERS]];
-  / if we have a match where the hpup is the same, but different name/type, then remove the old details
   removerows exec i from `.servers.SERVERS where hpup in exec hpup from res;
   register[res;;connect] each $[procs~`ALL;exec distinct proctype from res;procs,()];}
 
@@ -206,9 +196,7 @@ procupdate:{[procs] addprocs[procs;exec distinct proctype from procs;0b];}
 
 / return true if unix domain sockets can be used
 domainsocketsenabled:{[]
-  / unix domain sockets only works on unix and not windows
   notwin:not .z.o like "w*";
-  / v3.4 brought in the first version of unix domain sockets ipc
   iskdbv:3.4<=.z.K;
   :notwin and iskdbv;
   }
@@ -220,7 +208,6 @@ formathp:{[HOST;PORT;IPCTYPE;PROCTYPE;PROCNAME]
   notsamebox:not any HOST in `localhost,.z.h;
   host:string $[HOST=`localhost;.z.h;HOST];
   port:string PORT;
-  / revert socket to tcp
   if[isunixsocket and notsamebox;
     .z.m.logwarn[`formathp;"Expects to connect via domain sockets, but host is not on the same machine. Reverting IPC mechanism to TCP"];
     ipctype:`tcp;
@@ -229,7 +216,6 @@ formathp:{[HOST;PORT;IPCTYPE;PROCTYPE;PROCNAME]
     .z.m.logwarn[`formathp;"Domain sockets are not enabled for this system. Reverting IPC mechanism from to TCP"];
     ipctype:`tcp;
     ];
-  / Format hpup file handle
   if[ipctype = `tcp;
     hpup:lower `$":",host,":",port;
     ];
@@ -249,31 +235,26 @@ formatprocs:{[PROCS]
   :procs;
   }
 
-/ called at start up; config`connections and config`processcsv replace .servers.CONNECTIONS and .proc.file
+/ called at start up; config`connections and config`processcsv give the connections and process file
 startup:{[config]
   if[`connections in key config;
     .servers.CONNECTIONS:$[11h=abs type c:config`connections;c;`$c]];
   pf:$[`processcsv in key config;config`processcsv;.z.m.processcsv];
-  / correctly format procs and hpup
   .servers.procstab:procs:formatprocs readprocesscsv pf;
   .servers.nontorqprocesstab:formatprocs $[count key .servers.NONTORQPROCESSFILE;readprocesscsv 1_string .servers.NONTORQPROCESSFILE;0#procs];
-  / If DISCOVERY servers have been explicity defined
   if[count .servers.DISCOVERY;
     if[not null first .servers.DISCOVERY;
       if[count select from procs where hpup in .servers.DISCOVERY; .z.m.logerr[`startup; "host:port in .servers.DISCOVERY list is already present in data read from ",pf]];
       procs,:([]host:`;port:0Ni;proctype:`discovery;procname:`;hpup:.servers.DISCOVERY)]];
-  / Remove any processes that have an active connection
   connectedprocs:select procname, proctype, hpup from .servers.SERVERS;
   procs:delete from procs where ([] procname; proctype; hpup) in connectedprocs;
   nontorqprocs:delete from .servers.nontorqprocesstab where ([] procname; proctype; hpup) in connectedprocs;
-  / if there aren't any processes left to connect to, then escape
   if[not any count each (procs;nontorqprocs); .z.m.loginfo[`conn;"No new processes to connect to.  Escaping..."];:()];
   if[.servers.CONNECTIONSFROMDISCOVERY or .servers.DISCOVERYREGISTER;
     register[procs;`discovery;0b];
     retrydiscovery[]];
   if[not .servers.CONNECTIONSFROMDISCOVERY; register[procs;;0b] each $[.servers.CONNECTIONS~`ALL;exec distinct proctype from procs;.servers.CONNECTIONS]];
   if[.servers.TRACKNONTORQPROCESS;register[nontorqprocs;;0b] each $[.servers.CONNECTIONS~`ALL;exec distinct proctype from nontorqprocs;.servers.CONNECTIONS]];
-  / try and open dead connections
   retry[]}
 
 pc:{[W] update w:0Ni,endp:.z.p from`.servers.SERVERS where w=W;cleanup[];}
@@ -343,7 +324,7 @@ getapimeta:{[]
     (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };
 
-/ trackservers.q l.64-89, 198, 348-379, at their legacy root names
+/ root .servers functions for .sub and startup waits
 \d .servers
 
 / match required attributes against advertised ones

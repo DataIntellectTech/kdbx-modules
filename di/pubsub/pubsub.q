@@ -122,7 +122,7 @@ setsubtables`;
 initialized:0b;
 
 init:{[deps]
-  / optional deps: log for the legacy pubsub.q section
+  / optional deps: log
   if[99h=type deps;
     if[not `log in key deps;'"di.pubsub: log dependency is required - see di.util.log"];
     .z.m.log:deps`log];
@@ -132,7 +132,7 @@ init:{[deps]
   if[count tabcols;.z.m.initialized:1b];
   };
 
-/ legacy TorQ pubsub.q (.stpps, .u.sub, .ps) at its root names
+/ .stpps, .u.sub, .ps
 \d .stpps
 
 t:`

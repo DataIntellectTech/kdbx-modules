@@ -1,3 +1,3 @@
 dir:`:hdb
-/ create connections (legacy config/settings/hdb.q)
+/ create connections
 startup:1b

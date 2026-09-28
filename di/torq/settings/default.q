@@ -1,10 +1,10 @@
 / built-in framework defaults
-/ Server connection details - legacy TorQ config/settings/default.q .servers section (flat keys)
+/ server connection details
 / whether server tracking is enabled
 enabled:1b
-/ whether to register with the discovery service (legacy DISCOVERYREGISTER:DISCOVERYCONNECT)
+/ whether to register with the discovery service
 discoveryregister:$[`lim in key`.Q;@[{$[0W=x[`conns][`lim];1b;0b]};.Q.lim[];1b];1b]
-/ whether to get connection details from the discovery service (legacy CONNECTIONSFROMDISCOVERY:DISCOVERYREGISTER)
+/ whether to get connection details from the discovery service
 connectionsfromdiscovery:$[`lim in key`.Q;@[{$[0W=x[`conns][`lim];1b;0b]};.Q.lim[];1b];1b]
 / whether to track and register non torQ processes
 tracknontorqprocess:1b
@@ -24,3 +24,7 @@ autoclean:0b
 debug:1b
 / list of discovery services to connect to (if not using process.csv)
 discovery:enlist`
+/ whether to reconnect to processes previously subscribed to
+autoreconnect:0b
+/ how frequently to check subscriptions are still connected - 0D means don't check
+checksubscriptionperiod:0D00:00:10

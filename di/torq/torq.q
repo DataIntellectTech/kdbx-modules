@@ -294,7 +294,7 @@ init:{[proctype;procname;overrides]
   / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
   / app file may define/override .<proctype>.run for the hook to pick up).
   loadappcode[logdep;config;proctype;procname];
-  / initialise connections (legacy torq.q l.673)
+  / initialise connections
   if[@[value;`.servers.STARTUP;0b];.servers.startup config];
   / optional query logging - a no-op unless [querylog] enabled=true. LAST of everything that binds .z.*, because
   / di.querylog wraps whatever is bound at this moment by direct assignment (see initquerylog / torq.md)

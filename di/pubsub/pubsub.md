@@ -81,24 +81,17 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 ## Notes:
 
 - By default, all tables on top level of the process are available for subscription.
-- Loading the module defines legacy TorQ's root `.u.sub` (see below); a process that wants its own `.u.sub`/`.u.pub` sets them after `use`.
+- Loading the module defines a root `.u.sub` (see below); a process that wants its own `.u.sub`/`.u.pub` sets them after `use`.
 - The module initializes with defined list of tables to subscribe to and fetches their schemas and columns for use. This is done via calling `init` function.
 - The module does **not** bind `closesub` to `.z.pc` itself. A load-time `.z.pc` assignment from a `use`-loaded module replaces whatever the process had already bound - in a `di.torq` process that is the `di.torq.handlers` dispatcher carrying `di.torq.servers`' cleanup hook - so the consumer binds it: `handlers.register[`.z.pc;`;`pubsub;0;pubsub.closesub]` through its injected handlers dependency, or `.z.pc:pubsub.closesub` in a bare process.
 
-## Legacy TorQ pubsub.q layer
+## `.stpps`, `.u.sub`, `.ps`
 
-Legacy `code/common/pubsub.q`, the part legacy chainedtp uses, in a `\d .stpps` section at the end of `pubsub.q`, at its root
-names. It keeps its own state, separate from the API above:
+A second pub/sub API at root, in a `\d .stpps` section at the end of `pubsub.q`, with its own state,
+separate from the API above: `.stpps.t`/`subrequestall`/`subrequestfiltered`, `.stpps.allsubhandles`,
+`suball`/`subfiltered`/`add`/`errparse`/`addfiltered`/`selfiltered`/`pub`,
+`delhandle`/`delhandlef`/`closesub`/`extractschema`/`init`, root `.u.sub`, and
+`.ps.loaded`/`publish`/`subscribe`/`init`/`initialise`.
 
-| Root name | pubsub.q |
-|---|---|
-| `.stpps.t` / `subrequestall` / `subrequestfiltered` | l.9–15 |
-| `.stpps.allsubhandles` | l.28–30 |
-| `.stpps.suball` / `subfiltered` / `add` / `errparse` / `addfiltered` / `selfiltered` / `pub` | l.33–83 |
-| `.stpps.delhandle` / `delhandlef` / `closesub` / `extractschema` / `init` | l.92–124 |
-| `.u.sub` | l.134–141 |
-| `.ps.loaded` / `publish` / `subscribe` / `init` / `initialise` | l.147–151 |
-
-- `.lg.e` → the log passed as `init[enlist[`log]!enlist log]` (optional; `init[]` is unchanged).
-- l.129 `.z.pc` → the consumer registers `.stpps.closesub` through its handlers dependency.
-- Not ported: `.stpps.endp`/`end`/`pubclear`/`attrstrip`, `.u.pub`, `.ps.subtable*`, `.ds.*`.
+- `init[enlist[`log]!enlist log]` wires its error logging (optional; `init[]` is unchanged).
+- The consumer registers `.stpps.closesub` on `.z.pc` through its handlers dependency.

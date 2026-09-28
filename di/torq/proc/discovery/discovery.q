@@ -1,4 +1,4 @@
-/ di.torq.proc.discovery - TorQ's discovery service (code/processes/discovery.q) as a kdb-x module
+/ di.torq.proc.discovery - discovery service
 
 / subscriptions - handles to list of required proc types
 subs:(`int$())!()
@@ -6,7 +6,7 @@ subs:(`int$())!()
 register:{
   / add the new handle
   .servers.addw .z.w;
-  / If there already was an entry for the same host:port as the supplied handle, close it and delete the entry
+  / drop any other entry for the same host:port
   if[count toclose:exec i from .servers.SERVERS where not w=.z.w,hpup in exec hpup from .servers.SERVERS where w=.z.w;
     .servers.removerows toclose];
   / publish the updates
@@ -32,6 +32,6 @@ init:{[config;deps]
   @[.servers.addw;;{.z.m.log[`error][`discovery;x]}] each exec w from .servers.SERVERS where .dotz.liveh w,not hpup in exec hpup from .servers.nontorqprocesstab;
   / try to make each server connect back in
   (neg exec w from .servers.SERVERS where .dotz.liveh w,not hpup in exec hpup from .servers.nontorqprocesstab)@\:(`.servers.autodiscovery;`);
-  / drop items out of the subscription dictionary on close
+  / drop closed handles from subs
   (deps[`handlers]`register)[`.z.pc;`;`discovery;0j;{[W] .z.m.subs:(enlist W) _ .z.m.subs}];
   }

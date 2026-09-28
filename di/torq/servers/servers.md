@@ -23,10 +23,10 @@ second call refreshes everything but registers nothing twice. It opens no connec
 | `processcsv` | config | **path** to `process.csv`; supplied by di.torq (legacy `.proc.file`) |
 | `nontorqprocessfile` | config | path to the non-TorQ process file (legacy `NONTORQPROCESSFILE`); default `nontorqprocess.csv` in `processcsv`'s directory |
 
-The trackservers.q settings (l.13–28) are flat config keys, each setting its legacy global. The
-default is trackservers.q's own. `di/torq/settings/default.q` carries legacy
-`config/settings/default.q`'s values, and `di/torq/settings/discovery.q` carries legacy
-`config/settings/discovery.q`'s.
+The settings are flat config keys, each setting its `.servers.*` global. `di/torq/settings/default.q`
+supplies every process's values; `discoveryregister`, `connectionsfromdiscovery` and `debug` are
+`0b` there, so discovery is off unless the app turns it on. `di/torq/settings/discovery.q`
+supplies the discovery process's values.
 
 | key | global | trackservers.q default |
 |---|---|---|
@@ -136,8 +136,8 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
   `addnthawc`).
 - The retry job runs every `RETRY` (5m), not 10s.
 - `localhost` hpups resolve to `.z.h`.
-- Legacy defaults route connections through a discovery process: with
-  `connectionsfromdiscovery` on, `startup` dials only discovery rows and learns the rest from it.
+- With `connectionsfromdiscovery` on (off by default), `startup` dials only discovery rows and
+  learns the rest from it.
 
 ## Tests
 

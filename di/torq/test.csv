@@ -13,6 +13,7 @@ fail,0,0,q,tq.init[`;`;()!()],1,,auto-detect must fail when this session's port 
 run,0,0,q,r:tq.init[`hdb;`hdb;()!()],1,,explicit-identity init for the built-in hdb proctype
 true,0,0,q,`hdb~r`proctype,1,,identity resolved from the explicit args
 true,0,0,q,`k4unittest~(r`config)`owner,1,,config cascade reached the app-level default.q
+true,0,0,q,000b~(r`config)`discoveryregister`connectionsfromdiscovery`debug,1,,builtin default.q leaves discovery off and debug off
 true,0,0,q,`widgets in tables[],1,,the built-in hdb module actually mounted the fixture hdb dir
 true,0,0,q,(`handlers`log`servers`timer)~asc key r`deps,1,,all four core deps (incl injected servers) were built and passed through
 

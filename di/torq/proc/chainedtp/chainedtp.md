@@ -11,7 +11,8 @@ batches.
 | `tptype` | `` `chained `` |
 | `tablelist[]` | the published tables (`.stpps.t`) |
 | `subdetails[tabs;instruments]` | subscribes the caller and returns `schemalist`, `logfilelist`, `rowcounts`, `date` |
-| `.u.end[d]` | publishes and clears the batch, rolls to `d+1`, sends `` (`.u.end;d) `` to subscribers |
+| `.u.end[d]` | publishes and clears the batch, rolls to `d+1`, sends `` (`endofday;d) `` to subscribers |
+| `endofday[d]` | root; calls `.u.end d` (the upstream's end-of-day message) |
 | `upd` | set at root to `.ctp.upd` if no `upd` exists |
 | `.ctp.*` | settings, `subscribe`, `writetolog`, `tickpub`, `batchpub`, `publishalltables`, `cleartables`, `openlog`, `clearlog`, `refreshtp`, `createlogfilename`, `notpconnected`, `sub` |
 | `.u.i`/`.u.j`/`.u.icounts`/`.u.jcounts`/`.u.L`/`.u.l`/`.u.d` | publish and log counts, log file and handle, date |
@@ -49,10 +50,35 @@ di.torq runs `.ps.initialise[]` again after the module loads, which publishes th
 
 - The upstream is found by procname through `di.torq.servers` (with the default settings, through
   discovery). With `tpcheckcycles` `0W` it waits for it indefinitely.
-- An upstream that sends `endofday` rather than `.u.end` (a segmented tickerplant) does not end the day here.
+- End of day follows the rdb/wdb convention: `endofday[d]` in, `` (`endofday;d) `` out.
 - A corrupt own log is reported and opened anyway.
 - `.u.icounts` values are one-item lists after an all-syms subscribe.
 - `pubinterval` must be a whole number of seconds (the timer runs in seconds); anything else fails `init`.
+
+## Compatibility layer (temporary)
+
+Between `/ compat begin` and `/ compat end` in `chainedtp.q`, plus the `/ compat` line in `init`.
+It lets chainedtp sit between a di tickerplant and di rdb/wdb, which speak `di.subscriptions`'
+`.u.subdetails` protocol.
+
+- Upstream: `init` subscribes with `.ctp.subscribedi[]` in place of `.ctp.subscribe[]`: same handle
+  lookup and `refreshtp`, then `di.subscriptions` `subscribe`, then `.u.d` from the reply.
+- Downstream: root `.u.subdetails[tabs;syms]` subscribes the caller through `.ctp.sub` and returns
+  `tables`, `schemas`, `logfile`, `rowcount`, `date`.
+
+Limits:
+- `logfile` is always `` ` `` and `rowcount` 0, so subscribers never replay from chainedtp.
+- The upstream reply carries no per-table counts; `.u.icounts` starts empty.
+- `.sub.SUBSCRIPTIONS` is not filled on this path, so `.ctp.notpconnected` reads empty.
+- An unknown table comes back as a `(table;message)` pair, unfiltered.
+
+To remove:
+1. Delete the block between `/ compat begin` and `/ compat end`.
+2. In `init`, put back `.ctp.subscribe[];` for `.ctp.subscribedi[]; / compat`.
+3. Delete the `compat:` rows in `test.csv`, and the `compat:` lines in `test.q` (the fixture's
+   `.u.subdetails`, the `dsub.q` peer, `DSPORT`/`sh`); put the `.sub.SUBSCRIPTIONS` check back in
+   the init group.
+4. Delete this section.
 
 ## Testing
 
@@ -63,5 +89,5 @@ k4unit.moduletest`di.torq.proc.chainedtp
 
 `test.q`/`test.csv` run a real upstream (segmented tickerplant surface, found through
 `di.torq.servers`) and a real downstream subscriber: subscribe and schema, tick-by-tick delivery,
-`subdetails`, `tablelist`, `.u.end`, the own log, batch publish, `clearlogonsubscription`, and a
+`subdetails`, `tablelist`, end of day, the own log, batch publish, `clearlogonsubscription`, and a
 corrupt log.

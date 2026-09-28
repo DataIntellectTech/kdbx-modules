@@ -15,14 +15,16 @@ comment,,,,,,,init - connect and subscribe
 run,0,0,q,ctp.init[cfg[];deps[]],1,,init
 true,0,0,q,".ctp.tph=first exec w from .servers.SERVERS where procname=`tickerplant1",1,,tph is the upstream handle
 true,0,0,q,`trade in tables[],1,,upstream schema defined at root
-true,0,0,q,.u.d~D,1,,date taken from the upstream
-true,0,0,q,"1=count select from .sub.SUBSCRIPTIONS where table=`trade,active",1,,subscribed to trade
+true,0,0,q,.u.d~D,1,,compat: date taken from the .u.subdetails reply
+true,0,0,q,"1=count (use`di.subscriptions)[`getsubscriptions][]",1,,compat: subscribed through di.subscriptions
 true,0,0,q,all `stpps`chainedtp`sub in exec name from handlercalls where event=`.z.pc,1,,.z.pc observers registered
 true,0,0,q,`trade in key .ctp.tableschemas,1,,tableschemas holds trade
 true,0,0,q,not `publishalltables in exec id from timercalls,1,,no batch job at pubinterval 0
 true,0,0,q,upd~.ctp.tickpub,1,,root upd is tick-by-tick publish
 run,0,0,q,.ps.initialise[],1,,.ps.initialise again after the process module loads (as di.torq does)
 true,0,0,q,`trade in .stpps.t,1,,trade is published
+run,0,0,q,.ctp.subscribe[],1,,subscribe through .sub
+true,0,0,q,"1=count select from .sub.SUBSCRIPTIONS where table=`trade,active",1,,subscribed to trade
 
 comment,,,,,,,tick by tick
 run,0,0,q,"dh:hopen `$"":localhost:"",string DNPORT",1,,connect to the downstream peer
@@ -37,8 +39,8 @@ true,0,0,q,"()~(dh""(.z.w)(`subdetails;`trade;`)"")`logfilelist",1,,no log file 
 true,0,0,q,"`trade in dh""(.z.w)(`tablelist;`)""",1,,tablelist lists trade
 
 comment,,,,,,,end of day
-run,0,0,q,.u.end D,1,,end of day
-true,0,0,q,"(enlist D)~dh""ended""",1,,.u.end passed to the downstream
+run,0,0,q,endofday D,1,,end of day through root endofday
+true,0,0,q,"(enlist D)~dh""ended""",1,,endofday passed to the downstream
 true,0,0,q,.u.d=D+1,1,,date rolled
 true,0,0,q,0=count trade,1,,trade cleared
 
@@ -63,5 +65,18 @@ run,0,0,q,bh:.ctp.openlog bf,1,,open it
 true,0,0,q,"errlogged""is corrupt""",1,,corruption reported
 true,0,0,q,-6h=type bh,1,,and the log opened anyway
 true,0,0,q,1=first .u.i,1,,.u.i holds the good-prefix count of 1
+
+comment,,,,,,,compat: di.subscriptions subscriber downstream
+run,0,0,q,.stpps.closesub 0i,1,,compat: drop handle 0 left by the local subdetails call
+run,0,0,q,"sh:hopen `$"":localhost:"",string DSPORT",1,,compat: connect to the di.subscriptions peer
+run,0,0,q,"sd:sh""subs.subscribe[.z.w;`trade;`;1b]""",1,,compat: peer subscribes to trade through .u.subdetails
+true,0,0,q,(enlist`trade)~sd`tables,1,,compat: tables is a symbol list for one table
+true,0,0,q,"(`;0)~sd`logfile`rowcount",1,,compat: no log and no replay
+true,0,0,q,"(cols trade)~cols (sd`schemas)`trade",1,,compat: schema for trade
+true,0,0,q,"sh""`trade in tables[]""",1,,compat: trade defined at root on the peer
+true,0,0,q,"sh""1=count subs.getsubscriptions[]""",1,,compat: peer recorded the subscription
+true,0,0,q,"sd2:sh""(.z.w)(`.u.subdetails;`;`)""; (11h=type sd2`tables) and `trade in sd2`tables",1,,compat: tables is a symbol list for all tables
+run,0,0,q,".ctp.tph({(neg .z.w)(`upd;`trade;x)};rows 2)",1,,compat: upstream publishes 2 rows
+true,0,0,q,"(`trade;2)~sh""(first last got;count last last got)""",1,,compat: peer received the rows
 
 after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

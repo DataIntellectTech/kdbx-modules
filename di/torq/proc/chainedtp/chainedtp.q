@@ -18,7 +18,7 @@ init:{[config;deps]
   if[not `upd in key `.;set[`upd;.ctp.upd]];
   .ps.initialise[];
   .servers.startupdepnamecycles[.ctp.tickerplantname;.ctp.tpconnsleep;.ctp.tpcheckcycles];
-  .ctp.subscribe[];
+  .ctp.subscribedi[]; / compat
   .ctp.tableschemas:{x!(0#)@'value@'x} (),$[any null .ctp.subscribeto;tables[`.];.ctp.subscribeto];
   if[.ctp.pubinterval;(deps[`timer]`addjob)[`publishalltables;.ctp.publishalltables;();`long$.ctp.pubinterval%0D00:00:01;2;()!()]];
   }
@@ -156,7 +156,32 @@ end:{[d]
   .z.m.log[`info][`end;"end of day invoked"];
   .ctp.publishalltables[];
   .ctp.refreshtp[d+1];
-  (neg union[@[value;(`.stpps.allsubhandles;`);()]; @[{union/[(value x)[;;0]]};`.u.w;()]])@\:(`.u.end;d)
+  (neg union[@[value;(`.stpps.allsubhandles;`);()]; @[{union/[(value x)[;;0]]};`.u.w;()]])@\:(`endofday;d)
   }
 
 \d .
+
+endofday:{[d] .u.end d}
+
+/ compat begin
+\d .ctp
+
+subscribedi:{[]
+  s:.sub.getsubscriptionhandles[`;.ctp.tickerplantname;()!()];
+  if[count s;
+    subproc:first s;
+    .ctp.tph:subproc`w;
+    refreshtp @[tph;".u.d";.z.D];
+    .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
+    r:(use`di.subscriptions)[`subscribe][tph;subscribeto;subscribesyms;replay];
+    .u.d::r`date];
+  }
+
+\d .
+
+.u.subdetails:{[tabs;syms]
+  s:(.ctp.sub[tabs;syms])`schema;
+  if[-11h=type first s;s:enlist s];
+  `tables`schemas`logfile`rowcount`date!(s[;0];s[;0]!s[;1];`;0;.u.d)
+  }
+/ compat end

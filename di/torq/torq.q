@@ -294,6 +294,8 @@ init:{[proctype;procname;overrides]
   / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
   / app file may define/override .<proctype>.run for the hook to pick up).
   loadappcode[logdep;config;proctype;procname];
+  / initialise pubsub
+  if[@[value;`.ps.loaded;0b];.ps.initialise[]];
   / initialise connections
   if[@[value;`.servers.STARTUP;0b];.servers.startup config];
   / optional query logging - a no-op unless [querylog] enabled=true. LAST of everything that binds .z.*, because

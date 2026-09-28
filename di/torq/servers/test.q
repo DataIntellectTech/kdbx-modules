@@ -70,8 +70,7 @@ teardownfixture:{[] killpeer[]; killdisc[]; system "rm -rf ",FIXDIR;};
 QBIN:first system "readlink -f /proc/",(string .z.i),"/exe";
 DISCPORT:0N; TPPORT:0N; DISCPIDS:`long$();
 
-/ process.csv gains a discovery row; the stub answers getservices with the tpproc peer.
-/ addprocs' removerows calls .z.pc, which the handlers mock never binds
+/ add a discovery row to process.csv, write the stub, and bind the .z.pc that addprocs calls
 setupdisc:{[]
   .z.pc:{};
   DISCPORT::pickport DEADPORT+1;

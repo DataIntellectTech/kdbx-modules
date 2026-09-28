@@ -1,22 +1,10 @@
-/ connection management and handle-by-type lookup for the modular torq world - the di.* analogue
-/ of TorQ's .servers (code/handlers/trackservers.q + servers.q). The discovery-protocol parts of
-/ trackservers.q are ported line for line and published at their legacy root names (.servers.*,
-/ .dotz.liveh*); registry state and config live at legacy's root .servers.* globals. See servers.md.
-/ FRAMEWORK-tier module: no hard di.* deps; log, timer and handlers are injected (all required).
-/ standard one-arg init[deps]: di.torq merges this process's config slice (proctype/procname,
-/ connections, processcsv) into the same deps dict it passes the injectables in. conventions match
-/ di.torq.config: strict init validation (no fallback), three-flat-var logging, log-then-signal via
-/ raiseerror, getapimeta for di.api, and the env-free boundary (the process.csv path arrives via
-/ config; di.torq.servers reads no env itself).
+/ di.torq.servers - TorQ's .servers (code/handlers/trackservers.q) as a kdb-x module, at the legacy root names. See servers.md
 
 / --- module-local state (initial values at load; read/written via .z.m at runtime) ---
 
 self:`proctype`procname!``;
 
-/ guards init's one-time process-global side effects (the .z.pc observer + the timer jobs) so
-/ init is IDEMPOTENT - di.torq calls it once per process, but a second call (a test re-run, a
-/ future re-init) must not re-register: di.timer.addjob throws on a duplicate id. the dep refs are
-/ always refreshed; only the one-time registrations are guarded.
+/ whether init has registered the .z.pc observer and timer jobs
 registered:0b;
 
 / trackservers.q l.13-28: flat config key -> (.servers global;trackservers default)
@@ -44,11 +32,7 @@ raiseerror:{[ctx;msg]
   };
 
 init:{[deps]
-  / wire the injected deps (log/timer/handlers - all required, no fallback) and this process's
-  / config (proctype/procname identity, processcsv, the trackservers settings), publish the legacy
-  / root names, and install the one-time side effects (a .z.pc observer via handlers + the
-  / trackservers.q timer jobs via timer). idempotent (see `registered). does NOT open
-  / connections - that is startup's job.
+  / wire deps and config, publish the legacy root names, register the .z.pc observer and timer jobs once
   if[99h<>type deps;
     '"di.torq.servers: deps must be a dict of injectables + config"];
   if[not all `log`timer`handlers in key deps;
@@ -86,7 +70,7 @@ init:{[deps]
   if[not .z.m.registered;
     / trackservers.q l.385
     (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pc];
-    / trackservers.q l.387-389 (legacy .timer.repeat's default mode 2, from finish, is di.timer mode 3)
+    / trackservers.q l.387-389
     if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;3;()!()]];
     if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;3;()!()]];
     .z.m.registered:1b;
@@ -97,8 +81,6 @@ init:{[deps]
 / open a connection
 opencon:{[hpup]
   if[.servers.DEBUG;.z.m.loginfo[`conn;"attempting to open handle to ",string hpup]];
-  / NOTE the timeout form is hopen[(handle;timeoutms)] (a single 2-item list), not the dyadic
-  / hopen[handle;timeoutms], which throws 'rank.
   r:@[{(hopen (x;.servers.HOPENTIMEOUT);"")};hpup;{(0Ni;x)}];
   if[.servers.DEBUG;.z.m.loginfo[`conn;"connection to ",(string hpup),$[null first r;" failed: ",last r;" successful"]]];
   if[null first r;.z.m.logwarn[`servers;"failed to open connection to ",(string hpup),": ",last r]];
@@ -263,8 +245,7 @@ formatprocs:{[PROCS]
   :procs;
   }
 
-/ called at start up. config`connections / config`processcsv stand in for legacy's
-/ .servers.CONNECTIONS / .proc.file (a TOML config gives strings - normalised to symbols)
+/ called at start up; config`connections and config`processcsv replace .servers.CONNECTIONS and .proc.file
 startup:{[config]
   if[`connections in key config;
     .servers.CONNECTIONS:$[11h=abs type c:config`connections;c;`$c]];
@@ -331,12 +312,7 @@ signalfound:{[pt]
   };
 
 waitfortype:{[pt;timeoutms;pollms]
-  / block until at least one LIVE connection to pt exists, or timeoutms elapses. the DI-scoped
-  / analogue of legacy TorQ's startupdepcycles - "fail fast, but wait for a hard dependency to come
-  / up". each poll re-runs startup (reaches a discovery service that came up late, and so the pt rows
-  / it names) then retry, sleeping pollms. returns 1b once connected, 0b on timeout - the CALLER decides if that is fatal.
-  / NOTE the blocking system"sleep" is fine at startup (single-threaded; the injected timer's .z.ts
-  / just doesn't fire during the sleep).
+  / poll startup and retry every pollms until pt is live (1b) or timeoutms passes (0b)
   if[not -11h=type pt;raiseerror[`waitfortype;"proctype must be a symbol"]];
   if[not (abs type timeoutms) within 5 7h;raiseerror[`waitfortype;"timeoutms must be an integer (ms)"]];
   if[not (abs type pollms) within 5 7h;raiseerror[`waitfortype;"pollms must be an integer (ms)"]];

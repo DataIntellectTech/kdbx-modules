@@ -64,10 +64,10 @@ It lets chainedtp sit between a di tickerplant and di rdb/wdb, which speak `di.s
 - Upstream: `init` subscribes with `.ctp.subscribedi[]` in place of `.ctp.subscribe[]`: same handle
   lookup and `refreshtp`, then `di.subscriptions` `subscribe`, then `.u.d` from the reply.
 - Downstream: root `.u.subdetails[tabs;syms]` subscribes the caller through `.ctp.sub` and returns
-  `tables`, `schemas`, `logfile`, `rowcount`, `date`.
+  `tables`, `schemas`, `logfile`, `rowcount`, `date`. With `createlogfile` on, `logfile` is `.u.L`
+  and `rowcount` `.u.i`, so subscribers replay chainedtp's own log; otherwise `` ` `` and 0.
 
 Limits:
-- `logfile` is always `` ` `` and `rowcount` 0, so subscribers never replay from chainedtp.
 - The upstream reply carries no per-table counts; `.u.icounts` starts empty.
 - `.sub.SUBSCRIPTIONS` is not filled on this path, so `.ctp.notpconnected` reads empty.
 - An unknown table comes back as a `(table;message)` pair, unfiltered.

@@ -182,11 +182,15 @@ runhook:{[proctype;overrides]
   if[`run in key ns;(get `$".",(string proctype),".run")[]];
   }
 
+/ client tracking, every process
+clientswired:0b
+initclients:{[config;deps] if[.z.m.clientswired;:()]; ((use`di.clienttracking)`init)[config;deps]; .z.m.clientswired:1b;}
+
 / --- optional query logging ---------------------------------------------------------------
 / Wires di.querylog (kdbx-modules main, consumed unmodified) behind a [querylog] settings section - a silent
 / no-op unless enabled=true, same convention as di.torq.logroll. di.querylog wraps the .z.* handlers by DIRECT
-/ assignment, not through di.torq.handlers, so init calls this LAST - after the process module and app code
-/ have bound theirs. KNOWN LIMITATION (torq.md "Query logging"): an exec owner claimed on .z.pg/.z.ps/etc.
+/ assignment, not through di.torq.handlers, so init calls this after the process module and app code
+/ have bound theirs, and before zpsignore. KNOWN LIMITATION (torq.md "Query logging"): an exec owner claimed on .z.pg/.z.ps/etc.
 / AFTER this - e.g. a later permissions/auth layer - silently replaces the wrapper; that event's logging
 / drops to zero with no error.
 querylogwired:0b
@@ -229,6 +233,16 @@ initquerylog:{[config;deps]
     (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];1h;()!()]];
   msg:"query logging on (level ",(string cfg`level),", memory=",(string cfg`logtomemory),", disk=",(string cfg`logtodisk),")";
   deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
+  }
+
+/ zpsignore: ignorelisted async messages skip the .z.ps wrappers
+zpsignorewired:0b
+initzpsignore:{[config]
+  if[.z.m.zpsignorewired;:()];
+  s:$[`zpsignore in key config;config`zpsignore;()!()];
+  if[$[`enabled in key s;`boolean$s`enabled;1b];
+    .z.ps:{[il;f;y] $[any first[y]~/:il;value y;f y]}[qlignore $[`ignorelist in key s;s`ignorelist;`upd`.u.upd];@[value;`.z.ps;{value}]]];
+  .z.m.zpsignorewired:1b;
   }
 
 / reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
@@ -298,9 +312,10 @@ init:{[proctype;procname;overrides]
   if[@[value;`.ps.loaded;0b];.ps.initialise[]];
   / initialise connections
   if[@[value;`.servers.STARTUP;0b];.servers.startup config];
-  / optional query logging - a no-op unless [querylog] enabled=true. LAST of everything that binds .z.*, because
-  / di.querylog wraps whatever is bound at this moment by direct assignment (see initquerylog / torq.md)
+  / .z.* wrappers: clients, querylog, zpsignore last
+  initclients[config;deps];
   initquerylog[config;deps];
+  initzpsignore config;
   / post-load session audit (di.torq.depcheck.init): now that every module is loaded, introspect the live
   / session - core-dependency contract shapes (log/timer/handlers), .z.ts ownership, and an optional minimum
   / kdb-x engine version (config`minkdbxversion). Complements the pre-load VERSION graph above, which validated

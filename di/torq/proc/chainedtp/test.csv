@@ -12,7 +12,9 @@ fail,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:00.500;deps[]]",1
 fail,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:01.500;deps[]]",1,,a fractional-second pubinterval must error
 
 comment,,,,,,,init - connect and subscribe
-run,0,0,q,ctp.init[cfg[];deps[]],1,,init
+run,0,0,q,"ctp.init[cfg[],`pubinterval`logdir!(""0D00:00:00"";""tplogs"");deps[]]",1,,init with toml-style pubinterval and logdir strings
+true,0,0,q,0D~.ctp.pubinterval,1,,a pubinterval string becomes a timespan
+true,0,0,q,`:tplogs~.ctp.logdir,1,,a logdir string becomes a file symbol
 true,0,0,q,".ctp.tph=first exec w from .servers.SERVERS where procname=`tickerplant1",1,,tph is the upstream handle
 true,0,0,q,`trade in tables[],1,,upstream schema defined at root
 true,0,0,q,.u.d~D,1,,compat: date taken from the .u.subdetails reply

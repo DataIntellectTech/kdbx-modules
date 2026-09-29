@@ -1,19 +1,10 @@
-/ di.torq.servers - connection management; registry, config and protocol functions at root .servers.*
-/ FRAMEWORK-tier module: no hard di.* deps; log, timer and handlers are injected (all required).
-/ standard one-arg init[deps]: di.torq merges this process's config slice (proctype/procname,
-/ connections, processcsv) into the same deps dict it passes the injectables in. conventions match
-/ di.torq.config: strict init validation (no fallback), three-flat-var logging, log-then-signal via
-/ raiseerror, getapimeta for di.api, and the env-free boundary (the process.csv path arrives via
-/ config; di.torq.servers reads no env itself).
+/ di.torq.servers - connection management; registry, config and protocol functions at root .servers.*. See servers.md
 
 / --- module-local state (initial values at load; read/written via .z.m at runtime) ---
 
 self:`proctype`procname!``;
 
-/ guards init's one-time process-global side effects (the .z.pc observer + the timer jobs) so
-/ init is IDEMPOTENT - di.torq calls it once per process, but a second call (a test re-run, a
-/ future re-init) must not re-register: di.timer.addjob throws on a duplicate id. the dep refs are
-/ always refreshed; only the one-time registrations are guarded.
+/ whether init has registered the .z.pc observer and timer jobs
 registered:0b;
 
 / flat config key -> (.servers global;default)
@@ -92,8 +83,6 @@ init:{[deps]
 / open a connection
 opencon:{[hpup]
   if[.servers.DEBUG;.z.m.loginfo[`conn;"attempting to open handle to ",string hpup]];
-  / NOTE the timeout form is hopen[(handle;timeoutms)] (a single 2-item list), not the dyadic
-  / hopen[handle;timeoutms], which throws 'rank.
   r:@[{(hopen (x;.servers.HOPENTIMEOUT);"")};hpup;{(0Ni;x)}];
   if[.servers.DEBUG;.z.m.loginfo[`conn;"connection to ",(string hpup),$[null first r;" failed: ",last r;" successful"]]];
   if[null first r;.z.m.logwarn[`servers;"failed to open connection to ",(string hpup),": ",last r]];
@@ -308,18 +297,14 @@ signalfound:{[pt]
   };
 
 waitfortype:{[pt;timeoutms;pollms]
-  / block until at least one LIVE connection to pt exists, or timeoutms elapses. the DI-scoped
-  / analogue of legacy TorQ's startupdepcycles - "fail fast, but wait for a hard dependency to come
-  / up". startup must have run first (so a pt row exists to reattempt). polls retry between tries,
-  / sleeping pollms. returns 1b once connected, 0b on timeout - the CALLER decides if that is fatal.
-  / NOTE the blocking system"sleep" is fine at startup (single-threaded; the injected timer's .z.ts
-  / just doesn't fire during the sleep).
+  / poll startup and retry every pollms until pt is live (1b) or timeoutms passes (0b)
   if[not -11h=type pt;raiseerror[`waitfortype;"proctype must be a symbol"]];
   if[not (abs type timeoutms) within 5 7h;raiseerror[`waitfortype;"timeoutms must be an integer (ms)"]];
   if[not (abs type pollms) within 5 7h;raiseerror[`waitfortype;"pollms must be an integer (ms)"]];
   deadline:.z.p+`timespan$1000000*`long$timeoutms;
   .z.m.loginfo[`servers;"waiting up to ",(string timeoutms),"ms for a ",(string pt)," connection"];
   while[(0=count getservers pt) and .z.p<deadline;
+    startup ()!();
     retry[];
     if[0<count getservers pt;:signalfound pt];
     system "sleep ",string pollms%1000;

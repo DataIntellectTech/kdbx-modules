@@ -64,7 +64,32 @@ setupfixture:{[]
     "localhost,",string[DEADPORT],",deadproc,deadinst");
   };
 
-teardownfixture:{[] killpeer[]; system "rm -rf ",FIXDIR;};
+teardownfixture:{[] killpeer[]; killdisc[]; system "rm -rf ",FIXDIR;};
+
+/ --- discovery-later fixture: a discovery stub naming one tpproc peer, started after startup ---
+QBIN:first system "readlink -f /proc/",(string .z.i),"/exe";
+DISCPORT:0N; TPPORT:0N; DISCPIDS:`long$();
+
+/ add a discovery row to process.csv, write the stub, and bind the .z.pc that addprocs calls
+setupdisc:{[]
+  .z.pc:{};
+  DISCPORT::pickport DEADPORT+1;
+  TPPORT::pickport DISCPORT+1;
+  (`$":",FIXDIR,"/process.csv") 0: (read0 `$":",FIXDIR,"/process.csv"),enlist "localhost,",string[DISCPORT],",discovery,discinst";
+  (`$":",FIXDIR,"/disc.q") 0: (
+    "register:{}";
+    "getservices:{[p;s] ([]procname:enlist`tpinst;proctype:enlist`tpproc;hpup:enlist`$\":localhost:",string[TPPORT],"\";attributes:enlist()!())}");
+  };
+
+spawnq:{[args;port]
+  system QBIN," ",args," -p ",string[port]," -q </dev/null >/dev/null 2>&1 &";
+  if[not waitlisten[port;3000];'"test: q failed to listen on ",string port];
+  h:hopen (`$":localhost:",string port;2000);
+  DISCPIDS,:h ".z.i";
+  hclose h;};
+
+spawndisc:{[] spawnq["";TPPORT]; spawnq[FIXDIR,"/disc.q";DISCPORT];};
+killdisc:{[] {@[system;"kill ",string x;{}]} each DISCPIDS; DISCPIDS::`long$();};
 
 / build the deps dict di.torq would assemble: injectables + this process's config slice.
 / discovery off, so startup dials process.csv directly

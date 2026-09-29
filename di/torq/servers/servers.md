@@ -1,25 +1,16 @@
 # di.torq.servers
 
-Connection management and handle-by-type lookup for the modular TorQ world — the `di.*`
-analogue of TorQ's `.servers` (`code/handlers/trackservers.q` + `servers.q`). The parts of
-`trackservers.q` the discovery protocol uses are **ported line for line** and published at
-their **legacy root names** (`.servers.*`, `.dotz.liveh*`), with the registry and config at
-legacy's root `.servers.*` globals — see [Discovery protocol](#discovery-protocol-ported-from-trackserversq).
-No password/access-list files, no FinSpace.
-
-FRAMEWORK-tier module: no hard `di.*` dependencies; `log`, `timer` and `handlers` are all
-**injected** (all required, no fallback).
+TorQ's `.servers` (`code/handlers/trackservers.q`) as a kdb-x module. The parts the discovery
+protocol uses are ported line for line and published at root names (`.servers.*`,
+`.dotz.liveh*`); the registry and settings are root `.servers.*` globals. No
+password/access-list files, no FinSpace. `log`, `timer` and `handlers` are injected (all required).
 
 ## init and config
 
-Standard **one-arg `init[deps]`**: `di.torq` merges this process's resolved config slice into
-the same `deps` dict it passes the injectables in, so `deps` carries both the injectable
-dependencies **and** the config keys. `init` wires the deps, records self-identity, sets the
-`.servers.*` config globals, publishes the legacy root names, and installs the one-time
-process-global side effects — a `.z.pc` handler and trackservers.q's `discoveryretry` and
-`serversretry` timer jobs. It is **idempotent** (guarded by an internal `registered` flag): a
-second call refreshes deps, config and root names without re-registering (a duplicate
-`di.timer.addjob` id would throw). `init` does **not** open connections.
+`init[deps]` takes the injectables and this process's config in one dict (di.torq merges them).
+It sets the `.servers.*` globals, publishes the root names, and registers a `.z.pc`
+observer (via `handlers`) and the `discoveryretry`/`serversretry` timer jobs (via `timer`). A
+second call refreshes everything but registers nothing twice. It opens no connections.
 
 `deps` keys:
 
@@ -32,10 +23,10 @@ second call refreshes deps, config and root names without re-registering (a dupl
 | `processcsv` | config | **path** to `process.csv`; supplied by di.torq (legacy `.proc.file`) |
 | `nontorqprocessfile` | config | path to the non-TorQ process file (legacy `NONTORQPROCESSFILE`); default `nontorqprocess.csv` in `processcsv`'s directory |
 
-The trackservers.q settings (l.13–28) are flat config keys, each setting its legacy global. The
-default is trackservers.q's own. `di/torq/settings/default.q` carries legacy
-`config/settings/default.q`'s values, and `di/torq/settings/discovery.q` carries legacy
-`config/settings/discovery.q`'s.
+The settings are flat config keys, each setting its `.servers.*` global. `di/torq/settings/default.q`
+supplies every process's values; `discoveryregister`, `connectionsfromdiscovery` and `debug` are
+`0b` there, so discovery is off unless the app turns it on. `di/torq/settings/discovery.q`
+supplies the discovery process's values.
 
 | key | global | trackservers.q default |
 |---|---|---|
@@ -70,7 +61,7 @@ h "1+1"
 | `startup` | `startup[config]` | Legacy `startup` (l.323–345). `config`connections`/`config`processcsv` stand in for `.servers.CONNECTIONS`/`.proc.file`. |
 | `getservers` | `getservers[proctype]` | Live (`w` non-null) `SERVERS` rows for a proctype. |
 | `gethandlebytype` | `gethandlebytype[proctype;selection]` | One live handle via `` `any``/`roundrobin`/`last``; `0Ni` if none. Bumps usage stats. |
-| `waitfortype` | `waitfortype[proctype;timeoutms;pollms]` | Block until a live connection exists or timeout; `1b`/`0b`. Caller decides if a timeout is fatal. `startup` must have run first. |
+| `waitfortype` | `waitfortype[proctype;timeoutms;pollms]` | Poll `startup` then `retry` every `pollms` until a live connection exists (`1b`) or `timeoutms` passes (`0b`). |
 | `getapimeta` | `getapimeta[]` | This module's api metadata, one row per **callable** API function (`init`/`getapimeta` plumbing omitted), for `di.torq` to register with `di.api`. |
 
 ## The `SERVERS` table
@@ -131,7 +122,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 **Conversions** (legacy calls with no di equivalent):
 - `.lg.*` becomes the injected `log`.
 - `.dotz.set` on `.z.pc` becomes `handlers[`register]`.
-- `.timer.repeat` becomes `timer[`addjob]`, using mode 3 (legacy's default mode 2, next run counted from finish; legacy mode n is di.timer mode n+1) and the period in seconds.
+- `.timer.repeat` becomes `timer[`addjob]`, mode 3 (next run from finish), period in seconds.
 - `.proc.cp[]` becomes `.z.p`.
 - `.proc.procname`/`proctype` in `getdetails` become init's identity.
 - `.proc.readprocs` becomes `readprocesscsv`.
@@ -155,40 +146,21 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
   `addnthawc`).
 - The retry job runs every `RETRY` (5m), not 10s.
 - `localhost` hpups resolve to `.z.h`.
-- Legacy defaults route connections through a discovery process: with
-  `connectionsfromdiscovery` on, `startup` dials only discovery rows and learns the rest from it.
-
-## `.z.pc` registration via di.torq.handlers
-
-`.z.pc` (connection closed) is a **simple/observer** event in di.torq.handlers — side-effect only,
-fan-out — so di.torq.servers registers `pc` through the injected `handlers` dependency rather
-than assigning `.z.pc` directly:
-
-```q
-(handlers[`register])[`.z.pc;`;`servers;0j;pc]
-```
-
-`register`'s signature is `register[event;phase;nm;pri;func]`; for a simple event the `phase`
-must be `` ` `` (null) — di.torq.handlers rejects a non-null phase on an observer event.
-
-## Conventions (learnings from di.torq.config)
-
-- **One-arg `init[deps]`** with config folded into `deps`, not a two-arg `init[config;deps]`.
-- **Three-flat-var logging** — `.z.m.loginfo`/`.z.m.logwarn`/`.z.m.logerr`.
-- **`raiseerror` (log-then-signal)** for di's own post-init domain errors (`selector` unknown
-  selection, missing `process.csv`). `init`'s dependency validation signals plainly (no logger yet).
-- **`getapimeta`** exported; a test asserts it documents exactly the module's *callable* exports.
-- **Env-free** — the `process.csv` path arrives via `config`processcsv` (di.torq resolves it).
+- With `connectionsfromdiscovery` on (off by default), `startup` dials only discovery rows and
+  learns the rest from it.
 
 ## Tests
 
-`test.q` + `test.csv` (36 checks) spawn a genuinely separate `q` peer and cover init validation,
-wiring and idempotency, `startup` against a live and a dead peer (discovery switched off in the
-fixture), `gethandlebytype`, retry recovering an ungraceful kill, `waitfortype`, input validation
-and `getapimeta`. The discovery protocol is exercised by `di.torq.proc.discovery`'s suite.
+`test.q` + `test.csv` (54 checks) spawn real q peers. They cover:
+- init validation, wiring and idempotency;
+- `startup` against a live and a dead peer (discovery off);
+- `gethandlebytype`, and retry recovering an ungraceful kill;
+- `waitfortype`, including a discovery stub that comes up after `startup`;
+- the root `.servers` functions (`attributematch`, 5-arg `getservers`, `startupdepnamecycles`);
+- input validation and `getapimeta`.
 
-Run in a fresh q session. Needs `QHOME` set to a q install whose `bin/q` can be launched (the
-peer is started via `$QHOME/bin/q`):
+The rest of the discovery protocol is covered by `di.torq.proc.discovery`'s suite. Run in a fresh
+q session with `QHOME` set to a q install whose `bin/q` can be launched:
 
 ```q
 k4unit:use`di.k4unit

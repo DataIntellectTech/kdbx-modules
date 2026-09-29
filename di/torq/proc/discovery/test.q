@@ -1,6 +1,4 @@
-/ di.torq.proc.discovery test helpers (loaded by test.csv): mock log/handlers, stubbed .servers.*
-/ root names that record their calls, and two real q peers so the .z.w/.z.W paths run over
-/ genuine handles (a peer calls back into this process over the handle it was asked on).
+/ di.torq.proc.discovery test helpers: mock log/handlers, recording .servers.* stubs, two real q peers
 
 logrows:([]lvl:`symbol$();ctx:`symbol$();msg:());
 mocklog:`info`warn`error!({[c;m]`logrows upsert(`info;c;m)};{[c;m]`logrows upsert(`warn;c;m)};{[c;m]`logrows upsert(`error;c;m)});

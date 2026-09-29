@@ -51,6 +51,13 @@ true,0,0,q,"0=count .servers.getservers[`proctype;`deadproc;()!();0b;0b]",1,1,ge
 run,0,0,q,".servers.startupdepnamecycles[`otherinst;0;1]",1,1,startupdepnamecycles returns once otherinst is connected
 fail,0,0,q,".servers.startupdepnamecycles[`nosuchinst;0;0]",1,1,startupdepnamecycles signals after its cycles are used up
 true,0,0,q,`connectionreport in exec ctx from logrows where lvl=`error,1,1,the failure was logged as a connectionreport error
+comment,,,,,,,waitfortype - discovery comes up after startup
+run,0,0,q,setupdisc[],1,1,add a discovery row to process.csv and write a discovery stub naming a tpproc peer
+run,0,0,q,"svc.init[svrdeps[`tpproc],`discoveryregister`connectionsfromdiscovery!11b]",1,1,re-init taking connections from discovery
+run,0,0,q,svc.startup[svrdeps[`tpproc]],1,1,startup while discovery is down - the discovery row is registered dead
+true,0,0,q,0=count svc.getservers[`discovery],1,1,discovery is not live after startup
+run,0,0,q,spawndisc[],1,1,bring up the tpproc peer then discovery
+true,0,0,q,svc.waitfortype[`tpproc;3000;200],1,1,waitfortype reaches discovery and connects to the tpproc it names
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

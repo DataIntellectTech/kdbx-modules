@@ -23,7 +23,7 @@ init:{[config;deps]
   if[not `upd in key `.;set[`upd;.ctp.upd]];
   .ps.initialise[];
   .servers.startupdepnamecycles[.ctp.tickerplantname;.ctp.tpconnsleep;.ctp.tpcheckcycles];
-  .ctp.subscribedi[]; / compat
+  .ctp.subscribe[];
   .ctp.tableschemas:{x!(0#)@'value@'x} (),$[any null .ctp.subscribeto;tables[`.];.ctp.subscribeto];
   if[.ctp.pubinterval;(deps[`timer]`addjob)[`publishalltables;.ctp.publishalltables;();`long$.ctp.pubinterval%0D00:00:01;2;()!()]];
   }
@@ -34,9 +34,10 @@ tptype:`chained;
 
 tablelist:{.stpps.t}
 
-subdetails:{[tabs;instruments]
-  r:.ctp.sub[tabs;instruments];
-  `schemalist`logfilelist`rowcounts`date!r@/:(`schema;$[r[`logfile]~();();enlist`i`logfile];`icounts;`d)
+.u.subdetails:{[tabs;syms]
+  r:.ctp.sub[tabs;syms]; s:r`schema;
+  if[-11h=type first s;s:enlist s];
+  `tables`schemas`logfile`rowcount`date!(s[;0];s[;0]!s[;1];$[.ctp.createlogfile;r`logfile;`];$[.ctp.createlogfile;r`i;0];.u.d)
   }
 
 \d .ctp
@@ -83,17 +84,12 @@ openlog:{[lgfile]
 subscribe:{[]
   s:.sub.getsubscriptionhandles[`;.ctp.tickerplantname;()!()];
   if[count s;
-      subproc:first s;
-      .ctp.tph:subproc`w;
-      refreshtp @[tph;".u.d";.z.D];
-      .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
-      r:.sub.subscribe[subscribeto;subscribesyms;schema;replay;subproc];
-      if[`d in key r;.u.d::r[`d]];
-      if[(`icounts in key r) & (not createlogfile);
-	subtabs:$[subscribeto~`;key r`icounts;subscribeto],();
-	.u.jcounts::.u.icounts::$[0=count r`icounts;()!();subtabs!enlist [r`icounts]subtabs];
-      ]
-    ];
+    subproc:first s;
+    .ctp.tph:subproc`w;
+    refreshtp @[tph;".u.d";.z.D];
+    .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
+    r:(use`di.subscriptions)[`subscribe][tph;subscribeto;subscribesyms;replay];
+    .u.d::r`date];
   }
 
 writetolog:{[t;x]
@@ -168,25 +164,3 @@ end:{[d]
 
 endofday:{[d] .u.end d}
 
-/ compat begin
-\d .ctp
-
-subscribedi:{[]
-  s:.sub.getsubscriptionhandles[`;.ctp.tickerplantname;()!()];
-  if[count s;
-    subproc:first s;
-    .ctp.tph:subproc`w;
-    refreshtp @[tph;".u.d";.z.D];
-    .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
-    r:(use`di.subscriptions)[`subscribe][tph;subscribeto;subscribesyms;replay];
-    .u.d::r`date];
-  }
-
-\d .
-
-.u.subdetails:{[tabs;syms]
-  r:.ctp.sub[tabs;syms]; s:r`schema;
-  if[-11h=type first s;s:enlist s];
-  `tables`schemas`logfile`rowcount`date!(s[;0];s[;0]!s[;1];$[.ctp.createlogfile;r`logfile;`];$[.ctp.createlogfile;r`i;0];.u.d)
-  }
-/ compat end

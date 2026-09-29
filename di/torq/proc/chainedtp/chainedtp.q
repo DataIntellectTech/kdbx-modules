@@ -180,8 +180,8 @@ subscribedi:{[]
 \d .
 
 .u.subdetails:{[tabs;syms]
-  s:(.ctp.sub[tabs;syms])`schema;
+  r:.ctp.sub[tabs;syms]; s:r`schema;
   if[-11h=type first s;s:enlist s];
-  `tables`schemas`logfile`rowcount`date!(s[;0];s[;0]!s[;1];`;0;.u.d)
+  `tables`schemas`logfile`rowcount`date!(s[;0];s[;0]!s[;1];$[.ctp.createlogfile;r`logfile;`];$[.ctp.createlogfile;r`i;0];.u.d)
   }
 / compat end

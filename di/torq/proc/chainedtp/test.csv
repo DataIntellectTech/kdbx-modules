@@ -68,10 +68,15 @@ true,0,0,q,1=first .u.i,1,,.u.i holds the good-prefix count of 1
 
 comment,,,,,,,compat: di.subscriptions subscriber downstream
 run,0,0,q,.stpps.closesub 0i,1,,compat: drop handle 0 left by the local subdetails call
+run,0,0,q,".ctp.refreshtp D;.ctp.writetolog[`trade;rows 3];.ctp.tickpub[`trade;rows 3]",1,,compat: fresh log with one 3-row message before the peer subscribes
 run,0,0,q,"sh:hopen `$"":localhost:"",string DSPORT",1,,compat: connect to the di.subscriptions peer
 run,0,0,q,"sd:sh""subs.subscribe[.z.w;`trade;`;1b]""",1,,compat: peer subscribes to trade through .u.subdetails
 true,0,0,q,(enlist`trade)~sd`tables,1,,compat: tables is a symbol list for one table
-true,0,0,q,"(`;0)~sd`logfile`rowcount",1,,compat: no log and no replay
+true,0,0,q,"(.u.L;1)~sd`logfile`rowcount",1,,compat: own log and its message count
+true,0,0,q,"(1;`trade;3)~sh""(count got;first first got;count last first got)""",1,,compat: peer replayed the pre-subscribe message
+run,0,0,q,".ctp.createlogfile:0b",1,,compat: logging off
+true,0,0,q,"(`;0)~(sh""(.z.w)(`.u.subdetails;`trade;`)"")`logfile`rowcount",1,,compat: no log and no replay without createlogfile
+run,0,0,q,".ctp.createlogfile:1b",1,,compat: logging back on
 true,0,0,q,"(cols trade)~cols (sd`schemas)`trade",1,,compat: schema for trade
 true,0,0,q,"sh""`trade in tables[]""",1,,compat: trade defined at root on the peer
 true,0,0,q,"sh""1=count subs.getsubscriptions[]""",1,,compat: peer recorded the subscription

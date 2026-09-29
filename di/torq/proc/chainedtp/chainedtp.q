@@ -1,5 +1,8 @@
 / di.torq.proc.chainedtp - chained tickerplant
 
+/ a timespan, a "0D00:00:01" string or a number of seconds (TOML has no timespan type)
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
+
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.chainedtp: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.chainedtp: timer dependency is required - see di.timer"];
@@ -10,6 +13,8 @@ init:{[config;deps]
   (deps[`handlers]`register)[`.z.pc;`;`stpps;0j;.stpps.closesub];
   (use`di.subscriptions)[`init][config;deps];
   {[config;k] if[k in key config;set[` sv `.ctp,k;config k]]}[config] each `tickerplantname`pubinterval`tpconnsleep`createlogfile`logdir`subscribeto`subscribesyms`replay`schema`clearlogonsubscription`tpcheckcycles;
+  .ctp.pubinterval:totimespan .ctp.pubinterval;
+  if[10h=type .ctp.logdir;.ctp.logdir:hsym`$.ctp.logdir];
   if[0<>(`long$.ctp.pubinterval) mod 1000000000;'"di.torq.proc.chainedtp: pubinterval must be a whole number of seconds"];
   (deps[`handlers]`register)[`.z.pc;`;`chainedtp;0j;{[y] if[.ctp.tph=y;.z.m.log[`error][`.z.pc;"lost connection to tickerplant : ",string .ctp.tickerplantname];exit 0]}];
   .ctp.upd:$[.ctp.createlogfile;

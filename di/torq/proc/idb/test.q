@@ -25,7 +25,7 @@ mockservers:{[] `startup`getservers`gethandlebytype`waitfortype!(mockstartup;moc
 mockdeps:{[] `log`servers!(`info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;]);mockservers[])}
 
 / the root variables a real wdb publishes, which the evaluated query reads
-setwdb:{[sd] set[`.wdb.savedir;sd]; set[`.wdb.hdbdir;hsym `$FIXTUREHDBDIR]; set[`.wdb.currentpartition;TESTDATE];}
+setwdb:{[sd] set[`.wdb.savedir;sd]; set[`.wdb.hdbdir;hsym `$FIXTUREHDBDIR]; set[`.wdb.currentpartition;TESTDATE]; set[`.wdb.writedownmode;`default];}
 setwdbparams:{[] setwdb hsym `$FIXTUREDIR;}
 
 / the wdb reports a savedir that is not on disk - the window before its first flush
@@ -49,7 +49,7 @@ initnovar:{[v]
 askedwdb:{[] `waitfortype in exec fn from scalls}
 
 / the query the idb actually sent, captured by the mock handle
-askedforvars:{[] LASTQ~(each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition)}
+askedforvars:{[] LASTQ~(each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition`.wdb.writedownmode)}
 resetservercalls:{[] `scalls set ([]fn:`symbol$();arg:()); `WAITOK set 1b; `LASTQ set ();}
 
 FIXTUREDIR:"/tmp/di_idb_k4unit_fixture"
@@ -104,7 +104,7 @@ stalecfg:{[] `wdbtypes`savedir`hdbdir!(`wdb;`$":",FIXTUREDIR;`$":",FIXTUREHDBDIR
 
 / an unchanged sym file is silent, so a skip is proven by the absence of the entry log
 symattempted:{[] 0<count select from calls where lvl=`info,msg like "loading the sym file*"}
-symreloaded:{[] 0<count select from calls where lvl=`info,msg like "loaded sym domain*"}
+symreloaded:{[] symattempted[] and not symfailed[]}
 symfailed:{[] 0<count select from calls where lvl=`error,msg like "failed to load sym file*"}
 
 / .Q.en with an unseen symbol rewrites FIXTUREHDBDIR/sym, making it strictly bigger
@@ -127,4 +127,18 @@ corruptsymfile:{[] (hsym `$FIXTUREHDBDIR,"/sym") 0: enlist "not a serialised sym
 
 / the partition the module recorded. Not exposed by the module (nothing consumes it), so the tests
 / reach into its private namespace rather than the module inventing an accessor for their benefit.
-recordedpartition:{[] get `.m.di.0torq.0proc.0idb.partition}
+recordedpartition:{[] get `.m.di.0torq.0proc.0idb.currentpartition}
+idbdir:{[] get `.m.di.0torq.0proc.0idb.idbdir}
+rootmounted:{[] idbdir[]~.Q.dd[hsym `$FIXTUREDIR;`]}
+datemounted:{[d] idbdir[]~.Q.dd[hsym `$FIXTUREDIR;d]}
+
+/ a new dated partition appears under the savedir root, as the wdb's first flush of a new day makes
+addpartition:{[d] (` sv (hsym `$FIXTUREDIR,"/",(string d),"/widgets";`)) set .Q.en[hsym `$FIXTUREHDBDIR;([]id:1 2 3;name:`a`b`c)];}
+
+/ a partitioned writedown mode: savedir/<partition>/<int partition>/<table>, as the wdb's partbyenum writes
+setupenumfixture:{[]
+  system "rm -rf ",FIXTUREDIR;
+  widgets:.Q.en[hsym `$FIXTUREHDBDIR;([]id:1 2 3;name:`a`b`c)];
+  {[w;i] (` sv (hsym `$FIXTUREDIR,"/",(string TESTDATE),"/",(string i),"/widgets";`)) set w}[widgets] each 0 1;
+  set[`.wdb.writedownmode;`partbyenum];
+  }

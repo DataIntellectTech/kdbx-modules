@@ -1,0 +1,9 @@
+mode:`sort
+tickerplanttypes:`symbol$()
+hdbtypes:`symbol$()
+rdbtypes:`symbol$()
+idbtypes:`symbol$()
+gatewaytypes:`symbol$()
+sorttypes:`symbol$()
+sortworkertypes:`symbol$()
+wdbtypes:`symbol$()

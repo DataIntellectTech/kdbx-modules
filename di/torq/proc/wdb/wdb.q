@@ -12,7 +12,7 @@ tolong:{[x]
   r
   }
 tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]}
-astimespan:{[x] $[10h=abs type x;"N"$(),x;-16h=type x;x;`timespan$1000000000*x]}
+astimespan:{[x] $[10h=abs type x;$[any ((),x) in "D:";"N"$(),x;`timespan$1000000000*"J"$(),x];-16h=type x;x;`timespan$1000000000*x]}
 
 / a token-list config (e.g. reloadorder) as a symbol list
 astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
@@ -228,7 +228,7 @@ handler:{[x]
 / evaluate contents of d dictionary asynchronously; notify the gateway that we are done
 flushend:{[]
   if[not .z.m.reloadcomplete;
-    if[.z.m.eodwaittime>0;@[{neg[x]"";neg[x][]};;()] each key .z.m.reloadsummary];
+    if[.z.m.eodwaittime>0;@[{neg[x]"";neg[x][]};;()] each exec handle from .z.m.reloadsummary];
     informgateway`reloadend;
     .z.m.log[`info][`sort;"end of day sort is now complete"];
     .z.m.reloadcomplete:1b];
@@ -265,7 +265,8 @@ resetcompression:{[] setcompression 16 0 0}
 / temporary partition and the hdb partition. If there is a clash abort operation otherwise copy
 / each table to the hdb partition
 movetohdb:{[dw;hw;pt]
-  $[not (`$string pt) in key hsym `$(neg count string pt)_hw;
+  (.z.m.os`mkdir) hdbroot:(neg count string pt)_hw;
+  $[not (`$string pt) in key hsym `$hdbroot;
     .[.z.m.os`mv;(dw;hw);{[dw;hw;e] .z.m.log[`error][`mvtohdb;"Failed to move data from wdb ",dw," to hdb directory ",hw," : ",e]}[dw;hw]];
     not any a[dw] in (a:{key hsym `$x}) hw;
     [{[y;x]
@@ -328,9 +329,12 @@ postreplay:{[hdbdir;pt]
   @[.z.m.posteod .;(hdbdir;pt);{[e] .z.m.log[`error][`postreplay;"postreplay failed: ",e]}];
   }
 
+/ the loaded sort config, or an empty one as legacy's .sort.params
+sortparams:{[] $[(::)~c:(.z.m.dbw`getconfig)[];([] tabname:`symbol$(); att:`symbol$(); column:`symbol$(); sort:`boolean$());c]}
+
 / the parted column(s) for a table from the sort config, falling back to the default row
 getextrapartitiontype:{[tablename]
-  params:$[(::)~c:(.z.m.dbw`getconfig)[];();c];
+  params:sortparams[];
   if[count tabparts:distinct exec column from params where tabname=tablename,sort,att=`p;
     .z.m.log[`info][`getextraparttype;"parted attribute p found in sort.csv for ",(string tablename)," table"];
     :tabparts];
@@ -561,7 +565,7 @@ endofday:{[pt]
 / checks sort.csv sets the p attribute every partitioned writedown mode needs
 checksortparams:{[]
   if[not .z.m.writedownmode in .z.m.partwritemodes;:()];
-  params:$[(::)~c:(.z.m.dbw`getconfig)[];();c];
+  params:sortparams[];
   / check that default table is defined
   $[count exec distinct tabname from params where tabname=`default,att=`p,sort;
     .z.m.log[`info][`init;"default table defined in sort.csv and with at least one `p attribute and sort=1b"];
@@ -646,7 +650,7 @@ setroot:{[]
   @[`.z;`pd;:;{[] `u#raze {exec w from x} each (.z.m.svc`getservers) each .z.m.sortworkertypes}];
   @[`.;`upd;:;.z.m.upd];
   @[`.;`endofday;:;endofday];
-  @[`.;`.u.end;:;endofday];
+  set[`.u.end;endofday];
   / the idb reads these at startup; currentpartition is republished at each end of day
   set[`.wdb.savedir;.z.m.savedir];
   set[`.wdb.hdbdir;.z.m.hdbdir];

@@ -18,6 +18,9 @@ true,0,0,q,30000~.m.di.0torq.0proc.0wdb.tolong 30000,1,,tolong passes a native l
 true,0,0,q,1b~.m.di.0torq.0proc.0wdb.tobool "true",1,,tobool parses a string setting to a boolean ATOM (`boolean$ would give a list)
 true,0,0,q,0b~.m.di.0torq.0proc.0wdb.tobool "false",1,,tobool parses a false string
 true,0,0,q,1b~.m.di.0torq.0proc.0wdb.tobool 1b,1,,tobool passes a native boolean through unchanged
+true,0,0,q,0D00:00:10~.m.di.0torq.0proc.0wdb.astimespan "10",1,,astimespan reads a string of digits as seconds, like a number
+true,0,0,q,0D00:00:10~.m.di.0torq.0proc.0wdb.astimespan "0D00:00:10",1,,astimespan parses timespan text
+true,0,0,q,0D00:00:10~.m.di.0torq.0proc.0wdb.astimespan 10,1,,astimespan reads a number as seconds
 
 fail,0,0,q,.m.di.0torq.0proc.0wdb.tolong "not-a-number",1,,tolong rejects unparseable text rather than returning null (a null period silently busy-loops di.timer)
 fail,0,0,q,.m.di.0torq.0proc.0wdb.tolong "",1,,tolong rejects an empty string
@@ -31,6 +34,8 @@ comment,,,,,,,end to end - a spawned process answers .u.subdetails as the ticker
 run,0,0,q,"system ""l di/torq/proc/wdb/test.q""",1,,load fixture helpers
 run,0,0,q,setup[],1,,fixture dirs and the fake tickerplant
 true,0,0,q,defaultmode[],1,,default writedown: flushed, sorted into the hdb with p# on sym, working partition gone
+true,0,0,q,100h=type get `.u.end,1,,.u.end is defined at root as the end of day entry point
+true,0,0,q,98h=type .m.di.0torq.0proc.0wdb.sortparams[],1,,sortparams is always a table so the sort.csv checks can query it
 true,0,0,q,partbyattr`part,1,,partbyattr merged by whole partition
 true,0,0,q,partbyattr`col,1,,partbyattr merged column by column
 true,0,0,q,partbyattr`hybrid,1,,partbyattr merged by the hybrid method

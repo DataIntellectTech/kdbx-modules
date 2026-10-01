@@ -32,9 +32,6 @@ raiseerror:{[ctx;msg]
   '"di.torq.servers: ",string[ctx],": ",msg;
   };
 
-/ a timespan, a "0D00:00:10" string or a number of seconds (TOML has no timespan type)
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
-
 init:{[deps]
   / wire deps and config, publish the legacy root names, register the .z.pc observer and timer jobs once
   if[99h<>type deps;
@@ -64,8 +61,6 @@ init:{[deps]
   @[value;`.servers.SERVERS;{set[`.servers.SERVERS;([]procname:`symbol$();proctype:`symbol$();hpup:`symbol$();w:`int$();hits:`int$();startp:`timestamp$();lastp:`timestamp$();endp:`timestamp$();attributes:())]}];
   / trackservers.q l.13-28
   {[deps;k] set[first .z.m.settings k;$[k in key deps;deps k;last .z.m.settings k]]}[deps] each key .z.m.settings;
-  .servers.RETRY:totimespan .servers.RETRY;
-  .servers.DISCOVERYRETRY:totimespan .servers.DISCOVERYRETRY;
   set[`.servers.NONTORQPROCESSFILE;$[`nontorqprocessfile in key deps;hsym deps`nontorqprocessfile;hsym `$("/" sv -1_"/" vs .z.m.processcsv),"/nontorqprocess.csv"]];
   / dotz.q l.8
   set[`.dotz.liveh;{x in key .z.W}];

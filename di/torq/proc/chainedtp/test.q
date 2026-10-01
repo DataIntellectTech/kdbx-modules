@@ -1,4 +1,4 @@
-/ test helpers: recording mocks, a real upstream (segmented tickerplant surface) and a real downstream subscriber
+/ test helpers: recording mocks, a real upstream (di tickerplant surface) and real downstream subscribers
 
 logrows:([]lvl:`symbol$();ctx:`symbol$();msg:())
 mocklog:`info`warn`error!({[c;m]`logrows upsert(`info;c;m)};{[c;m]`logrows upsert(`warn;c;m)};{[c;m]`logrows upsert(`error;c;m)})
@@ -15,19 +15,15 @@ isfree:{[p] not @[{hclose hopen x;1b};(`$":localhost:",string p;100);0b]}
 waitlisten:{[p] d:.z.p+0D00:00:03; while[(.z.p<d) and isfree p; system "sleep 0.05"]; not isfree p}
 UPPORT:0N; DNPORT:0N; DSPORT:0N; uh:0N; dh:0N; sh:0N
 
-/ upstream answers .sub.subscribe as a segmented tickerplant; downstream records upd and endofday
+/ upstream answers .u.subdetails as a di tickerplant; downstream records upd and endofday
 setupfixture:{[]
   system "rm -rf ",FIXDIR; system "mkdir -p ",FIXDIR;
   (`$":",FIXDIR,"/up.q") 0: (
-    "tptype:`segmented";
     "trade:([]time:`timestamp$();sym:`g#`symbol$();price:`float$())";
-    "tablelist:{enlist`trade}";
     ".u.d:",string D;
-    "subdetails:{[t;s] `schemalist`logfilelist`rowcounts`date`logdir!(enlist(`trade;0#trade);();(enlist`trade)!enlist 0;.u.d;`:",FIXDIR,")}";
-    "/ compat: di tickerplant surface";
     ".u.subdetails:{[t;s] `tables`schemas`logfile`rowcount`date!(enlist`trade;enlist[`trade]!enlist 0#trade;`;0;.u.d)}");
   (`$":",FIXDIR,"/down.q") 0: ("got:()";"ended:()";"upd:{[t;x] got::got,enlist(t;x)}";"endofday:{ended::ended,x}");
-  / compat: a di.subscriptions subscriber
+  / a di.subscriptions subscriber
   (`$":",FIXDIR,"/dsub.q") 0: (
     "subs:use`di.subscriptions";
     "nolog:`info`warn`error!3#{[c;m]}";

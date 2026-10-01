@@ -8,4 +8,4 @@
 / BOTH the file (pre-load manifest walk) and this export (post-load session audit).
 version:first read0`:::VERSION
 
-export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;version])
+export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;gc;version])

@@ -1,0 +1,111 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tlr:use`di.torq.proc.tickerlogreplay,1,,load module
+before,0,0,q,"system ""l di/torq/proc/tickerlogreplay/test.q""",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,write the schema and a plain log; run a segmentedtp to write segmented logs
+
+comment,,,,,,,settings
+true,0,0,q,"(0;1b;1b;0W;0W;enlist`all;`date;1b;1b;0b;1b;0b;1b;1b;`;0b;`part)~.replay`firstmessage`segmentedmode`autoreplay`lastmessage`messagechunks`tablelist`partitiontype`emptytables`sortafterreplay`basicmode`exitwhencomplete`checklogfiles`gc`clean`sortcsv`partandmerge`mergemethod",1,,replay defaults
+true,0,0,q,`:tempmergedir~.replay.tempdir,1,,tempdir default
+true,0,0,q,all `NT`Fex`pth`deldir`md in key .os,1,,os helpers defined
+true,0,0,q,all `savedownmanipulation`manipulate`postreplay in key .save,1,,save helpers defined
+fail,0,0,q,"tlr.init[()!();()!()]",1,,init without log must error
+
+comment,,,,,,,plain log
+true,0,0,q,0=replay sect plain "()!()",1,,a full replay exits 0
+true,0,0,q,(3;1)~(rows[D;`trade];rows[D;`quote]),1,,every message replayed into a date partition
+true,0,0,q,`a`b`c~syms[D;`trade],1,,the default sort csv sorts by sym
+true,0,0,q,`p~attr hdb[D;`trade]`sym,1,,and applies p# to sym
+true,0,0,q,"logged ""*replayed data into tables with the following counts: trade = 3; quote = 1*""",1,,table counts logged
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect plain "enlist[`tablelist]!enlist enlist`trade",1,,replay one table
+true,0,0,q,(3;0)~(rows[D;`trade];rows[D;`quote]),1,,other tables are not saved
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect plain "`firstmessage`lastmessage!1 1",1,,replay message 1 only
+true,0,0,q,(0;1)~(rows[D;`trade];rows[D;`quote]),1,,only the quote message replayed; trade saved empty
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect plain "enlist[`messagechunks]!enlist 1",1,,save every message
+true,0,0,q,(3;1)~(rows[D;`trade];rows[D;`quote]),1,,chunked saves append
+true,0,0,q,"logged ""*has been exceeded.  Saving down*""",1,,chunk saves logged
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect plain "enlist[`messagechunks]!enlist -1",1,,negative chunks only track
+true,0,0,q,(3;1)~(rows[D;`trade];rows[D;`quote]),1,,tables saved at the end
+true,0,0,q,"logged ""*Total message count so far is 3*""",1,,progress logged
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect plain "enlist[`basicmode]!enlist 1b",1,,basic mode
+true,0,0,q,(3;1)~(rows[D;`trade];rows[D;`quote]),1,,saved with .Q.hdpf
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect plain ""enlist[`sortcsv]!enlist "",hp""timesort.csv""",1,,replay with a sort csv
+true,0,0,q,(`b`a`c;`)~(syms[D;`trade];attr hdb[D;`trade]`sym),1,,the sort csv sorts by time with no attribute
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect plain ""enlist[`compression]!enlist 17 2 6""",1,,replay with compression
+true,0,0,q,"0<count -21!fp""hdb/"",D,""/trade/price""",1,,columns written compressed
+
+comment,,,,,,,clean
+run,0,0,q,"(fp""hdb/"",D,""/junk/"") set ([]a:1 2)",1,,a table not in the log
+true,0,0,q,0=replay sect plain "()!()",1,,replay
+true,0,0,q,"not `junk in key fp[""hdb/"",D]",1,,clean deleted the partition first
+run,0,0,q,"(fp""hdb/"",D,""/junk/"") set ([]a:1 2)",1,,
+true,0,0,q,"0=replay sect plain ""enlist[`clean]!enlist 0b""",1,,replay without clean
+true,0,0,q,"`junk in key fp[""hdb/"",D]",1,,the partition was kept
+
+comment,,,,,,,overrides set before use
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replayp[(""`.replay.savedownmanipulation set enlist[`trade]!enlist {update price:2*price from x}"";""`.replay.postreplay set {[d;p] ("",hp[""post""],"") set p}"");sect plain ""()!()""]",1,,replay with savedownmanipulation and postreplay
+true,0,0,q,2 4 8f~asc hdb[D;`trade]`price,1,,the manipulation ran before saving
+true,0,0,q,"(""D""$D)~get fp""post""",1,,postreplay ran with the partition
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replayp[enlist""`.replay.upd set {[t;x] if[t~`trade;insert[t;x]]}"";sect plain ""()!()""]",1,,replay with an upd override
+true,0,0,q,(3;0)~(rows[D;`trade];rows[D;`quote]),1,,the upd override decided what was inserted
+
+comment,,,,,,,checks at init
+true,0,0,q,"1=replay sect plain ""enlist[`schemafile]!enlist`""",1,,a null schemafile exits 1
+true,0,0,q,"logged ""*Variable .replay.schemafile is null but must be set*""",1,,and says which
+true,0,0,q,"1=replay sect plain ""enlist[`partitiontype]!enlist`int""",1,,an unknown partitiontype exits 1
+true,0,0,q,"2=replay sect plain ""enlist[`messagechunks]!enlist 0""",1,,zero messagechunks exits 2
+true,0,0,q,"1=replay sect plain ""`basicmode`messagechunks!(1b;2)""",1,,basic mode with chunks exits 1
+true,0,0,q,"2=replay sect plain ""enlist[`schemafile]!enlist "",hp""nosuch.q""",1,,a bad schema file exits 2
+true,0,0,q,"1=replay sect plain ""`partandmerge`tempdir!(1b;"",hp[""hdb""],"")""",1,,partandmerge into the hdb exits 1
+true,0,0,q,"3=replay sect plain ""enlist[`tplogdir]!enlist "",hp""stp""",1,,a log file and a log directory together signal
+true,0,0,q,"logged ""*Can't pass in log file and directory.*""",1,,and log why
+
+comment,,,,,,,partandmerge
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect plain ""`partandmerge`tempdir`mergemethod!(1b;"",hp[""tmp""],"";`part)""",1,,merge by partition
+true,0,0,q,(3;1;`p)~(rows[D;`trade];rows[D;`quote];attr hdb[D;`trade]`sym),1,,merged with p# on sym
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect plain ""`partandmerge`tempdir`mergemethod!(1b;"",hp[""tmp""],"";`col)""",1,,merge by column
+true,0,0,q,(3;1;`p)~(rows[D;`trade];rows[D;`quote];attr hdb[D;`trade]`sym),1,,merged with p# on sym
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect plain ""`partandmerge`tempdir`mergemethod!(1b;"",hp[""tmp""],"";`hybrid)""",1,,hybrid merge
+true,0,0,q,(3;1;`p)~(rows[D;`trade];rows[D;`quote];attr hdb[D;`trade]`sym),1,,merged with p# on sym
+true,0,0,q,"0=count key fp""tmp""",1,,the temp partition was removed
+
+comment,,,,,,,segmented logs
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect seg "()!()",1,,replay a segmentedtp log directory
+true,0,0,q,(3;1)~(rows[SD;`trade];rows[SD;`quote]),1,,every table replayed into the logs' date
+true,0,0,q,`a`b`c~syms[SD;`trade],1,,sorted by sym
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect seg "enlist[`tablelist]!enlist enlist`quote",1,,replay one table
+true,0,0,q,(0;1)~(rows[SD;`trade];rows[SD;`quote]),1,,only its logs are read from stpmeta
+true,0,0,q,"replayed ""stp1_quote""",1,,the quote log only
+true,0,0,q,"not replayed ""stp1_trade""",1,,
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,0=replay sect seg "enlist[`firstmessage]!enlist 5",1,,the firstmessage check in segmented mode does not exit
+true,0,0,q,"3=replay sect seg ""enlist[`tplogdir]!enlist "",hp""mixed""",1,,logs from two dates signal
+true,0,0,q,"logged ""*Cannot replay logs from different dates in segmented mode!*""",1,,and log why
+true,0,0,q,"3=replay sect seg ""enlist[`tplogfile]!enlist "",hp""tplog"",D",1,,a log file in segmented mode signals
+run,0,0,q,"system ""cp -r "",STPDIR,"" "",FIXDIR,""/bad""",1,,copy the logs
+run,0,0,q,"{f 1: -5_read1 f:fp""bad/"",string x} first k where (k:key fp""bad"") like ""stp1_trade*""",1,,truncate the trade log
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect seg ""`tplogdir`checklogfiles!("",hp[""bad""],"";1b)""",1,,replay checking the logs
+true,0,0,q,(2;1)~(rows[SD;`trade];rows[SD;`quote]),1,,the good trade messages replayed
+true,0,0,q,"any (key fp""bad"") like ""*.good""",1,,from a good copy of the log
+
+comment,,,,,,,checklogfiles on a plain log
+run,0,0,q,"fp[""bad"",D] 1: -5_read1 fp[""tplog"",D]",1,,truncate a copy of the plain log
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect plain ""`tplogfile`checklogfiles!("",hp[""bad"",D],"";1b)""",1,,replay checking the log
+true,0,0,q,"(2;1)~(count get fp""hdb/trade/"";count get fp""hdb/quote/"")",1,,the good log's name has no date; tables are saved at the hdb root
+
+after,0,0,q,teardownfixture[],1,,remove the fixture

@@ -81,10 +81,12 @@ expects.
 
 ### Process-type dispatch
 
-A small built-in registry maps proctype → module name:
+A built-in registry maps proctype → module name, `` `x → `di.torq.proc.x `` for each of `hdb`,
+`tickerplant`, `rdb`, `wdb`, `gateway`, `idb`, `segmentedtp`, `chainedtp`, `housekeeping`, `discovery`
+and `tickerlogreplay`:
 
 ```q
-builtin:(enlist`hdb)!enlist`di.torq.proc.hdb
+builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery`tickerlogreplay!`di.torq.proc.hdb`di.torq.proc.tickerplant ...
 ```
 
 If `proctype` is in `builtin`, `startbuiltin` `use`-loads that module and calls its
@@ -292,11 +294,6 @@ freshly-started process. tmux mode is for local development; production stays on
 - **Query logging (`[querylog]`) wraps `.z.*` by direct assignment.** If a phased event's `exec`
   is claimed after startup, logging for that event silently drops to zero with no error. See
   [Query logging](#query-logging-optional).
-- The builtin registry has exactly one entry (`` `hdb ``) so far - every other
-  proctype in a real deployment would be custom, until more `di.*` process-type
-  modules exist.
-- No `di.torq.depcheck`-style pre-flight dependency validation yet (next up per the
-  modularisation plan).
 - `autodetect`'s host-matching has no `-procfile` override and no FinSpace-specific
   host handling - deliberately out of scope, same scoping-down `di.torq.servers` applies
   to its own `process.csv` reading.

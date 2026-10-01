@@ -1,7 +1,7 @@
 / di.torq.servers live-peer integration test helpers (loaded by test.csv).
 / recording mock deps + a genuinely separate spawned q peer: hopen to a port THIS process is
 / listening on returns a pseudo-handle 0 and never exercises real disconnect/retry/cleanup, so we
-/ spawn a real peer (the licensed q via QHOME) to dial.
+/ spawn a real peer to dial.
 
 / --- recording mock dependencies ---
 logrows:([]lvl:`symbol$();ctx:`symbol$();msg:());
@@ -31,6 +31,7 @@ firejob:{[id] timerjobs[id][]};
 
 / --- real peer process fixture ---
 FIXDIR:"/tmp/diserverstest";
+QBIN:first system "readlink -f /proc/",(string .z.i),"/exe";
 isfree:{[p] not @[{hclose hopen x;1b};(`$":localhost:",string p;100);0b]};
 pickport:{[start] first (start+til 500) where isfree each start+til 500};
 PEERPORT:0N; DEADPORT:0N; PEERPID:0N;
@@ -41,9 +42,9 @@ waitlisten:{[port;timeoutms]
   not isfree port};
 
 spawnpeer:{[]
-  / launch the licensed q (via QHOME) as a detached listener; wait until it accepts connections,
+  / launch q as a detached listener; wait until it accepts connections,
   / then grab its pid over IPC (.z.i) for an exact-pid kill later.
-  system (getenv[`QHOME]),"/bin/q -p ",string[PEERPORT]," -q </dev/null >/dev/null 2>&1 &";
+  system QBIN," -p ",string[PEERPORT]," -q </dev/null >/dev/null 2>&1 &";
   if[not waitlisten[PEERPORT;3000];'"test: peer failed to listen on ",string PEERPORT];
   h:hopen (`$":localhost:",string PEERPORT;2000);
   PEERPID::h ".z.i";
@@ -67,7 +68,6 @@ setupfixture:{[]
 teardownfixture:{[] killpeer[]; killdisc[]; system "rm -rf ",FIXDIR;};
 
 / --- discovery-later fixture: a discovery stub naming one tpproc peer, started after startup ---
-QBIN:first system "readlink -f /proc/",(string .z.i),"/exe";
 DISCPORT:0N; TPPORT:0N; DISCPIDS:`long$();
 
 / add a discovery row to process.csv, write the stub, and bind the .z.pc that addprocs calls

@@ -30,6 +30,7 @@ supplies the discovery process's values.
 
 | key | global | trackservers.q default |
 |---|---|---|
+| `enabled` | `.servers.enabled` | `1b` — gates the `discoveryretry`/`serversretry` timer jobs |
 | `connections` | `.servers.CONNECTIONS` | `` ` `` |
 | `discoveryregister` | `.servers.DISCOVERYREGISTER` | `1b` |
 | `connectionsfromdiscovery` | `.servers.CONNECTIONSFROMDISCOVERY` | `1b` |

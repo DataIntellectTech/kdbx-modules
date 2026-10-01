@@ -138,6 +138,14 @@ t:`
 subrequestall:enlist[`]!enlist ()
 subrequestfiltered:([]tbl:`$();handle:`int$();filts:();columns:())
 
+endp:{
+  (neg allsubhandles[])@\:(`endofperiod;x;y;z);
+ };
+
+end:{
+  (neg allsubhandles[])@\:(`endofday;x;y);
+ };
+
 allsubhandles:{
   distinct raze union/[value subrequestall;exec handle from .stpps.subrequestfiltered]
   };
@@ -184,6 +192,11 @@ pub:{[t;x]
     ];
    };
 
+pubclear:{
+ .stpps.pub'[x;value each x,:()];
+ @[`.;x;:;.stpps.schemasnoattributes[x]];
+ }
+
 delhandle:{[t;h]
   @[`.stpps.subrequestall;t;except;h];
  };
@@ -198,6 +211,11 @@ closesub:{[h]
  };
 
 extractschema:{t:value x; $[.Q.qp t; t; 0#t]};
+
+attrstrip:{[t]
+  {@[x;cols x;`#]} each .stpps.t:t;
+  .stpps.schemasnoattributes:.stpps.t!extractschema each .stpps.t;
+ };
 
 init:{[t]
   if[count b:t where not t in tables[];{.z.m.log[`error][`psinit;m:"Table ",string[x]," does not exist"];'m} each b];
@@ -217,8 +235,35 @@ init:{[t]
   $[y~`;.stpps.suball[x];.stpps.subfiltered[x;y]]
  };
 
+.u.pub:.stpps.pub
+
 .ps.loaded:1b;
 .ps.publish:.stpps.pub;
 .ps.subscribe:.u.sub;
 .ps.init:.stpps.init;
 .ps.initialise:{.ps.init[tables[]];.ps.initialised:1b};
+
+.ps.subtable:{[tab;syms]
+  .z.m.log[`info][`subtable;"Received a subscription to ",$[count tab;tab;"all tables"]," for ",$[count syms;syms;"all syms"]];
+  val:.u.sub[`$tab;$[count syms;::;first] `$csv vs syms];
+  $[10h~type last val;'last val;val]
+ };
+
+.ps.subtablefiltered:{[tab;filters;columns]
+  .z.m.log[`info][`subtablefiltered;"Received a subscription to ",$[count tab;tab;"all tables"]," for filters: ",filters," and columns: ",columns];
+  val:.u.sub[`$tab;1!enlist `tabname`filters`columns!(`$tab;filters;columns)];
+  $[10h~type last val;'last val;val]
+ };
+
+.ds.map:{[numseg;sym] sym!(sum each string sym)mod numseg};
+
+.ds.subreq:(`u#`$())!`int$();
+
+.ds.stripe:{[input;skey]
+  if[0=count input;:`boolean$()];
+  if[0N in val:.ds.subreq input;
+    .ds.subreq,:.ds.map[.ds.numseg;distinct input where null val];
+    val:.ds.subreq input;
+  ];
+  skey=val
+ };

@@ -1,89 +1,93 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,st:use`di.torq.proc.segmentedtp,1,,load module
-before,0,0,q,system "l di/torq/proc/segmentedtp/test.q",1,,load fixture helpers
-before,0,0,q,setupfixture[],1,,create temp fixture dirs plus schema and custom csv files
+before,0,0,q,seg:use`di.torq.proc.segmentedtp,1,,load module
+before,0,0,q,"system ""l di/torq/proc/segmentedtp/test.q""",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,start the tickerplant peers
+before,0,0,q,"`ha`hb`hc`hs`hp set' peer each PORTS`a`b`c`s`p",1,,connect to the peers
 
-comment,,,,,,,exports and api metadata
-true,0,0,q,(asc (key st) except `init`getapimeta`version)~asc exec name from st.getapimeta[],1,,getapimeta documents exactly the callable exports (plumbing and version omitted)
-true,0,0,q,not any `init`getapimeta in exec name from st.getapimeta[],1,,framework plumbing is not registered in the api
-true,0,0,q,`name`public`descrip`params`return~cols st.getapimeta[],1,,getapimeta rows carry the registry columns
-true,0,0,q,versionok[],1,,version is exported (di.torq.depcheck reads it there) and holds a clean major.minor.patch
+comment,,,,,,,init and settings
+fail,0,0,q,"seg.init[()!();()!()]",1,,init without log must error
+fail,0,0,q,"seg.init[()!();enlist[`log]!enlist nolog]",1,,init without timer must error
+fail,0,0,q,"seg.init[()!();`log`timer!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]})]",1,,init without handlers must error
+true,0,0,q,"(`tabperiod;0D01;1b;`defaultbatch;`day;`)~.stplg`multilog`multilogperiod`errmode`batchmode`replayperiod`customcsv",1,,stplg defaults
+true,0,0,q,"(0b;`none;`stp1;10;0W;`;`;0b;1b)~.sctp`chainedtp`loggingmode`tickerplantname`tpconnsleep`tpcheckcycles`subscribeto`subscribesyms`replay`schema",1,,sctp defaults
+true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperiod""",1,,a stplg section overrides the defaults; singular rolls daily
+true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
+true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered
+true,0,0,q,"`stplg in ha""exec name from h.list`.z.exit""",1,,.z.exit observer registered
 
-comment,,,,,,,init - dependency and config validation (each asserts the error names the reason; bad schema first while root holds no schema tables)
-true,0,0,q,initbadschema[],1,,a schema with no time/sym table fails init
-true,0,0,q,initnotdict[],1,,deps that are not a dict are rejected
-true,0,0,q,initnolog[],1,,a missing log dependency is rejected
-true,0,0,q,initnotimer[],1,,a missing timer dependency is rejected
-true,0,0,q,initnohandlers[],1,,a missing handlers dependency is rejected
-true,0,0,q,initlogkeys[],1,,a log dependency without an error function is rejected
-true,0,0,q,initnokdbtplog[],1,,kdbtplog is required
-true,0,0,q,"initrejects[`multilog;`hourly;""multilog must be one of""]",1,,an unrecognised multilog fails init (fix 8)
-true,0,0,q,"initrejects[`batchmode;`sometimes;""batchmode must be one of""]",1,,an unrecognised batchmode fails init (fix 8)
-true,0,0,q,"initrejects[`replayperiod;`prior;""replayperiod must be one of""]",1,,an unrecognised replayperiod fails init - prior was never implemented (fix 8)
-true,0,0,q,badmsgnames[],1,,each fix 8 error names the setting at fault
-true,0,0,q,"initrejects[`multilogperiod;0D;""multilogperiod must be""]",1,,a non-positive multilogperiod fails init
-true,0,0,q,"initrejects[`tickinterval;0;""tickinterval must be""]",1,,a non-positive tickinterval fails init
-true,0,0,q,fix7[],1,,an init that threw part-way is not treated as initialised and the retry registers once with no leaked handle (fix 7)
-true,0,0,q,reinit[],1,,a second init tears down first and leaves one job and one handler and one open handle per file
-true,0,0,q,defaults[],1,,every config default reached module state
-true,0,0,q,jobok[],1,,the tick job is scheduled every tickinterval seconds in mode 1 under the module's own id and survives a failing run
-true,0,0,q,tickprotected[],1,,a throw inside the tick job is caught and logged rather than propagated to di.timer
-true,0,0,q,stringconfig[],1,,string and numeric settings (toml / command line) are parsed into the right types
-true,0,0,q,handlerok[],1,,.z.exit and pubsub closesub on .z.pc are registered through the handlers dependency as simple events
-true,0,0,q,forced[],1,,singular and tabular force a daily period and custom does not
-true,0,0,q,tzconfigok[],1,,rolltimezone / datatimezone / rolltimeoffset settings reach di.eodtime and init succeeds
-true,0,0,q,tzstringok[],1,,a string rolltimeoffset is parsed and an unparseable one is dropped with a warning - never silently
-true,0,0,q,prefixok[],1,,logprefix defaults to the process name from config and an explicit logprefix still wins
-true,0,0,q,prefixempty[],1,,an empty logprefix is rejected
-true,0,0,q,logdictwiring[],1,,init wires from di.util.log's logdict joined with the other deps
+comment,,,,,,,subscribe handshake
+true,0,0,q,"`segmented~ha""tptype""",1,,tptype is segmented
+true,0,0,q,"`quote`trade~ha""tablelist[]""",1,,tablelist is the published tables
+run,0,0,q,"r:subto[ha;`stp1;`;`]",1,,subscribe to all tables through .sub
+true,0,0,q,"all `trade`quote in tables[]",1,,schemas defined here
+true,0,0,q,"(`quote`trade;`$FIXDIR,""/a"";.z.d)~r`subtables`logdir`d",1,,subtables logdir and date returned
+true,0,0,q,"`schemalist`logfilelist`rowcounts`date`logdir~key ha""subdetails[enlist`trade;`]""",1,,subdetails keys
+true,0,0,q,"ha"".z.w in .stpps.subrequestall`trade""",1,,this handle subscribed to trade
 
-comment,,,,,,,log naming modes
-true,0,0,q,nameok[`tabperiod],1,,tabperiod opens one log per table stamped with the period start
-true,0,0,q,nameok[`tabular],1,,tabular opens one log per table stamped with the day start
-true,0,0,q,nameok[`singular],1,,singular opens one shared log stamped with the day start
-true,0,0,q,nameok[`periodic],1,,periodic opens one shared log stamped with the period start
-true,0,0,q,sharedhandle[],1,,tables in a singular log share one handle
-true,0,0,q,customnames[],1,,custom opens logs under each table's own mode
+comment,,,,,,,defaultbatch
+run,0,0,q,"ha(`.u.upd;`trade;trd`a`b)",1,,send two trades
+true,0,0,q,"(2;0)~(ha""count trade"";count got)",1,,held in memory and not yet published
+true,0,0,q,"1=logcount ha""currlog[`trade;`logname]""",1,,written to the log immediately
+true,0,0,q,"(`trade;1;0)~ha""(first key .stplg.tmpmsgcount;.stplg.tmpmsgcount`trade;.stplg.msgcount`trade)""",1,,counted as pending
+run,0,0,q,"ha"".z.ts .z.p""",1,,timer
+true,0,0,q,"(1;`trade)~(count got;first first got)",1,,published on the timer
+true,0,0,q,"(`time`sym`price`size;`a`b)~(cols last first got;exec sym from last first got)",1,,time added and rows intact
+true,0,0,q,"(0;1;2;0)~ha""(count trade;.stplg.msgcount`trade;.stplg.rowcount`trade;count .stplg.tmpmsgcount)""",1,,table cleared and counts moved
+true,0,0,q,"(string ha""currlog[`trade;`logname]"") like ""*/stp1_"",(string .z.d),""/stp1_trade2*""",1,,tabperiod log name
+true,0,0,q,"(1;2)~(ha"".stplg.i+1"";count get `$(string ha"".stplg.dldir""),""/stpmeta"")",1,,stpmeta on disk holds a row per table
+true,0,0,q,"(1;ha""currlog[`trade;`logname]"")~first ha"".stplg.replaylog`trade""",1,,day replay lists the live log and its count
 
-comment,,,,,,,batch modes and updates
-true,0,0,q,immediateok[],1,,immediate logs and publishes every update
-true,0,0,q,defaultok[],1,,defaultbatch logs straight away and publishes on the flush with counts pending until then
-true,0,0,q,memoryok[],1,,memorybatch buffers then logs the whole buffer as one message on the flush
-true,0,0,q,stampok[],1,,updates are timestamped unless already stamped and table and multi-table messages are accepted
-true,0,0,q,stringtablename[],1,,a string table name from a feed is accepted as the symbol
-true,0,0,q,errmodeok[],1,,errmode diverts failed updates to the error log as upderr messages
-true,0,0,q,noerrmode[],1,,without errmode an update for an unknown table throws back to the feed
-true,0,0,q,nologsok[],1,,createlogs off publishes and counts without opening any log (fix 9)
-true,0,0,q,unlistedok[],1,,a custom-mode table missing from the csv publishes without a log (fix 9)
+comment,,,,,,,error mode
+run,0,0,q,"ha(`.u.upd;`trade;(`a;""bad""))",1,,send a bad update
+true,0,0,q,"(`upderr;`trade)~2#first get ha""currlog[`segmentederrorlogfile;`logname]""",1,,the bad update goes to the error log
 
-comment,,,,,,,corruption / roll guard / error log / metatable / replay lists
-true,0,0,q,fix1[],1,,a corrupt log is never opened blind - its good prefix is kept in .good and used across restarts (fix 1)
-true,0,0,q,shortfile[],1,,a log truncated inside its header is recovered as an empty .good instead of throwing at init
-true,0,0,q,fix2[],1,,a period guard trip disables only this module's timer job and the next good roll re-enables it (fix 2)
-true,0,0,q,fix3[],1,,a day roll closes the old error log's file descriptor along with every table log (fix 3)
-true,0,0,q,fix4resume[],1,,a restart after an unclean exit resumes the same segment rows instead of repeating them (fix 4)
-true,0,0,q,fix4orphan[],1,,an open row for a file not reopened is closed with a null message count (fix 4)
-true,0,0,q,fix5[],1,,the period replay list has one pair per physical file counting every table in it (fix 5)
-true,0,0,q,fix6[],1,,custom mode writes one metatable row per physical file - shared for singular (fix 6)
+comment,,,,,,,immediate and singular
+run,0,0,q,"got:(); r2:subto[hb;`stp2;`trade;`b]",1,,subscribe to trade for sym b
+run,0,0,q,"hb(`.u.upd;`trade;trd`a`b)",1,,send trades for a and b
+true,0,0,q,"(1;enlist`b)~(count got;exec sym from last first got)",1,,published immediately and filtered to b
+true,0,0,q,"(0;1;2)~hb""(count trade;.stplg.msgcount`trade;.stplg.rowcount`trade)""",1,,nothing held; counts updated
+true,0,0,q,"1=count distinct hb""exec logname from currlog where tbl in `trade`quote""",1,,one log for all tables
+true,0,0,q,"(string hb""currlog[`trade;`logname]"") like ""*/stp2_2*""",1,,singular log name
+run,0,0,q,"got:(); hb"".u.sub[`quote;1!([]tbl:enlist`quote;filters:enlist\""bid>1\"";columns:enlist\""sym,bid\"")]""; hb(`.u.upd;`quote;(`a`b;1 2f))",1,,filtered subscription with where and columns
+true,0,0,q,"(`sym`bid;enlist`b)~(cols last first got;exec sym from last first got)",1,,only matching rows and columns published
 
-comment,,,,,,,period and day rolls
-true,0,0,q,periodroll[],1,,end of period closes the segment and rolls to a new file and notifies subscribers and lists the day
-true,0,0,q,dayroll[],1,,end of day notifies subscribers and moves to the next day's directory and closes every segment
+comment,,,,,,,memorybatch and tabular
+run,0,0,q,"hc(`.u.upd;`trade;trd`a`b)",1,,send two trades
+true,0,0,q,"(2;0)~(hc""count trade"";logcount hc""currlog[`trade;`logname]"")",1,,held in memory and not logged
+run,0,0,q,"hc"".z.ts .z.p""",1,,timer
+true,0,0,q,"(0;1;1;2)~(hc""count trade"";logcount hc""currlog[`trade;`logname]"";hc"".stplg.msgcount`trade"";hc"".stplg.rowcount`trade"")",1,,logged and counted on the timer
+true,0,0,q,"(string hc""currlog[`trade;`logname]"") like ""*/stp3_trade2*""",1,,tabular log name
 
-comment,,,,,,,subscriber surface / custom mode / lifecycle
-true,0,0,q,subdetailsok[],1,,subdetails returns schemas and replay pairs and rowcounts and date and logdir
-true,0,0,q,subbad[],1,,subdetails for only unknown tables throws
-true,0,0,q,tablelistok[],1,,tablelist returns the publishable tables
-true,0,0,q,readcsvok[],1,,readcustomcsv reads a table/mode csv from a string or symbol path
-true,0,0,q,readcsvmissing[],1,,readcustomcsv rejects a missing file
-true,0,0,q,readcsvbadmode[],1,,readcustomcsv rejects an unrecognised mode
-true,0,0,q,readcsvbadheader[],1,,readcustomcsv rejects a csv without a table/mode header
-true,0,0,q,setcustomok[],1,,setcustommode applies a new layout at runtime and reopens logs under it
-true,0,0,q,setcustomnotcustom[],1,,setcustommode is rejected outside custom mode
-true,0,0,q,setcustomunknown[],1,,setcustommode rejects tables that are not publishable
-true,0,0,q,setcustombadmode[],1,,setcustommode rejects an unrecognised mode
-true,0,0,q,exitok[],1,,a bad exit leaves logs alone and a clean exit flushes and closes them
-true,0,0,q,teardownok[],1,,teardown flushes and closes every file and removes the job and handler
-true,0,0,q,afterteardown[],1,,exported functions and the root upd reject calls after teardown
+comment,,,,,,,chained
+true,0,0,q,"(`quote`trade;1)~hs""(.stpps.t;count select from .sub.SUBSCRIPTIONS where table=`trade,active)""",1,,subscribed to the upstream
+true,0,0,q,"waitfor {2=hs""count trade""}",1,,upstream publish arrives
+true,0,0,q,"1 2~hs""(.stplg.updtab`trade)[1 2;3]""",1,,chained upd adds no time
+run,0,0,q,"hs"".z.ts .z.p""",1,,timer
+true,0,0,q,"(0;1;1)~hs""(count trade;.stplg.msgcount`trade;logcount:{-11!(-2;x)} currlog[`trade;`logname])""",1,,published and logged in create mode
+true,0,0,q,"(string hs""currlog[`trade;`logname]"") like ""*/sctp1_"",(string .z.d),""/sctp1_trade2*""",1,,own log in create mode
+true,0,0,q,"(ha"".stplg.replaylog`trade"")~hp"".stplg.replaylog`trade""",1,,parent mode replays the upstream logs
+true,0,0,q,"hp""all (::)~/:value loghandles""",1,,parent mode writes no logs
 
-after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs
+comment,,,,,,,end of period
+run,0,0,q,"eops:(); ha"".stplg.nextperiod:.z.p-0D00:00:01; .stplg.getnextendUTC[]; .z.ts .z.p""",1,,force the period end
+true,0,0,q,"(1;`proctype`procname`tables`p;`stp1)~(count eops;key last last eops;(last last eops)`procname)",1,,endofperiod sent with process data
+true,0,0,q,"(1;4;0)~ha""(.stplg.i;count .stpm.metatable;.stplg.msgcount`trade)""",1,,logs rolled and counts reset
+true,0,0,q,"(0W;2)~ha""(first first r;count r:.stplg.replaylog`trade)""",1,,day replay lists the closed log as 0W
+true,0,0,q,"1=count ha"".stplg.replayperiod:`period; r:.stplg.replaylog enlist`trade; .stplg.replayperiod:`day; r""",1,,period replay lists the current log only
+true,0,0,q,"waitfor {1=hs"".stplg.i""}",1,,chained create mode rolls its logs
+
+comment,,,,,,,end of day
+run,0,0,q,"eods:(); ha""(use`di.eodtime)[`setnextroll] .z.p-0D00:00:01; .stplg.getnextendUTC[]; .z.ts .z.p""",1,,force the day end
+true,0,0,q,"(1;.z.d;`stp1)~(count eods;first first eods;(last first eods)`procname)",1,,endofday sent with date and process data
+true,0,0,q,"(.z.d+1;`$"":"",FIXDIR,""/a/stp1_"",string .z.d+1;2)~ha""((use`di.eodtime)[`getd][];.stplg.dldir;count .stpm.metatable)""",1,,date advanced and logs reopened
+true,0,0,q,"ha"".z.p<(use`di.eodtime)[`getnextroll][]""",1,,next roll is in the future
+true,0,0,q,"waitfor {(.z.d+1)=hs""(use`di.eodtime)[`getd][]""}",1,,chained passes end of day through
+
+comment,,,,,,,exit
+run,0,0,q,"hc(`.u.upd;`trade;trd`x`y); cm:`$(string hc"".stplg.dldir""),""/stpmeta""; cl:hc""currlog[`trade;`logname]""; @[{neg[x]""exit 0"";neg[x][]};hc;()]",1,,send trades then exit cleanly
+true,0,0,q,"waitfor {not alive PORTS`c}",1,,process exited
+true,0,0,q,"(2;1b)~(logcount cl;all not null exec end from get cm)",1,,memorybatch flushed and logs closed on exit
+run,0,0,q,"@[{neg[x]""exit 0"";neg[x][]};ha;()]",1,,upstream exits
+true,0,0,q,"waitfor {not any alive each PORTS`s`p}",1,,chained processes exit when the upstream is lost
+
+after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

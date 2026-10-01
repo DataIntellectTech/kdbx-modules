@@ -53,7 +53,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 | `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
 | `pubsub.closesub`         | Remove handle upon connection close. Not bound to `.z.pc` by the module - the consumer binds it (see Notes). | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
-| `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas).  |
+| `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas). Takes a deps dict with a required `log`.  |
 ---
 
 ### Example: 
@@ -63,7 +63,7 @@ q).u.sub:pubsub.subscribe
 q).u.pub:pubsub.publish
 
 q)pubsub.setsubtables[`trade`quote]
-q)pubsub.init[]
+q)pubsub.init[enlist[`log]!enlist log]
 
 q)pubsub.subscribe[`;`]
 q)pubsub.subscribe[`;`AAPL`GOOG]
@@ -93,5 +93,5 @@ separate from the API above: `.stpps.t`/`subrequestall`/`subrequestfiltered`, `.
 `delhandle`/`delhandlef`/`closesub`/`extractschema`/`init`, root `.u.sub`, and
 `.ps.loaded`/`publish`/`subscribe`/`init`/`initialise`.
 
-- `init[enlist[`log]!enlist log]` wires its error logging (optional; `init[]` is unchanged).
+- `.stpps` logs its errors through the `log` passed to `init`.
 - The consumer registers `.stpps.closesub` on `.z.pc` through its handlers dependency.

@@ -122,10 +122,9 @@ setsubtables`;
 initialized:0b;
 
 init:{[deps]
-  / optional deps: log
-  if[99h=type deps;
-    if[not `log in key deps;'"di.pubsub: log dependency is required - see di.util.log"];
-    .z.m.log:deps`log];
+  if[99h<>type deps;'"di.pubsub: deps must be a dict with a log key"];
+  if[not `log in key deps;'"di.pubsub: log dependency is required - see di.util.log"];
+  .z.m.log:deps`log;
   .z.m.t:$[count subtables;subtables;tables[]except`reqfilteredtbl];
   .z.m.schemas:t!extractschema each t;
   .z.m.tabcols:t!cols each t;

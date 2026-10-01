@@ -17,7 +17,7 @@ true,0,0,q,300=first exec period from timercalls where id=`serversretry,1,1,retr
 true,0,0,q,3 3~exec mode from timercalls where id in `serversretry`discoveryretry,1,1,both jobs use timer mode 3
 true,0,0,q,1=count select from timercalls where id=`discoveryretry,1,1,init scheduled the discoveryretry job
 true,0,0,q,.servers.enabled,1,1,enabled defaults to 1b
-true,0,0,q,"0~first ""J""$system (getenv[`QHOME]),""/bin/q di/torq/servers/test_enabled.q -q""",1,1,enabled:0b schedules neither retry job
+true,0,0,q,"0~first ""J""$system QBIN,"" di/torq/servers/test_enabled.q -q""",1,1,enabled:0b schedules neither retry job
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,re-init must be idempotent
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,idempotent re-init did NOT add a second retry job
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,idempotent re-init did NOT re-register the pc handler

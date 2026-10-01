@@ -9,7 +9,7 @@ run,0,0,q,h".z.pc:pubsub.closesub",1,,bind closesub to .z.pc on the server (the 
 true,0,0,q,h>0,1,,verify client connected to server
 run,0,0,q,h"trade:([]time:\"p\"$();`g#sym:`$();price:\"f\"$();tsize:\"i\"$());",1,,define trade table on server
 run,0,0,q,h"quote:([]time:\"p\"$();`g#sym:`$();bid:\"f\"$();bidsize:\"i\"$();ask:\"f\"$();asksize:\"i\"$());",1,,define quote table on server
-run,0,0,q,h".m.di.0pubsub.init[]",,
+run,0,0,q,"h"".m.di.0pubsub.init[enlist[`log]!enlist `info`warn`error!3#enlist{[c;m]}]""",1,,init with a no-op log
 true,0,0,q,1b~h".m.di.0pubsub.initialized",1,,confirm server initialized with necessary data
 run,0,0,q,clt:first h"key[.z.W]",1,,get client handle on server
 run,0,0,q,upd:insert,1,,define local upd function
@@ -116,8 +116,9 @@ true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed 
 
 comment,,,,,,,root .stpps/.u.sub/.ps
 true,0,0,q,"h"".ps.loaded""",1,,.ps.loaded is set when the module loads
-run,0,0,q,"h""pubsub.init[enlist[`log]!enlist `info`warn`error!3#enlist{[c;m] `lastlog set (c;m)}]""",1,,wire a recording log through init's optional deps
+run,0,0,q,"h""pubsub.init[enlist[`log]!enlist `info`warn`error!3#enlist{[c;m] `lastlog set (c;m)}]""",1,,wire a recording log through init
 fail,0,0,q,"h""pubsub.init[enlist[`x]!enlist 1]""",1,,init deps without log must error
+fail,0,0,q,"h""pubsub.init[]""",1,,init without deps must error
 run,0,0,q,"h"".ps.initialise[]""",1,,.ps.initialise registers every root table
 true,0,0,q,"h"".ps.initialised""",1,,initialised flag set
 true,0,0,q,"all `trade`quote in h"".stpps.t""",1,,trade and quote are pub/sub tables

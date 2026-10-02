@@ -7,6 +7,8 @@ discoveryregister:0b
 connectionsfromdiscovery:0b
 / whether to track and register non torQ processes throught discovery
 tracknontorqprocess:1b
+/ whether the retry timers run; off, since retry and discoveryretry below are already 0
+enabled:0b
 / how often to retry the connection to the discovery service.  If 0, no connection is made
 discoveryretry:0D
 / new connection time out value in milliseconds

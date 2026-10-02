@@ -1,4 +1,4 @@
-/ Bespoke config for the discovery service - legacy TorQ config/settings/discovery.q (flat keys)
+/ discovery service settings
 / list of connections to make at start up
 connections:`ALL
 / whether to register with the discovery service

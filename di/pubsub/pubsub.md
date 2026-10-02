@@ -53,7 +53,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 | `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
 | `pubsub.closesub`         | Remove handle upon connection close. Not bound to `.z.pc` by the module - the consumer binds it (see Notes). | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
-| `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas).  |
+| `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas). Takes a deps dict with a required `log`.  |
 ---
 
 ### Example: 
@@ -63,7 +63,7 @@ q).u.sub:pubsub.subscribe
 q).u.pub:pubsub.publish
 
 q)pubsub.setsubtables[`trade`quote]
-q)pubsub.init[]
+q)pubsub.init[enlist[`log]!enlist log]
 
 q)pubsub.subscribe[`;`]
 q)pubsub.subscribe[`;`AAPL`GOOG]
@@ -81,6 +81,17 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 ## Notes:
 
 - By default, all tables on top level of the process are available for subscription.
-- The user should define the `.u.sub` and the `.u.pub` functions within the process.
+- Loading the module defines a root `.u.sub` (see below); a process that wants its own `.u.sub`/`.u.pub` sets them after `use`.
 - The module initializes with defined list of tables to subscribe to and fetches their schemas and columns for use. This is done via calling `init` function.
 - The module does **not** bind `closesub` to `.z.pc` itself. A load-time `.z.pc` assignment from a `use`-loaded module replaces whatever the process had already bound - in a `di.torq` process that is the `di.torq.handlers` dispatcher carrying `di.torq.servers`' cleanup hook - so the consumer binds it: `handlers.register[`.z.pc;`;`pubsub;0;pubsub.closesub]` through its injected handlers dependency, or `.z.pc:pubsub.closesub` in a bare process.
+
+## `.stpps`, `.u.sub`, `.ps`
+
+A second pub/sub API at root, in a `\d .stpps` section at the end of `pubsub.q`, with its own state,
+separate from the API above: `.stpps.t`/`subrequestall`/`subrequestfiltered`, `.stpps.allsubhandles`,
+`suball`/`subfiltered`/`add`/`errparse`/`addfiltered`/`selfiltered`/`pub`,
+`delhandle`/`delhandlef`/`closesub`/`extractschema`/`init`, root `.u.sub`, and
+`.ps.loaded`/`publish`/`subscribe`/`init`/`initialise`.
+
+- `.stpps` logs its errors through the `log` passed to `init`.
+- The consumer registers `.stpps.closesub` on `.z.pc` through its handlers dependency.

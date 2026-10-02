@@ -9,7 +9,7 @@ run,0,0,q,h".z.pc:pubsub.closesub",1,,bind closesub to .z.pc on the server (the 
 true,0,0,q,h>0,1,,verify client connected to server
 run,0,0,q,h"trade:([]time:\"p\"$();`g#sym:`$();price:\"f\"$();tsize:\"i\"$());",1,,define trade table on server
 run,0,0,q,h"quote:([]time:\"p\"$();`g#sym:`$();bid:\"f\"$();bidsize:\"i\"$();ask:\"f\"$();asksize:\"i\"$());",1,,define quote table on server
-run,0,0,q,h".m.di.0pubsub.init[]",,
+run,0,0,q,"h"".m.di.0pubsub.init[enlist[`log]!enlist `info`warn`error!3#enlist{[c;m]}]""",1,,init with a no-op log
 true,0,0,q,1b~h".m.di.0pubsub.initialized",1,,confirm server initialized with necessary data
 run,0,0,q,clt:first h"key[.z.W]",1,,get client handle on server
 run,0,0,q,upd:insert,1,,define local upd function
@@ -113,6 +113,32 @@ true,0,0,q,98h~type first res[1],1,,client receives table schema
 run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters
+
+comment,,,,,,,root .stpps/.u.sub/.ps
+true,0,0,q,"h"".ps.loaded""",1,,.ps.loaded is set when the module loads
+run,0,0,q,"h""pubsub.init[enlist[`log]!enlist `info`warn`error!3#enlist{[c;m] `lastlog set (c;m)}]""",1,,wire a recording log through init
+fail,0,0,q,"h""pubsub.init[enlist[`x]!enlist 1]""",1,,init deps without log must error
+fail,0,0,q,"h""pubsub.init[]""",1,,init without deps must error
+run,0,0,q,"h"".ps.initialise[]""",1,,.ps.initialise registers every root table
+true,0,0,q,"h"".ps.initialised""",1,,initialised flag set
+true,0,0,q,"all `trade`quote in h"".stpps.t""",1,,trade and quote are pub/sub tables
+run,0,0,q,"r:h(`.u.sub;`trade;`)",1,,.u.sub for all trade syms
+true,0,0,q,`trade~first r,1,,.u.sub returns the table name
+true,0,0,q,98h~type last r,1,,and its schema
+true,0,0,q,"clt in h"".stpps.subrequestall`trade""",1,,client registered in subrequestall
+run,0,0,q,delete from `trade,1,,clear the local trade table
+run,0,0,q,"h(`.ps.publish;`trade;ntrade)",1,,.ps.publish on the server
+true,0,0,q,ntrade~trade,1,,client received exactly the published rows
+run,0,0,q,"r:h(`.u.sub;`nosuch;`)",1,,subscribe to a table that is not published
+true,0,0,q,`nosuch~first r,1,,.u.sub returns the table name
+true,0,0,q,"(`sub;""Table nosuch not in list of stp pub/sub tables"")~h""lastlog""",1,,and logs the error through the injected log
+run,0,0,q,"r:h(`.u.sub;`quote;enlist`IBM)",1,,sym-filtered subscription (a sym list)
+true,0,0,q,"clt in h""exec handle from .stpps.subrequestfiltered where tbl=`quote""",1,,client registered in subrequestfiltered
+true,0,0,q,"clt in h"".stpps.allsubhandles[]""",1,,allsubhandles includes the client
+run,0,0,q,"h(`.stpps.closesub;clt)",1,,closesub for the client handle
+true,0,0,q,"not clt in h"".stpps.allsubhandles[]""",1,,client removed from both registries
+true,0,0,q,"""Table nosuchtable does not exist""~h""@[.stpps.init;enlist`nosuchtable;{x}]""",1,,init signals on a missing table
+true,0,0,q,"(`psinit;""Table nosuchtable does not exist"")~h""lastlog""",1,,and logs it through the injected log
 
 run,0,0,q,neg[h](exit;0);neg[h](::),1,,close background process and flush
 run,0,0,q,hclose h,1,,close handle

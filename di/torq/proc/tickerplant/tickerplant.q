@@ -139,7 +139,7 @@ init:{[config;deps]
   / which used to replace the di.torq.handlers dispatcher installed moments earlier by di.torq
   .z.m.ps:use`di.pubsub;
   (.z.m.ps`setsubtables)[tabs];
-  (.z.m.ps`init)[];
+  (.z.m.ps`init)[enlist[`log]!enlist .z.m.log];
   (.z.m.handlers`register)[`.z.pc;`;`pubsub;0;.z.m.ps`closesub];
 
   / eodtime: single merged dict (log + tz config)

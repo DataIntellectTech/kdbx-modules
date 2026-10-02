@@ -13,13 +13,16 @@ comment,,,,,,,init - wiring and idempotency
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,init with mock deps + config (dial otherproc and deadproc)
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,init registered its .z.pc observer via the handlers dep
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,init scheduled the retry job via the timer dep
-true,0,0,q,10=first exec period from timercalls where id=`serversretry,1,1,retry period is 10s (di.timer mode-1h period in seconds - guards the old 10000 typo)
+true,0,0,q,300=first exec period from timercalls where id=`serversretry,1,1,retry period is trackservers.q's RETRY 0D00:05 in seconds (di.timer period unit)
+true,0,0,q,3 3~exec mode from timercalls where id in `serversretry`discoveryretry,1,1,both jobs use di.timer mode 3 (legacy .timer.repeat default mode 2 - next run from finish)
+true,0,0,q,1=count select from timercalls where id=`discoveryretry,1,1,init scheduled trackservers.q's discoveryretry job (DISCOVERYRETRY>0)
+true,0,0,q,.servers.enabled,1,1,enabled defaults to 1b
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,re-init must be idempotent
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,idempotent re-init did NOT add a second retry job
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,idempotent re-init did NOT re-register the pc handler
-comment,,,,,,,startup - connect to a live peer and a dead one (self excluded)
+comment,,,,,,,startup - connect to a live peer and a dead one
 run,0,0,q,svc.startup[svrdeps[`otherproc`deadproc]],1,1,open connections to otherproc (live) and deadproc (nothing listening) - connections+processcsv come from the config arg
-true,0,0,q,0=count svc.getservers[`selfproc],1,1,self is excluded even though it is in process.csv
+true,0,0,q,0=count svc.getservers[`selfproc],1,1,selfproc is not in connections so it is not dialled
 true,0,0,q,1=count svc.getservers[`otherproc],1,1,otherproc connected successfully
 true,0,0,q,0=count svc.getservers[`deadproc],1,1,deadproc failed (nothing listening) so it is not live
 true,0,0,q,"warnlogged[""failed to open connection""]",1,1,the failed dial was logged at warn
@@ -29,14 +32,21 @@ true,0,0,q,"2=h ""1+1""",1,1,the handle is a live remote connection to a separat
 comment,,,,,,,cleanup + retry recover an ungraceful kill
 run,0,0,q,killpeer[],1,1,kill the peer ungracefully (handlers are mocked so no auto .z.pc fires)
 run,0,0,q,"@[{h ""1+1""};();{[e]e}]",1,1,touch the dead handle so kdb+ drops it from .z.W (protected - expected to error)
-run,0,0,q,firejob[`serversretry],1,1,fire the retry job (runs cleanup then reopen) exactly as the timer would
-true,0,0,q,0=count svc.getservers[`otherproc],1,1,cleanup marked the dead connection as gone
+run,0,0,q,firejob[`serversretry],1,1,fire the retry job (reopens every row whose handle is not live) exactly as the timer would
+true,0,0,q,0=count svc.getservers[`otherproc],1,1,retry's failed reopen marked the dead connection as gone
 run,0,0,q,spawnpeer[],1,1,bring a fresh peer up on the same port
 run,0,0,q,firejob[`serversretry],1,1,fire retry again - should reconnect now a peer is listening
 true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
 comment,,,,,,,waitfortype - connected vs timeout
 true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
 true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
+comment,,,,,,,waitfortype - discovery comes up after startup
+run,0,0,q,setupdisc[],1,1,add a discovery row to process.csv and write a discovery stub naming a tpproc peer
+run,0,0,q,"svc.init[svrdeps[`tpproc],`discoveryregister`connectionsfromdiscovery!11b]",1,1,re-init taking connections from discovery
+run,0,0,q,svc.startup[svrdeps[`tpproc]],1,1,startup while discovery is down - the discovery row is registered dead
+true,0,0,q,0=count svc.getservers[`discovery],1,1,discovery is not live after startup
+run,0,0,q,spawndisc[],1,1,bring up the tpproc peer then discovery
+true,0,0,q,svc.waitfortype[`tpproc;3000;200],1,1,waitfortype reaches discovery and connects to the tpproc it names
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

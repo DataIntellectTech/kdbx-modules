@@ -40,6 +40,8 @@ true,0,0,q,TESTPROCNAME~r3`proctype,1,,identity resolved for the custom proctype
 true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reached the custom proctype's own settings file
 true,0,0,q,(`handlers`log`servers`timer)~asc key .k4unittestproc.captureddeps,1,,deps (incl injected servers) were passed through to the custom proctype's init exactly like a built-in one
 true,0,0,q,1=.k4unittestproc.runcalled,1,,the .run hook fired automatically after init - no launcher-side proctype knowledge needed
+true,0,0,q,1=.k4unittestproc.deferredcalled,1,,a function queued with .proc.addinitlist ran once after init
+true,0,0,q,()~.proc.initlist,1,,the deferred init list is emptied
 
 run,0,0,q,r5:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with the norun override set (this reloads the proctype file, resetting runcalled to 0)
 true,0,0,q,0=.k4unittestproc.runcalled,1,,-norun skipped the hook - count stayed at 0 instead of incrementing to 1

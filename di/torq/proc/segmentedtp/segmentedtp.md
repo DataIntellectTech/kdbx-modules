@@ -64,6 +64,9 @@ Requires `log`, `timer` and `handlers`. It:
 5. chained: initialises di.subscriptions, waits for the upstream and subscribes; otherwise loads `schemafile`;
 6. strips attributes from the published tables and opens the logs.
 
+Under di.torq, `generateschemas` is queued with `.proc.addinitlist`, so it runs again after di.torq's
+`.ps.initialise[]` and the published tables stay the schema tables.
+
 ## Behaviour to know
 
 - End of period and end of day are checked on each update and each timer tick.

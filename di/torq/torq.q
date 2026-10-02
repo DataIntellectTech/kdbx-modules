@@ -300,6 +300,9 @@ init:{[proctype;procname;overrides]
   / the rolled files too, matching torq.q's own ordering.
   lr:use`di.torq.logroll;
   (lr`init)[config;deps];
+  / init functions a process defers until pubsub and connections are initialised
+  set[`.proc.initlist;()];
+  set[`.proc.addinitlist;{[x] .proc.initlist,:enlist x}];
   $[proctype in key builtin;
     startbuiltin[proctype;config;deps];
     startcustom[proctype;config;deps]
@@ -312,6 +315,8 @@ init:{[proctype;procname;overrides]
   if[@[value;`.ps.loaded;0b];.ps.initialise[]];
   / initialise connections
   if[@[value;`.servers.STARTUP;0b];.servers.startup config];
+  / run deferred init functions
+  if[count .proc.initlist;value each .proc.initlist;.proc.initlist:()];
   / .z.* wrappers: clients, querylog, zpsignore last
   initclients[config;deps];
   / optional query logging - a no-op unless [querylog] enabled=true. LAST of everything that binds .z.*, because

@@ -41,6 +41,8 @@ init:{[config;deps]
   / chained: subscribe to the main STP; otherwise load the schema file
   $[.sctp.chainedtp;.sctp.init[];(`..loadschemas)[]];
   (`..generateschemas)[];
+  / again after di.torq's .ps.initialise, which registers every root table
+  if[`addinitlist in key `.proc;.proc.addinitlist(`generateschemas;`)];
   .stplg.init[string .z.m.procname];
   }
 

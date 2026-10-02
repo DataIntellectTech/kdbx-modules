@@ -131,6 +131,9 @@ already uses for `code/processes/`.
 App code loads **after** the process module's `init` (so it can reference the module's tables and
 state) and **before** the `.run` hook (so an app file may define/override `` .<proctype>.run ``).
 
+After `.ps.initialise[]` and connections, `init` runs any functions a process queued with
+`.proc.addinitlist[(func;arg)]` (`.proc.initlist`), then empties the list.
+
 ### The `.run` post-init hook
 
 After starting the process type and loading app code, `init` calls `runhook[proctype;overrides]`:

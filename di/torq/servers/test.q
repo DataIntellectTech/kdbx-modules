@@ -92,5 +92,5 @@ spawndisc:{[] spawnq["";TPPORT]; spawnq[FIXDIR,"/disc.q";DISCPORT];};
 killdisc:{[] {@[system;"kill ",string x;{}]} each DISCPIDS; DISCPIDS::`long$();};
 
 / build the deps dict di.torq would assemble: injectables + this process's config slice.
-/ discovery off, so startup dials process.csv directly
+/ discovery off, so startup dials process.csv directly (trackservers.q's own defaults are 1b).
 svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv`discoveryregister`connectionsfromdiscovery!(mocklog;mocktimer;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv";0b;0b)};

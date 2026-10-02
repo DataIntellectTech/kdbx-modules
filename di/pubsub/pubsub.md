@@ -88,6 +88,7 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 ## `.stpps`, `.u.sub`, `.ps`
 
 A second pub/sub API at root, in a `\d .stpps` section at the end of `pubsub.q`, with its own state,
+A second pub/sub API at root, in a `\d .stpps` section at the end of `pubsub.q`, with its own state,
 separate from the API above: `.stpps.t`/`subrequestall`/`subrequestfiltered`, `.stpps.endp`/`end`,
 `allsubhandles`, `suball`/`subfiltered`/`add`/`errparse`/`addfiltered`/`selfiltered`/`pub`/`pubclear`,
 `delhandle`/`delhandlef`/`closesub`/`extractschema`/`attrstrip`/`init`, root `.u.sub`/`.u.pub`,

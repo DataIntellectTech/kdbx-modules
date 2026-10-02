@@ -1,0 +1,3 @@
+# Peer modules di.torq.proc.discovery `use`s (see di/torq/depcheck/depcheck.md for the manifest-graph mechanism).
+[dependencies]
+"di.torq.servers" = "0.4.0"       # requires the legacy .servers.* root names (addw, removerows, cleanup, procupdate, autodiscovery)

@@ -1,35 +1,28 @@
-/ connection management and handle-by-type lookup for the modular torq world - the di.* analogue
-/ of TorQ's .servers (code/handlers/trackservers.q + servers.q), scoped down for v1: no discovery
-/ service, no password/access-list files, no non-torq process tracking, no FinSpace. process.csv
-/ is a static phone book (who to dial), NOT an identity source - self-identity comes from config.
-/ FRAMEWORK-tier module: no hard di.* deps; log, timer and handlers are injected (all required).
-/ standard one-arg init[deps]: di.torq merges this process's config slice (proctype/procname,
-/ connections, processcsv) into the same deps dict it passes the injectables in. conventions match
-/ di.torq.config: strict init validation (no fallback), three-flat-var logging, log-then-signal via
-/ raiseerror, getapimeta for di.api, and the env-free boundary (the process.csv path arrives via
-/ config; di.torq.servers reads no env itself).
+/ di.torq.servers - connection management; registry, config and protocol functions at root .servers.*. See servers.md
 
 / --- module-local state (initial values at load; read/written via .z.m at runtime) ---
 
-SERVERS:([]
-  procname:`symbol$();
-  proctype:`symbol$();
-  hpup:`symbol$();
-  w:`int$();
-  hits:`int$();
-  startp:`timestamp$();
-  lastp:`timestamp$();
-  endp:`timestamp$());
-
-HOPENTIMEOUT:2000;
-
 self:`proctype`procname!``;
 
-/ guards init's one-time process-global side effects (the .z.pc observer + the retry timer job) so
-/ init is IDEMPOTENT - di.torq calls it once per process, but a second call (a test re-run, a
-/ future re-init) must not re-register: di.timer.addjob throws on a duplicate id. the dep refs are
-/ always refreshed; only the one-time registrations are guarded.
+/ whether init has registered the .z.pc observer and timer jobs
 registered:0b;
+
+/ flat config key -> (.servers global;default)
+settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery!(
+  (`.servers.enabled;1b);
+  (`.servers.CONNECTIONS;`);
+  (`.servers.DISCOVERYREGISTER;1b);
+  (`.servers.CONNECTIONSFROMDISCOVERY;1b);
+  (`.servers.SUBSCRIBETODISCOVERY;1b);
+  (`.servers.DISCOVERYRETRY;0D00:05);
+  (`.servers.TRACKNONTORQPROCESS;0b);
+  (`.servers.HOPENTIMEOUT;2000);
+  (`.servers.RETRY;0D00:05);
+  (`.servers.RETAIN;`long$0D00:30);
+  (`.servers.AUTOCLEAN;0b);
+  (`.servers.DEBUG;1b);
+  (`.servers.STARTUP;0b);
+  (`.servers.DISCOVERY;enlist`));
 
 raiseerror:{[ctx;msg]
   / internal - log an error under ctx via the injected logger, then signal it, so a failure is
@@ -40,11 +33,7 @@ raiseerror:{[ctx;msg]
   };
 
 init:{[deps]
-  / wire the injected deps (log/timer/handlers - all required, no fallback) and this process's
-  / config (proctype/procname identity, connections, processcsv), and install the one-time side
-  / effects (a .z.pc cleanup observer via handlers + a 10s serversretry job via timer). config
-  / arrives in the SAME deps dict (the one-arg init convention - di.torq merges the config slice
-  / into it). idempotent (see `registered). does NOT open connections - that is startup's job.
+  / wire deps and config, publish root names, register .z.pc and retry timers once
   if[99h<>type deps;
     '"di.torq.servers: deps must be a dict of injectables + config"];
   if[not all `log`timer`handlers in key deps;
@@ -67,39 +56,35 @@ init:{[deps]
   .z.m.timer:deps`timer;
   .z.m.handlers:deps`handlers;
   .z.m.self:`proctype`procname!deps`proctype`procname;
-  .z.m.connections:$[`connections in key deps;deps`connections;`symbol$()];
   .z.m.processcsv:$[`processcsv in key deps;deps`processcsv;""];
+  / registry
+  @[value;`.servers.SERVERS;{set[`.servers.SERVERS;([]procname:`symbol$();proctype:`symbol$();hpup:`symbol$();w:`int$();hits:`int$();startp:`timestamp$();lastp:`timestamp$();endp:`timestamp$();attributes:())]}];
+  / config
+  {[deps;k] set[first .z.m.settings k;$[k in key deps;deps k;last .z.m.settings k]]}[deps] each key .z.m.settings;
+  set[`.servers.NONTORQPROCESSFILE;$[`nontorqprocessfile in key deps;hsym deps`nontorqprocessfile;hsym `$("/" sv -1_"/" vs .z.m.processcsv),"/nontorqprocess.csv"]];
+  / live-handle checks
+  set[`.dotz.liveh;{x in key .z.W}];
+  set[`.dotz.livehn;{x in 0Ni,key .z.W}];
+  set[`.dotz.liveh0;{x in 0i,key .z.W}];
+  pub:`opencon`cleanup`addnthawc`getdetails`addhw`addw`retry`retrydiscovery`autodiscovery`retryrows`removerows`register`querydiscovery`registerfromdiscovery`addprocs`procupdate`domainsocketsenabled`formathp`formatprocs`startup`pc!(opencon;cleanup;addnthawc;getdetails;addhw;addw;retry;retrydiscovery;autodiscovery;retryrows;removerows;register;querydiscovery;registerfromdiscovery;addprocs;procupdate;domainsocketsenabled;formathp;formatprocs;startup;pc);
+  set'[` sv/:`.servers,/:key pub;value pub];
   if[not .z.m.registered;
-    / .z.pc is a SIMPLE (observer) event in di.torq.handlers - side-effect only, fan-out. registered via
-    / the injected handlers dep with di.torq.handlers' register[event;phase;nm;pri;func] contract; phase
-    / is ` (null) for a simple event, pri 0. the callback marks a closed handle's row disconnected.
-    / (param `wh`, not `w`, so it does not shadow the SERVERS column w.)
-    pcfunc:{[wh] .z.m.SERVERS:update endp:.z.p,w:0Ni from .z.m.SERVERS where w=wh; };
-    (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pcfunc];
-    / di.timer mode-1h period is in SECONDS, so 10 = a 10-second retry (a bare 10000 here would be
-    / ~2.8h - the latent typo that made dead-handle recovery effectively never fire in early POCs).
-    (.z.m.timer[`addjob])[`serversretry;retry;();10;1;()!()];
+    / .z.pc
+    (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pc];
+    / retry timers
+    if[.servers.enabled;
+      if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;3;()!()]];
+      if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;3;()!()]]];
     .z.m.registered:1b;
     ];
   .z.m.loginfo[`init;"di.torq.servers initialised"];
   };
 
-formathp:{[host;port;ipctype]
-  / internal - build a connection-handle symbol for `tcp`/`tcps`/`unix. only `tcp is exercised by
-  / startup in v1; the others exist for a future SOCKETTYPE-style config.
-  h:string host;
-  p:string port;
-  $[ipctype=`tcp; lower `$":",h,":",p;
-    ipctype=`tcps;lower `$":tcps://",h,":",p;
-    ipctype=`unix;lower `$":unix://",p;
-    raiseerror[`formathp;"unknown ipctype ",string ipctype]]
-  };
-
+/ open a connection
 opencon:{[hpup]
-  / open a connection, logging (not erroring) on failure - a downed peer isn't necessarily an
-  / error at connect time; retry keeps trying. NOTE the timeout form is hopen[(handle;timeoutms)]
-  / (a single 2-item list), not the dyadic hopen[handle;timeoutms], which throws 'rank.
-  r:@[{(hopen (x;.z.m.HOPENTIMEOUT);"")};hpup;{(0Ni;x)}];
+  if[.servers.DEBUG;.z.m.loginfo[`conn;"attempting to open handle to ",string hpup]];
+  r:@[{(hopen (x;.servers.HOPENTIMEOUT);"")};hpup;{(0Ni;x)}];
+  if[.servers.DEBUG;.z.m.loginfo[`conn;"connection to ",(string hpup),$[null first r;" failed: ",last r;" successful"]]];
   if[null first r;.z.m.logwarn[`servers;"failed to open connection to ",(string hpup),": ",last r]];
   first r
   };
@@ -113,68 +98,171 @@ readprocesscsv:{[path]
   ("SISS";enlist",") 0: fsym
   };
 
-startup:{[config]
-  / open connections to every process.csv row whose proctype is in the configured connections list,
-  / excluding this process's own row. `connections` and `processcsv` are read from the config arg -
-  / NOT from init - because each consumer computes its OWN role-specific connection list (e.g. an rdb
-  / dials its tickerplant+hdb types, a gateway its backend types) and passes it in via its config
-  / slice; di.torq cannot know that list at init time. a failed connection is logged (not raised) and
-  / left as w:0Ni for retry. a no-op if no connections are configured.
-  / normalise connections to symbols to match process.csv's `proctype column (always a symbol via
-  / the "S" spec): a .q settings file gives symbols already (`$ throws 'type on a symbol - it is
-  / NOT idempotent, hence the type check); a .toml one gives plain strings (TOML has no symbol).
-  conns:$[`connections in key config;config`connections;`symbol$()];
-  conns:$[11h=abs type conns;conns;`$conns];
-  if[0=count conns;.z.m.loginfo[`servers;"no configured connections to make"];:()];
-  if[not `processcsv in key config;raiseerror[`startup;"processcsv (path to process.csv) is required in config to open connections"]];
-  procs:readprocesscsv[config`processcsv];
-  pt:.z.m.self`proctype;
-  pn:.z.m.self`procname;
-  procs:update isme:(proctype=pt)&procname=pn from procs;
-  procs:select from procs where not isme;
-  procs:select from procs where proctype in conns;
-  if[0=count procs;.z.m.loginfo[`servers;"no process.csv rows match the configured connections"];:()];
-  {[row]
-    hpup:formathp[row`host;row`port;`tcp];
-    w:opencon[hpup];
-    if[not null w;.z.m.loginfo[`servers;"connected to ",(string row`proctype),"/",(string row`procname)," at ",string hpup]];
-    / catenate+reassign, NOT `tablename insert - a symbol-based insert into `.z.m.SERVERS` misses
-    / the compile-time module-local rewrite a source-level .z.m.SERVERS gets, silently targeting the
-    / wrong (literal) table.
-    newrow:([]procname:enlist row`procname;proctype:enlist row`proctype;hpup:enlist hpup;w:enlist w;hits:enlist 0i;startp:enlist $[null w;0Np;.z.p];lastp:enlist .z.p;endp:enlist 0Np);
-    .z.m.SERVERS:.z.m.SERVERS,newrow;
-    } each 0!procs;
-  };
+cleanup:{if[count w0:exec w from`.servers.SERVERS where not .dotz.livehn w;
+    update endp:.z.p,lastp:.z.p,w:0Ni from`.servers.SERVERS where w in w0];
+  if[.servers.AUTOCLEAN;delete from`.servers.SERVERS where not .dotz.liveh w,(.z.p^endp)<.z.p-.servers.RETAIN];}
 
-retryrows:{[rows]
-  / internal - reattempt opencon for the given SERVERS row indices, updating w/lastp (and startp on
-  / a successful reconnect).
-  hs:opencon each exec hpup from .z.m.SERVERS where i in rows;
-  .z.m.SERVERS:update w:hs,lastp:.z.p from .z.m.SERVERS where i in rows;
-  .z.m.SERVERS:update startp:.z.p from .z.m.SERVERS where i in rows, not null w;
-  };
-
-cleanup:{[]
-  / internal - sweep any row whose handle has vanished from key .z.W (a peer that died WITHOUT a
-  / clean .z.pc on this side) and mark it disconnected, so retry will reopen it. the .z.pc observer
-  / already catches clean closes; this catches the ungraceful ones.
-  dead:exec w from .z.m.SERVERS where not null w, not w in key .z.W;
-  if[count dead;.z.m.SERVERS:update endp:.z.p,w:0Ni from .z.m.SERVERS where w in dead];
-  };
-
-retry:{[]
-  / internal - the scheduled `serversretry job (driven by the injected timer; passed by value at
-  / init, so it needs no export). first sweep ungracefully-vanished handles (cleanup), then reopen
-  / every dead (null) handle - so both clean and unclean drops are recovered on the retry cycle.
+/ add a new server for current session
+addnthawc:{[name;proctype;hpup;attributes;W;checkhandle]
+  if[checkhandle and not isalive:.dotz.liveh W;'"invalid handle"];
   cleanup[];
-  rows:exec i from .z.m.SERVERS where null w;
-  if[count rows;retryrows[rows]];
-  };
+  $[not hpup in (exec hpup from .servers.SERVERS) inter (exec hpup from .servers.nontorqprocesstab);
+    `.servers.SERVERS insert(name;proctype;lower hpup;W;0i;$[isalive;.z.p;0Np];.z.p;0Np;attributes);
+    .z.m.loginfo[`conn;"Removed double entries: name->", string[name],", proctype->",string[proctype],", hpup->\"",string[hpup],"\""]];
+  W
+  }
+
+/ return the details of the current process
+getdetails:{(.z.f;.z.h;system"p";.z.m.self`procname;.z.m.self`proctype;@[value;(`.proc.getattributes;`);()!()])}
+
+/ add session behind a handle
+addhw:{[hpuP;W]
+  info:`f`h`port`procname`proctype`attributes!(@[W;({$[`getdetails in key`.servers;.servers.getdetails[];(.z.f;.z.h;system"p";`;`;$[`getattributes in key`.proc;.proc.getattributes[];()!()])]};`);(`;`;0Ni;`;`;()!())]);
+  if[0Ni~info`port;'"remote call failed on handle ",string W];
+  if[null name:info`procname;name:`$last("/"vs string info`f)except enlist""];
+  if[0=count name;name:`default];
+  if[null hpuP;hpuP:formathp[info`h;info`port;`tcp;info`proctype;info`procname]];
+  delete from `.servers.SERVERS where w=W;
+  addnthawc[name;info`proctype;hpuP;info`attributes;W;0b]}
+
+addw:addhw[`]
+
+/ after getting new servers run retry to open connections
+retry:{retryrows exec i from `.servers.SERVERS where not .dotz.liveh0 w,not proctype=`discovery}
+
+retrydiscovery:{
+  if[count d:exec i from `.servers.SERVERS where proctype=`discovery,not ({any .dotz.liveh0 x};w) fby hpup, i=(first;i) fby hpup;
+    .z.m.loginfo[`conn;"attempting to connect to discovery services"];
+    retryrows d;
+    if[.servers.DISCOVERYREGISTER and count h:exec w from .servers.SERVERS[d] where .dotz.liveh w;
+      .z.m.loginfo[`conn;"registering with discovery services"];
+      @[;(`..register;`);()] each neg h];
+    if[.servers.CONNECTIONSFROMDISCOVERY and count h;
+      registerfromdiscovery[$[`discovery in .servers.CONNECTIONS;(.servers.CONNECTIONS,()) except `discovery;.servers.CONNECTIONS];0b]];
+    ]}
+
+/ Called by the discovery service when it restarts
+autodiscovery:{if[.servers.DISCOVERYRETRY>0; .servers.retrydiscovery[]]}
+
+/ Attempt to make a connection for specified row ids
+retryrows:{[rows]
+  a:{$[not null x;@[x;({.proc.getattributes[]};::);()!()];()!()]};
+  handles:opencon each exec hpup from .servers.SERVERS where i in rows;
+  update lastp:.z.p,w:handles from`.servers.SERVERS where i in rows;
+  update attributes:a each w,startp:?[null w;0Np;.z.p] from`.servers.SERVERS where i in rows;
+  if[count connectedrows:select from`.servers.SERVERS where i in rows,.dotz.liveh0 w;
+    .servers.connectcustom[connectedrows]]}
+
+/ close handles and remove rows from the table
+removerows:{[rows]
+  @[hclose;;()] each .servers.SERVERS[rows][`w] except 0 0Ni;
+  @[.z.pc;;()] each .servers.SERVERS[rows][`w] except 0 0Ni;
+  delete from `.servers.SERVERS where i in rows}
+
+/ Create some connections and optionally connect to them
+register:{[connectiontab;proc;connect]
+  {addnthawc[x`procname;x`proctype;x`hpup;()!();0Ni;0b]}each distinct select from connectiontab where proctype=proc;
+  if[connect;
+    $[`discovery=proc;retrydiscovery[];retry[]]]};
+
+/ services from the live discovery services
+querydiscovery:{[procs]
+  if[0=count procs;:()];
+  .z.m.loginfo[`conn;"querying discovery services for processes of types "," " sv string procs,()];
+  h:exec w from .servers.getservers[`proctype;`discovery;()!();0b;0b];
+  $[0=count h;
+    [.z.m.loginfo[`conn;"no discovery services available"];()];
+    raze @[;(`getservices;procs;.servers.SUBSCRIBETODISCOVERY);()] each h]}
+
+/ register processes from the discovery service
+registerfromdiscovery:{[procs;connect]
+  if[`discovery in procs; '"cannot use registerfromdiscovery to locate discovery services"];
+  .z.m.loginfo[`conn;"requesting processes from discovery service"];
+  res:querydiscovery[procs];
+  if[0=count res; .z.m.loginfo[`conn;"no processes found"]; :()];
+  addprocs[res;procs;connect];}
+
+addprocs:{[connectiontab;procs;connect]
+  connectiontab:formatprocs[delete split from update host:hpup^`$last each -1 _' split, port:"I"$last each split from update split:{":" vs string x}each hpup from connectiontab];
+  res:select from connectiontab where not ([]procname;proctype;hpup) in select procname,proctype,hpup from .servers.SERVERS;
+  if[not count[res]=count connectiontab;
+    if[`attributes in cols connectiontab;
+      .servers.SERVERS:.servers.SERVERS lj 3!select procname,proctype,hpup,attributes from connectiontab where not ([]procname;proctype;hpup) in select procname,proctype,hpup from .servers.SERVERS]];
+  removerows exec i from `.servers.SERVERS where hpup in exec hpup from res;
+  register[res;;connect] each $[procs~`ALL;exec distinct proctype from res;procs,()];}
+
+/ used to handle updates from the discovery service
+procupdate:{[procs] addprocs[procs;exec distinct proctype from procs;0b];}
+
+/ return true if unix domain sockets can be used
+domainsocketsenabled:{[]
+  notwin:not .z.o like "w*";
+  iskdbv:3.4<=.z.K;
+  :notwin and iskdbv;
+  }
+
+/ format hpup from procs table, take into account ipc type
+formathp:{[HOST;PORT;IPCTYPE;PROCTYPE;PROCNAME]
+  ipctype:IPCTYPE;
+  isunixsocket:ipctype = `unix;
+  notsamebox:not any HOST in `localhost,.z.h;
+  host:string $[HOST=`localhost;.z.h;HOST];
+  port:string PORT;
+  if[isunixsocket and notsamebox;
+    .z.m.logwarn[`formathp;"Expects to connect via domain sockets, but host is not on the same machine. Reverting IPC mechanism to TCP"];
+    ipctype:`tcp;
+    ];
+  if[isunixsocket and not domainsocketsenabled[];
+    .z.m.logwarn[`formathp;"Domain sockets are not enabled for this system. Reverting IPC mechanism from to TCP"];
+    ipctype:`tcp;
+    ];
+  if[ipctype = `tcp;
+    hpup:lower `$":",host,":",port;
+    ];
+  if[ipctype = `tcps;
+    hpup:lower `$":tcps://",host,":",port;
+    ];
+  if[ipctype = `unix;
+    hpup:lower `$":unix://",port;
+    ];
+  :hpup;
+  }
+
+/ do full formatting of proc table
+formatprocs:{[PROCS]
+  procs:update ipctype:`tcp from PROCS;
+  procs:update hpup:.servers.formathp'[host;port;ipctype;proctype;procname] from procs;
+  :procs;
+  }
+
+/ called at start up; config`connections and config`processcsv give the connections and process file
+startup:{[config]
+  if[`connections in key config;
+    .servers.CONNECTIONS:$[11h=abs type c:config`connections;c;`$c]];
+  pf:$[`processcsv in key config;config`processcsv;.z.m.processcsv];
+  .servers.procstab:procs:formatprocs readprocesscsv pf;
+  .servers.nontorqprocesstab:formatprocs $[count key .servers.NONTORQPROCESSFILE;readprocesscsv 1_string .servers.NONTORQPROCESSFILE;0#procs];
+  if[count .servers.DISCOVERY;
+    if[not null first .servers.DISCOVERY;
+      if[count select from procs where hpup in .servers.DISCOVERY; .z.m.logerr[`startup; "host:port in .servers.DISCOVERY list is already present in data read from ",pf]];
+      procs,:([]host:`;port:0Ni;proctype:`discovery;procname:`;hpup:.servers.DISCOVERY)]];
+  connectedprocs:select procname, proctype, hpup from .servers.SERVERS;
+  procs:delete from procs where ([] procname; proctype; hpup) in connectedprocs;
+  nontorqprocs:delete from .servers.nontorqprocesstab where ([] procname; proctype; hpup) in connectedprocs;
+  if[not any count each (procs;nontorqprocs); .z.m.loginfo[`conn;"No new processes to connect to.  Escaping..."];:()];
+  if[.servers.CONNECTIONSFROMDISCOVERY or .servers.DISCOVERYREGISTER;
+    register[procs;`discovery;0b];
+    retrydiscovery[]];
+  if[not .servers.CONNECTIONSFROMDISCOVERY; register[procs;;0b] each $[.servers.CONNECTIONS~`ALL;exec distinct proctype from procs;.servers.CONNECTIONS]];
+  if[.servers.TRACKNONTORQPROCESS;register[nontorqprocs;;0b] each $[.servers.CONNECTIONS~`ALL;exec distinct proctype from nontorqprocs;.servers.CONNECTIONS]];
+  retry[]}
+
+pc:{[W] update w:0Ni,endp:.z.p from`.servers.SERVERS where w=W;cleanup[];}
 
 getservers:{[pt]
   / every live (non-null handle) SERVERS row for a proctype.
   if[not -11h=type pt;raiseerror[`getservers;"proctype must be a symbol"]];
-  select from .z.m.SERVERS where proctype=pt, not null w
+  select from .servers.SERVERS where proctype=pt, not null w
   };
 
 selector:{[tab;selection]
@@ -187,7 +275,7 @@ selector:{[tab;selection]
 
 updatestats:{[wh]
   / internal - bump hits/lastp on the row whose handle was just handed out.
-  .z.m.SERVERS:update lastp:.z.p,hits:1+hits from .z.m.SERVERS where w=wh
+  .servers.SERVERS:update lastp:.z.p,hits:1+hits from .servers.SERVERS where w=wh
   };
 
 gethandlebytype:{[pt;selection]
@@ -209,18 +297,14 @@ signalfound:{[pt]
   };
 
 waitfortype:{[pt;timeoutms;pollms]
-  / block until at least one LIVE connection to pt exists, or timeoutms elapses. the DI-scoped
-  / analogue of legacy TorQ's startupdepcycles - "fail fast, but wait for a hard dependency to come
-  / up". startup must have run first (so a pt row exists to reattempt). polls retry between tries,
-  / sleeping pollms. returns 1b once connected, 0b on timeout - the CALLER decides if that is fatal.
-  / NOTE the blocking system"sleep" is fine at startup (single-threaded; the injected timer's .z.ts
-  / just doesn't fire during the sleep).
+  / poll startup and retry every pollms until pt is live (1b) or timeoutms passes (0b)
   if[not -11h=type pt;raiseerror[`waitfortype;"proctype must be a symbol"]];
   if[not (abs type timeoutms) within 5 7h;raiseerror[`waitfortype;"timeoutms must be an integer (ms)"]];
   if[not (abs type pollms) within 5 7h;raiseerror[`waitfortype;"pollms must be an integer (ms)"]];
   deadline:.z.p+`timespan$1000000*`long$timeoutms;
   .z.m.loginfo[`servers;"waiting up to ",(string timeoutms),"ms for a ",(string pt)," connection"];
   while[(0=count getservers pt) and .z.p<deadline;
+    startup ()!();
     retry[];
     if[0<count getservers pt;:signalfound pt];
     system "sleep ",string pollms%1000;
@@ -239,3 +323,56 @@ getapimeta:{[]
     (`gethandlebytype; 1b; "one live handle for a proctype via any/roundrobin/last selection";      "[symbol: proctype; symbol: selection]";           "int: handle, 0Ni if none");
     (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };
+
+/ root .servers functions for .sub and startup waits
+\d .servers
+
+/ match required attributes against advertised ones
+attributematch:{[req;avail]
+    vals:key[req] inter key avail;
+    notpresent:noval!(count noval:key[req] except key avail)#enlist(0b;());
+    notpresent,vals!{($[0>type y;x~y;all x in y];(x,()) inter y,())}'[req vals;avail vals]}
+
+/ servers matching types or names, optionally reopening closed handles
+getservers:{[nameortype;lookups;req;autoopen;onlyone]
+    r:$[`~lookups; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS;
+        nameortype~`proctype; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where proctype in lookups;
+        select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where procname in lookups];
+    if[0=count r;:update attributematch:attributes from r];
+    r:update alive:.dotz.liveh w from r;
+    if[autoopen;
+        if[(count r) > alivecount:sum r`alive;
+            if[(alivecount=0) or (not onlyone) or (any not exec max alive by agg:?[nameortype~`proctype;proctype;procname] from r);
+                retryrows exec index from r where not alive;
+                r:select procname,proctype,lastp,w,hpup,attributes,alive:.dotz.liveh w from .servers.SERVERS where i in r`index]]];
+    select procname,proctype,lastp,w,hpup,attributes,attribmatch:.servers.attributematch[req]each attributes from r where alive}
+
+/ run on (re)connected SERVERS rows
+connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}]
+
+/ are any required processes not connected
+reqprocsnotconn:{[requiredprocs;typeorname]
+    not all requiredprocs in ?[`.servers.SERVERS;enlist (`.dotz.liveh;`w);();typeorname]
+  };
+
+reqprocnamesnotconn:reqprocsnotconn[;`procname];
+
+/ block until all required processes are connected
+startupdepcyclestypename:{[requiredprocs;typeornamefunc;timeintv;cycles]
+  n:1;
+  .servers.startup ()!();
+  while[typeornamefunc requiredprocs;
+    if[n>cycles;
+      b:((),requiredprocs)except(),exec proctype from .servers.SERVERS where .dotz.liveh w;
+      .z.m.logerr[`connectionreport;s:string[.z.m.self`procname]," cannot connect to ",","sv string'[b]];
+      's;
+     ];
+    system "sleep ",string timeintv;
+    n+:1;
+    .servers.startup ()!();
+   ];
+ };
+
+startupdepnamecycles:startupdepcyclestypename[;.servers.reqprocnamesnotconn;;];
+
+\d .

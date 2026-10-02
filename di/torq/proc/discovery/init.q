@@ -1,4 +1,4 @@
-\l ::chainedtp.q
+\l ::discovery.q
 
 version:first read0`:::VERSION
 

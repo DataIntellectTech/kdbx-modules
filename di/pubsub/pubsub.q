@@ -74,8 +74,8 @@ closesub:{[h]
   delete from .z.M.reqfilteredtbl where handle=h;
   };
 
-/ broadcast to all subscribers upon end of day, client needs to define endofday function
-callendofday:{[d](neg getallhandles[])@\:(`endofday;d)};
+/ broadcast end of day to all subscribers as .u.end[d]
+callendofday:{[d](neg getallhandles[])@\:(`.u.end;d)};
 
 / broadcast to all subscribers upon end of period, client needs to define endofperiod function
 callendofperiod:{(neg getallhandles[])@\:(`endofperiod;x)};

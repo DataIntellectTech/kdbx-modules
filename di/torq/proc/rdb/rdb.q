@@ -53,7 +53,7 @@ notifyhdbs:{[]
     .z.m.log[`warn][`rdb;"no hdb connected to notify for reload"]];
   }
 
-/ end of day: called by the tickerplant as endofday[date] (di.pubsub's dated broadcast).
+/ end of day for a date: .u.end[date] (tickerplant, chainedtp) or endofday[date;data] (segmented).
 / standalone mode: save every non-ignored root table to the HDB, clear it, reload the HDB(s).
 / wdb-fronted mode (reloadenabled=1b): the wdb owns the writedown - snapshot the per-table
 / row counts (so a later reload[] drops exactly the prior day) and escape, leaving the data
@@ -131,11 +131,10 @@ init:{[config;deps]
   tpt:first .z.m.tptypes;
   if[not (.z.m.svc`waitfortype)[tpt;timeout;500];
     '"di.torq.proc.rdb: no ",(string tpt)," connection within ",(string timeout),"ms - cannot start rdb"];
-  tph:(.z.m.svc`gethandlebytype)[tpt;`any];
   .z.m.subs:use`di.subscriptions;
   (.z.m.subs`init)[config;deps];
-  sd:(.z.m.subs`subscribe)[tph;subscribeto;subscribesyms;replaylog];
-  .z.m.log[`info][`rdb;"subscribed; replayed ",(string sd`rowcount)," message(s), partition date ",string sd`date];
+  sd:.sub.subscribe[subscribeto;subscribesyms;1b;replaylog;first .sub.getsubscriptionhandles[tpt;`;()!()]];
+  .z.m.log[`info][`rdb;"subscribed, partition date ",string sd`d];
 
   / di.dbwrite for savedown (optional sort.csv sort/attr config). Takes the injected binary
   / (ctx;msg) log dep directly - no adapter, since di.dbwrite now uses the same contract.
@@ -143,10 +142,12 @@ init:{[config;deps]
   (.z.m.dbw`init)[enlist[`log]!enlist deps`log];
   if[`sortcsv in key config;(.z.m.dbw`readcsv)[resolvedir[apphome[];config`sortcsv]]];
 
-  / publish the EOD entry points at root (the TP calls endofday[date]; .u.end is the alias).
+  / publish the EOD entry points at root.
   / reload[date] is the wdb's IPC entry point when reloadenabled (harmless if never called).
-  @[`.;`endofday;:;endofday];
-  @[`.;`.u.end;:;endofday];
+  set[`.u.end;endofday];
+  / segmented tickerplant entry points
+  @[`.;`endofday;:;{[d;x] endofday d}];
+  @[`.;`endofperiod;:;{[currp;nextp;data] .z.m.log[`info][`endofperiod;"Received endofperiod. currentperiod, nextperiod and data are ",(string currp),", ", (string nextp),", ", .Q.s1 data]}];
   @[`.;`reload;:;reload];
   .z.m.log[`info][`rdb;"initialised, hdbdir=",.z.m.hdbdir,", reloadenabled=",string .z.m.reloadenabled];
   }

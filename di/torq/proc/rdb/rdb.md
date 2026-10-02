@@ -49,8 +49,8 @@ di.subscriptions defines the tables at root from what the TP returns.
 - **Accumulate** (`upd`, published at root): a **root-namespace-safe** append — upserts a
   table payload (live) or a list-of-columns payload (replay) into the root table via
   `@[`.;t;…]`. Set at root **before** subscribing so replay drives it too.
-- **End of day** (`endofday[date]`, published at root, also `.u.end`): the tickerplant
-  broadcasts `(`endofday;date)` at roll (see below). Behaviour depends on `reloadenabled`:
+- **End of day**: `.u.end[date]` (from a tickerplant or chainedtp) or root `endofday[date;data]` (from a
+  segmented tickerplant, which also calls the logging `endofperiod` stub). Behaviour depends on `reloadenabled`:
   - **standalone** (`0b`, default): saves every non-ignored root table to `hdbdir` for `date`
     (`di.dbwrite.savedown` — enumerate, splay, sort, attr, gc), clears each (`@[`.;t;0#]`),
     then tells every connected HDB to `.hdb.reload[]`.
@@ -84,11 +84,7 @@ probes for a wdb's existence (fail-fast / explicit-config, per the TorQ conventi
 
 The RDB's writedown is triggered **by the tickerplant**, not a local timer — so it saves
 exactly the day's data, only after the TP has sent its last message for the day. This
-required a fix to di.pubsub (vendored into TorqX): `callendofday` now broadcasts
-`(`endofday;date)` instead of a bare `` `endofday`` symbol. A bare async symbol is **not**
-applied by a default `.z.ps` (it returns the function, doesn't call it) and carries no
-partition date; the 2-list form is applied as `endofday[date]` (classic `.u.end` style).
-Feed this fix upstream when di.pubsub is next touched.
+uses di.pubsub's `callendofday`, which broadcasts `(`.u.end;date)`.
 
 ## Not included (future / other-process / deprecated)
 

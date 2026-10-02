@@ -175,8 +175,7 @@ doreload:{[pt]
   informgateway[`reloadend];
   }
 
-/ end of day: called by the tickerplant as endofday[pt] (di.pubsub's dated broadcast, same
-/ trigger as di.torq.proc.rdb). Flush what remains, sort each working partition, move it into the hdb, then
+/ end of day for a partition: .u.end[pt] (tickerplant, chainedtp) or endofday[pt;data] (segmented). Flush what remains, sort each working partition, move it into the hdb, then
 / reload downstream. Advance the partition for the new day.
 endofday:{[pt]
   .z.m.log[`info][`wdb;"end of day for partition ",string pt];
@@ -242,19 +241,20 @@ init:{[config;deps]
   tpt:first .z.m.tptypes;
   if[not (.z.m.svc`waitfortype)[tpt;timeout;500];
     '"di.torq.proc.wdb: no ",(string tpt)," connection within ",(string timeout),"ms - cannot start wdb"];
-  tph:(.z.m.svc`gethandlebytype)[tpt;`any];
   .z.m.subs:use`di.subscriptions;
   (.z.m.subs`init)[config;deps];
-  sd:(.z.m.subs`subscribe)[tph;subscribeto;subscribesyms;replaylog];
-  if[not sd[`date]~.z.m.currentpartition;
-    .z.m.log[`warn][`wdb;"tp log date ",(string sd`date)," != partition ",(string .z.m.currentpartition),"; using log date (cross-date working-dir move is deferred - see wdb.md)"];
-    .z.m.currentpartition:sd`date];
-  .z.m.log[`info][`wdb;"subscribed; replayed ",(string sd`rowcount)," message(s), partition date ",string sd`date];
+  sd:.sub.subscribe[subscribeto;subscribesyms;1b;replaylog;first .sub.getsubscriptionhandles[tpt;`;()!()]];
+  if[not sd[`d]~.z.m.currentpartition;
+    .z.m.log[`warn][`wdb;"tp log date ",(string sd`d)," != partition ",(string .z.m.currentpartition),"; using log date (cross-date working-dir move is deferred - see wdb.md)"];
+    .z.m.currentpartition:sd`d];
+  .z.m.log[`info][`wdb;"subscribed, partition date ",string sd`d];
 
   / swap to the live accumulate upd (the timer flushes over-threshold), publish EOD entries
   @[`.;`upd;:;updfn];
-  @[`.;`endofday;:;endofday];
-  @[`.;`.u.end;:;endofday];
+  set[`.u.end;endofday];
+  / segmented tickerplant entry points
+  @[`.;`endofday;:;{[d;x] endofday d}];
+  @[`.;`endofperiod;:;{[currp;nextp;data] .z.m.log[`info][`endofperiod;"Received endofperiod. currentperiod, nextperiod and data are ",(string currp),", ", (string nextp),", ", .Q.s1 data]}];
   / the idb reads these directly at startup, as legacy's setparametersfromwdb does. savedir and
   / hdbdir are fixed for the life of the process; currentpartition is republished whenever it
   / moves (see endofday), or the copy here goes stale from the first roll.

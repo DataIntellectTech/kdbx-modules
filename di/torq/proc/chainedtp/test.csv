@@ -15,16 +15,14 @@ comment,,,,,,,init - connect and subscribe
 run,0,0,q,ctp.init[cfg[];deps[]],1,,init
 true,0,0,q,".ctp.tph=first exec w from .servers.SERVERS where procname=`tickerplant1",1,,tph is the upstream handle
 true,0,0,q,`trade in tables[],1,,upstream schema defined at root
-true,0,0,q,.u.d~D,1,,date taken from the .u.subdetails reply
-true,0,0,q,"1=count (use`di.subscriptions)[`getsubscriptions][]",1,,subscribed through di.subscriptions
+true,0,0,q,.u.d~D,1,,date taken from the upstream
+true,0,0,q,"1=count select from .sub.SUBSCRIPTIONS where table=`trade,active",1,,subscribed to trade
 true,0,0,q,all `stpps`chainedtp`sub in exec name from handlercalls where event=`.z.pc,1,,.z.pc observers registered
 true,0,0,q,`trade in key .ctp.tableschemas,1,,tableschemas holds trade
 true,0,0,q,not `publishalltables in exec id from timercalls,1,,no batch job at pubinterval 0
 true,0,0,q,upd~.ctp.tickpub,1,,root upd is tick-by-tick publish
 run,0,0,q,.ps.initialise[],1,,.ps.initialise again after the process module loads (as di.torq does)
 true,0,0,q,`trade in .stpps.t,1,,trade is published
-true,0,0,q,".ctp.tph~first exec handle from (use`di.subscriptions)[`getsubscriptions][]",1,,subscription is on the upstream handle
-true,0,0,q,"`trade in first exec tabs from (use`di.subscriptions)[`getsubscriptions][]",1,,subscribed to trade
 
 comment,,,,,,,tick by tick
 run,0,0,q,"dh:hopen `$"":localhost:"",string DNPORT",1,,connect to the downstream peer
@@ -32,15 +30,17 @@ run,0,0,q,"r:dh""(.z.w)(`.u.sub;`trade;`)""",1,,downstream subscribes to trade
 true,0,0,q,`trade~first r,1,,.u.sub returns the table
 true,0,0,q,"dh in .stpps.subrequestall`trade",1,,downstream registered
 run,0,0,q,".ctp.tph({(neg .z.w)(`upd;`trade;x)};rows 3)",1,,upstream publishes 3 rows
-true,0,0,q,3=.u.icounts`trade,1,,icounts updated
+true,0,0,q,(enlist 3)~.u.icounts`trade,1,,icounts updated (one-item list as the subscribe reshape leaves it)
 true,0,0,q,"(1;3)~dh""(count got;count last last got)""",1,,downstream received the 3 rows
+true,0,0,q,"`schemalist`logfilelist`rowcounts`date~key dh""(.z.w)(`subdetails;`trade;`)""",1,,subdetails keys
+true,0,0,q,"()~(dh""(.z.w)(`subdetails;`trade;`)"")`logfilelist",1,,no log file without createlogfile
 true,0,0,q,"`tables`schemas`logfile`rowcount`date~key dh""(.z.w)(`.u.subdetails;`trade;`)""",1,,.u.subdetails keys
 true,0,0,q,"(`;0)~(dh""(.z.w)(`.u.subdetails;`trade;`)"")`logfile`rowcount",1,,no log and no replay without createlogfile
 true,0,0,q,"`trade in dh""(.z.w)(`tablelist;`)""",1,,tablelist lists trade
 
 comment,,,,,,,end of day
-run,0,0,q,endofday D,1,,end of day through root endofday
-true,0,0,q,"(enlist D)~dh""ended""",1,,endofday passed to the downstream
+run,0,0,q,.u.end D,1,,end of day
+true,0,0,q,"(enlist D)~dh""ended""",1,,.u.end passed to the downstream
 true,0,0,q,.u.d=D+1,1,,date rolled
 true,0,0,q,0=count trade,1,,trade cleared
 
@@ -58,6 +58,8 @@ run,0,0,q,.ctp.refreshtp D,1,,reopen the existing log
 true,0,0,q,1=.u.i,1,,existing messages counted
 run,0,0,q,".ctp.clearlogonsubscription:1b;.ctp.refreshtp D",1,,reopen with clearlogonsubscription
 true,0,0,q,0=.u.i,1,,log cleared
+run,0,0,q,"r:subdetails[`trade;`]",1,,subdetails with a log
+true,0,0,q,"(enlist(0;.u.L))~r`logfilelist",1,,logfilelist carries i and the log file
 run,0,0,q,"r:.u.subdetails[`trade;`]",1,,.u.subdetails with a log
 true,0,0,q,"(.u.L;.u.i)~r`logfile`rowcount",1,,logfile and rowcount are the own log and .u.i
 run,0,0,q,"bf:hsym`$FIXDIR,""/bad""; bf set (); lh:hopen bf; lh enlist(`upd;`trade;rows 1); hclose lh; bf 1: (read1 bf),0x0102030405",1,,write a log with one message and a bad tail

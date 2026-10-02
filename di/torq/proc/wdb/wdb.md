@@ -58,8 +58,8 @@ di.subscriptions defines the tables at root from what the TP returns.
   (`` .idb.intradayreload[] ``, async, no partition — the idb mounts the savedir root and finds
   the day itself) — an all-skipped tick (nothing over threshold) stays silent. This is
   unconditional on `reloadorder`; it only needs an idb to be connected.
-- **End of day** (`endofday[date]`, published at root): the tickerplant
-  broadcasts `(`endofday;date)` at roll (the same trigger as di.torq.proc.rdb). di.torq.proc.wdb flushes what
+- **End of day**: `.u.end[date]` (from a tickerplant or chainedtp) or root `endofday[date;data]` (from a
+  segmented tickerplant, which also calls the logging `endofperiod` stub). di.torq.proc.wdb flushes what
   remains, sorts each working partition (`di.dbwrite.sort` — driven by `sortcsv` or the time-asc
   default), **moves** each table dir into `hdbdir/date/` (skipping any that already exist, to
   never corrupt the hdb), then reloads downstream in `reloadorder`. The hdb and rdb are given the

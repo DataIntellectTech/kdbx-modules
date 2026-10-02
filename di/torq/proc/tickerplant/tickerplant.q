@@ -38,7 +38,8 @@ stamp:{[x]
 / publishes immediately or buffers into the root table for the flush job.
 upd:{[t;x]
   x:stamp tocols x;
-  if[.z.m.logh>0;(.z.m.tp`write)[.z.m.logh;(`upd;t;x)];.z.m.msgcount+:1];
+  if[.z.m.logh>0;(.z.m.tp`write)[.z.m.logh;(`upd;t;x)];.u.i+:1];
+  if[count .z.m.tplogdir;.u.icounts[t]+:count first x];
   $[.z.m.publishmode=`batched;
     t insert x;
     (.z.m.ps`publish)[t;flip (cols value t)!$[0>type first x;enlist each x;x]]
@@ -48,7 +49,13 @@ upd:{[t;x]
 / subscriber entry point (published at root as `.u.sub`). syms=` -> all data for the
 / table(s); a sym list -> a sym-filtered subscription. Delegates to di.pubsub, whose
 / .z.w-based registration sees the calling subscriber's handle.
-sub:{[tabs;syms] (.z.m.ps`subscribe)[tabs;syms]}
+sub:{[x;y]
+  if[x~`;:sub[;y] each .z.m.tables];
+  if[not x in .z.m.tables;'x];
+  / batched: flush first, so a replaying subscriber doesn't receive the buffer twice
+  if[.z.m.publishmode=`batched;(.z.m.ps`pubclear)[.z.m.tables]];
+  r:(.z.m.ps`subscribe)[x;y];
+  (first r 0;first r 1)}
 
 / subscription-details call (published at root as `.u.subdetails`) for a replaying
 / subscriber - di.torq.proc.rdb via di.subscriptions. In ONE synchronous call it (a) registers the
@@ -72,7 +79,7 @@ subdetails:{[tabs;syms]
   sub:(.z.m.ps`subscribe)[tabs;syms];
   d:(.z.m.eod`getd)[];
   lf:$[0<count .z.m.tplogdir;(.z.m.tp`logname)[.z.m.tplogdir;d];`];
-  `tables`schemas`logfile`rowcount`date!(sub 0;(sub 0)!sub 1;lf;.z.m.msgcount;d)
+  `tables`schemas`logfile`rowcount`date!(sub 0;(sub 0)!sub 1;lf;.u.i;d)
   }
 
 / batched-mode flush (timer job): publish every buffered table and clear it.
@@ -85,8 +92,9 @@ endofday:{[]
   / tell subscribers (e.g. di.torq.proc.rdb) to end the day for partition d - AFTER any final flush
   / above, so they save exactly the day's data. Carries the date (vendored pubsub patch).
   (.z.m.ps`callendofday)[d];
-  if[.z.m.logh>0;r:(.z.m.tp`roll)[.z.m.logh;.z.m.tplogdir;d];.z.m.logh:r 0;.z.m.msgcount:r 1];
-  (.z.m.eod`setd)[d+1];
+  if[.z.m.logh>0;r:(.z.m.tp`roll)[.z.m.logh;.z.m.tplogdir;d];.z.m.logh:r 0;.u.i:r 1;.u.L:(.z.m.tp`logname)[.z.m.tplogdir;d+1]];
+  .u.icounts:(`symbol$())!0#0;
+  (.z.m.eod`setd)[.u.d:d+1];
   (.z.m.eod`setnextroll)[(.z.m.eod`getroll)[.z.p]];
   (.z.m.eod`setdailyadj)[(.z.m.eod`getdailyadjustment)[]];
   .z.m.log[`info][`tickerplant;"end of day complete, rolled ",(string d)," -> ",string d+1];
@@ -149,7 +157,12 @@ init:{[config;deps]
   / tplog: prepared now; log opened after the root upd is published (replay needs it)
   .z.m.tp:use`di.tplogmgr;
   .z.m.logh:0;
-  .z.m.msgcount:0;
+  / classic tickerplant surface read by .sub.subscribe
+  .u.w:tabs!(count tabs)#();
+  .u.i:0;
+  .u.icounts:(`symbol$())!0#0;
+  .u.L:`;
+  .u.d:(.z.m.eod`getd)[];
 
   / publish the IPC surface at real root names (use mangles module code into a private
   / namespace, so a remote/replayed `upd`/`.u.sub` must resolve at root). Done BEFORE
@@ -165,7 +178,8 @@ init:{[config;deps]
     system "mkdir -p ",.z.m.tplogdir;
     r:(.z.m.tp`open)[.z.m.tplogdir;(.z.m.eod`getd)[]];
     .z.m.logh:r 0;
-    .z.m.msgcount:r 1;
+    .u.i:r 1;
+    .u.L:(.z.m.tp`logname)[.z.m.tplogdir;.u.d];
     .z.m.log[`info][`tickerplant;"opened tp log, replayed ",(string r 1)," message(s)"];
     ];
 

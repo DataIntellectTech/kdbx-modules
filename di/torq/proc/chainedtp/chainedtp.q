@@ -29,6 +29,11 @@ tptype:`chained;
 
 tablelist:{.stpps.t}
 
+subdetails:{[tabs;instruments]
+  r:.ctp.sub[tabs;instruments];
+  `schemalist`logfilelist`rowcounts`date!r@/:(`schema;$[r[`logfile]~();();enlist`i`logfile];`icounts;`d)
+  }
+
 .u.subdetails:{[tabs;syms]
   r:.ctp.sub[tabs;syms]; s:r`schema;
   if[-11h=type first s;s:enlist s];
@@ -79,12 +84,17 @@ openlog:{[lgfile]
 subscribe:{[]
   s:.sub.getsubscriptionhandles[`;.ctp.tickerplantname;()!()];
   if[count s;
-    subproc:first s;
-    .ctp.tph:subproc`w;
-    refreshtp @[tph;".u.d";.z.D];
-    .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
-    r:(use`di.subscriptions)[`subscribe][tph;subscribeto;subscribesyms;replay];
-    .u.d::r`date];
+      subproc:first s;
+      .ctp.tph:subproc`w;
+      refreshtp @[tph;".u.d";.z.D];
+      .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
+      r:.sub.subscribe[subscribeto;subscribesyms;schema;replay;subproc];
+      if[`d in key r;.u.d::r[`d]];
+      if[(`icounts in key r) & (not createlogfile);
+	subtabs:$[subscribeto~`;key r`icounts;subscribeto],();
+	.u.jcounts::.u.icounts::$[0=count r`icounts;()!();subtabs!enlist [r`icounts]subtabs];
+      ]
+    ];
   }
 
 writetolog:{[t;x]
@@ -152,10 +162,7 @@ end:{[d]
   .z.m.log[`info][`end;"end of day invoked"];
   .ctp.publishalltables[];
   .ctp.refreshtp[d+1];
-  (neg union[@[value;(`.stpps.allsubhandles;`);()]; @[{union/[(value x)[;;0]]};`.u.w;()]])@\:(`endofday;d)
+  (neg union[@[value;(`.stpps.allsubhandles;`);()]; @[{union/[(value x)[;;0]]};`.u.w;()]])@\:(`.u.end;d)
   }
 
 \d .
-
-endofday:{[d] .u.end d}
-

@@ -18,6 +18,11 @@ fail,0,0,q,(tk`init)[immcfg[];`log`timer#deps[]],1,,init without the handlers de
 run,0,0,q,feedtrades[2],1,,feed two trades in immediate mode
 true,0,0,q,0=count trade,1,,immediate mode retains no local rows
 true,0,0,q,loghas["log";2],1,,both feed messages were written to the tp log
+true,0,0,q,"(2;enlist[`trade]!enlist 2;hsym`$BASE,""/log/tp"",string .u.d)~(.u.i;.u.icounts;.u.L)",1,,".u.i, .u.icounts and .u.L track the log"
+true,0,0,q,`trade in key .u.w,1,,.u.w is keyed on the tables
+true,0,0,q,"(`trade;98h;0)~{(x 0;type x 1;count x 1)} .u.sub[`trade;`]",1,,.u.sub returns (table;schema)
+true,0,0,q,"(count .u.w)=count .u.sub[`;`]",1,,.u.sub on ` returns one pair per table
+run,0,0,q,(use`di.pubsub)[`closesub][0],1,,drop the in-process subscription
 
 true,0,0,q,subdetailsok[],1,,subdetails returns rowcount + tables/schemas + logfile/date for a replaying subscriber
 true,0,0,q,subdetailsbatchedok[],1,,batched: subdetails flushes the buffer to existing subscribers before registering the caller - no replay-then-flush double delivery
@@ -43,5 +48,6 @@ run,0,0,q,doinit[replaycfg[]],1,,re-init for the eod roll test (batched with a l
 run,0,0,q,ROLLDATE:"d"$.z.p,1,,capture today's date before rolling
 run,0,0,q,endofday[],1,,force an end-of-day roll
 true,0,0,q,rolledfile["replog";ROLLDATE+1],1,,the roll opened the next day's log file
+true,0,0,q,"(ROLLDATE+1;0)~(.u.d;count .u.icounts)",1,,the roll advances .u.d and resets .u.icounts
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

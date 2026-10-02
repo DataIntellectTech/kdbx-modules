@@ -156,7 +156,8 @@ an extra call after `init` that hdb processes don't. Skipped entirely if
 > ⚠️ **Known limitation — read this before adding anything that binds `.z.*`.** Query logging wraps the `.z.*` handlers
 > by **direct assignment**, because that is how `di.querylog` (used unmodified from kdbx-modules
 > `main`) works; it does not register through `di.torq.handlers`. `di.torq.init` therefore wires it
-> **last**, after the process module and app code have bound their handlers. That works today
+> after the process module, app code and client tracking have bound their handlers, and before
+> zpsignore (see below). That works today
 > because no built-in process type owns `.z.pg` or `.z.ps`.
 >
 > **If anything claims a phased event's `exec` after startup, logging for that event silently drops
@@ -207,6 +208,35 @@ flushinterval = 1800      # seconds between flushes (a job on the injected timer
   expression over IPC as a query string.
 - **Differences from TorQ's `.usage`:** off by default (TorQ turns it on), no
   `proctype`/`procname` columns, `.z.pi` not logged, and no daily disk-log roll.
+
+### Client tracking and zpsignore
+
+`di.torq.init` binds `.z.*` in this order, each step wrapping whatever the step before it left:
+
+1. `di.clienttracking` runs on **every** process: `.clients.clients` gets a row per inbound
+   connection. Unless `clients.opencloseonly` is set, `.z.pg`, `.z.ps` and `.z.ws` are wrapped to
+   count queries, errors and bytes. The only switch is the module's own `clients` section
+   (`enabled`, `opencloseonly`, ...; see `di/clienttracking/clienttracking.md`).
+2. Query logging, if on (above).
+3. **zpsignore**: `.z.ps` is wrapped once more, outermost. An async message whose head is in the
+   ignorelist runs with `value` and skips every wrapper beneath it. By default those heads are
+   `` `upd ``, `` `.u.upd `` and their string forms, which covers the `` (`upd;t;x) `` stream into
+   chainedtp, rdb and wdb. querylog already filters these heads itself, so in practice zpsignore
+   keeps ticks out of client tracking. The check is `first` of the message, so a message sent as a
+   string (`"upd[...]"`) is **not** skipped: its first element is a character.
+
+```toml
+[zpsignore]
+enabled = true                   # default true
+ignorelist = ["upd", ".u.upd"]   # default; each name matches its symbol and string head
+```
+
+Both run once per process; a second `di.torq.init` skips them. The builtin `tickerplant` and
+`segmentedtp` settings set `clients` `opencloseonly` to true and `zpsignore` `enabled` to false,
+so a tickerplant records connections only and its `.z.ps` stays unwrapped. An app `clients`
+section **replaces the whole builtin section, not just the keys it sets**. An app that adds
+`[clients]` to a tickerplant for any reason (to change `RETAIN`, say) must restate
+`opencloseonly = true`, or the tickerplant's publish path goes back through client tracking.
 
 ## Usage
 

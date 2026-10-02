@@ -16,6 +16,21 @@ true,0,0,q,`k4unittest~(r`config)`owner,1,,config cascade reached the app-level 
 true,0,0,q,000b~(r`config)`discoveryregister`connectionsfromdiscovery`debug,1,,builtin default.q leaves discovery off and debug off
 true,0,0,q,`widgets in tables[],1,,the built-in hdb module actually mounted the fixture hdb dir
 true,0,0,q,(`handlers`log`servers`timer)~asc key r`deps,1,,all four core deps (incl injected servers) were built and passed through
+true,0,0,q,99h=type .clients.clients,1,,init wired client tracking (.clients.clients exists)
+run,0,0,q,"ctorig:(.clients.hit;.clients.hite); .clients.hit:{HITS+::1;x}; .clients.hite:{HITE+::1;'x}; HITS::HITE::UPD::0; tgt:{[x] x}; upd:{[t;x] UPD+::1}; .u.upd:upd",1,,count client-tracking hits and upd calls
+run,0,0,q,.z.ps (`tgt;1),1,,a non-upd async message
+true,0,0,q,"(1;0)~(HITS;UPD)",1,,is counted by client tracking
+run,0,0,q,.z.ps (`upd;`trade;()),1,,an upd async message
+true,0,0,q,"(1;1)~(HITS;UPD)",1,,skips client tracking (zpsignore) and still runs
+run,0,0,q,.z.ps (`.u.upd;`trade;()),1,,a .u.upd async message
+true,0,0,q,"(1;2)~(HITS;UPD)",1,,also skips client tracking
+run,0,0,q,".z.ps ""upd[`trade;()]""",1,,a string upd message
+true,0,0,q,"(2;3)~(HITS;UPD)",1,,is not skipped: the ignorelist check only matches list heads
+run,0,0,q,"zps:.z.ps; .m.di.0torq.zpsignorewired:0b; .m.di.0torq.initzpsignore[enlist[`zpsignore]!enlist enlist[`enabled]!enlist 0b]",1,,zpsignore with enabled 0b
+true,0,0,q,zps~.z.ps,1,,leaves .z.ps untouched
+run,0,0,q,".clients.hit:first ctorig; .clients.hite:last ctorig",1,,restore client tracking
+run,0,0,q,"ctp:{(use`di.torq.config)[`cascade] . .m.di.0torq.roots[],x,`$string[x],""1""} each `tickerplant`segmentedtp",1,,cascade the tickerplant and segmentedtp settings
+true,0,0,q,"all {(1b;0b)~((x`clients)`opencloseonly;(x`zpsignore)`enabled)} each ctp",1,,tickerplants track connections only and have no zpsignore
 
 run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
 true,0,0,q,`hdb~r2`proctype,1,,override path still resolves the same identity

@@ -1,3 +1,3 @@
 \l ::analytics.q
 
-export:([ffill;ffillzero;intervals;pivot;rack])
+export:([ffill;ffillzero;intervals;pivot;rack;shrink;rdprecur;rdpiter])

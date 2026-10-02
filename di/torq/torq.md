@@ -83,10 +83,11 @@ expects.
 
 A built-in registry maps proctype → module name, `` `x → `di.torq.proc.x `` for each of `hdb`,
 `tickerplant`, `rdb`, `wdb`, `gateway`, `idb`, `segmentedtp`, `chainedtp`, `housekeeping`, `discovery`
-and `tickerlogreplay`:
+and `tickerlogreplay`; `segmentedchainedtp` also maps to `di.torq.proc.segmentedtp` (a chained segmented
+tickerplant, set by its settings):
 
 ```q
-builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery`tickerlogreplay!`di.torq.proc.hdb`di.torq.proc.tickerplant ...
+builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery`tickerlogreplay`segmentedchainedtp!`di.torq.proc.hdb`di.torq.proc.tickerplant ...
 ```
 
 If `proctype` is in `builtin`, `startbuiltin` `use`-loads that module and calls its
@@ -290,7 +291,8 @@ In practice nothing calls `tq.init` directly like the examples above - that's wh
 does on top of that (start/stop/restart/status across a whole `process.csv`, without
 duplicating any of the identity-resolution logic above - it only reads `process.csv`
 to know *which* processes exist, never to resolve *who a given session is*, which
-stays exclusively `di.torq`'s job).
+stays exclusively `di.torq`'s job). An optional `startwithall` column, as in TorQ, keeps a row with `0` out of
+`torqx.sh start` / `start all`; it can still be started by name.
 
 ### Dev mode (tmux)
 

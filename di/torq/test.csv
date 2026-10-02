@@ -35,6 +35,7 @@ true,0,0,q,"all {(1b;0b)~((x`clients)`opencloseonly;(x`zpsignore)`enabled)} each
 run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
 true,0,0,q,`hdb~r2`proctype,1,,override path still resolves the same identity
 
+true,0,0,q,`di.torq.proc.segmentedtp~.m.di.0torq.builtin`segmentedchainedtp,1,,segmentedchainedtp runs the segmentedtp module
 run,0,0,q,r3:tq.init[TESTPROCNAME;`testinst;()!()],1,,explicit-identity init for a custom proctype
 true,0,0,q,TESTPROCNAME~r3`proctype,1,,identity resolved for the custom proctype
 true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reached the custom proctype's own settings file

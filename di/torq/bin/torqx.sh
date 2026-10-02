@@ -56,6 +56,11 @@ allprocnames() {
   awk -F, 'NR>1{print $4}' "$CSVPATH"
 }
 
+startwithall() {
+  # $1 = procname -> false if its optional startwithall column is 0
+  [ "$(getfield "$(findprocno "$1")" startwithall)" != "0" ]
+}
+
 findproc() {
   # $1 = proctype, $2 = procname -> prints matching pid(s), if any.
   # The token after -procname must be a SPACE or END-OF-LINE, not just a space: a
@@ -274,7 +279,10 @@ foreachtarget() {
   # $1 = fn, $2 = target ("" or "all" means every row), remaining args passed through
   local fn="$1"; local target="$2"; shift 2
   if [ -z "$target" ] || [ "$target" = "all" ]; then
-    for p in $(allprocnames); do "$fn" "$p" "$@"; done
+    for p in $(allprocnames); do
+      [ "$fn" = start_one ] && ! startwithall "$p" && continue
+      "$fn" "$p" "$@"
+    done
   else
     "$fn" "$target" "$@"
   fi
@@ -283,7 +291,8 @@ foreachtarget() {
 usage() {
   cat >&2 <<USAGE
 usage: torqx.sh {start|stop|restart|status|attach|export-systemd} [procname|all] [--tmux] [extra torqx_init.q args]
-  start [procname|all] [--tmux|-t] [-norun ...]  start one or all process.csv rows
+  start [procname|all] [--tmux|-t] [-norun ...]  start one or all process.csv rows (all skips
+                                       rows whose optional startwithall column is 0)
                                        --tmux/-t: run in attachable tmux sessions (dev mode)
                                        instead of background nohup+logfile
   stop [procname|all]                 stop one or all (also cleans up any tmux session)

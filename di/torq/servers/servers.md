@@ -129,6 +129,8 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 - `.proc.getconfigfile` becomes `nontorqprocessfile`.
 - In `startupdepcyclestypename`, `.servers.startup[]` becomes `.servers.startup ()!()` (the stored
   globals), `.proc.procname` becomes init's identity, and `.os.sleep` becomes `system "sleep "`.
+- In `querydiscovery`, the 5-arg `getservers[`proctype;`discovery;()!();0b;0b]` becomes its result:
+  live discovery rows.
 
 **Not ported** (discovery does not reach them):
 - passwords (`loadpassword`, `USERPASS`, `PASSWORDS`, `LOADPASSWORD`);

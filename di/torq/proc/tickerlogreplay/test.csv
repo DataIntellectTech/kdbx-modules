@@ -6,6 +6,7 @@ before,0,0,q,setupfixture[],1,,write the schema and a plain log; run a segmented
 comment,,,,,,,settings
 true,0,0,q,"(0;1b;1b;0W;0W;enlist`all;`date;1b;1b;0b;1b;0b;1b;1b;`;0b;`part)~.replay`firstmessage`segmentedmode`autoreplay`lastmessage`messagechunks`tablelist`partitiontype`emptytables`sortafterreplay`basicmode`exitwhencomplete`checklogfiles`gc`clean`sortcsv`partandmerge`mergemethod",1,,replay defaults
 true,0,0,q,`:tempmergedir~.replay.tempdir,1,,tempdir default
+true,0,0,q,"{x~(key x)#.replay}((use`di.torq.config)[`parsefile][""di/torq/settings/tickerlogreplay.q""]`replay)",1,,the shipped replay section declares the module's own defaults (so each is overridable from the command line)
 true,0,0,q,all `NT`Fex`pth`deldir`md in key .os,1,,os helpers defined
 true,0,0,q,all `savedownmanipulation`manipulate`postreplay in key .save,1,,save helpers defined
 fail,0,0,q,"tlr.init[()!();()!()]",1,,init without log must error
@@ -86,7 +87,7 @@ true,0,0,q,0=replay sect seg "()!()",1,,replay a segmentedtp log directory
 true,0,0,q,(3;1)~(rows[SD;`trade];rows[SD;`quote]),1,,every table replayed into the logs' date
 true,0,0,q,`a`b`c~syms[SD;`trade],1,,sorted by sym
 run,0,0,q,clearhdb[],1,,
-true,0,0,q,"0=replay sect ""`schemafile`hdbdir`tplogdir!("",(-3!FIXDIR,""/schema.q""),"";"",(-3!FIXDIR,""/hdb""),"";"",(-3!STPDIR),"")""",1,,replay with toml-style string settings
+true,0,0,q,"0=replay sect ""`schemafile`hdbdir`tplogdir`tablelist`partitiontype!("",(-3!FIXDIR,""/schema.q""),"";"",(-3!FIXDIR,""/hdb""),"";"",(-3!STPDIR),"";(\""trade\"";\""quote\"");\""date\"")""",1,,replay with toml-style string settings
 true,0,0,q,(3;1)~(rows[SD;`trade];rows[SD;`quote]),1,,strings become the schema file and paths
 run,0,0,q,clearhdb[],1,,
 true,0,0,q,0=replay sect seg "enlist[`tablelist]!enlist enlist`quote",1,,replay one table

@@ -47,7 +47,10 @@ A `replay` section, set onto `.replay.<name>`:
 | `mergenumrows` / `mergenumtab` / `mergenumbytes` | `10000000` / `` `quote`trade!10000 50000 `` / `500000000` |
 | `exitwhencomplete` / `autoreplay` / `gc` | `1b` / `1b` / `1b` |
 
-`schemafile`, `hdbdir` and `tplogdir` also take strings, so the section can live in a `.toml` file.
+The symbol settings (`schemafile`, `hdbdir`, `tplogdir`, `tplogfile`, `tablelist`, `partitiontype`, `sortcsv`,
+`tempdir`, `mergemethod`) also take strings, so the section can live in a `.toml` file. `di/torq/settings/tickerlogreplay.q`
+declares every default, so any key can be given on the command line as `-.replay.<key>`, as in TorQ; an app
+`replay` section replaces it, so list there every key to override.
 
 A `merge` section (`mergebybytelimit`, `partlimit`) is set onto `.merge.<name>` and passed to di.merge's `init`.
 

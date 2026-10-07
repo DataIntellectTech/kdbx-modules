@@ -1,5 +1,8 @@
 / di.torq.proc.tickerlogreplay - replay tickerplant log files into an hdb
 
+/ a symbol or a string (TOML has no symbol type)
+tosym:{[x] $[10h=abs type x;`$x;x]};
+
 / log the error and exit
 ex:{[id;message;code] .z.m.log[`error][id;message]; exit code}
 
@@ -16,6 +19,7 @@ init:{[config;deps]
   .z.m.dbw:use`di.dbwrite;
   .z.m.dbw.init enlist[`log]!enlist deps`log;
   {[c;ns] if[ns in key c;(` sv' (`$".",string ns),'key c ns) set' value c ns]}[config] each `replay`merge;
+  @[`.replay;`schemafile`hdbdir`tplogdir;tosym];
   .z.m.merge:use`di.merge;
   .z.m.merge.init (enlist[`log]!enlist deps`log),$[`merge in key config;config`merge;()!()];
   / some variables must be set

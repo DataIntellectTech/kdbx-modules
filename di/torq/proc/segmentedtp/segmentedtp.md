@@ -44,7 +44,8 @@ A `stplg` section, set onto `.stplg.<name>`:
 
 A `sctp` section, set onto `.sctp.<name>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
 `parent`), `tickerplantname` (`` `stp1 ``), `tpconnsleep` (`10`), `tpcheckcycles` (`0W`), `subscribeto` and
-`subscribesyms` (`` ` ``), `replay` (`0b`), `schema` (`1b`).
+`subscribesyms` (`` ` ``), `replay` (`0b`), `schema` (`1b`). `loggingmode`, `tickerplantname`, `subscribeto` and
+`subscribesyms` also take strings, so the section can live in a `.toml` file.
 
 An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`.
 

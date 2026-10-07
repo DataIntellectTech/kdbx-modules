@@ -1,5 +1,8 @@
 / di.torq.proc.segmentedtp - segmented tickerplant
 
+/ a symbol, a string or a list of strings (TOML has no symbol type)
+tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
+
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.segmentedtp: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.segmentedtp: timer dependency is required - see di.timer"];
@@ -15,6 +18,7 @@ init:{[config;deps]
   .z.m.eod:use`di.eodtime;
   .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];
   {[c;ns] if[ns in key c;(` sv' (`$".",string ns),'key c ns) set' value c ns]}[config] each `stplg`sctp;
+  @[`.sctp;`loggingmode`tickerplantname`subscribeto`subscribesyms;tosym];
   if[`createlogs in key config;set[`createlogs;config`createlogs]];
   / subscribers replay from the parent's logs
   if[.sctp.loggingmode=`parent;.stplg.replaylog:{[t] .sctp.tph (`.stplg.replaylog; t)}];

@@ -58,6 +58,9 @@ run,0,0,q,svc.startup[svrdeps[`tpproc]],1,1,startup while discovery is down - th
 true,0,0,q,0=count svc.getservers[`discovery],1,1,discovery is not live after startup
 run,0,0,q,spawndisc[],1,1,bring up the tpproc peer then discovery
 true,0,0,q,svc.waitfortype[`tpproc;3000;200],1,1,waitfortype reaches discovery and connects to the tpproc it names
+comment,,,,,,,retry periods from toml
+run,0,0,q,"svc.init[svrdeps[`otherproc],`retry`discoveryretry!(""0D00:00:10"";10)]",1,1,retry as a string and discoveryretry as seconds
+true,0,0,q,"(0D00:00:10;0D00:00:10)~(.servers.RETRY;.servers.DISCOVERYRETRY)",1,1,both become timespans
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

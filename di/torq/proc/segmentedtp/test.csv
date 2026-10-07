@@ -65,6 +65,7 @@ true,0,0,q,"1 2~hs""(.stplg.updtab`trade)[1 2;3]""",1,,chained upd adds no time
 run,0,0,q,"hs"".z.ts .z.p""",1,,timer
 true,0,0,q,"(0;1;1)~hs""(count trade;.stplg.msgcount`trade;logcount:{-11!(-2;x)} currlog[`trade;`logname])""",1,,published and logged in create mode
 true,0,0,q,"(string hs""currlog[`trade;`logname]"") like ""*/sctp1_"",(string .z.d),""/sctp1_trade2*""",1,,own log in create mode
+true,0,0,q,"(`parent;`stp1;`)~hp"".sctp`loggingmode`tickerplantname`subscribeto""",1,,toml-style sctp strings become symbols
 true,0,0,q,"(ha"".stplg.replaylog`trade"")~hp"".stplg.replaylog`trade""",1,,parent mode replays the upstream logs
 true,0,0,q,"hp""all (::)~/:value loghandles""",1,,parent mode writes no logs
 

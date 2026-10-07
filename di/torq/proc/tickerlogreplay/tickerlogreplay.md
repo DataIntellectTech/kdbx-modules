@@ -47,6 +47,8 @@ A `replay` section, set onto `.replay.<name>`:
 | `mergenumrows` / `mergenumtab` / `mergenumbytes` | `10000000` / `` `quote`trade!10000 50000 `` / `500000000` |
 | `exitwhencomplete` / `autoreplay` / `gc` | `1b` / `1b` / `1b` |
 
+`schemafile`, `hdbdir` and `tplogdir` also take strings, so the section can live in a `.toml` file.
+
 A `merge` section (`mergebybytelimit`, `partlimit`) is set onto `.merge.<name>` and passed to di.merge's `init`.
 
 ## init[config;deps]

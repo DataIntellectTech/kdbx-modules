@@ -86,6 +86,9 @@ true,0,0,q,0=replay sect seg "()!()",1,,replay a segmentedtp log directory
 true,0,0,q,(3;1)~(rows[SD;`trade];rows[SD;`quote]),1,,every table replayed into the logs' date
 true,0,0,q,`a`b`c~syms[SD;`trade],1,,sorted by sym
 run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replay sect ""`schemafile`hdbdir`tplogdir!("",(-3!FIXDIR,""/schema.q""),"";"",(-3!FIXDIR,""/hdb""),"";"",(-3!STPDIR),"")""",1,,replay with toml-style string settings
+true,0,0,q,(3;1)~(rows[SD;`trade];rows[SD;`quote]),1,,strings become the schema file and paths
+run,0,0,q,clearhdb[],1,,
 true,0,0,q,0=replay sect seg "enlist[`tablelist]!enlist enlist`quote",1,,replay one table
 true,0,0,q,(0;1)~(rows[SD;`trade];rows[SD;`quote]),1,,only its logs are read from stpmeta
 true,0,0,q,"replayed ""stp1_quote""",1,,the quote log only

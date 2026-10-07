@@ -28,7 +28,6 @@ subscribe:{[]
 
 / initialise chained STP
 init:{
-  (use`di.subscriptions)[`init][.z.m.params;.z.m.deps];
   `endofperiod set {[x;y;z] .stplg.endofperiod[x;y;z]};
   `endofday set {[x;y] .stplg.endofday[x;y]};
   .servers.startupdepnamecycles[.sctp.tickerplantname;.sctp.tpconnsleep;.sctp.tpcheckcycles];

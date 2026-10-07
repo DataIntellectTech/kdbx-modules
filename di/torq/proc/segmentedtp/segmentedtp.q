@@ -8,7 +8,7 @@ init:{[config;deps]
   .z.m.procname:config`procname;
   .z.m.proctype:config`proctype;
   .z.m.params:config;
-  .z.m.deps:deps;
+  (use`di.subscriptions)[`init][config;deps];
   (use`di.pubsub)[`init][enlist[`log]!enlist deps`log];
   r:deps[`handlers]`register;
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];

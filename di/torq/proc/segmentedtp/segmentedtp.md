@@ -54,14 +54,14 @@ Flat: `schemafile` (required unless chained), `createlogs` (`1b`).
 
 Requires `log`, `timer` and `handlers`. It:
 
-1. initialises di.pubsub and di.eodtime, and registers `.stpps.closesub` on `.z.pc`;
+1. initialises di.subscriptions, di.pubsub and di.eodtime, and registers `.stpps.closesub` on `.z.pc`;
 2. applies the settings; `singular` and `tabular` set `multilogperiod` to `1D`; `custom` loads `customcsv`;
    `parent` makes `replaylog` ask the upstream;
 3. registers a `.z.pc` observer (chained: exit 1 when the upstream closes) and a `.z.exit` observer (flush
    `memorybatch`, close the logs);
 4. sets `.u.upd` from `batchmode`, wraps `.z.ts` (the existing handler, then the batch timer and the end checks),
    and sets `\t` to 1000 if it is off;
-5. chained: initialises di.subscriptions, waits for the upstream and subscribes; otherwise loads `schemafile`;
+5. chained: waits for the upstream and subscribes; otherwise loads `schemafile`;
 6. strips attributes from the published tables and opens the logs.
 
 Under di.torq, `generateschemas` is queued with `.proc.addinitlist`, so it runs again after di.torq's

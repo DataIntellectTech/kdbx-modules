@@ -35,10 +35,10 @@ supplies the discovery process's values.
 | `discoveryregister` | `.servers.DISCOVERYREGISTER` | `1b` |
 | `connectionsfromdiscovery` | `.servers.CONNECTIONSFROMDISCOVERY` | `1b` |
 | `subscribetodiscovery` | `.servers.SUBSCRIBETODISCOVERY` | `1b` |
-| `discoveryretry` | `.servers.DISCOVERYRETRY` | `0D00:05` |
+| `discoveryretry` | `.servers.DISCOVERYRETRY` | `0D00:05`; string or seconds allowed |
 | `tracknontorqprocess` | `.servers.TRACKNONTORQPROCESS` | `0b` |
 | `hopentimeout` | `.servers.HOPENTIMEOUT` | `2000` |
-| `retry` | `.servers.RETRY` | `0D00:05` |
+| `retry` | `.servers.RETRY` | `0D00:05`; string or seconds allowed |
 | `retain` | `.servers.RETAIN` | `` `long$0D00:30 `` |
 | `autoclean` | `.servers.AUTOCLEAN` | `0b` |
 | `debug` | `.servers.DEBUG` | `1b` |
@@ -153,7 +153,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 
 ## Tests
 
-`test.q` + `test.csv` (54 checks) spawn real q peers. They cover:
+`test.q` + `test.csv` (56 checks) spawn real q peers. They cover:
 - init validation, wiring and idempotency;
 - `startup` against a live and a dead peer (discovery off);
 - `gethandlebytype`, and retry recovering an ungraceful kill;

@@ -53,19 +53,6 @@ in di.tplogmgr's module context) lands in the module's *private* namespace, not 
   `@[`.;t;…]`. A bare `upd:insert` would, under replay, insert into the wrong namespace
   and silently capture nothing. (Reads are safe: a bare `value t` falls through to root.)
 
-## Root `endofperiod`
-
-A segmented tickerplant (di.torq.proc.segmentedtp) broadcasts end of period through
-`di.pubsub.callendofperiod`, which sends the `(current;next;data)` triple as a **single**
-argument — not three. The subscribing process must have a root `endofperiod` or the publish
-fails on this side, so `init` installs a monadic default that logs and returns.
-
-It is installed **only when root `endofperiod` is not already defined**, the same rule
-di.torq.proc.chainedtp uses for `upd`. A subscriber with real work to do on a period roll —
-forwarding downstream, for instance — defines its own before calling `init` and keeps it.
-di.torq.proc.wdb and di.torq.proc.rdb both rely on the default: their partitions only advance
-at end of day.
-
 ## `.sub`
 
 A second subscription API at root `.sub`, in a `\d .sub` section at the end of `subscriptions.q`, with

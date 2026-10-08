@@ -55,7 +55,3 @@ true,0,0,q,.sub.reconnectinit,1,,subscribe wrapped .servers.connectcustom for au
 true,0,0,q,10b~pcclosecheck[],1,,closing a subscribed handle marks it inactive through .z.pc at once (no checksubscriptions run)
 
 after,0,0,q,teardownfixture[],1,,remove the temp log dir
-
-comment,,,,,,,endofperiod - the callback every subscriber needs for a segmented tickerplant
-true,0,0,q,endofperioddefault[],1,,init installs a monadic root endofperiod when none is defined
-true,0,0,q,endofperiodnotclobbered[],1,,a consumer's own endofperiod survives init and receives the triple

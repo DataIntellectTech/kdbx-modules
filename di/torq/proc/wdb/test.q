@@ -293,13 +293,3 @@ getpartitionoverride:{[]
   chk `used`notthedefault!(2001.09.11~(mv`getpartition)[];not 2001.09.11~(mv`defaultgetpartition)[])
   };
 
-/ di.pubsub sends the (current;next;data) triple as one argument, so the callback must be monadic
-endofperiodcallback:{[]
-  freshwdb cfg[];
-  r:@[{get[`endofperiod] x};(2026.01.01D12:00;2026.01.01D13:00;`p`t!(2026.01.01D13:00;.z.p));{`$"ERR:",x}];
-  chk `defined`atroot`monadic`logged!(
-    100h=type get`endofperiod;
-    `endofperiod in key `.;
-    not 10h=type r;
-    loggedlike[`info;"received endofperiod*"])
-  };

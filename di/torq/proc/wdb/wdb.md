@@ -111,13 +111,6 @@ The writedown mode decides whether the idb mounts `savedir` or `savedir/<current
 `endofday` republishes `currentpartition` after it advances; the other three are fixed for the life
 of the process.
 
-## End of period
-
-A segmented tickerplant broadcasts end of period to its subscribers, and the callback has to exist
-at root or the publish fails on this side. The wdb has nothing to do on a period roll — its
-partition only advances at end of day — so it relies on the default `endofperiod` that
-di.subscriptions installs. See di.subscriptions for the contract.
-
 ## RDB / WDB interaction
 
 When a wdb is present the rdb must run **`reloadenabled = true`** (see di.torq.proc.rdb). At EOD:
@@ -206,7 +199,7 @@ sort process with `.merge.syncpartsizes` before the hand-off.
 
 ## Not included (deprecated)
 
-- **FinSpace/AWS** — stripped.
+- **FinSpace/AWS** and the `endofperiod` STP stub — stripped.
 
 ## Module-namespace notes
 

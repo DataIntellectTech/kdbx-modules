@@ -10,14 +10,14 @@ classic standard-TP `.u.i`/`.u.L`/`.u.d` global reads.
 
 ## Dependency
 
-`log` (required) — the injected di.torq logging dep. `init` also `use`s `di.tplogmgr`
-(for the repair-aware, count-limited replay).
+`log`, `timer` and `handlers` (required) — the injected di.torq deps. `init` also `use`s
+`di.tplogmgr` (for the repair-aware, count-limited replay).
 
 ## Functions
 
 | Function | Description |
 |---|---|
-| `init[config;deps]` | validate the `log` dep, stash it, load di.tplogmgr |
+| `init[config;deps]` | validate the deps, stash `log`, load di.tplogmgr, apply the `.sub` settings, register `.sub.pc` and the `checksubscriptions` job (once) |
 | `subscribe[tph;tabs;syms;replay]` | subscribe over an open TP handle; returns the subdetails dict |
 | `subscribed[]` | `1b` if any subscription is active |
 | `getsubscriptions[]` | the active-subscriptions registry table |
@@ -53,9 +53,23 @@ in di.tplogmgr's module context) lands in the module's *private* namespace, not 
   `@[`.;t;…]`. A bare `upd:insert` would, under replay, insert into the wrong namespace
   and silently capture nothing. (Reads are safe: a bare `value t` falls through to root.)
 
+## `.sub`
+
+A second subscription API at root `.sub`, in a `\d .sub` section at the end of `subscriptions.q`, with
+its own state: `AUTORECONNECT`, `checksubscriptionperiod`, `SUBSCRIPTIONS`, `getsubscriptionhandles`,
+`updatesubscriptions`, `reconnectinit`, `reducesubs`, `createtables`, `replay`, `subscribe`,
+`replayupd`, `checksubscriptions`, `retrysubscription`, `autoreconnect`, `pc`. `subscribe` asks the
+publisher for its `tptype` (`standard`, `chained` or `segmented`) and subscribes to match. It calls
+`.servers.getservers`, `.servers.enabled` and `.servers.connectcustom` from `di.torq.servers` 0.5.0.
+
+- Settings (flat config): `autoreconnect` (default `0b`), `checksubscriptionperiod` (default `0D00:00:10`).
+- `init` registers, once per process: `.sub.pc[::;]` on `.z.pc` through `handlers`, and
+  `checksubscriptions` every `checksubscriptionperiod` (converted to seconds, timer mode 1) through
+  `timer` when the period is above 0.
+
 ## Not yet (future)
 
-Auto-reconnect / resubscribe on TP bounce; filtered-**column** subscriptions;
+Auto-reconnect / resubscribe on TP bounce (for the API above); filtered-**column** subscriptions;
 remote-log streaming (v1 assumes the subscriber shares the TP's filesystem to read the
 log — the classic tick assumption).
 

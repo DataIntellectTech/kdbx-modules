@@ -121,9 +121,104 @@ setsubtables`;
 
 initialized:0b;
 
-init:{
+init:{[deps]
+  if[99h<>type deps;'"di.pubsub: deps must be a dict with a log key"];
+  if[not `log in key deps;'"di.pubsub: log dependency is required - see di.util.log"];
+  .z.m.log:deps`log;
   .z.m.t:$[count subtables;subtables;tables[]except`reqfilteredtbl];
   .z.m.schemas:t!extractschema each t;
   .z.m.tabcols:t!cols each t;
   if[count tabcols;.z.m.initialized:1b];
   };
+
+/ .stpps, .u.sub, .ps
+\d .stpps
+
+t:`
+subrequestall:enlist[`]!enlist ()
+subrequestfiltered:([]tbl:`$();handle:`int$();filts:();columns:())
+
+allsubhandles:{
+  distinct raze union/[value subrequestall;exec handle from .stpps.subrequestfiltered]
+  };
+
+suball:{
+  delhandle[x;.z.w];
+  add[x];
+  :(x;schemas[x]);
+ };
+
+subfiltered:{[x;y]
+  delhandlef[x;.z.w];
+  val:![11 99h;(selfiltered;addfiltered)][type y] . (x;y);
+  $[all raze null val;(x;schemas[x]);val]
+ };
+
+add:{
+  if[not (count subrequestall x)>i:subrequestall[x]?.z.w;
+    subrequestall[x],:.z.w];
+ };
+
+errparse:{.z.m.log[`error][`addfiltered;m:y," error: ",x];'m};
+
+addfiltered:{[x;y]
+  filters:$[all null f:y[x;`filters];();@[parse;"select from t where ",f;.stpps.errparse[;"Filter"]] 2];
+  columns:last $[all null c:y[x;`columns];();@[parse;"select ",c," from t";.stpps.errparse[;"Column"]]];
+  @[eval;(?;.stpps.schemas[x];filters;0b;columns);.stpps.errparse[;"Query"]];
+  `.stpps.subrequestfiltered upsert (x;.z.w;filters;columns);
+ };
+
+selfiltered:{[x;y]
+  filts:enlist enlist (in;`sym;enlist y);
+  @[eval;(?;.stpps.schemas[x];filts;0b;());.stpps.errparse[;"Query"]];
+  `.stpps.subrequestfiltered upsert (x;.z.w;filts;());
+ };
+
+pub:{[t;x]
+  if[not count x;:()];
+  if[count h:subrequestall[t];-25!(h;(`upd;t;x))];
+  if[t in .stpps.subrequestfiltered`tbl;
+    {[t;x;sels] data:eval(?;x;sels`filts;0b;sels`columns);
+         if[count data;neg[sels`handle](`upd;t;data)]}[t;x;]
+           each select handle,filts,columns from .stpps.subrequestfiltered where tbl=t
+    ];
+   };
+
+delhandle:{[t;h]
+  @[`.stpps.subrequestall;t;except;h];
+ };
+
+delhandlef:{[t;h]
+  delete from  `.stpps.subrequestfiltered where tbl=t,handle=h;
+ };
+
+closesub:{[h]
+  delhandle[;h]each t;
+  delhandlef[;h]each t;
+ };
+
+extractschema:{t:value x; $[.Q.qp t; t; 0#t]};
+
+init:{[t]
+  if[count b:t where not t in tables[];{.z.m.log[`error][`psinit;m:"Table ",string[x]," does not exist"];'m} each b];
+  .stpps.t:t except b;
+  .stpps.schemas:.stpps.t!extractschema each .stpps.t;
+  .stpps.tabcols:.stpps.t!cols each .stpps.t;
+ };
+
+\d .
+
+.u.sub:{[x;y]
+  if[x~`;:.z.s[;y] each .stpps.t];
+  if[not x in .stpps.t;
+    .z.m.log[`error][`sub;m:"Table ",string[x]," not in list of stp pub/sub tables"];
+    :(x;m)
+  ];
+  $[y~`;.stpps.suball[x];.stpps.subfiltered[x;y]]
+ };
+
+.ps.loaded:1b;
+.ps.publish:.stpps.pub;
+.ps.subscribe:.u.sub;
+.ps.init:.stpps.init;
+.ps.initialise:{.ps.init[tables[]];.ps.initialised:1b};

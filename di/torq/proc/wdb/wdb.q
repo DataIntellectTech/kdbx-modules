@@ -43,7 +43,9 @@ replaymaxrows:{[t] $[t in key .z.m.replaynumtab;.z.m.replaynumtab t;.z.m.replayn
 mergemaxrows:{[t] $[t in key .z.m.mergenumtab;.z.m.mergenumtab t;.z.m.mergenumrows]}
 
 / function to determine the partition value
-getpartition:{[] $[null .z.m.currentpartition;(`date^.z.m.partitiontype)$.z.D;.z.m.currentpartition]}
+/ the partition value; legacy exposed this as an overridable setting, so config may replace it
+defaultgetpartition:{[] $[null .z.m.currentpartition;(`date^.z.m.partitiontype)$.z.D;.z.m.currentpartition]}
+getpartition:{[] .z.m.getpartition[]}
 
 / function to return a list of tables that the wdb process has been configured to deal within
 tablelist:{[] ((exec tablename from `bytes xdesc .z.m.tabsizes) union tables[`.]) except .z.m.ignorelist}
@@ -252,6 +254,11 @@ doreload:{[pt]
      (.z.m.timer`addjob)[`sortflushend;flushend;();1;1h;`startattime`maxruns!(.z.m.timeouttime;1)]];
     flushend[]];
   }
+
+/ a segmented tickerplant broadcasts end of period to its subscribers through di.pubsub, which
+/ sends the (current;next;data) triple as ONE argument - the wdb has nothing to do on a period
+/ roll, but the callback has to exist or the publish fails
+endofperiod:{[x] .z.m.log[`info][`endofperiod;"received endofperiod, (current;next;data) is ",.Q.s1 x];}
 
 / set .z.zd to control how data gets compressed
 setcompression:{[compression]
@@ -624,6 +631,7 @@ setconfig:{[config]
   .z.m.gc:$[`gc in key config;tobool config`gc;1b];
   .z.m.partitiontype:$[`partitiontype in key config;assym config`partitiontype;`date];
   .z.m.savedownmanipulation:$[`savedownmanipulation in key config;config`savedownmanipulation;()!()];
+  .z.m.getpartition:$[`getpartition in key config;config`getpartition;defaultgetpartition];
   .z.m.upd:$[`upd in key config;config`upd;insert];
   .z.m.posteod:$[`postreplay in key config;config`postreplay;{[d;p]}];
   .z.m.reloadorder:$[`reloadorder in key config;astoklist config`reloadorder;`hdb`rdb`idb];
@@ -655,6 +663,7 @@ setroot:{[]
   @[`.z;`pd;:;{[] `u#raze {exec w from x} each (.z.m.svc`getservers) each .z.m.sortworkertypes}];
   @[`.;`upd;:;.z.m.upd];
   @[`.;`endofday;:;endofday];
+  @[`.;`endofperiod;:;endofperiod];
   set[`.u.end;endofday];
   / the idb reads these at startup; currentpartition is republished at each end of day
   set[`.wdb.savedir;.z.m.savedir];

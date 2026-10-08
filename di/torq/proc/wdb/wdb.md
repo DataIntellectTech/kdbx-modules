@@ -58,6 +58,7 @@ eodwaittime = 10                  # seconds to wait for reload callbacks before 
 permitreload = true               # false: sort and move, but leave downstream alone
 # compression (optional) -> e.g. 17 2 6, applied (.z.zd) while sorting/merging, then reset to 16 0 0
 # savedownmanipulation (optional, .q settings) -> table!function applied before each write
+# getpartition (optional, .q settings) -> niladic function returning the partition value
 # upd (optional, .q settings) -> {[t;x]} the live upd, and the one the replay calls; default insert
 # postreplay (optional, .q settings) -> {[hdbdir;pt]} called after the move, before the reload
 # subscribeto / subscribesyms omitted -> all tables, all syms
@@ -109,6 +110,14 @@ so the idb is not configured with the two directories by hand — one source of 
 The writedown mode decides whether the idb mounts `savedir` or `savedir/<currentpartition>`.
 `endofday` republishes `currentpartition` after it advances; the other three are fixed for the life
 of the process.
+
+## End of period
+
+A segmented tickerplant (di.torq.proc.segmentedtp) broadcasts end of period to its subscribers
+through `di.pubsub.callendofperiod`, which sends the `(current;next;data)` triple as a **single**
+argument. The wdb has nothing to do on a period roll — its partition only advances at end of day —
+but the callback has to exist at root or the publish fails on the subscriber, so `setroot` defines
+a monadic `endofperiod` that logs and returns.
 
 ## RDB / WDB interaction
 
@@ -198,7 +207,7 @@ sort process with `.merge.syncpartsizes` before the hand-off.
 
 ## Not included (deprecated)
 
-- **FinSpace/AWS** and the `endofperiod` STP stub — stripped.
+- **FinSpace/AWS** — stripped.
 
 ## Module-namespace notes
 

@@ -67,6 +67,10 @@ true,0,0,q,tabsizestracked[],1,,a partitioned writedown tracks tabsizes so table
 true,0,0,q,tabsizescleared[],1,,end of day clears tabsizes in a partitioned mode too
 true,0,0,q,nogatewayquiet[],1,,no gateway is a normal state and must not log an error
 
+comment,,,,,,,parity with legacy wdb - overridable getpartition and the endofperiod callback
+true,0,0,q,getpartitionoverride[],1,,a getpartition supplied in config replaces the built-in
+true,0,0,q,endofperiodcallback[],1,,endofperiod exists at root and takes the triple as one argument
+
 run,0,0,q,stoptp[],1,,stop the fake tickerplant
 
 comment,,,,,,,sort mode - proctypes sort and sortworker

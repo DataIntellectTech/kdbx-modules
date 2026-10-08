@@ -62,6 +62,11 @@ true,0,0,q,savemode`partbyattr,1,,a save-mode wdb hands a partbyattr day and its
 true,0,0,q,savemode`partbyfirstchar,1,,a save-mode wdb hands a partbyfirstchar day to the sort process
 true,0,0,q,handshake[],1,,with eodwaittime the hdb reloads async and calls back before the release
 true,0,0,q,syncreload[],1,,with eodwaittime 0 the reload is a sync call
+comment,,,,,,,review fixes - tabsizes tracking and the absent-gateway log level
+true,0,0,q,tabsizestracked[],1,,a partitioned writedown tracks tabsizes so tablelist flushes the largest table first
+true,0,0,q,tabsizescleared[],1,,end of day clears tabsizes in a partitioned mode too
+true,0,0,q,nogatewayquiet[],1,,no gateway is a normal state and must not log an error
+
 run,0,0,q,stoptp[],1,,stop the fake tickerplant
 
 comment,,,,,,,sort mode - proctypes sort and sortworker

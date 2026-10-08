@@ -6,6 +6,10 @@ TPPORT:25961;
 
 chk:{[d] `LAST set d; all value d};
 
+/ module-local state and internals, for the checks that cannot go through the export dict
+MOD:`.m.di.0torq.0proc.0wdb;
+mv:{[n] get .Q.dd[MOD;n]};
+
 calls:([]lvl:`symbol$();ctx:`symbol$();msg:());
 mocklogfn:{[lvl;ctx;msg] `calls upsert `lvl`ctx`msg!(lvl;ctx;msg);};
 reclog:`info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;]);
@@ -250,4 +254,35 @@ syncreload:{[]
   r:chk `reloaded`logged!(1=h"RELOADS";loggedlike[`info;"the hdb successfully reloaded"]);
   stoppeers[];
   r
+  };
+
+/ tablelist[] orders by bytes from tabsizes, so a partitioned writedown must populate it too
+tabsizestracked:{[]
+  freshwdb cfg[],`writedownmode`mergemode`numrows!(`partbyattr;`part;1);
+  feed[];
+  (mv`savetodisk)[];
+  ts:mv`tabsizes;
+  chk `populated`bothtables`bytespositive`largestfirst!(
+    0<count ts;
+    `quote`trade~asc exec tablename from ts;
+    all 0<exec bytes from ts;
+    `trade~first (mv`tablelist)[])
+  };
+
+/ tabsizes is populated in every mode now, so end of day has to clear it in every mode
+tabsizescleared:{[]
+  freshwdb cfg[],`writedownmode`mergemode`numrows!(`partbyattr;`part;1);
+  feed[];
+  (mv`savetodisk)[];
+  before:count mv`tabsizes;
+  endofday today[];
+  chk `wastracked`nowempty!(0<before;0=count mv`tabsizes)
+  };
+
+/ a deployment with no gateway is normal, so an absent gateway must not log an error every eod
+nogatewayquiet:{[]
+  freshwdb cfg[];
+  feed[];
+  endofday today[];
+  chk `noerror`saidso!(not loggedlike[`error;"*gateway*"];loggedlike[`info;"no gateway detected*"])
   };

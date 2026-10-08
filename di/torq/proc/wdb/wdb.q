@@ -133,6 +133,8 @@ savetablesbypart:{[dir;pt;forcesave;tablename;writedownmode]
     .z.m.log[`info][`save;"enumerated ",(string tablename)," table"];
     / upsert data to specific partition directory
     upserttopartition[dir;tablename;enumdata;pt;extrapartitiontype;;writedownmode] each extrapartitions;
+    / tablelist[] orders by bytes from tabsizes, so the partitioned modes must track it as well
+    .z.m.tabsizes+:([tablename:enlist tablename]rowcount:enlist arows;bytes:enlist -22!enumdata);
     / empty the table
     .z.m.log[`info][`delete;"deleting ",(string tablename)," data from in-memory table"];
     @[`.;tablename;0#];
@@ -271,11 +273,13 @@ movetohdb:{[dw;hw;pt]
     not any a[dw] in (a:{key hsym `$x}) hw;
     [{[y;x]
        $[not (b:`$last "/" vs x) in key y;
-         [.[.z.m.os`mv;(x;y);{[x;y;e] .z.m.log[`error][`mvtohdb;"Table ",(string x)," has failed to copy to ",(string y)," with error: ",e]}[b;y]];
+         [.[.z.m.os`mv;(x;y);{[x;y;e] .z.m.log[`error][`mvtohdb;"Table ",(string x)," has failed to copy to ",(string y)," with error: ",e];'e}[b;y]];
           .z.m.log[`info][`mvtohdb;"Table ",(string b)," has been successfully moved to ",string y]];
          .z.m.log[`error][`mvtohdb;"Table ",(string b)," was skipped because it already exists in ",string y]];
        }[hsym `$hw]'[dw,/:"/",/:string key hsym `$dw];
-     if[0=count key hsym `$dw;@[.z.m.os`deldir;dw;{[x;y] .z.m.log[`error][`mvtohdb;"Failed to delete folder ",x," with error: ",y]}[dw]]]];
+     $[0=count key hsym `$dw;
+       @[.z.m.os`deldir;dw;{[x;y] .z.m.log[`error][`mvtohdb;"Failed to delete folder ",x," with error: ",y]}[dw]];
+       .z.m.log[`error][`mvtohdb;"Table(s) ",(", " sv string key hsym `$dw)," are still in ",dw," - the partition is split across the wdb and the hdb"]]];
     .z.m.log[`error][`mvtohdb;raze "Table(s) ",string[(key hsym `$hw) inter key hsym `$dw]," is present in both location. Operation will be aborted to avoid corrupting the hdb"]]
   }
 
@@ -500,7 +504,7 @@ knowntypes:{[] $[`getallservers in key .z.m.svc;exec distinct proctype from (.z.
 informgateway:{[msg]
   .z.m.log[`info][`informgateway;"sending message to gateway(s)"];
   if[0=count h:raze {exec w from x} each (.z.m.svc`getservers) each .z.m.gatewaytypes;
-    :.z.m.log[`error][`informgateway;"can't connect to the gateway - no gateway detected"]];
+    :.z.m.log[`info][`informgateway;"no gateway detected - nothing to reload"]];
   {[wh;msg] @[neg wh;(`.gw.reload;msg);{[e] .z.m.log[`error][`informgateway;"unable to run command on gateway: ",e]}]}[;msg] each h;
   .z.m.log[`info][`informgateway;"the message - ",(.Q.s1 msg)," was sent to the gateways"];
   }
@@ -555,8 +559,9 @@ endofday:{[pt]
     endofdaysave[.z.m.savedir;pt];
     / if sort mode enable call endofdaysort within the process, else inform the sort and reload process to do it
     $[.z.m.sortenabled;endofdaysort;informsortandreload] . (.z.m.savedirs;pt;tablist;.z.m.writedownmode;mergelimits;.z.m.hdbsettings;mergemethod)];
-  .z.m.log[`info][`eod;"deleting data from ",$[r:.z.m.writedownmode in .z.m.partwritemodes;"partsizes";"tabsizes"]];
-  $[r;(.z.m.mrg`clearpartsizes)[];.z.m.tabsizes:0#.z.m.tabsizes];
+  .z.m.log[`info][`eod;"deleting data from ",$[.z.m.writedownmode in .z.m.partwritemodes;"partsizes and tabsizes";"tabsizes"]];
+  if[.z.m.writedownmode in .z.m.partwritemodes;(.z.m.mrg`clearpartsizes)[]];
+  .z.m.tabsizes:0#.z.m.tabsizes;
   .z.m.currentpartition:pt+1;
   set[`.wdb.currentpartition;.z.m.currentpartition];
   .z.m.log[`info][`eod;"end of day is now complete"];

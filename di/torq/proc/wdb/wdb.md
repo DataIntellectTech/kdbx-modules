@@ -113,11 +113,10 @@ of the process.
 
 ## End of period
 
-A segmented tickerplant (di.torq.proc.segmentedtp) broadcasts end of period to its subscribers
-through `di.pubsub.callendofperiod`, which sends the `(current;next;data)` triple as a **single**
-argument. The wdb has nothing to do on a period roll — its partition only advances at end of day —
-but the callback has to exist at root or the publish fails on the subscriber, so `setroot` defines
-a monadic `endofperiod` that logs and returns.
+A segmented tickerplant broadcasts end of period to its subscribers, and the callback has to exist
+at root or the publish fails on this side. The wdb has nothing to do on a period roll — its
+partition only advances at end of day — so it relies on the default `endofperiod` that
+di.subscriptions installs. See di.subscriptions for the contract.
 
 ## RDB / WDB interaction
 

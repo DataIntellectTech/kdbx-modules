@@ -255,11 +255,6 @@ doreload:{[pt]
     flushend[]];
   }
 
-/ a segmented tickerplant broadcasts end of period to its subscribers through di.pubsub, which
-/ sends the (current;next;data) triple as ONE argument - the wdb has nothing to do on a period
-/ roll, but the callback has to exist or the publish fails
-endofperiod:{[x] .z.m.log[`info][`endofperiod;"received endofperiod, (current;next;data) is ",.Q.s1 x];}
-
 / set .z.zd to control how data gets compressed
 setcompression:{[compression]
   if[3=count compression;
@@ -663,7 +658,6 @@ setroot:{[]
   @[`.z;`pd;:;{[] `u#raze {exec w from x} each (.z.m.svc`getservers) each .z.m.sortworkertypes}];
   @[`.;`upd;:;.z.m.upd];
   @[`.;`endofday;:;endofday];
-  @[`.;`endofperiod;:;endofperiod];
   set[`.u.end;endofday];
   / the idb reads these at startup; currentpartition is republished at each end of day
   set[`.wdb.savedir;.z.m.savedir];

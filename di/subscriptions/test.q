@@ -80,3 +80,26 @@ pcclosecheck:{[]
   }
 
 teardownfixture:{[] @[{(neg x)"exit 0";(neg x)[]};tph;()]; system "sleep 0.3"; system "rm -rf ",BASE; }
+
+/ the (current;next;data) triple a segmented tp publishes, as di.pubsub sends it - one argument
+EOPMSG:(2026.01.01D12:00;2026.01.01D13:00;`p`t!(2026.01.01D13:00;2026.01.01D12:59));
+dropeop:{[] if[`endofperiod in key `.;![`.;();0b;enlist`endofperiod]];};
+
+/ di.pubsub.callendofperiod sends that triple as ONE argument, so every subscriber needs a monadic
+/ root endofperiod or the publish fails on this side
+endofperioddefault:{[]
+  dropeop[];
+  sub.init[()!();deps[]];
+  all(`endofperiod in key `.;
+      not 10h=type @[{get[`endofperiod] x};EOPMSG;{`$"ERR:",x}])
+  };
+
+/ a consumer that defines its own keeps it - the same rule chainedtp uses for upd
+endofperiodnotclobbered:{[]
+  dropeop[];
+  @[`.;`endofperiod;:;{[x] `EOPMARK set x;}];
+  sub.init[()!();deps[]];
+  @[`.;`EOPMARK;:;::];
+  get[`endofperiod] EOPMSG;
+  EOPMSG~get`EOPMARK
+  };

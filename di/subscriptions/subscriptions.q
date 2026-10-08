@@ -10,6 +10,11 @@
 / reads the TP log file directly, same filesystem - the classic tick assumption). Not yet:
 / auto-reconnect/resubscribe, filtered-column subscriptions, remote-log streaming.
 
+/ a segmented tickerplant broadcasts end of period through di.pubsub.callendofperiod, which sends
+/ the (current;next;data) triple as ONE argument. Every subscriber needs the callback to exist or
+/ the publish fails on this side; a subscriber that has real work to do defines its own.
+endofperiod:{[x] .z.m.log[`info][`endofperiod;"received endofperiod, (current;next;data) is ",.Q.s1 x];}
+
 / registry of active subscriptions - for health checks now, reconnect later.
 SUBSCRIPTIONS:([]handle:`int$();tabs:();syms:();subtime:`timestamp$())
 
@@ -25,6 +30,8 @@ init:{[config;deps]
   / .sub settings
   if[`autoreconnect in key config;.sub.AUTORECONNECT:config`autoreconnect];
   if[`checksubscriptionperiod in key config;.sub.checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b])*config`checksubscriptionperiod];
+  / as chainedtp does for upd, only install the default when the consumer has not defined its own
+  if[not `endofperiod in key `.;@[`.;`endofperiod;:;endofperiod]];
   if[not .z.m.registered;
     (deps[`handlers]`register)[`.z.pc;`;`sub;0j;.sub.pc[::;]];
     if[.sub.checksubscriptionperiod>0;(deps[`timer]`addjob)[`checksubscriptions;.sub.checksubscriptions;();`long$.sub.checksubscriptionperiod%0D00:00:01;1;()!()]];

@@ -673,8 +673,6 @@ init:{[config;deps]
   / not in deps.toml: di.os has no VERSION, which fails depcheck
   .z.m.os:use`di.os;
   initdbwrite[config;deps];
-  .z.m.subs:use`di.subscriptions;
-  (.z.m.subs`init)[config;deps];
   .z.m.mrg:use`di.merge;
   (.z.m.mrg`init)[`log`mergebybytelimit!(deps`log;.z.m.mergebybytelimit)];
   checksortparams[];
@@ -686,6 +684,8 @@ init:{[config;deps]
     .z.m.log[`info][`init;"initialised, mode=sort, savedir=",.z.m.savedirs,", hdbdir=",(1_string .z.m.hdbdir),", waiting to be called at .wdb.endofdaysort"];
     :()];
 
+  .z.m.subs:use`di.subscriptions;
+  (.z.m.subs`init)[config;deps];
   .z.m.currentpartition:getpartition[];
   (.z.m.os`mkdir) .z.m.savedir;
   clearwdbdata[];

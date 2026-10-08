@@ -19,7 +19,9 @@ servers:{[] `startup`getservers`gethandlebytype`waitfortype!(
   {[pt] ([]w:`int$(),$[pt in key PEERS;PEERS pt;()])};
   {[pt;sel] TPH};
   {[pt;t;p] TPUP})};
-recdeps:{[] `log`timer`servers!(reclog;`addjob`deletejobs!({[a;b;c;d;e;f]};{[x]});servers[])};
+/ handlers is required by di.subscriptions, which the wdb inits with its own deps
+rechandlers:`register`remove`list!({[ev;ph;nm;pri;fn]};{[ev;ph;nm]};{[ev]});
+recdeps:{[] `log`timer`servers`handlers!(reclog;`addjob`deletejobs!({[a;b;c;d;e;f]};{[x]});servers[];rechandlers)};
 
 starttp:{[]
   f:BASE,"/faketp.q";
@@ -68,7 +70,8 @@ eodok:{[c]
   feed[];
   endofday today[];
   t:select from get hdbpart`trade;
-  s:value t`sym;
+  / enum on disk, but select resolves it once the sym domain is loaded - take the column as-is
+  s:t`sym;
   chk `rows`psym`grouped`quote`wdbgone!(
     8=count t;
     `p=attr (get hdbpart`trade)`sym;
@@ -213,7 +216,8 @@ eodok:{[c]
   endofday today[];
   if[`sort in key PEERS;(first PEERS`sort)""];
   t:select from get hdbpart`trade;
-  s:value t`sym;
+  / enum on disk, but select resolves it once the sym domain is loaded - take the column as-is
+  s:t`sym;
   chk `rows`psym`grouped`quote`wdbgone!(
     8=count t;
     `p=attr (get hdbpart`trade)`sym;

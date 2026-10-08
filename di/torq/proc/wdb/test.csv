@@ -3,7 +3,8 @@ before,0,0,q,wdb:use`di.torq.proc.wdb,1,,load module
 before,0,0,q,mlog:`info`warn`error!(3#enlist {[c;m]}),1,,a minimal (dyadic) log dep dict
 before,0,0,q,mtimer:`addjob`deletejobs!(2#enlist {[x]}),1,,a minimal timer dep dict
 before,0,0,q,mservers:`startup`getservers`gethandlebytype`waitfortype!(4#enlist {[x]}),1,,a minimal servers dep dict
-before,0,0,q,"alldeps:`log`timer`servers!(mlog;mtimer;mservers)",1,,every injected dep the wdb requires
+before,0,0,q,"mhandlers:`register`remove`list!({[ev;ph;nm;pri;fn]};{[ev;ph;nm]};{[ev]})",1,,a minimal handlers dep dict - di.subscriptions requires it
+before,0,0,q,"alldeps:`log`timer`servers`handlers!(mlog;mtimer;mservers;mhandlers)",1,,every injected dep the wdb requires
 before,0,0,q,"initerr:{[c] @[{[x] wdb.init[x;alldeps]};c;{x}]}",1,,run init for a config and return the error string
 
 fail,0,0,q,wdb.init[()!();()!()],1,,init without the log dependency must error

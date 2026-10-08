@@ -7,13 +7,13 @@ tolong:{[x] $[10h=abs type x;"J"$(),x;"j"$x]}
 / force loads sym file; the size is only recorded once the load succeeds, so a failed read is retried
 loadsym:{[]
   .z.m.log[`info][`load;"loading the sym file"];
-  @[{load x;.z.m.symsize:@[hcount;x;0]};.z.m.symfilepath;{.z.m.log[`error][`load;"failed to load sym file: ",(string .z.m.symfilepath)," error: ",x]}];
+  @[{load x;.z.m.symsize:@[hcount;x;0]};.z.m.symfilepath;{.z.m.log[`error][`load;"failed to load sym file: ",(1_string .z.m.symfilepath)," error: ",x]}];
   }
 
 / force loads IDB
 loadidb:{[]
   .z.m.log[`info][`load;"loading the db"];
-  @[system;"l ",1_string .z.m.idbdir;{.z.m.log[`error][`load;"failed to load IDB: ",(string .z.m.idbdir)," error: ",x]}];
+  @[system;"l ",1_string .z.m.idbdir;{.z.m.log[`error][`load;"failed to load IDB: ",(1_string .z.m.idbdir)," error: ",x]}];
   .z.m.partitionsize:count key .z.m.idbdir;
   }
 
@@ -29,7 +29,7 @@ loaddb:{[]
 rollover:{[pt]
   .z.m.currentpartition:pt;
   .z.m.idbdir:.Q.dd[.z.m.savedir;$[.z.m.writedownmode~`default;`;pt]];
-  .z.m.log[`info][`rollover;"IDB folder has been set to: ",string .z.m.idbdir];
+  .z.m.log[`info][`rollover;"IDB folder has been set to: ",1_string .z.m.idbdir];
   loaddb[];
   }
 
@@ -70,7 +70,7 @@ setparametersfromwdb:{[config]
   .z.m.symfilepath:.Q.dd[hsym params 1;`sym];
   .z.m.writedownmode:params 3;
   .z.m.idbdir:.Q.dd[.z.m.savedir;$[.z.m.writedownmode~`default;`;.z.m.currentpartition]];
-  .z.m.log[`info][`init;"Current settings: db folder: ",(string .z.m.idbdir),", sym file: ",(string .z.m.symfilepath),", writedownmode: ",string .z.m.writedownmode];
+  .z.m.log[`info][`init;"Current settings: db folder: ",(1_string .z.m.idbdir),", sym file: ",(1_string .z.m.symfilepath),", writedownmode: ",string .z.m.writedownmode];
   }
 
 / helper function to support queries against the sym column

@@ -1,0 +1,139 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,setup - load module and accessors
+before,0,0,q,da:use`di.dataaccess,1,,load module (pulls in di.asyncdispatch + di.serverselect via use)
+before,0,0,q,reqs:{.m.di.0dataaccess.requests},1,,live requests table accessor
+before,0,0,q,sr:{.m.di.0dataaccess.shardresults},1,,live shard results dict accessor
+comment,,,,,,,setup - override hard deps with mocks so tests are deterministic
+before,0,0,q,".m.di.0dataaccess.asyncdispatch:`execquery`execqueryto!({[q;st;jf;pb;t;s]1};{[rt;q;st;jf;pb;t;s]1})",1,,mock di.asyncdispatch (the submitshards stub bypasses it anyway)
+before,0,0,q,".m.di.0dataaccess.serverselect:enlist[`getservers]!enlist{[no;lu;req]select servertype from .m.di.0dataaccess.partitions}",1,,mock di.serverselect - all configured partition types are reachable
+comment,,,,,,,setup - capturing logger and recording timer (required deps)
+before,0,0,q,logged:(),1,,log capture buffer of (level;ctx;msg) triples
+before,0,0,q,"mocklog:`info`warn`error!({[c;m]logged,:enlist(`info;c;m)};{[c;m]logged,:enlist(`warn;c;m)};{[c;m]logged,:enlist(`error;c;m)})",1,,capturing binary {[c;m]} logger
+before,0,0,q,scheduledjobs:(),1,,timer addjob capture buffer of (id;period;mode)
+before,0,0,q,"mocktimer:enlist[`addjob]!enlist{[id;f;p;per;mode;o]scheduledjobs,:enlist(id;per;mode);}",1,,mock di.timer with a recording 6-arg addjob (di.torq's injected timer contract)
+before,0,0,q,"(da`init)[`log`timer`partitions!(mocklog;mocktimer;([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp))]",1,,init with required log+timer and a single hdb partition covering all time
+before,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout](da`shardresult)[reqid;first shards`shardquery;2]}",1,,stub submitshards - feed a fixed result back via shardresult per shard
+
+comment,,,,,,,exports - both entry points plus the shared lifecycle
+true,0,0,q,`init`getdata`getdatafull`execquery`setpartitions`shardresult`sharderror`removerequests`version~key da,1,,module exports the merged api
+true,0,0,q,0<count da`version,1,,version string present
+true,0,0,q,all `shardresult`sharderror in key `.dataaccess,1,,init published the local-postback entry points at root
+
+comment,,,,,,,init validation - all required-dep failures must signal
+fail,0,0,q,(da`init)[(::)],1,,init rejects a non-dictionary deps
+fail,0,0,q,"(da`init)[enlist[`timer]!enlist mocktimer]",1,,init rejects missing log dependency
+fail,0,0,q,"(da`init)[`log`timer!((enlist`info)!enlist{[c;m]};mocktimer)]",1,,init rejects an incomplete log dict
+fail,0,0,q,"(da`init)[enlist[`log]!enlist mocklog]",1,,init rejects missing timer dependency
+fail,0,0,q,"(da`init)[`log`timer`partitions!(mocklog;mocktimer;([]bad:enlist`x))]",1,,init rejects a partitions table with wrong columns
+
+comment,,,,,,,init wired the housekeeping job into the injected timer
+true,0,0,q,1=count scheduledjobs,1,,init scheduled exactly one timer job
+true,0,0,q,`dataaccesspurge~scheduledjobs[0;0],1,,scheduled job id is dataaccesspurge
+
+comment,,,,,,,getrouting - clips the request range to a single hdb shard
+true,0,0,q,`servertype`rangestart`rangeend~cols .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,routing returns the expected columns
+true,0,0,q,1~count .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,one shard for one covering partition
+true,0,0,q,(enlist`hdb)~exec servertype from .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,shard servertype is hdb
+true,0,0,q,("p"$2000.01.01)~first exec rangestart from .m.di.0dataaccess.getrouting["p"$2000.01.01;"p"$2000.01.02],1,,rangestart clipped to the requested start
+
+comment,,,,,,,buildstringshardquery - injects a within filter on the time column (execquery path)
+true,0,0,q,".m.di.0dataaccess.buildstringshardquery[""select from t"";""p""$2000.01.01;""p""$2000.01.02] like ""select from t where time within (*""",1,,no-where query gets a where time within clause
+true,0,0,q,".m.di.0dataaccess.buildstringshardquery[""select from t where a=1"";""p""$2000.01.01;""p""$2000.01.02] like ""*where a=1 , time within (*""",1,,existing where gets the time clause ANDed on
+
+comment,,,,,,,buildshardquery - functional per-backend build with date normalisation (getdata path)
+true,0,0,q,"0h=type .m.di.0dataaccess.buildshardquery[`hdb;`trade;enlist`date;()!();""p""$2000.01.01;""p""$2000.01.02;`time;`date]",1,,functional builder returns a parse tree not a string
+true,0,0,q,"`date~.m.di.0dataaccess.buildshardquery[`hdb;`trade;enlist`date;(enlist`cnt)!enlist(`count;`i);""p""$2000.01.01;""p""$2000.01.02;`time;`date][3]`date",1,,hdb groups by its NATIVE date column
+true,0,0,q,"($;enlist`date;`time)~.m.di.0dataaccess.buildshardquery[`rdb;`trade;enlist`date;(enlist`cnt)!enlist(`count;`i);""p""$2000.01.01;""p""$2000.01.02;`time;`date][3]`date",1,,rdb DERIVES date via a date$time parse tree (no date column in memory)
+true,0,0,q,"2=count .m.di.0dataaccess.buildshardquery[`hdb;`trade;`;()!();""p""$2000.01.01;""p""$2000.01.02;`time;`date]2",1,,hdb where-clause also constrains the partition column so kdb prunes partitions
+true,0,0,q,"1=count .m.di.0dataaccess.buildshardquery[`rdb;`trade;`;()!();""p""$2000.01.01;""p""$2000.01.02;`time;`date]2",1,,rdb where-clause is the time filter only
+
+comment,,,,,,,single-shard execquery completes via the stub (string entry point + user joinfn)
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit a single-shard query
+true,0,0,q,1~count select from reqs[] where not null returntime,1,,request completed
+true,0,0,q,0b~first exec error from reqs[] where not null returntime,1,,request completed without error
+true,0,0,q,`execquery~first exec mode from reqs[] where not null returntime,1,,request recorded as execquery mode
+true,0,0,q,0~count sr[],1,,shard results accumulator cleaned up after the join
+
+comment,,,,,,,two-shard request accumulates both results before joining
+run,0,0,q,".m.di.0dataaccess.partitions:([]servertype:`hdb`rdb;coverfrom:2#-0Wp;coverto:2#0Wp)",1,,configure two partitions covering the range
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,stub submitshards to capture reqid without delivering
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;raze;();0Wn;0b);{}]",1,,submit two-shard query
+true,0,0,q,2~first exec remaining from reqs[] where requestid=pendreqid,1,,two shards still outstanding
+run,0,0,q,"(da`shardresult)[pendreqid;""q"";enlist 6]",1,,deliver first shard result
+true,0,0,q,1~first exec remaining from reqs[] where requestid=pendreqid,1,,one shard still outstanding
+run,0,0,q,"(da`shardresult)[pendreqid;""q"";enlist 6]",1,,deliver second shard result
+true,0,0,q,0b~first exec error from reqs[] where requestid=pendreqid,1,,two-shard request completed without error
+true,0,0,q,"0~count select from reqs[] where requestid=pendreqid, null returntime",1,,request is finished
+run,0,0,q,".m.di.0dataaccess.partitions:([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)",1,,restore single-shard partition config
+run,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout](da`shardresult)[reqid;first shards`shardquery;2]}",1,,restore auto-delivering stub
+
+comment,,,,,,,sharderror short-circuits the request and is logged
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,stub to capture reqid
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit query
+run,0,0,q,logged:(),1,,clear log buffer before the error
+run,0,0,q,"(da`sharderror)[pendreqid;""mock backend failure""]",1,,signal a shard error
+true,0,0,q,1b~first exec error from reqs[] where requestid=pendreqid,1,,request flagged as error
+true,0,0,q,not null first exec returntime from reqs[] where requestid=pendreqid,1,,returntime stamped on error
+true,0,0,q,any `error=logged[;0],1,,sharderror was routed through the injected logger
+
+comment,,,,,,,shardresult detects an "error:" result string and short-circuits via the error path
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid},1,,capture reqid without delivering
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit query
+run,0,0,q,"(da`shardresult)[pendreqid;""q"";""error: backend blew up""]",1,,deliver an error-string result via the success postback
+true,0,0,q,1b~first exec error from reqs[] where requestid=pendreqid,1,,error-string result was treated as a shard error
+run,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout](da`shardresult)[reqid;first shards`shardquery;2]}",1,,restore auto-delivering stub
+
+comment,,,,,,,duplicate shardresult after completion is a no-op
+run,0,0,q,"(da`shardresult)[pendreqid;""q"";enlist 0]",1,,late shard result on an already-finished request
+true,0,0,q,1b~first exec error from reqs[] where requestid=pendreqid,1,,error flag unchanged after the duplicate result
+
+comment,,,,,,,GRAFT - request lifecycle is recorded for the typed getdata path too
+run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid;captimeout::timeout},1,,capture reqid and the timeout threaded into dispatch
+run,0,0,q,"(da`getdatafull)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;();`mypostback;0D00:00:05;0b]",1,,typed request with a postback and a timeout
+true,0,0,q,`getdata~first exec mode from reqs[] where requestid=pendreqid,1,,request recorded as getdata mode
+true,0,0,q,0D00:00:05~first exec timeout from reqs[] where requestid=pendreqid,1,,timeout stored on the request row
+true,0,0,q,0D00:00:05~captimeout,1,,timeout is threaded through submitshards into dispatch (was hardcoded 0Wn before the merge)
+true,0,0,q,(enlist`mypostback)~first exec postback from reqs[] where requestid=pendreqid,1,,a symbol postback is normalised to a one-item list
+
+comment,,,,,,,GRAFT - the 5-arg getdata still works and delegates with lifecycle defaults
+run,0,0,q,"(da`getdata)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;()]",1,,plain 5-arg getdata (unchanged caller contract)
+true,0,0,q,0Wn~first exec timeout from reqs[] where requestid=pendreqid,1,,delegated call defaults to no timeout
+true,0,0,q,()~first exec postback from reqs[] where requestid=pendreqid,1,,delegated call defaults to no postback
+true,0,0,q,0b~first exec sync from reqs[] where requestid=pendreqid,1,,delegated call defaults to async
+
+comment,,,,,,,GRAFT - deferred-sync is refused unless explicitly enabled
+fail,0,0,q,"(da`getdatafull)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;();();0Wn;1b]",1,,sync getdata rejected while synccallsallowed is 0b
+fail,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;1b);{'x}]",1,,sync execquery rejected while synccallsallowed is 0b
+true,0,0,q,"""di.dataaccess: getdata: synchronous calls are not allowed""~@[{(da`getdatafull)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;();();0Wn;1b]};(::);{x}]",1,,refusal carries the documented message
+
+comment,,,,,,,GRAFT - an uncovered time range replies empty without creating a request
+run,0,0,q,"(da`setpartitions)[([]servertype:enlist`hdb;coverfrom:enlist ""p""$2020.01.01;coverto:enlist ""p""$2020.01.02)]",1,,coverage that does not span the requested range
+run,0,0,q,beforecount:count reqs[],1,,row count before the uncovered request
+run,0,0,q,"nextid:.m.di.0dataaccess.requestid",1,,request id before the uncovered request
+run,0,0,q,"(da`getdata)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;()]",1,,request a range no partition covers
+true,0,0,q,beforecount~count reqs[],1,,no request row created for an uncovered range
+true,0,0,q,(nextid+1)~.m.di.0dataaccess.requestid,1,,request id still advances so ids stay monotonic
+run,0,0,q,".m.di.0dataaccess.partitions:([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)",1,,restore full coverage
+run,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout](da`shardresult)[reqid;first shards`shardquery;2]}",1,,restore the auto-delivering stub (the graft block left the capturing one in place)
+
+comment,,,,,,,getdata input validation (typed entry point)
+fail,0,0,q,"(da`getdata)[`trade;0Np;0Wp;`;(`x;`median;`i)]",1,,getdata rejects an unsupported agg fn before dispatch
+fail,0,0,q,"(da`getdata)[`trade;0Np;0Wp;`;(`vw;`vwap;`price)]",1,,getdata rejects wavg/vwap without a (weight;value) incol pair
+
+comment,,,,,,,setpartitions - runtime coverage refresh (called by the gateway at EOD reloadend)
+true,0,0,q,"(da`setpartitions)[([]servertype:`rdb`hdb;coverfrom:(0Np;-0Wp);coverto:(0Wp;-1+`timestamp$.z.d))];1b",1,,setpartitions accepts a well-formed coverage table
+fail,0,0,q,"(da`setpartitions)[([]bad:enlist`x)]",1,,setpartitions rejects a coverage table with wrong columns
+run,0,0,q,".m.di.0dataaccess.partitions:([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp)",1,,restore full coverage
+run,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout](da`shardresult)[reqid;first shards`shardquery;2]}",1,,restore the auto-delivering stub (the graft block left the capturing one in place)
+
+comment,,,,,,,removerequests purges old completed rows (clock poked directly)
+true,0,0,q,0<count select from reqs[] where not null returntime,1,,completed rows exist before the purge
+run,0,0,q,.m.di.0dataaccess.cp:{.z.p+2D},1,,fast-forward the module clock past requestkeeptime
+run,0,0,q,(da`removerequests)[0D00:30],1,,purge completed rows older than 30 minutes
+true,0,0,q,0~count select from reqs[] where not null returntime,1,,all completed rows purged
+
+comment,,,,,,,regression - removerequests must not unkey the table (the 0! bug)
+true,0,0,q,1=count keys reqs[],1,,requests table is still keyed after a purge
+run,0,0,q,.m.di.0dataaccess.cp:{.z.p},1,,restore the real clock
+run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit another query after the purge
+true,0,0,q,0<count select from reqs[] where not null returntime,1,,post-purge query completed - table was not bricked

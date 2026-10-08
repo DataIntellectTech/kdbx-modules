@@ -1,0 +1,288 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,Setup - load module, define mock loggers (info+error only - the minimum di.merge requires) and a scratch dir
+before,0,0,q,merge:use`di.merge,1,1,load the merge module
+before,0,0,q,os:use`di.os,1,1,load os for portable directory management in the on-disk tests
+before,0,0,q,mylog:`info`error!({[c;m]};{[c;m]}),1,1,silent binary log mock with only the required info/error keys
+before,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,1,capture table for the log-path assertions
+before,0,0,q,logcap:`info`error!({[c;m]`caplog upsert(`info;c;m)};{[c;m]`caplog upsert(`error;c;m)}),1,1,capturing binary logger recording level context and message
+before,0,0,q,.test.root:`:mergetesttmp,1,1,scratch directory root for the on-disk merges
+before,0,0,q,{if[os.isdir x;os.deldir x]} .test.root,1,1,remove any leftover scratch dir from a previous run
+before,0,0,q,os.mkdir .test.root,1,1,create the scratch dir
+before,0,0,q,".test.splay:{[d;t] (` sv d,`) set t}",1,1,helper to write a table as a splayed partition directory
+before,0,0,q,".test.slash:{` sv x,`}",1,1,helper to append the trailing slash mergebypart expects on dest
+
+comment,,,,,,,requireinit guard - every exported function except init/getapimeta refuses to run before init
+fail,0,0,q,merge.trackpartition[`:g1;1;1],1,1,trackpartition rejected before init
+fail,0,0,q,merge.clearpartsizes[],1,1,clearpartsizes rejected before init
+fail,0,0,q,merge.getpartsizes[],1,1,getpartsizes rejected before init
+fail,0,0,q,"merge.syncpartsizes[([ptdir:`symbol$()] rowcount:`long$();bytes:`long$())]",1,1,syncpartsizes rejected before init
+fail,0,0,q,merge.getpartchunks[`:d1`:d2;100],1,1,getpartchunks rejected before init
+fail,0,0,q,merge.mergebypart[enlist`sym;`:dest;`:seg1`:seg2],1,1,mergebypart rejected before init
+fail,0,0,q,"merge.mergebycol[(`t;([]a:`int$()));`:dest;`:seg]",1,1,mergebycol rejected before init
+fail,0,0,q,"merge.mergehybrid[enlist`sym;(`t;([]a:`int$()));`:dest;`:d1`:d2;100]",1,1,mergehybrid rejected before init
+fail,0,0,q,merge.checkpartitiontype[`t;enlist`sym],1,1,checkpartitiontype rejected before init
+fail,0,0,q,merge.checkenumerabletype[`t;enlist`sym],1,1,checkenumerabletype rejected before init
+fail,0,0,q,merge.getextrapartitions[`t;enlist`sym],1,1,getextrapartitions rejected before init
+fail,0,0,q,merge.getfirstcharpartitions[`t;enlist`sym],1,1,getfirstcharpartitions rejected before init
+true,0,0,q,".[merge.trackpartition;(`:g1;1;1);{x}]~""di.merge: trackpartition: init must be called before any other function""",1,1,requireinit error message names the function and is precise
+
+comment,,,,,,,init - dependency injection validation (log is required with info and error keys)
+fail,0,0,q,merge.init[(::)],1,1,init rejects :: as deps
+fail,0,0,q,merge.init[42],1,1,init rejects a non-dict deps value
+fail,0,0,q,merge.init[()!()],1,1,init rejects empty dict (log missing)
+fail,0,0,q,merge.init[enlist[`other]!enlist mylog],1,1,init rejects a dict missing the log key
+fail,0,0,q,merge.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
+fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`info]!enlist mylog`info)],1,1,init rejects a log dict missing the error level
+fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`error]!enlist mylog`error)],1,1,init rejects a log dict missing the info level
+true,0,0,q,"(8#@[merge.init;(::);{x}])~""di.merge""",1,1,error message is prefixed di.merge
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,init with a valid minimal (info+error only) log dep
+
+comment,,,,,,,version and getapimeta
+true,0,0,q,`version in key merge,1,1,version is still an export - di.depcheck reads it there
+true,0,0,q,3=count "." vs merge.version,1,1,the VERSION file holds a parseable major.minor.patch string
+true,0,0,q,"not any merge.version in ""\n\r""",1,1,no stray newline came through from the file
+true,0,0,q,"(asc (key merge) except `init`getapimeta)~asc exec name from merge.getapimeta[]",1,1,getapimeta documents exactly the callable exports (plumbing omitted)
+true,0,0,q,"not any `init`getapimeta in exec name from merge.getapimeta[]",1,1,framework plumbing is not registered in the api
+true,0,0,q,`name`public`descrip`params`return~cols merge.getapimeta[],1,1,getapimeta rows carry the registry columns
+
+comment,,,,,,,trackpartition accumulates row count and bytes per partition directory
+run,0,0,q,merge.clearpartsizes[],1,1,start from an empty store
+true,0,0,q,0=count merge.getpartsizes[],1,1,store is empty
+run,0,0,q,merge.trackpartition[`:t1;5;500],1,1,record a segment write
+run,0,0,q,merge.trackpartition[`:t1;3;100],1,1,record a second write to the same segment
+true,0,0,q,8=first exec rowcount from merge.getpartsizes[] where ptdir=`:t1,1,1,row counts accumulate
+true,0,0,q,600=first exec bytes from merge.getpartsizes[] where ptdir=`:t1,1,1,byte estimates accumulate
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+true,0,0,q,0=count merge.getpartsizes[],1,1,clearpartsizes empties the store
+
+comment,,,,,,,re-init preserves tracked-but-unmerged partitions rather than wiping them
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,merge.clearpartsizes[],1,1,start from an empty store
+run,0,0,q,merge.trackpartition[`:reinit1;9;90],1,1,track a segment before re-init
+run,0,0,q,caplog:0#caplog,1,1,reset the capture before the re-init under test
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,re-init with valid, unchanged deps
+true,0,0,q,1=count merge.getpartsizes[],1,1,the tracked partition survives the re-init
+true,0,0,q,9=first exec rowcount from merge.getpartsizes[] where ptdir=`:reinit1,1,1,its tracked values are unchanged
+true,0,0,q,"any {0<count x ss ""already tracked, preserved""} each caplog`msg",1,1,init logs that it preserved existing tracked partitions
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,re-init again with nothing tracked
+true,0,0,q,"not any {0<count x ss ""preserved""} each caplog`msg",1,1,init does not claim to have preserved anything when there was nothing tracked
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
+comment,,,,,,,syncpartsizes upserts a peer-received table into local tracked state
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[`:s1;5;50],1,1,track a local segment
+run,0,0,q,"merge.syncpartsizes[([ptdir:enlist`:s2] rowcount:enlist 7;bytes:enlist 70)]",1,1,sync a new partition received from a peer
+true,0,0,q,2=count merge.getpartsizes[],1,1,both the local and synced partitions are present
+true,0,0,q,5=first exec rowcount from merge.getpartsizes[] where ptdir=`:s1,1,1,the local partition is unaffected by the sync
+true,0,0,q,7=first exec rowcount from merge.getpartsizes[] where ptdir=`:s2,1,1,the synced partition's rowcount is present
+run,0,0,q,"merge.syncpartsizes[([ptdir:enlist`:s1] rowcount:enlist 99;bytes:enlist 999)]",1,1,sync an update to the already-tracked s1
+true,0,0,q,99=first exec rowcount from merge.getpartsizes[] where ptdir=`:s1,1,1,syncpartsizes replaces the matching row wholesale rather than accumulating
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
+comment,,,,,,,getpartchunks batches partitions up to the row-count limit
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[`:d1;100;1000],1,1,track partition d1
+run,0,0,q,merge.trackpartition[`:d2;100;1000],1,1,track partition d2
+run,0,0,q,merge.trackpartition[`:d3;100;1000],1,1,track partition d3
+true,0,0,q,merge.getpartchunks[`:d1`:d2`:d3;250]~(`:d1`:d2;enlist`:d3),1,1,d1+d2 fit one batch of 250 rows, d3 starts a new one
+
+comment,,,,,,,getpartchunks batches by byte estimate when mergebybytelimit is set
+run,0,0,q,merge.init[`mergebybytelimit`log!(1b;mylog)],1,1,switch to byte-size batching
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[`:b1;1;100],1,1,track b1 with a small row count but 100 bytes
+run,0,0,q,merge.trackpartition[`:b2;1;100],1,1,track b2
+run,0,0,q,merge.trackpartition[`:b3;1;100],1,1,track b3
+true,0,0,q,merge.getpartchunks[`:b1`:b2`:b3;250]~(`:b1`:b2;enlist`:b3),1,1,batching uses bytes not row count (row count alone would fit all three)
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore row-count batching (default)
+
+comment,,,,,,,getpartchunks splits a batch that exceeds partlimit partitions
+run,0,0,q,merge.init[`partlimit`log!(2;mylog)],1,1,cap batches at two partitions
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[`:e1;1;0],1,1,track e1
+run,0,0,q,merge.trackpartition[`:e2;1;0],1,1,track e2
+run,0,0,q,merge.trackpartition[`:e3;1;0],1,1,track e3
+true,0,0,q,merge.getpartchunks[`:e1`:e2`:e3;1000000]~(`:e1`:e2;enlist`:e3),1,1,a huge data limit would take all three but partlimit splits them 2+1
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the default partlimit
+
+comment,,,,,,,getpartchunks logs when a requested partdir has no tracked size and drops it
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[`:f1;10;100],1,1,track only f1
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+true,0,0,q,merge.getpartchunks[`:f1`:f2;1000]~enlist enlist`:f1,1,1,the untracked partition f2 is silently dropped from the result
+true,0,0,q,"any {0<count x ss ""1 of 2 requested partition""} each caplog`msg",1,1,getpartchunks logs how many requested partitions had no tracked size
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
+comment,,,,,,,mergebycol appends each segment's columns to the destination partition
+run,0,0,q,.test.cschema:([]px:`float$();sz:`long$()),1,1,column schema
+run,0,0,q,.test.ctinfo:(`quote;.test.cschema),1,1,tableinfo pair (name;schema)
+run,0,0,q,.test.cdest:`:mergetesttmp/cdest,1,1,destination partition directory
+run,0,0,q,.test.cseg1:`:mergetesttmp/cseg1,1,1,segment 1
+run,0,0,q,.test.cseg2:`:mergetesttmp/cseg2,1,1,segment 2
+run,0,0,q,.test.splay[.test.cdest;([]px:1 2f;sz:10 20)],1,1,seed the destination with two rows
+run,0,0,q,.test.splay[.test.cseg1;([]px:3 4f;sz:30 40)],1,1,write segment 1
+run,0,0,q,.test.splay[.test.cseg2;([]px:enlist 5f;sz:enlist 50)],1,1,write segment 2 (single row)
+run,0,0,q,merge.mergebycol[.test.ctinfo;.test.cdest;] each (.test.cseg1;.test.cseg2),1,1,merge both segments column by column
+true,0,0,q,(get .test.cdest)~([]px:1 2 3 4 5f;sz:10 20 30 40 50),1,1,destination holds the seed rows then each segment appended in order
+
+comment,,,,,,,mergebycol/mergeonecol signals loudly (not logged-and-swallowed) on a segment missing a column - by design, see merge.md
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,.test.mcdest:`:mergetesttmp/mcdest,1,1,destination partition directory
+run,0,0,q,.test.mcseg:`:mergetesttmp/mcseg,1,1,segment missing the sz column entirely
+run,0,0,q,.test.splay[.test.mcdest;([]px:enlist 1f;sz:enlist 10)],1,1,destination expects both px and sz
+run,0,0,q,.test.splay[.test.mcseg;([]px:enlist 2f)],1,1,segment only has px - sz is missing
+run,0,0,q,.test.mcerr:.[merge.mergebycol;((`quote;.test.cschema);.test.mcdest;.test.mcseg);{x}],1,1,call mergebycol once capturing the propagated error instead of letting it throw out of the test
+true,0,0,q,10h=type .test.mcerr,1,1,mergebycol signalled rather than returning normally on the missing column
+true,0,0,q,"0<count .test.mcerr ss ""mcseg/sz""",1,1,the propagated error names the failing segment column path
+true,0,0,q,`error in exec fn from caplog,1,1,the failure is logged via logerr before it is re-signalled
+true,0,0,q,"any {0<count x ss ""failed to read segment column""} each caplog`msg",1,1,the logged message describes the read failure
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
+comment,,,,,,,mergebypart joins whole segments and upserts them to the destination
+run,0,0,q,.test.pdest:`:mergetesttmp/pdest,1,1,destination partition directory
+run,0,0,q,.test.pseg1:`:mergetesttmp/pseg1,1,1,segment 1
+run,0,0,q,.test.pseg2:`:mergetesttmp/pseg2,1,1,segment 2
+run,0,0,q,.test.splay[.test.pdest;([]px:1 2f;sz:10 20)],1,1,seed the destination
+run,0,0,q,.test.splay[.test.pseg1;([]px:3 4f;sz:30 40)],1,1,write segment 1
+run,0,0,q,.test.splay[.test.pseg2;([]px:enlist 5f;sz:enlist 50)],1,1,write segment 2
+run,0,0,q,merge.mergebypart[`$();.test.slash .test.pdest;(.test.pseg1;.test.pseg2)],1,1,merge one batch of both whole segments (no parted column)
+true,0,0,q,(get .test.pdest)~([]px:1 2 3 4 5f;sz:10 20 30 40 50),1,1,segments joined and appended to the destination
+
+comment,,,,,,,mergebypart re-sorts by the parted column when p# cannot be applied directly
+run,0,0,q,.test.rdest:`:mergetesttmp/rdest,1,1,destination partition directory
+run,0,0,q,.test.rseg1:`:mergetesttmp/rseg1,1,1,segment 1
+run,0,0,q,.test.rseg2:`:mergetesttmp/rseg2,1,1,segment 2
+run,0,0,q,.test.splay[.test.rdest;([]grp:`long$();px:`float$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.rseg1;([]grp:1 2;px:1 2f)],1,1,segment 1 - grp interleaves with segment 2
+run,0,0,q,.test.splay[.test.rseg2;([]grp:1 2;px:3 4f)],1,1,segment 2
+run,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.rdest;(.test.rseg1;.test.rseg2)],1,1,merge with grp as the parted column - joined data is not parted so must be re-sorted
+true,0,0,q,(get .test.rdest)~([]grp:1 1 2 2;px:1 3 2 4f),1,1,rows re-sorted by grp so the p attribute can be applied
+
+comment,,,,,,,mergebypart isolates one missing/corrupt segment from healthy batch-mates in the same batch
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,.test.midest:`:mergetesttmp/midest,1,1,destination partition directory
+run,0,0,q,.test.miseg1:`:mergetesttmp/miseg1,1,1,segment 1 (healthy)
+run,0,0,q,.test.miseg2:`:mergetesttmp/miseg2,1,1,segment 2 (never written - missing)
+run,0,0,q,.test.splay[.test.midest;([]grp:`long$();px:`float$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.miseg1;([]grp:1 2;px:1 2f)],1,1,write only the healthy segment
+run,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.midest;(.test.miseg1;.test.miseg2)],1,1,batch the healthy segment together with a missing one
+true,0,0,q,(get .test.midest)~([]grp:1 2;px:1 2f),1,1,the healthy segment's data still lands in dest rather than the whole batch being lost
+true,0,0,q,`error in exec fn from caplog,1,1,the missing segment is error-logged
+true,0,0,q,"any {0<count x ss ""failed to read segment""} each caplog`msg",1,1,the log names the read failure
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
+comment,,,,,,,mergebypart logs an upsert failure via the injected logger instead of throwing
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,.test.edest:`:mergetesttmp/edest,1,1,destination partition directory with a deliberately mismatched column type
+run,0,0,q,.test.eseg:`:mergetesttmp/eseg,1,1,segment with a mismatched column type
+run,0,0,q,.test.splay[.test.edest;([]px:`int$())],1,1,destination column typed int
+run,0,0,q,.test.splay[.test.eseg;([]px:1 2)],1,1,segment column typed long - the upsert will type-mismatch
+run,0,0,q,merge.mergebypart[`$();.test.slash .test.edest;enlist .test.eseg],1,1,merge does not throw even though the underlying upsert fails
+true,0,0,q,`error in exec fn from caplog,1,1,the upsert failure is logged as an error
+true,0,0,q,"any {0<count x ss ""failed to merge to""} each caplog`msg",1,1,the logged message names the failure clearly rather than being corrupted by a double string conversion
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
+comment,,,,,,,mergehybrid merges under-limit partitions whole and over-limit ones column by column
+run,0,0,q,.test.hschema:([]px:`float$();sz:`long$()),1,1,column schema
+run,0,0,q,.test.htinfo:(`trade;.test.hschema),1,1,tableinfo pair
+run,0,0,q,.test.hdest:`:mergetesttmp/hdest,1,1,destination partition directory
+run,0,0,q,.test.h1:`:mergetesttmp/h1,1,1,under-limit segment
+run,0,0,q,.test.h2:`:mergetesttmp/h2,1,1,over-limit segment
+run,0,0,q,.test.splay[.test.hdest;([]px:`float$();sz:`long$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.h1;([]px:10 11f;sz:1 2)],1,1,write the under-limit segment
+run,0,0,q,.test.splay[.test.h2;([]px:20 21 22f;sz:3 4 5)],1,1,write the over-limit segment
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[.test.h1;2;0],1,1,h1 is small (2 rows)
+run,0,0,q,merge.trackpartition[.test.h2;100;0],1,1,h2 is large (100 rows) - over the limit below
+run,0,0,q,merge.mergehybrid[`$();.test.htinfo;.test.hdest;(.test.h1;.test.h2);10],1,1,merge with a limit of 10: h1 whole, h2 column by column
+true,0,0,q,(get .test.hdest)~([]px:10 11 20 21 22f;sz:1 2 3 4 5),1,1,h1 merged whole first then h2 merged column by column
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
+comment,,,,,,,mergehybrid resorts and attributes the whole destination once both merge paths have run
+run,0,0,q,.test.pattinfo:(`trade;([]grp:`long$();px:`float$())),1,1,tableinfo pair with grp as the parted column
+run,0,0,q,.test.pdest2:`:mergetesttmp/pdest2,1,1,destination partition directory
+run,0,0,q,.test.pg1:`:mergetesttmp/pg1,1,1,under-limit segment - takes the whole-partition path
+run,0,0,q,.test.pg2:`:mergetesttmp/pg2,1,1,over-limit segment - takes the column-by-column path
+run,0,0,q,.test.splay[.test.pdest2;([]grp:`long$();px:`float$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.pg1;([]grp:2 2;px:20 21f)],1,1,write the under-limit segment - grp 2, sorts after grp 1
+run,0,0,q,.test.splay[.test.pg2;([]grp:1 1 1;px:10 11 12f)],1,1,write the over-limit segment - grp 1, sorts before grp 2
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[.test.pg1;2;0],1,1,pg1 is small (2 rows)
+run,0,0,q,merge.trackpartition[.test.pg2;3;0],1,1,pg2 is large (3 rows) - over the limit below
+run,0,0,q,merge.mergehybrid[enlist`grp;.test.pattinfo;.test.pdest2;(.test.pg1;.test.pg2);2],1,1,limit of 2: pg1 (whole-partition) written before pg2 (column-by-column) - lands out of grp order
+true,0,0,q,(get .test.pdest2)~([]grp:1 1 1 2 2;px:10 11 12 20 21f),1,1,mergehybrid resorts the full destination so grp ends up ascending despite the write order
+true,0,0,q,`p=first exec a from meta[.test.pdest2] where c=`grp,1,1,the parted attribute is applied to the whole destination, not left unset or scoped to one batch
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
+comment,,,,,,,mergehybrid takes only the whole-partition path when overlimit is empty (both partitions under the limit)
+run,0,0,q,.test.hedest:`:mergetesttmp/hedest,1,1,destination partition directory
+run,0,0,q,.test.he1:`:mergetesttmp/he1,1,1,segment 1 - under limit
+run,0,0,q,.test.he2:`:mergetesttmp/he2,1,1,segment 2 - under limit
+run,0,0,q,.test.splay[.test.hedest;([]px:`float$();sz:`long$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.he1;([]px:10 11f;sz:1 2)],1,1,write segment 1
+run,0,0,q,.test.splay[.test.he2;([]px:20 21f;sz:3 4)],1,1,write segment 2
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[.test.he1;2;0],1,1,he1 is small (2 rows)
+run,0,0,q,merge.trackpartition[.test.he2;2;0],1,1,he2 is also small (2 rows) - both under the limit
+run,0,0,q,merge.mergehybrid[`$();.test.htinfo;.test.hedest;(.test.he1;.test.he2);100],1,1,limit of 100 - overlimit is empty so everything takes the whole-partition path
+true,0,0,q,(get .test.hedest)~([]px:10 11 20 21f;sz:1 2 3 4),1,1,both segments merged whole - the column-by-column path never ran
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
+comment,,,,,,,mergehybrid takes only the column-by-column path when every partition is over the limit (overlimit equals partdirs)
+run,0,0,q,.test.hodest:`:mergetesttmp/hodest,1,1,destination partition directory
+run,0,0,q,.test.ho1:`:mergetesttmp/ho1,1,1,segment 1 - over limit
+run,0,0,q,.test.ho2:`:mergetesttmp/ho2,1,1,segment 2 - over limit
+run,0,0,q,.test.splay[.test.hodest;([]px:`float$();sz:`long$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.ho1;([]px:enlist 30f;sz:enlist 5)],1,1,write segment 1
+run,0,0,q,.test.splay[.test.ho2;([]px:enlist 31f;sz:enlist 6)],1,1,write segment 2
+run,0,0,q,merge.clearpartsizes[],1,1,reset the store
+run,0,0,q,merge.trackpartition[.test.ho1;50;0],1,1,ho1 is large (50 rows) - over the limit below
+run,0,0,q,merge.trackpartition[.test.ho2;60;0],1,1,ho2 is also large (60 rows) - both over the limit
+run,0,0,q,merge.mergehybrid[`$();.test.htinfo;.test.hodest;(.test.ho1;.test.ho2);10],1,1,limit of 10 - overlimit equals partdirs so everything takes the column-by-column path
+true,0,0,q,(get .test.hodest)~([]px:30 31f;sz:5 6),1,1,both segments merged column by column - the whole-partition path never ran
+run,0,0,q,merge.clearpartsizes[],1,1,clear the store
+
+comment,,,,,,,getextrapartitions returns the distinct parted-column combinations
+run,0,0,q,qsym:([]sym:`c`a`b`a`c;px:1 2 3 4 5),1,1,table with a repeating symbol column
+true,0,0,q,3=count merge.getextrapartitions[`qsym;enlist`sym],1,1,one entry per distinct sym value
+true,0,0,q,(asc raze merge.getextrapartitions[`qsym;enlist`sym])~`a`b`c,1,1,the three distinct sym values
+
+comment,,,,,,,getfirstcharpartitions groups partition values by first character not by full value
+run,0,0,q,fctbl:([]sym:`aa`ab`ba`bb`ac;px:1 2 3 4 5),1,1,table with symbol values sharing first characters
+true,0,0,q,merge.getfirstcharpartitions[`fctbl;enlist`sym]~(`aa`ab`ac;`ba`bb),1,1,values grouped by first character not by full value
+
+comment,,,,,,,parted-column checks route through the injected logger and no longer reference sort.csv
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,qtbl:([]a:1 2;b:3 4;f:1.0 2.0),1,1,table with long and float columns
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.checkpartitiontype[`qtbl;enlist`c],1,1,check a parted column absent from the table
+true,0,0,q,`error in exec fn from caplog,1,1,missing parted column is error-logged
+true,0,0,q,"not any {0<count x ss ""sort.csv""} each caplog`msg",1,1,the error message no longer references sort.csv
+true,0,0,q,"any {0<count x ss ""parted columns supplied""} each caplog`msg",1,1,the error message uses the reworded phrasing
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.checkpartitiontype[`qtbl;enlist`a],1,1,check a parted column present in the table
+true,0,0,q,`info in exec fn from caplog,1,1,present parted column is info-logged
+true,0,0,q,"not any {0<count x ss ""sort.csv""} each caplog`msg",1,1,the info message no longer references sort.csv either
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.checkenumerabletype[`qtbl;enlist`f],1,1,check a non-enumerable (float) parted column
+true,0,0,q,`error in exec fn from caplog,1,1,non-enumerable parted column is error-logged
+true,0,0,q,all 10h=type each exec msg from caplog,1,1,the error message is a flat string not a malformed nested list
+true,0,0,q,"any {0<count x ss ""not all columns f""} each caplog`msg",1,1,the error message names the offending column as flat text
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.checkenumerabletype[`qtbl;enlist`a],1,1,check an enumerable (long) parted column
+true,0,0,q,`info in exec fn from caplog,1,1,enumerable parted column is info-logged
+
+comment,,,,,,,init routes its own message through the injected logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,re-init with the capturing logger
+true,0,0,q,`merge in exec ctx from caplog,1,1,init logged under the merge context
+true,0,0,q,any caplog[`msg] like "di.merge initialised",1,1,init emitted its initialisation message
+run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+
+comment,,,,,,,teardown - remove the scratch directory
+run,0,0,q,{if[os.isdir x;os.deldir x]} .test.root,1,1,delete the scratch dir

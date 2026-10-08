@@ -1,0 +1,63 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,ct:use`di.clienttracking,1,,load module
+before,0,0,q,system "l di/clienttracking/test.q",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,start the server peers
+
+comment,,,,,,,settings and table
+true,0,0,q,"(1b;0b;0b;1b)~.clients`enabled`opencloseonly`INTRUSIVE`AUTOCLEAN",1,,boolean defaults
+true,0,0,q,"(`long$0D02;0)~.clients`RETAIN`MAXIDLE",1,,RETAIN two hours and MAXIDLE off
+true,0,0,q,"(enlist`w)~keys .clients.clients",1,,table keyed on w
+true,0,0,q,"`ipa`u`a`k`K`c`s`o`f`pid`port`startp`endp`lastp`hits`errs`sz~cols value .clients.clients",1,,table columns
+true,0,0,q,"""iij""~exec t from meta .clients.clients where c in `hits`errs`sz",1,,hits and errs int; sz long
+fail,0,0,q,"ct.init[()!();()!()]",1,,init without handlers must error
+
+comment,,,,,,,connection lifecycle
+run,0,0,q,ha:peer PORTS`a,1,,connect to the default peer
+true,0,0,q,"1=ha""count select from .clients.clients where w=.z.w""",1,,a connection adds a row
+true,0,0,q,"(.z.u;`localhost;`int$.Q.addr`localhost)~(mine[ha;""u""];mine[ha;""ipa""];mine[ha;""a""])",1,,row records user and address
+true,0,0,q,"(mine[ha;""startp""]<=mine[ha;""lastp""]) and null mine[ha;""endp""]",1,,startp and lastp set; endp null while open
+true,0,0,q,"ha""all {`clients in exec name from h.list x} each `.z.po`.z.pc`.z.wo`.z.wc""",1,,open and close observers registered
+
+comment,,,,,,,usage
+run,0,0,q,"n0:mine[ha;""hits""]; ha""1+1""; n1:mine[ha;""hits""]",1,,two sync queries
+true,0,0,q,n1=n0+2i,1,,each sync query counts a hit
+run,0,0,q,"s0:mine[ha;""sz""]; neg[ha]""til 10""; s1:mine[ha;""sz""]",1,,an async query between two reads
+true,0,0,q,s1=s0+(-22!s0)+-22!til 10,1,,sz counts the bytes of sync and async results
+run,0,0,q,"e0:mine[ha;""errs""]; n0:mine[ha;""hits""]; r:@[ha;""1+`a"";::]; e1:mine[ha;""errs""]; n1:mine[ha;""hits""]",1,,a failing query
+true,0,0,q,"r~""type""",1,,the error reaches the client
+true,0,0,q,(e1=e0+1i) and n1=n0+3i,1,,a failing query counts an error and a hit
+
+comment,,,,,,,close and manual add
+run,0,0,q,"c0:ha""count select from .clients.clients where null w,not null endp""; hclose ha; hb:peer PORTS`a",1,,close and reconnect
+true,0,0,q,"(c0+1)=hb""count select from .clients.clients where null w,not null endp""",1,,a close nulls w and sets endp
+true,0,0,q,"1=hb""count select from .clients.clients where w=.z.w""",1,,the new connection has its own row
+true,0,0,q,"0i=hb"".clients.addw .z.w; exec first hits from .clients.clients where w=.z.w""",1,,addw records the handle afresh
+fail,0,0,q,"hb"".clients.unregistered[]""",1,,unregistered reads a CLIENTS table that does not exist
+true,0,0,q,"hb"".clients.wo[::;999i]; 1=count select from .clients.clients where w=999i""",1,,a websocket open adds a row
+true,0,0,q,"hb"".clients.pc[::;999i]; 0=count select from .clients.clients where w=999i""",1,,a websocket close nulls w
+
+comment,,,,,,,opencloseonly
+run,0,0,q,"hbb:peer PORTS`b; hbb""1+1""; hbb""1+1""",1,,connect and query the opencloseonly peer
+true,0,0,q,"1=hbb""count select from .clients.clients where w=.z.w""",1,,connections are still recorded
+true,0,0,q,"0i=mine[hbb;""hits""]",1,,queries are not counted
+
+comment,,,,,,,disabled
+run,0,0,q,hc:peer PORTS`c,1,,connect to the disabled peer
+true,0,0,q,"0=hc""count .clients.clients""",1,,connections are not recorded
+true,0,0,q,"hc""(`clients in exec name from h.list`.z.pc) and not `clients in exec name from h.list`.z.po""",1,,.z.pc is still wired when disabled
+
+comment,,,,,,,INTRUSIVE and settings section
+run,0,0,q,"hd:peer PORTS`d; hd""1""; hd""1""",1,,connect to the INTRUSIVE peer and let the reply arrive
+true,0,0,q,"(.z.i;.z.k;system""p"")~(mine[hd;""pid""];mine[hd;""k""];mine[hd;""port""])",1,,the client reported its pid and version and port
+true,0,0,q,"(`long$0D00:00:01)~hd"".clients.MAXIDLE""",1,,a clients section overrides the defaults
+
+comment,,,,,,,MAXIDLE and RETAIN
+run,0,0,q,"hd2:peer PORTS`d; system ""sleep 1.5""; hd3:peer PORTS`d",1,,leave two connections idle past MAXIDLE then connect again
+true,0,0,q,"`closed~@[hd2;""1"";{`closed}]",1,,an idle connection is closed
+true,0,0,q,"1=hd3""count .clients.clients""",1,,closed idle connections and expired rows are dropped
+run,0,0,q,hclose hd3; hd4:peer PORTS`d,1,,close a connection normally
+true,0,0,q,"1=hd4""count select from .clients.clients where null w,not null endp""",1,,a closed row is kept within RETAIN
+run,0,0,q,"system ""sleep 1.5""; hd5:peer PORTS`d",1,,wait past RETAIN then connect again
+true,0,0,q,"0=hd5""count select from .clients.clients where null w""",1,,closed rows are purged after RETAIN
+
+after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

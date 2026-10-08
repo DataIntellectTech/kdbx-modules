@@ -1,0 +1,57 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,sub:use`di.subscriptions,1,,load module
+before,0,0,q,system "l di/subscriptions/test.q",1,,load fixture helpers
+before,0,0,q,buildlog[4],1,,build a real 4-message tp log via di.tplogmgr
+
+fail,0,0,q,sub.init[()!();()!()],1,,init without the log dependency must error
+fail,0,0,q,"sub.init[()!();`log`handlers!(mocklog[];mockhandlers)]",1,,init without the timer dependency must error
+fail,0,0,q,"sub.init[()!();`log`timer!(mocklog[];mocktimer)]",1,,init without the handlers dependency must error
+
+run,0,0,q,sub.init[()!();deps[]],1,,init with mock log/timer/handlers dependencies
+run,0,0,q,`upd set rootupd,1,,define the root-namespace-safe upd the replay drives - as di.rdb does
+run,0,0,q,@[`.;`trade;:;0#tradeschema[]],1,,ensure no stale trade table before subscribing
+run,0,0,q,sd:sub.subscribe[mocktph[4];`;`;1b],1,,subscribe all/all with replay over the mock TP handle
+
+true,0,0,q,`trade in tables[],1,,subscribe created the trade table from the returned schema
+true,0,0,q,`g=attr trade`sym,1,,the schema's g# attribute on sym was preserved
+true,0,0,q,4=count trade,1,,all four logged messages were replayed into the table
+true,0,0,q,4=sd`rowcount,1,,subdetails reported the pre-subscription rowcount
+true,0,0,q,sub.subscribed[],1,,the subscription was recorded in the registry
+
+run,0,0,q,`trade set 0#tradeschema[],1,,reset the table for the filtered-subscription test
+run,0,0,q,sdf:sub.subscribe[mocktph[4];`;enlist`S1;1b],1,,subscribe with a sym filter (only S1)
+true,0,0,q,1=count trade,1,,replay filtered to the single subscribed sym
+true,0,0,q,`S1=first trade`sym,1,,the replayed row is the subscribed sym
+
+comment,,,,,,,.sub at root
+true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`sub",1,,init registered .sub.pc on .z.pc
+true,0,0,q,"(enlist(`checksubscriptions;10;1))~flip value flip timercalls",1,,init registered checksubscriptions every 10s
+run,0,0,q,sub.init[()!();deps[]],1,,init again
+true,0,0,q,"(1;1)~(count handlercalls;count timercalls)",1,,second init registers nothing new
+true,0,0,q,.sub.AUTORECONNECT,1,,AUTORECONNECT defaults to 1b
+run,0,0,q,"sub.init[`autoreconnect`checksubscriptionperiod!(0b;0D00:00:30);deps[]]",1,,config sets the .sub settings
+true,0,0,q,"(0b;0D00:00:30)~(.sub.AUTORECONNECT;.sub.checksubscriptionperiod)",1,,settings applied
+run,0,0,q,spawnpeer[],1,,start a real chained-tickerplant peer
+run,0,0,q,`trade set 0#tradeschema[],1,,reset the table
+run,0,0,q,"r:.sub.subscribe[`trade;`;1b;1b;peerproc[]]",1,,subscribe through the tptype handshake
+true,0,0,q,4=count trade,1,,schema set and the peer's 4 logged messages replayed
+true,0,0,q,"(enlist`trade;D;4)~r`subtables`tplogdate`i",1,,returns subtables/tplogdate/i as a chained subscription
+true,0,0,q,"1=count select from .sub.SUBSCRIPTIONS where table=`trade,w=tph,active",1,,subscription recorded active
+true,0,0,q,"99h=type .sub.subscribe[`trade;`;0b;0b;peerproc[]]",1,,a repeat all-syms subscription is not deduplicated (stored enlist` vs bare `) - it subscribes again
+true,0,0,q,"1=count select from .sub.SUBSCRIPTIONS where table=`trade",1,,and the keyed upsert keeps one row
+run,0,0,q,hclose tph,1,,drop the peer handle
+run,0,0,q,.sub.checksubscriptions[],1,,run the check job
+true,0,0,q,"not first exec active from .sub.SUBSCRIPTIONS where table=`trade",1,,the dropped subscription is marked inactive
+run,0,0,q,"`tph set hopen (`$"":localhost:"",string PEERPORT;2000)",1,,reopen the peer handle
+run,0,0,q,".sub.pc[::;tph]",1,,.sub.pc on a handle with no active subscription
+run,0,0,q,"x:(`time`sym`price`size)!(2#.z.p;`S1`S2;1 2f;1 2i); .sub.replayupd[{[t;x] `got set x};`trade;enlist`S1;`trade;value x]",1,,replayupd with a sym filter
+true,0,0,q,`S1~first got`sym,1,,replayupd kept only the subscribed sym
+true,0,0,q,1=count got,1,,and only one row
+run,0,0,q,".servers.getservers:{[nt;l;a;o;one] ([]procname:enlist`ctp1;proctype:enlist`chainedtp;w:enlist 5i)}",1,,stub the servers lookup this suite does not load
+true,0,0,q,"(enlist`ctp1)~exec procname from .sub.getsubscriptionhandles[`;`ctp1;()!()]",1,,getsubscriptionhandles resolves a procname through .servers.getservers
+run,0,0,q,".servers.enabled:1b;.servers.connectcustom:{[r]};.sub.AUTORECONNECT:1b;.sub.reconnectinit:0b",1,,autoreconnect on with server tracking enabled
+run,0,0,q,".sub.subscribe[`trade;`;0b;0b;peerproc[]]",1,,subscribe
+true,0,0,q,.sub.reconnectinit,1,,subscribe wrapped .servers.connectcustom for autoreconnect once
+true,0,0,q,10b~pcclosecheck[],1,,closing a subscribed handle marks it inactive through .z.pc at once (no checksubscriptions run)
+
+after,0,0,q,teardownfixture[],1,,remove the temp log dir

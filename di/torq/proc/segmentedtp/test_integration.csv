@@ -1,0 +1,21 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+comment,,,,,,,integration test - real child kdb-x processes running di.torq.proc.segmentedtp with real di.timer and di.torq.handlers
+comment,,,,,,,requires a kdb-x binary reachable via QHOME (or q on PATH) and QPATH resolving the di.* modules; skips cleanly if no child comes up
+comment,,,,,,,child ports are OS-assigned; every child pid is killed by the after row; run from the repo root in a fresh q session
+comment,,,,,,,timing: the period scenario waits ~4s and the day scenario ~8s; the day scenario assumes it is not run within seconds of UTC midnight
+
+before,0,0,q,system "l di/torq/proc/segmentedtp/test_integration.q",1,,load integration helpers
+before,0,0,q,setupintegration[],1,,fixture dir and schema; TORQXAPPHOME/TORQXDATAHOME for the children
+before,0,0,q,if[not probe[];killall[];exit 0],1,,skip cleanly when no child kdb-x process can be started
+
+comment,,,,,,,crash / restart / corruption against genuinely unclean on-disk state
+true,0,0,q,restarts[],1,,a shared singular file counts every table - a kill -9 leaves segments open - a restart resumes them - a smashed log is recovered into .good - a layout change orphans the old segment - a clean exit closes everything
+
+comment,,,,,,,a real di.torq boot through torqx_init.q with a settings cascade
+true,0,0,q,stackboot[],1,,di.torq launches the proctype from process.csv + segmentedtp.toml - identity and settings reach the module - feed - shared file - clean exit closes the metatable
+
+comment,,,,,,,real timer-driven rolls
+true,0,0,q,periodroll[],1,,the real timer rolls a 3-second periodic log - closed segments carry their counts and no message is lost across rolls
+true,0,0,q,dayroll[],1,,the real timer rolls the day - new date and directory - old segments closed - the old error log and table log file descriptors are closed in the child
+
+after,0,0,q,killall[],1,,kill every child and remove the fixture dir

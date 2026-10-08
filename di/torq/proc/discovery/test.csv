@@ -1,0 +1,48 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,disc:use`di.torq.proc.discovery,1,,load module
+before,0,0,q,system "l di/torq/proc/discovery/test.q",1,,load mocks and peer fixture helpers
+before,0,0,q,setupfixture[],1,,write the peer script and pick two free ports
+before,0,0,q,spawnpeers[],1,,launch peers A and B and open a handle to each
+before,0,0,q,stubservers[],1,,stub the .servers.* root names discovery calls
+
+comment,,,,,,,init - dependency validation
+fail,0,0,q,"disc[`init][()!();enlist[`handlers]!enlist mockhandlers]",1,,init without a log dependency must error
+fail,0,0,q,"disc[`init][()!();enlist[`log]!enlist mocklog]",1,,init without a handlers dependency must error
+
+comment,,,,,,,init - discovery.q l.8-40
+run,0,0,q,initrows[],1,,peer A (alpha) and peer B (beta) live; B listed as non-torq
+run,0,0,q,"disc[`init][`connections`processcsv!(`ALL;""/x/process.csv"");`log`handlers!(mocklog;mockhandlers)]",1,,init
+true,0,0,q,"(enlist `connections`processcsv!(`ALL;""/x/process.csv""))~argsof`startup",1,,l.8 startup called once with the config
+true,0,0,q,all `register`getservices in key `.,1,,register and getservices published at root (legacy names)
+true,0,0,q,(enlist hA)~argsof`addw,1,,l.33 addw on each live handle - the non-torq one skipped
+true,0,0,q,(enlist`autodiscovery)~hA"got",1,,l.37 peer A told to run .servers.autodiscovery
+true,0,0,q,()~hB"got",1,,l.37 the non-torq peer B not told
+true,0,0,q,1=count select from handlercalls where event=`.z.pc,name=`discovery,1,,l.40 .z.pc observer registered via handlers
+
+comment,,,,,,,getservices - l.27-30
+run,0,0,q,servicerows[],1,,alpha + beta + discovery's own row
+run,0,0,q,delete from `calls,1,,reset call log
+true,0,0,q,`alpha`beta~asc exec proctype from getservices[`ALL;0b],1,,ALL returns every proctype except discovery
+true,0,0,q,`alpha`beta~asc exec proctype from getservices[enlist`ALL;0b],1,,enlist`ALL behaves the same
+true,0,0,q,(enlist`beta)~exec proctype from getservices[`beta;0b],1,,a proctype list filters
+true,0,0,q,0=count getservices[`discovery;0b],1,,discovery rows are never returned
+true,0,0,q,`procname`proctype`hpup`attributes~cols getservices[`ALL;0b],1,,returns procname/proctype/hpup/attributes
+true,0,0,q,5=count argsof`cleanup,1,,each call runs .servers.cleanup first
+
+comment,,,,,,,register - l.13-23 (peer A subscribes to beta; peer B registers)
+run,0,0,q,registerrows[],1,,servicerows plus a stale row sharing B's host:port
+run,0,0,q,delete from `calls,1,,reset call log
+true,0,0,q,"(enlist`beta)~exec proctype from hA""(.z.w)(`getservices;`beta;1b)""",1,,peer A subscribes to beta over its handle
+run,0,0,q,"hB""(.z.w)(`register;`)""",1,,peer B registers over its handle
+true,0,0,q,(enlist hB)~argsof`addw,1,,addw called with the registering handle
+true,0,0,q,(enlist enlist 3)~argsof`removerows,1,,the stale row on B's host:port removed
+true,0,0,q,"(enlist`beta1)~exec procname from last hA""got""",1,,procupdate pushed B's row to subscriber A
+true,0,0,q,`proctype`procname`hpup`attributes~cols last hA"got",1,,pushed row carries proctype/procname/hpup/attributes
+true,0,0,q,()~hB"got",1,,the registering handle is not pushed to
+
+comment,,,,,,,.z.pc - l.40 drops the closed handle's subscription
+run,0,0,q,pcfunc[][hA],1,,fire the .z.pc observer for peer A's handle
+run,0,0,q,"hB""(.z.w)(`register;`)""",1,,peer B registers again
+true,0,0,q,2=count hA"got",1,,A is no longer subscribed - nothing new pushed
+
+after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

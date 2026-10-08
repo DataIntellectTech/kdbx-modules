@@ -1,0 +1,6 @@
+enabled: true
+
+tracker:
+  enabled: true
+  provider: trello
+  project_key: KDB-X

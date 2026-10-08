@@ -1,0 +1,92 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,tq:use`di.torq,1,,load module
+before,0,0,q,system "l di/torq/test.q",1,,load fixture helpers
+before,0,0,q,setupfixture[],1,,create a temp app fixture: settings, process.csv, scratch hdb, custom proctype file
+
+fail,0,0,q,tq.reqenv[`DI_TORQ_TEST_NO_SUCH_VAR],1,,reqenv on a missing env var must error
+
+fail,0,0,q,tq.init[`;`;()!()],1,,"auto-detect with no port set (system""p""=0) and two localhost rows in process.csv must fail as ambiguous"
+
+run,0,0,q,system "p 19999",1,,bind a port that appears nowhere in the fixture process.csv
+fail,0,0,q,tq.init[`;`;()!()],1,,auto-detect must fail when this session's port matches no process.csv row
+
+run,0,0,q,r:tq.init[`hdb;`hdb;()!()],1,,explicit-identity init for the built-in hdb proctype
+true,0,0,q,`hdb~r`proctype,1,,identity resolved from the explicit args
+true,0,0,q,`k4unittest~(r`config)`owner,1,,config cascade reached the app-level default.q
+true,0,0,q,000b~(r`config)`discoveryregister`connectionsfromdiscovery`debug,1,,builtin default.q leaves discovery off and debug off
+true,0,0,q,`widgets in tables[],1,,the built-in hdb module actually mounted the fixture hdb dir
+true,0,0,q,(`handlers`log`servers`timer)~asc key r`deps,1,,all four core deps (incl injected servers) were built and passed through
+true,0,0,q,99h=type .clients.clients,1,,init wired client tracking (.clients.clients exists)
+run,0,0,q,"ctorig:(.clients.hit;.clients.hite); .clients.hit:{HITS+::1;x}; .clients.hite:{HITE+::1;'x}; HITS::HITE::UPD::0; tgt:{[x] x}; upd:{[t;x] UPD+::1}; .u.upd:upd",1,,count client-tracking hits and upd calls
+run,0,0,q,.z.ps (`tgt;1),1,,a non-upd async message
+true,0,0,q,"(1;0)~(HITS;UPD)",1,,is counted by client tracking
+run,0,0,q,.z.ps (`upd;`trade;()),1,,an upd async message
+true,0,0,q,"(1;1)~(HITS;UPD)",1,,skips client tracking (zpsignore) and still runs
+run,0,0,q,.z.ps (`.u.upd;`trade;()),1,,a .u.upd async message
+true,0,0,q,"(1;2)~(HITS;UPD)",1,,also skips client tracking
+run,0,0,q,".z.ps ""upd[`trade;()]""",1,,a string upd message
+true,0,0,q,"(2;3)~(HITS;UPD)",1,,is not skipped: the ignorelist check only matches list heads
+run,0,0,q,"zps:.z.ps; .m.di.0torq.zpsignorewired:0b; .m.di.0torq.initzpsignore[enlist[`zpsignore]!enlist enlist[`enabled]!enlist 0b]",1,,zpsignore with enabled 0b
+true,0,0,q,zps~.z.ps,1,,leaves .z.ps untouched
+run,0,0,q,".clients.hit:first ctorig; .clients.hite:last ctorig",1,,restore client tracking
+run,0,0,q,"ctp:{(use`di.torq.config)[`cascade] . .m.di.0torq.roots[],x,`$string[x],""1""} each `tickerplant`segmentedtp",1,,cascade the tickerplant and segmentedtp settings
+true,0,0,q,"all {(1b;0b)~((x`clients)`opencloseonly;(x`zpsignore)`enabled)} each ctp",1,,tickerplants track connections only and have no zpsignore
+
+run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
+true,0,0,q,`hdb~r2`proctype,1,,override path still resolves the same identity
+
+run,0,0,q,r3:tq.init[TESTPROCNAME;`testinst;()!()],1,,explicit-identity init for a custom proctype
+true,0,0,q,TESTPROCNAME~r3`proctype,1,,identity resolved for the custom proctype
+true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reached the custom proctype's own settings file
+true,0,0,q,(`handlers`log`servers`timer)~asc key .k4unittestproc.captureddeps,1,,deps (incl injected servers) were passed through to the custom proctype's init exactly like a built-in one
+true,0,0,q,1=.k4unittestproc.runcalled,1,,the .run hook fired automatically after init - no launcher-side proctype knowledge needed
+
+run,0,0,q,r5:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with the norun override set (this reloads the proctype file, resetting runcalled to 0)
+true,0,0,q,0=.k4unittestproc.runcalled,1,,-norun skipped the hook - count stayed at 0 instead of incrementing to 1
+
+true,0,0,q,APPCOMMON_LOADED,1,,app-code cascade loaded code/common/*.q during init (at root)
+true,0,0,q,APPPROC_LOADED,1,,app-code cascade loaded code/<proctype>/*.q during init (at root)
+true,0,0,q,not `APPNAME_LOADED in key `.,1,,procname-tier code/<procname>/ is OFF by default (loadnamecode)
+run,0,0,q,enablenamecode[],1,,enable procname-tier loading via the procname settings tier
+run,0,0,q,r6:tq.init[TESTPROCNAME;`testinst;enlist[`norun]!enlist 1b],1,,re-init with loadnamecode turned on in config
+true,0,0,q,`APPNAME_LOADED in key `.,1,,procname-tier code now loads when loadnamecode=1b
+
+true,0,0,q,`hdb~r`proctype,1,,sanity: hdb (no .hdb.run published) still inited cleanly earlier with no hook and no error
+
+run,0,0,q,system "p 28580",1,,rebind to the port process.csv says hdb owns
+run,0,0,q,r4:tq.init[`;`;()!()],1,,auto-detect identity now that the port uniquely matches one row
+true,0,0,q,`hdb~r4`proctype,1,,auto-detected the right proctype
+true,0,0,q,`hdb~r4`procname,1,,auto-detected the right procname
+
+comment,,,,,,,command-line override layer - clioverrideparams filters .Q.opt .z.x into config-override params
+run,0,0,q,cliopts:sampleopts[],1,,a synthetic .Q.opt-shape command line (reserved launcher flags + myrows/myname setting flags)
+true,0,0,q,`myname`myrows~asc key .m.di.0torq.clioverrideparams[cliopts],1,,only the real setting flags survive the filter
+true,0,0,q,not any `proctype`procname`torqxstackid`p`norun in key .m.di.0torq.clioverrideparams[cliopts],1,,every reserved launcher/identity flag is dropped before overrideconfig
+true,0,0,q,(enlist"7")~(.m.di.0torq.clioverrideparams[cliopts])`myrows,1,,kept override values are unchanged (the .Q.opt string-list shape overrideconfig expects)
+true,0,0,q,0=count .m.di.0torq.clioverrideparams[()!()],1,,an empty command line yields no overrides
+true,0,0,q,0=count .m.di.0torq.clioverrideparams[`proctype`p!((enlist"hdb");(enlist"5560"))],1,,a command line of only reserved flags yields no overrides
+
+comment,,,,,,,optional query logging - initquerylog wires di.querylog from a [querylog] settings section (init calls it last)
+run,0,0,q,.m.di.0torq.initquerylog[qlcfg 0b;r4`deps],1,,a [querylog] section with enabled=false is a silent no-op
+true,0,0,q,not .m.di.0torq.querylogwired,1,,nothing was wired while disabled
+run,0,0,q,.m.di.0torq.initquerylog[enlist[`procname]!enlist`qltest;r4`deps],1,,no [querylog] section at all is also a no-op
+true,0,0,q,not .m.di.0torq.querylogwired,1,,still nothing wired
+true,0,0,q,"(`upd;`.u.upd;""upd"";"".u.upd"")~.m.di.0torq.qlignore (""upd"";"".u.upd"")",1,,toml ignorelist strings expand to both the symbol-head and string-head message shapes
+run,0,0,q,.m.di.0torq.initquerylog[qlcfg 1b;r4`deps],1,,enable with defaults - memory-only log plus the flush timer job
+true,0,0,q,.m.di.0torq.querylogwired,1,,the wired flag is set
+true,0,0,q,`querylogflush in exec id from (r4[`deps][`timer][`getactivejobs])[],1,,the in-memory flush job was scheduled on the injected timer
+run,0,0,q,n0:qlcompleted`pg,1,,baseline sync-query completions
+run,0,0,q,qlsync[],1,,one sync query through the wrapped .z.pg
+true,0,0,q,1=(qlcompleted`pg)-n0,1,,one sync query logs exactly one completion row
+run,0,0,q,upd:{[t;x]},1,,root upd stub so the ignored async message still evaluates
+run,0,0,q,n1:qlrowcount[],1,,baseline row count before an ignored async message
+run,0,0,q,qlasync[],1,,an async (`upd;t;x) message - the tickerplant-to-rdb shape
+true,0,0,q,n1=qlrowcount[],1,,upd is on the default ignorelist - the tick stream writes no rows at all
+run,0,0,q,.m.di.0torq.initquerylog[qlcfg 1b;r4`deps],1,,a second wiring attempt (e.g. di.torq.init re-run in the same process)
+run,0,0,q,n2:qlcompleted`pg,1,,baseline after the re-init
+run,0,0,q,qlsync[],1,,one more sync query
+true,0,0,q,1=(qlcompleted`pg)-n2,1,,re-init is guarded - still one row per query (di.querylog alone would double-wrap)
+run,0,0,q,.m.di.0torq.flushquerylog[],1,,the flush job body runs cleanly
+true,0,0,q,0<qlcompleted`pg,1,,rows younger than flushtime survive a flush
+
+after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file

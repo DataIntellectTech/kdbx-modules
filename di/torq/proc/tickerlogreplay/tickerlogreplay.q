@@ -29,7 +29,7 @@ init:{[config;deps]
    ex[`replayinit; "if using basic mode, messagechunks must not be used (it should be set to 0W). basicmode will use .Q.hdpf to overwrite tables at the end of the replay";1]];
   if[not .replay.partitiontype in `date`month`year; ex[`replayinit;"partitiontype must be one of `date`month`year";1]];
   if[.replay.messagechunks=0;ex[`replayinit;"messagechunks value cannot be 0";2]];
-  if[.replay.segmentedmode and ((0<>.replay.firstmessage) or 0W<>.replay.lastmessage);ex[`replayinit;"firstmessage must be 0 and lastmessage must be 0W while in segmented mode"];1];
+  if[.replay.segmentedmode and ((0<>.replay.firstmessage) or 0W<>.replay.lastmessage);ex[`replayinit;"firstmessage must be 0 and lastmessage must be 0W while in segmented mode";1]];
   .replay.trackonly:.replay.messagechunks < 0;
   if[.replay.trackonly;.z.m.log[`info][`replayinit;"messagechunks value is negative - log replay progress will be tracked"]];
   .replay.messagechunks:abs .replay.messagechunks;

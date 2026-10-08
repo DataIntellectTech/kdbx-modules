@@ -61,7 +61,7 @@ Requires `log`. It:
 1. initialises di.dbwrite and di.merge, and applies the settings;
 2. exits on a bad setting:
    - code 1 for a null `schemafile`/`hdbdir`/log, an unknown `partitiontype`, `basicmode` with
-     `messagechunks`, or `partandmerge` into `hdbdir`;
+     `messagechunks`, a message range in segmented mode, or `partandmerge` into `hdbdir`;
    - code 2 for zero `messagechunks` or a schema file that fails to load;
 3. loads the schema file at root;
 4. wraps `.replay.realupd` to filter on `tablelist` (plain logs) and to save every `messagechunks` messages;
@@ -75,7 +75,7 @@ Requires `log`. It:
   their `_YYYYMMDDhhmmss` suffix. Segmented logs from more than one date are refused.
 - With `checklogfiles` on a plain log, the repaired copy is named `<log>.good`, so it has no date and its tables
   are saved at the HDB root.
-- In segmented mode, a non-default `firstmessage` or `lastmessage` doesn't stop the replay.
+- In segmented mode, a non-default `firstmessage` or `lastmessage` is rejected at init (exit 1).
 - `clean` deletes the whole date partition when `tablelist` is `all`, otherwise only the replayed tables.
 - A table with no rows is still saved empty when `emptytables` is on.
 - `partandmerge` turns `sortafterreplay` off and applies `p#` through the merge.

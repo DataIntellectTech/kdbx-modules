@@ -95,7 +95,9 @@ true,0,0,q,(0;1)~(rows[SD;`trade];rows[SD;`quote]),1,,only its logs are read fro
 true,0,0,q,"replayed ""stp1_quote""",1,,the quote log only
 true,0,0,q,"not replayed ""stp1_trade""",1,,
 run,0,0,q,clearhdb[],1,,
-true,0,0,q,0=replay sect seg "enlist[`firstmessage]!enlist 5",1,,the firstmessage check in segmented mode does not exit
+true,0,0,q,1=replay sect seg "enlist[`firstmessage]!enlist 5",1,,a non-default firstmessage in segmented mode exits 1
+true,0,0,q,1=replay sect seg "enlist[`lastmessage]!enlist 5",1,,a non-default lastmessage in segmented mode exits 1
+true,0,0,q,"logged ""*firstmessage must be 0 and lastmessage must be 0W*""",1,,and says why
 true,0,0,q,"3=replay sect seg ""enlist[`tplogdir]!enlist "",hp""mixed""",1,,logs from two dates signal
 true,0,0,q,"logged ""*Cannot replay logs from different dates in segmented mode!*""",1,,and log why
 true,0,0,q,"3=replay sect seg ""enlist[`tplogfile]!enlist "",hp""tplog"",D",1,,a log file in segmented mode signals

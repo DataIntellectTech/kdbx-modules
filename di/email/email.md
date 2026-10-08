@@ -2,8 +2,6 @@
 
 `email.q` provides a self-contained HTML email module. It supports two transports: the system `sendmail` utility, or SMTP via `curl`. HTML construction utilities are ported from [qmail](https://github.com/BestiaPL/qmail).
 
-Alert and report result handlers compatible with the TorQ reporter process are included, ported from `code/processes/reporter.q`.
-
 ## Requirements
 
 One of the following must be installed and configured:
@@ -69,7 +67,7 @@ logdep:`info`warn`error!(log.info;log.warn;log.error)
 
 email.init[
   `mailfrom`enabled!("me@example.com";1b);
-  `log`send!(logdep;::)]
+  enlist[`log]!enlist logdep]
 
 email.test[`$"me@example.com"]
 ```
@@ -82,6 +80,7 @@ Passed as the first dictionary to `init`. All keys are optional.
 |---|---|---|---|
 | `mailfrom` | string or symbol | `"torq@localhost"` | From address on outgoing emails |
 | `enabled` | boolean | `0b` | Set `1b` to allow emails to be sent |
+| `historyenabled` | boolean | `1b` | Set `0b` to disable send history recording |
 | `smtpurl` | string or symbol | `""` | SMTP server URL e.g. `"smtp://smtp.gmail.com:587"`. When set, curl is used instead of sendmail |
 | `smtpuser` | string or symbol | `""` | SMTP username |
 | `smtppassword` | string | `""` | SMTP password |
@@ -89,18 +88,16 @@ Passed as the first dictionary to `init`. All keys are optional.
 
 ## Dependencies
 
-Passed as the second dictionary to `init`. Pass `(::)` to use all defaults.
+Passed as the second dictionary to `init`.
 
 | Key | Required | Type | Description |
 |---|---|---|---|
 | `` `log `` | yes | dict | Logger with keys `` `info`warn`error ``, each `{[c;m]}`. Required — `init` throws if absent. See `di.log` for a default implementation. |
-| `` `send `` | no | function | `{[frm;to;sub;body;att]}` — injectable send function. Pass `(::)` or omit to use curl smtp when `smtpurl` is set, otherwise sendmail. |
 
 ## Core Structures
 
-- **`history`** (table, `.z.M`) — Append-only log of every `senddefault` call:
+- **`history`** (table, `.z.m`) — Append-only log of every `senddefault` call. Preserved across `init` calls; cleared only by `clearhistory`.
   - `time` (timestamp), `recipients` (symbol), `subject` (any), `status` (symbol: `` `sent `` / `` `failed `` / `` `disabled ``), `bytes` (long: `0j` on success, `-1j` on failure or disabled)
-- **`alertstats`** (keyed table, `.z.M`) — Tracks last alert send time per `procname`+`alertname` pair for cooldown enforcement
 
 ## Main Functions
 
@@ -109,7 +106,9 @@ Parameters: `[config; deps]`
 
 Initialises the module. Pass `(::)` for config to use defaults (email disabled, sendmail transport). A `log` dependency is always required — `init` throws if it is absent.
 
-When `smtpurl` is set in config and no custom `send` is injected, the curl SMTP transport is used automatically.
+Transport is selected automatically: curl SMTP when `smtpurl` is set in config, sendmail otherwise.
+
+The `history` table is initialised on the first `init` call only; subsequent calls (e.g. to change SMTP config) preserve existing rows.
 
 ### `senddefault`
 Parameters: `[msgdict]`
@@ -118,31 +117,20 @@ Sends an HTML email. `msgdict` keys:
 - `to` — symbol or symbol list of recipients
 - `subject` — string
 - `body` — list of strings (plain strings are wrapped in a styled `<p>` tag; pre-built HTML strings are passed through as-is; a timestamp footer is appended automatically)
-- `attachment` — (optional) hsym file path
+- `attachments` — (optional) single hsym file path or a list of hsyms
 
-Returns `1b` on success, `0b` on send failure, `-1` if disabled. Every attempt is logged to `history`.
+Returns `1b` on success, `0b` on send failure, `-1` if disabled. Every attempt is appended to `history` unless `historyenabled` is `0b`.
 
 ### `test`
 Parameters: `[to]`
 
 Sends a test email to `to` (symbol). Returns `1b` on success.
 
-### `alert`
-Parameters: `[period; recipients]`
-
-Returns a result handler projection `{[data]}` for the TorQ reporter `resulthandler` column.
-
-- `period` — timespan cooldown e.g. `00:02:00`
-- `recipients` — string or list of strings (email addresses)
-- `data.result` must have a `messages` column (list of strings)
-
-### `report`
-Parameters: `[temppath; recipients; filename; filetype]`
-
-Returns a result handler projection `{[data]}` for the TorQ reporter `resulthandler` column. Writes result to `temppath/filename.filetype`, emails it as an attachment, then deletes the temp file.
-
 ### `getstatus`
 Returns the full `history` table.
+
+### `clearhistory`
+Truncates the `history` table, preserving its schema. Intended to be scheduled via a timer to bound memory growth — see [example 6](#6-schedule-history-clearing-with-a-timer).
 
 ## HTML Helpers
 
@@ -181,7 +169,7 @@ logdep:`info`warn`error!(
 email:use`di.email
 email.init[
   `mailfrom`enabled!("me@example.com";1b);
-  `log`send!(logdep;::)]
+  enlist[`log]!enlist logdep]
 email.senddefault`to`subject`body!(`$"ops@example.com";"Deployed";enlist"Build 42 deployed.")
 ```
 
@@ -196,7 +184,7 @@ email.init[
     "smtp://smtp.gmail.com:587";
     "me@example.com";
     "myapppassword");
-  `log`send!(logdep;::)]
+  enlist[`log]!enlist logdep]
 email.senddefault`to`subject`body!(`$"ops@example.com";"Deployed";enlist"Build 42 deployed.")
 ```
 
@@ -206,35 +194,59 @@ email.senddefault`to`subject`body!(`$"ops@example.com";"Deployed";enlist"Build 4
 email:use`di.email
 email.init[
   `mailfrom`enabled!("me@example.com";1b);
-  `log`send!(logdep;::)]
+  enlist[`log]!enlist logdep]
 results:([]sym:`AAPL`GOOG;price:182.5 141.3)
 body:email.ztable[results]
 email.senddefault`to`subject`body!(`$"ops@example.com";"EOD Prices";body)
 ```
 
-### 4. Test transport connectivity
+### 4. Send with attachments
 
 ```q
 email:use`di.email
 email.init[
   `mailfrom`enabled!("me@example.com";1b);
-  `log`send!(logdep;::)]
+  enlist[`log]!enlist logdep]
+
+/ single attachment
+email.senddefault`to`subject`body`attachments!(
+  `$"ops@example.com";"Report";enlist"see attached";
+  `:/tmp/report.csv)
+
+/ multiple attachments
+email.senddefault`to`subject`body`attachments!(
+  `$"ops@example.com";"Reports";enlist"see attached";
+  `:/tmp/report1.csv`:/tmp/report2.csv)
+```
+
+### 5. Test transport connectivity
+
+```q
+email:use`di.email
+email.init[
+  `mailfrom`enabled!("me@example.com";1b);
+  enlist[`log]!enlist logdep]
 email.test[`$"me@example.com"]
 ```
 
-### 5. Use as a reporter alert handler
+### 6. Schedule history clearing with a timer
 
-```
-rdbmemorycheck|.checks.memorycheck[1500000000]|email.alert[00:02;getenv`DEMOEMAILRECEIVER]|||rdb|rdb1|00:00:00|23:59:59|00:05:00|00:00:20|0 1 2 3 4 5 6
+Wire `clearhistory` into `di.timer` so it runs once a day, keeping memory bounded:
+
+```q
+timer:use`di.timer
+email:use`di.email
+
+timer.init[timerconfig;enlist[`log]!enlist logdep]
+email.init[`mailfrom`enabled!("me@example.com";1b);enlist[`log]!enlist logdep]
+
+/ clear history every 24 hours
+timer.addjob[`emailhistoryclear;email.clearhistory;();0D01:00:00:00;`repeat;()!()]
 ```
 
-### 6. Use as a reporter report handler
+### 7. Testing without real sends
 
-```
-eodreport|hloc[.proc.cd[];.proc.cd[];0D01]|email.report[getenv[`TORQHOME];getenv`DEMOEMAILRECEIVER;"eodreport";"csv"]|||rdb||18:00|18:00|00:00|00:05|2 3 4 5 6
-```
-
-### 7. Testing with a mock send function
+Override the internal send function after `init` to intercept calls without hitting a mail server:
 
 ```q
 mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
@@ -242,6 +254,7 @@ mocksend:{[frm;to;sub;body;att]}
 email:use`di.email
 email.init[
   `mailfrom`enabled!("me@example.com";1b);
-  `log`send!(mocklog;mocksend)]
+  enlist[`log]!enlist mocklog]
+.m.di.0email.send:mocksend
 email.senddefault`to`subject`body!(`$"a@b.com";"test";enlist"hello")
 ```

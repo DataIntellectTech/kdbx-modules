@@ -35,10 +35,10 @@ supplies the discovery process's values.
 | `discoveryregister` | `.servers.DISCOVERYREGISTER` | `1b` |
 | `connectionsfromdiscovery` | `.servers.CONNECTIONSFROMDISCOVERY` | `1b` |
 | `subscribetodiscovery` | `.servers.SUBSCRIBETODISCOVERY` | `1b` |
-| `discoveryretry` | `.servers.DISCOVERYRETRY` | `0D00:05`; also a `"0D00:00:10"` string or seconds |
+| `discoveryretry` | `.servers.DISCOVERYRETRY` | `0D00:05`; string or seconds allowed |
 | `tracknontorqprocess` | `.servers.TRACKNONTORQPROCESS` | `0b` |
 | `hopentimeout` | `.servers.HOPENTIMEOUT` | `2000` |
-| `retry` | `.servers.RETRY` | `0D00:05`; also a `"0D00:00:10"` string or seconds |
+| `retry` | `.servers.RETRY` | `0D00:05`; string or seconds allowed |
 | `retain` | `.servers.RETAIN` | `` `long$0D00:30 `` |
 | `autoclean` | `.servers.AUTOCLEAN` | `0b` |
 | `debug` | `.servers.DEBUG` | `1b` |

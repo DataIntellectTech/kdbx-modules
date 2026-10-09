@@ -115,7 +115,8 @@ So **yes, it supports per-procname customisation** just like the config cascade 
 as in TorQ (`.proc.loadnamecode` defaults `0b`), the procname tier is **off by default** and
 opt-in via `loadnamecode:1b` in that process's settings. Each flag is read from the merged
 config (so it's overridable per-process in settings). `parentproctype` (TorQ's 4th tier, for
-sharing code between a WDB and its sort workers) is omitted — there is no sort-worker tier yet.
+sharing code between a WDB and its sort workers) is omitted: proctypes `sort` and `sortworker` are
+built in and run `di.torq.proc.wdb` itself, with `settings/sort.q` and `settings/sortworker.q`.
 
 Within a directory, files load in this order: an optional `order.txt` (one filename per line)
 is loaded first, then the remaining `*.q`/`*.k` files alphabetically — matching TorQ's `loaddir`.

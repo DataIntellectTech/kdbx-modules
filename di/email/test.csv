@@ -1,0 +1,300 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,email:use`di.email,1,1,load module into session
+before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
+before,0,0,q,"mocksend:{[frm;to;sub;body;att]}",1,1,define no-op mock send for direct state injection
+before,0,0,q,mockcapture:{[frm;to;sub;body;att]lastatt::att;lastfiles::read0 each att;1b},1,1,define capturing mock send for senddata tests
+
+/ Test 0: init with defaults leaves email disabled and config empty
+run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with defaults and injected logger
+true,0,0,q,not .m.di.0email.enabled,1,1,email disabled by default
+true,0,0,q,"""kdbx@localhost""~.m.di.0email.mailfrom",1,1,default mailfrom is kdbx@localhost
+
+/ Test 1: init with custom config sets values correctly
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist mocklog]",1,1,init with string mailfrom
+true,0,0,q,"""me@example.com""~.m.di.0email.mailfrom",1,1,mailfrom set from string
+run,0,0,q,"email.init[`mailfrom`enabled!(`$""me@example.com"";0b);enlist[`log]!enlist mocklog]",1,1,init with symbol mailfrom
+true,0,0,q,"""me@example.com""~.m.di.0email.mailfrom",1,1,symbol mailfrom converted to string
+
+/ Test 2: init wires injected logger into individual loginfo/logwarn/logerr slots
+run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with injected logger
+true,0,0,q,mocklog[`info]~.m.di.0email.loginfo,1,1,injected info function stored
+true,0,0,q,mocklog[`warn]~.m.di.0email.logwarn,1,1,injected warn function stored
+true,0,0,q,mocklog[`error]~.m.di.0email.logerr,1,1,injected error function stored
+
+/ Test 3: init errors when log dep not provided
+fail,0,0,q,email.init[(::);(::)],1,1,init without log dep throws an error
+fail,0,0,q,"email.init[(::);enlist[`log]!enlist(::)]",1,1,init with log set to (::) throws an error
+
+/ Test 4: init selects smtpsend_ transport when smtpurl is set
+run,0,0,q,"email.init[enlist[`smtpurl]!enlist ""smtp://x:25"";enlist[`log]!enlist mocklog]",1,1,init with smtpurl set
+true,0,0,q,.m.di.0email.smtpsend_~.m.di.0email.send,1,1,smtpsend_ used when smtpurl set
+
+/ Test 5: init selects mailsend transport when no smtpurl
+run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with no smtpurl
+true,0,0,q,.m.di.0email.mailsend~.m.di.0email.send,1,1,mailsend used when no smtpurl set
+
+/ Test 6: senddefault returns -1 and logs disabled entry when email is disabled
+run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,reset to defaults (disabled)
+run,0,0,q,before:count email.getstatus[],1,1,capture history row count
+run,0,0,q,"res:email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,send while disabled
+true,0,0,q,-1~res,1,1,returns -1 when disabled
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
+true,0,0,q,`disabled~last exec status from email.getstatus[],1,1,status is disabled
+
+/ Test 7: senddefault with mock send returns 1b on success
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
+run,0,0,q,.m.di.0email.send:mocksend,1,1,override send with mock to avoid real smtp
+run,0,0,q,before:count email.getstatus[],1,1,capture history row count
+run,0,0,q,"res:email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,send with mock send
+true,0,0,q,1b~res,1,1,returns 1b on success
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
+true,0,0,q,`sent~last exec status from email.getstatus[],1,1,status is sent
+
+/ Test 8: senddefault with failing send returns 0b and logs failed status
+run,0,0,q,"failsend:{[frm;to;sub;body;att]'""smtp error""}",1,1,define failing send
+run,0,0,q,"email.init[(enlist`enabled)!enlist 1b;enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
+run,0,0,q,.m.di.0email.send:failsend,1,1,override send with failing mock
+run,0,0,q,before:count email.getstatus[],1,1,capture count
+run,0,0,q,"res:email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,invoke send that throws
+true,0,0,q,0b~res,1,1,returns 0b on failure
+true,0,0,q,`failed~last exec status from email.getstatus[],1,1,status is failed
+
+/ Test 9: getstatus returns history table with expected columns and correct type
+run,0,0,q,h:email.getstatus[],1,1,fetch history
+true,0,0,q,`time`recipients`subject`status`bytes~cols h,1,1,correct column names
+true,0,0,q,98h=type h,1,1,history is a table
+
+/ Test 10: addtext wraps text in styled <p>
+run,0,0,q,"t:.m.di.0email.addtext ""hello""",1,1,build addtext result
+true,0,0,q,"""<p ""~3#t",1,1,addtext starts with <p tag
+true,0,0,q,"""</p>""~-4#t",1,1,addtext closes with </p>
+true,0,0,q,"0<count t ss ""hello""",1,1,addtext preserves text content
+
+/ Test 11: mailheading produces heading tags
+run,0,0,q,"h1:.m.di.0email.mailheading[""1"";""title""]",1,1,build h1 heading
+true,0,0,q,"""<h1 ""~4#h1",1,1,mailheading h1 opens with tag
+true,0,0,q,"""</h1>""~-5#h1",1,1,mailheading h1 closes
+true,0,0,q,"0<count h1 ss ""title""",1,1,mailheading contains heading text
+
+/ Test 12: mailbold and mailitalic produce inline tags
+run,0,0,q,"mbi:.m.di.0email.mailbold ""x""",1,1,build bold span
+true,0,0,q,"""<b ""~3#mbi",1,1,mailbold opens with <b tag
+true,0,0,q,"""</b>""~-4#mbi",1,1,mailbold closes with </b>
+run,0,0,q,"mii:.m.di.0email.mailitalic ""x""",1,1,build italic span
+true,0,0,q,"""<i ""~3#mii",1,1,mailitalic opens with <i tag
+true,0,0,q,"""</i>""~-4#mii",1,1,mailitalic closes with </i>
+
+/ Test 13: mailstring converts types to strings
+true,0,0,q,"""hello""~.m.di.0email.mailstring ""hello""",1,1,mailstring passes through string
+true,0,0,q,"""abc""~.m.di.0email.mailstring `abc",1,1,mailstring converts symbol to string
+
+/ Test 14: addcolor sets only color - no spurious font-size (mailcolors bug fix)
+run,0,0,q,"ac:.m.di.0email.addcolor[""red"";""text""]",1,1,build addcolor result
+true,0,0,q,"0<count ac ss ""color:red""",1,1,addcolor sets color property
+true,0,0,q,"0=count ac ss ""font-size:px""",1,1,addcolor does not produce invalid font-size:px
+
+/ Test 15: mailsize sets font-size with px suffix
+run,0,0,q,"ms:.m.di.0email.mailsize[""20"";""text""]",1,1,build mailsize result
+true,0,0,q,"0<count ms ss ""font-size:20px""",1,1,mailsize appends px to size value
+
+/ Test 16: mailbgcolor sets background-color
+run,0,0,q,"mbg:.m.di.0email.mailbgcolor[""#ffff00"";""text""]",1,1,build mailbgcolor result
+true,0,0,q,"0<count mbg ss ""background-color:#ffff00""",1,1,mailbgcolor sets background-color property
+
+/ Test 17: mailcolors sets all specified properties
+run,0,0,q,"mc:.m.di.0email.mailcolors[""blue"";""#ee"";""14"";""text""]",1,1,build mailcolors result
+true,0,0,q,"0<count mc ss ""color:blue""",1,1,mailcolors sets color
+true,0,0,q,"0<count mc ss ""font-size:14px""",1,1,mailcolors sets font-size
+true,0,0,q,"0<count mc ss ""display:inline""",1,1,mailcolors sets display
+
+/ Test 18: mailurl produces anchor tag with href
+run,0,0,q,"u:.m.di.0email.mailurl[""https://x.com"";""click""]",1,1,build mailurl
+true,0,0,q,"""<a ""~3#u",1,1,mailurl starts with <a tag
+true,0,0,q,"""</a>""~-4#u",1,1,mailurl closes with </a>
+true,0,0,q,"0<count u ss ""x.com""",1,1,mailurl embeds href url
+
+/ Test 19: setbookmark and getbookmark produce anchor elements
+run,0,0,q,"bm:.m.di.0email.setbookmark ""s1""",1,1,build anchor bookmark
+true,0,0,q,"0<count bm ss ""name=""",1,1,setbookmark has name attribute
+true,0,0,q,"0<count bm ss ""s1""",1,1,setbookmark embeds anchor id
+run,0,0,q,"gbm:.m.di.0email.getbookmark[""s1"";""go""]",1,1,build bookmark link
+true,0,0,q,"0<count gbm ss ""#s1""",1,1,getbookmark links to named anchor
+
+/ Test 20: mailtable produces html table with headers and data
+run,0,0,q,mt:.m.di.0email.mailtable[([]a:1 2;b:3 4)],1,1,build mailtable from kdb table
+true,0,0,q,0h=type mt,1,1,mailtable returns list of strings
+true,0,0,q,"""</table>""~last mt",1,1,mailtable closes with </table>
+true,0,0,q,"0<count(raze mt)ss ""<th """,1,1,mailtable has header cells
+true,0,0,q,"0<count(raze mt)ss ""<td """,1,1,mailtable has data cells
+true,0,0,q,"0=count(raze mt)ss ""#e6e6ff""",1,1,mailtable rows all same color no alternating
+
+/ Test 21: ztable produces alternating row colors
+run,0,0,q,zt:.m.di.0email.ztable[([]a:1 2 3 4;b:5 6 7 8)],1,1,build ztable
+true,0,0,q,"0<count(raze zt)ss ""#e6e6ff""",1,1,ztable has alternating odd row background
+
+/ Test 22: maildict renders key-value pairs as table rows
+run,0,0,q,"md:.m.di.0email.maildict[`k1`k2!(""v1"";""v2"")]",1,1,build maildict
+true,0,0,q,0h=type md,1,1,maildict returns list of strings
+true,0,0,q,"0<count(raze md)ss ""k1""",1,1,maildict renders key
+true,0,0,q,"0<count(raze md)ss ""v1""",1,1,maildict renders value
+
+/ Test 23: template0 has blank separator between headers and html body
+run,0,0,q,"tmpl:.m.di.0email.template0[""f"";""t"";""s"";enlist ""body""]",1,1,build template0
+true,0,0,q,"any """"~/:tmpl",1,1,template0 has blank separator line
+true,0,0,q,"any ""<html>""~/:tmpl",1,1,template0 has html open tag
+true,0,0,q,"(first where """"~/:tmpl)<first where ""<html>""~/:tmpl",1,1,blank separator comes before html body
+
+/ Test 24: dict2css produces semicolon-separated key:value css
+run,0,0,q,"css:.m.di.0email.dict2css[(`$""color"";`$""background-color"")!(""red"";""blue"")]",1,1,build css from two-key dict
+true,0,0,q,"0<count css ss ""color:red""",1,1,dict2css produces colon-separated key:val
+true,0,0,q,""";"" in css",1,1,dict2css separates properties with semicolon
+
+/ Test 25: getstyle returns correct css dict for each style key
+true,0,0,q,.m.di.0email.cssbody[]~.m.di.0email.getstyle[`body],1,1,getstyle body returns cssbody dict
+true,0,0,q,.m.di.0email.csstableall[]~.m.di.0email.getstyle[`table`all],1,1,getstyle table all
+true,0,0,q,.m.di.0email.csstableheader[]~.m.di.0email.getstyle[`table`header],1,1,getstyle table header
+
+/ Test 26: colornormalize scales and clamps values
+true,0,0,q,0.5~.m.di.0email.colornormalize[0f;10f;5f],1,1,colornormalize 5 on 0-10 scale is 0.5
+true,0,0,q,0f~.m.di.0email.colornormalize[0f;10f;-1f],1,1,colornormalize clamps below min to 0f
+true,0,0,q,1f~.m.di.0email.colornormalize[0f;10f;11f],1,1,colornormalize clamps above max to 1f
+
+/ Test 27: colorhsv2rgb converts hue-saturation-value to 3-byte rgb
+run,0,0,q,rgb:.m.di.0email.colorhsv2rgb[0f;1f;1f],1,1,convert pure red hsv to rgb
+true,0,0,q,3=count rgb,1,1,colorhsv2rgb returns 3 byte values
+true,0,0,q,rgb[0]=max rgb,1,1,colorhsv2rgb red hue has maximum red channel
+run,0,0,q,mono:.m.di.0email.colorizemono[`red;0f;100f;0 50 100f],1,1,colorize 3 values on red scale
+true,0,0,q,3=count mono,1,1,colorizemono returns one entry per input value
+true,0,0,q,all 3=count each mono,1,1,colorizemono each entry is 3 bytes
+
+/ Test 28: senddefault with single attachment sends and logs success
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
+run,0,0,q,.m.di.0email.send:mocksend,1,1,override send with mock to avoid real smtp
+run,0,0,q,attfile:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create temp attachment file
+run,0,0,q,attfile 0: enlist "test attachment",1,1,write content to temp file
+run,0,0,q,before:count email.getstatus[],1,1,capture history count
+run,0,0,q,"res:email.senddefault[`to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body"";attfile)]",1,1,send with single hsym attachment
+true,0,0,q,1b~res,1,1,returns 1b on success
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
+true,0,0,q,`sent~last exec status from email.getstatus[],1,1,status is sent
+run,0,0,q,hdel attfile,1,1,clean up temp file
+
+/ Test 29: senddefault with multiple attachments sends and logs success
+run,0,0,q,att1:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create first temp file
+run,0,0,q,att2:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create second temp file
+run,0,0,q,att1 0: enlist "file one",1,1,write to first file
+run,0,0,q,att2 0: enlist "file two",1,1,write to second file
+run,0,0,q,before:count email.getstatus[],1,1,capture history count
+run,0,0,q,"res:email.senddefault[`to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body"";att1,att2)]",1,1,send with list of two hsym attachments
+true,0,0,q,1b~res,1,1,returns 1b on success
+true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
+true,0,0,q,`sent~last exec status from email.getstatus[],1,1,status is sent
+run,0,0,q,hdel each att1,att2,1,1,clean up temp files
+
+/ Test 30: encodefile returns list of strings for a valid file
+run,0,0,q,ef_file:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create temp file for encodefile test
+run,0,0,q,ef_file 0: enlist "hello",1,1,write known content to temp file
+run,0,0,q,ef:.m.di.0email.encodefile[ef_file],1,1,encode temp file to base64
+true,0,0,q,0h=type ef,1,1,encodefile returns a list
+true,0,0,q,0<count ef,1,1,encodefile output is non-empty
+true,0,0,q,all 10h=type each ef,1,1,encodefile elements are all strings
+run,0,0,q,hdel ef_file,1,1,clean up temp file
+
+/ Test 31: encodefile throws for non-existent file
+fail,0,0,q,.m.di.0email.encodefile[`:/tmp/does-not-exist-email-test],1,1,encodefile throws on missing file
+
+/ Test 32: mimetype returns a string for an existing file
+run,0,0,q,mt_file:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create temp file for mimetype test
+run,0,0,q,"mt_file 0: enlist ""a,b""",1,1,write content to temp file
+run,0,0,q,mt:.m.di.0email.mimetype[mt_file],1,1,get mime type of temp file
+true,0,0,q,10h=type mt,1,1,mimetype returns a string
+true,0,0,q,0<count mt,1,1,mimetype result is non-empty
+run,0,0,q,hdel mt_file,1,1,clean up temp file
+
+/ Test 33: mailtemplate with attachment produces all-string element list (regression: content-type header was type 0h)
+run,0,0,q,mta_file:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create temp attachment for mailtemplate test
+run,0,0,q,mta_file 0: enlist "data",1,1,write content to attachment file
+run,0,0,q,"mta:.m.di.0email.mailtemplate[""f"";""t"";""s"";enlist ""body"";enlist mta_file]",1,1,build multipart template with attachment
+true,0,0,q,all 10h=type each mta,1,1,all mailtemplate elements are strings when attachment present
+true,0,0,q,"0<count(raze mta)ss ""multipart/mixed""",1,1,mailtemplate uses multipart/mixed content type with attachment
+true,0,0,q,"0<count(raze mta)ss ""Content-Transfer-Encoding: base64""",1,1,mailtemplate includes base64 transfer encoding header
+run,0,0,q,hdel mta_file,1,1,clean up temp file
+
+/ Test 34: historyenabled defaults to 1b after init
+run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,reset to defaults
+true,0,0,q,1b~.m.di.0email.historyenabled,1,1,historyenabled is 1b by default
+
+/ Test 35: when historyenabled is 0b senddefault does not append to history
+run,0,0,q,"email.init[`enabled`historyenabled!(1b;0b);enlist[`log]!enlist mocklog]",1,1,init with history disabled
+run,0,0,q,.m.di.0email.send:mocksend,1,1,override send with mock
+run,0,0,q,before:count email.getstatus[],1,1,capture history count
+run,0,0,q,"res:email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,send with history disabled
+true,0,0,q,1b~res,1,1,send still succeeds when history disabled
+true,0,0,q,before=count email.getstatus[],1,1,history unchanged when historyenabled is 0b
+
+/ Test 36: clearhistory empties the history table and preserves schema
+run,0,0,q,"email.init[`enabled`historyenabled!(1b;1b);enlist[`log]!enlist mocklog]",1,1,re-enable history
+run,0,0,q,.m.di.0email.send:mocksend,1,1,override send with mock
+run,0,0,q,"email.senddefault[`to`subject`body!(`$""a@b.com"";""subj"";enlist""body"")]",1,1,send to populate history
+true,0,0,q,0<count email.getstatus[],1,1,history has rows before clear
+run,0,0,q,email.clearhistory[],1,1,clear history
+true,0,0,q,0=count email.getstatus[],1,1,history is empty after clearhistory
+true,0,0,q,`time`recipients`subject`status`bytes~cols email.getstatus[],1,1,schema preserved after clearhistory
+
+/ Test 37: version is exported and read from the VERSION file
+true,0,0,q,10h=abs type email.version,1,1,version is a string
+true,0,0,q,0<count email.version,1,1,version is not empty
+true,0,0,q,2=sum "."=email.version,1,1,version is semver-shaped (two dots)
+
+/ Test 38: test[] sends a canned message through senddefault
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
+run,0,0,q,.m.di.0email.send:mocksend,1,1,override send with mock to avoid real smtp
+run,0,0,q,email.clearhistory[],1,1,start from an empty history
+true,0,0,q,"1b~email.test[`$""a@b.com""]",1,1,test returns 1b with a working send
+true,0,0,q,1=count email.getstatus[],1,1,test logged exactly one send
+true,0,0,q,"""test email""~first exec subject from email.getstatus[]",1,1,test uses its canned subject
+
+/ Test 39: test[] respects the enabled gate
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist mocklog]",1,1,re-init disabled
+true,0,0,q,"-1~email.test[`$""a@b.com""]",1,1,test returns -1 when email is disabled
+
+/ Test 40: dataaslines renders each kind of q object
+true,0,0,q,"(""sym,px"";""a,1.5"";""b,2.5"")~.m.di.0email.dataaslines ([]sym:`a`b;px:1.5 2.5)",1,1,a table becomes csv
+true,0,0,q,"(""k,v"";""1,3"";""2,4"")~.m.di.0email.dataaslines ([k:1 2]v:3 4)",1,1,a keyed table becomes csv
+true,0,0,q,"(enlist ""one line"")~.m.di.0email.dataaslines ""one line""",1,1,a string becomes a single line
+true,0,0,q,"(""aa"";""bb"")~.m.di.0email.dataaslines (""aa"";""bb"")",1,1,a list of strings passes through
+true,0,0,q,"(enlist ""`x`y!1 2"")~.m.di.0email.dataaslines `x`y!1 2",1,1,anything else gets its text form
+
+/ Test 41: senddata attaches q objects and removes the temp files afterwards
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
+run,0,0,q,.m.di.0email.send:mockcapture,1,1,override send with the capturing mock
+run,0,0,q,email.clearhistory[],1,1,start from an empty history
+true,0,0,q,"1b~email.senddata `to`subject`body`attachments!(`$""a@b.com"";""with data"";enlist""see attached"";`trades.csv`notes.txt!(([]sym:`a`b;px:1.5 2.5);""a line of text""))",1,1,senddata returns 1b
+true,0,0,q,2=count lastatt,1,1,both objects were attached
+true,0,0,q,"(""sym,px"";""a,1.5"";""b,2.5"")~first lastfiles",1,1,the table arrived as csv
+true,0,0,q,"(enlist""a line of text"")~last lastfiles",1,1,the string arrived as text
+true,0,0,q,"(`trades.csv;`notes.txt)~`$last each""/""vs/:1_'string lastatt",1,1,the given filenames are used
+true,0,0,q,all ()~/:key each lastatt,1,1,the temp files are removed after the send
+true,0,0,q,1=count email.getstatus[],1,1,senddata logs one history row
+
+/ Test 42: senddata rejects attachment specifications it cannot write safely
+fail,0,0,q,"email.senddata `to`subject`body!(`$""a@b.com"";""s"";enlist""body text"")",1,1,senddata needs an attachments key
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";`:/tmp/x)",1,1,senddata rejects a non-dict attachments value
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(enlist `$""sub/dir/x.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a path separator in a filename
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(enlist `$""../escaped.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a parent directory reference
+
+/ Test 43: values interpolated into shell commands are quoted
+true,0,0,q,"""'abc'""~.m.di.0email.shquote ""abc""",1,1,a plain value is wrapped in single quotes
+true,0,0,q,"""'a'\\''b'""~.m.di.0email.shquote ""a'b""",1,1,an embedded single quote is escaped
+true,0,0,q,"""\""a\\\""b\""""~.m.di.0email.curlquote ""a\""b""",1,1,an embedded double quote is escaped for the curl config file
+
+/ Test 44: attachments must be a dict, whatever non-dict shape is passed
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";`:/tmp/a`:/tmp/b)",1,1,senddata rejects a symbol list of paths
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(""a"";""b""))",1,1,senddata rejects a list of strings
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";42)",1,1,senddata rejects a non-dict atom
+
+/ Test 45: a send that fails while building the message leaves no temp file behind
+run,0,0,q,tmpcount:{count key`:/tmp},1,1,helper to count entries in /tmp
+run,0,0,q,before:tmpcount[],1,1,record the temp file count
+fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";""s"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
+true,0,0,q,before=tmpcount[],1,1,mailsend left no temp file behind

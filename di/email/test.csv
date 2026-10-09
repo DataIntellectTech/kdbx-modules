@@ -287,3 +287,14 @@ fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enl
 true,0,0,q,"""'abc'""~.m.di.0email.shquote ""abc""",1,1,a plain value is wrapped in single quotes
 true,0,0,q,"""'a'\\''b'""~.m.di.0email.shquote ""a'b""",1,1,an embedded single quote is escaped
 true,0,0,q,"""\""a\\\""b\""""~.m.di.0email.curlquote ""a\""b""",1,1,an embedded double quote is escaped for the curl config file
+
+/ Test 44: attachments must be a dict, whatever non-dict shape is passed
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";`:/tmp/a`:/tmp/b)",1,1,senddata rejects a symbol list of paths
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(""a"";""b""))",1,1,senddata rejects a list of strings
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";42)",1,1,senddata rejects a non-dict atom
+
+/ Test 45: a send that fails while building the message leaves no temp file behind
+run,0,0,q,tmpcount:{count key`:/tmp},1,1,helper to count entries in /tmp
+run,0,0,q,before:tmpcount[],1,1,record the temp file count
+fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";""s"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
+true,0,0,q,before=tmpcount[],1,1,mailsend left no temp file behind

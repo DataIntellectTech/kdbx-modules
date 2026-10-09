@@ -245,6 +245,12 @@ smtpssl:1b;
 // internal helpers
 // ============================================================
 
+// remove the smtp temp files, credentials first, tolerating one that has already gone
+cleansmtptmp:{[cf;fn]
+  @[hdel;cf;::];
+  @[hdel;fn;::];
+  };
+
 smtpsend_:{[frm;to;sub;body;att]
   // send via curl smtp transport using module smtp config (smtpurl/smtpuser/smtppassword/smtpssl)
   // signature matches mailsend: frm to sub body att
@@ -258,16 +264,15 @@ smtpsend_:{[frm;to;sub;body;att]
   cfgfile:first system"mktemp /tmp/qmail.XXXXXXXXXX";
   fn:hsym`$tmpfile;
   cf:hsym`$cfgfile;
-  onwritefail:{[fn;cf;e]hdel fn;hdel cf;'"smtp write error: ",e}[fn;cf];
+  onwritefail:{[cf;fn;e]cleansmtptmp[cf;fn];'"smtp write error: ",e}[cf;fn];
   .[{[a;b]a 0: b};(fn;msg);onwritefail];
   .[{[a;b]a 0: b};(cf;enlist("user = ",curlquote[smtpuser,":",smtppassword]));onwritefail];
   rcpts:" " sv {[r]"--mail-rcpt ",(shquote r)}each ","vs to;
   sslopt:$[smtpssl;"--ssl-reqd ";""];
   cmd:"curl --config ",(shquote cfgfile)," --url ",(shquote smtpurl)," ",sslopt;
   cmd,:"--crlf --mail-from ",(shquote frm)," ",rcpts," --upload-file ",(shquote tmpfile)," 2>&1";
-  @[{system x};cmd;{[fn;cf;e]hdel fn;hdel cf;'"curl smtp error: ",e}[fn;cf]];
-  hdel fn;
-  hdel cf;
+  @[{system x};cmd;{[cf;fn;e]cleansmtptmp[cf;fn];'"curl smtp error: ",e}[cf;fn]];
+  cleansmtptmp[cf;fn];
   };
 
 // render a q object as the lines of an attachment file
@@ -281,8 +286,8 @@ dataaslines:{[x]
 
 // remove a temp attachment directory and everything in it
 cleantmpdir:{[dir]
-  hdel each .Q.dd[dir]each key dir;
-  hdel dir;
+  @[hdel;;::]each .Q.dd[dir]each key dir;
+  @[hdel;dir;::];
   };
 
 // ============================================================

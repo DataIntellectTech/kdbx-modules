@@ -83,7 +83,7 @@ Passed as the first dictionary to `init`. All keys are optional.
 | `historyenabled` | boolean | `1b` | Set `0b` to disable send history recording |
 | `smtpurl` | string or symbol | `""` | SMTP server URL e.g. `"smtp://smtp.gmail.com:587"`. When set, curl is used instead of sendmail |
 | `smtpuser` | string or symbol | `""` | SMTP username |
-| `smtppassword` | string | `""` | SMTP password |
+| `smtppassword` | string | `""` | SMTP password. Written to a temporary `0600` file read by `curl --config`, so it never appears in the command line or in `ps` output |
 | `smtpssl` | boolean | `1b` | Require TLS (`--ssl-reqd`). Set `0b` to disable |
 
 ## Dependencies
@@ -96,7 +96,7 @@ Passed as the second dictionary to `init`.
 
 ## Core Structures
 
-- **`history`** (table, `.z.m`) — Append-only log of every `senddefault` call. Preserved across `init` calls; cleared only by `clearhistory`.
+- **`history`** (table, `.z.m`) — Append-only log of every send attempt, from `senddefault`, `senddata` or `test`. Preserved across `init` calls; cleared only by `clearhistory`.
   - `time` (timestamp), `recipients` (symbol), `subject` (any), `status` (symbol: `` `sent `` / `` `failed `` / `` `disabled ``), `bytes` (long: `0j` on success, `-1j` on failure or disabled)
 
 ## Main Functions
@@ -121,6 +121,21 @@ Sends an HTML email. `msgdict` keys:
 
 Returns `1b` on success, `0b` on send failure, `-1` if disabled. Every attempt is appended to `history` unless `historyenabled` is `0b`.
 
+### `senddata`
+Parameters: `[msgdict]`
+
+Sends an HTML email whose attachments are q objects rather than files already on disk. `msgdict` is the same as for `senddefault`, except that `attachments` is a dictionary mapping each attachment filename to the object to send:
+
+```q
+`trades.csv`notes.txt!(tradetable;"a line of text")
+```
+
+Each object is rendered by type — a table or keyed table becomes CSV, a string or list of strings is written as text, anything else is written as its text representation (`-3!`). The objects are written to a private temporary directory, attached, and the directory is removed again once the send completes or fails.
+
+Attachment names must be plain filenames; a name containing `/` is rejected, since the names become paths underneath the temporary directory.
+
+Returns whatever `senddefault` returns: `1b` on success, `0b` on send failure, `-1` if disabled.
+
 ### `test`
 Parameters: `[to]`
 
@@ -130,11 +145,13 @@ Sends a test email to `to` (symbol). Returns `1b` on success.
 Returns the full `history` table.
 
 ### `clearhistory`
-Truncates the `history` table, preserving its schema. Intended to be scheduled via a timer to bound memory growth — see [example 6](#6-schedule-history-clearing-with-a-timer).
+Truncates the `history` table, preserving its schema. Intended to be scheduled via a timer to bound memory growth — see [example 7](#7-schedule-history-clearing-with-a-timer).
 
 ## HTML Helpers
 
-These functions are exported and can be used to build rich HTML email bodies before passing to `senddefault`.
+These are **internal** to the module — they are not in the `export` dictionary and cannot be called through the `use` binding. They are listed here because they shape how bodies are rendered.
+
+To send rich content, either build the HTML yourself (`body` passes any string beginning with `<` through unchanged — see [example 3](#3-send-an-html-table)) or attach the data with `senddata` (see [example 5](#5-attach-a-q-table-without-writing-a-file-first)).
 
 | Function | Parameters | Description |
 |---|---|---|
@@ -195,8 +212,12 @@ email:use`di.email
 email.init[
   `mailfrom`enabled!("me@example.com";1b);
   enlist[`log]!enlist logdep]
-results:([]sym:`AAPL`GOOG;price:182.5 141.3)
-body:email.ztable[results]
+
+/ a body string that already starts with "<" is passed through as-is,
+/ so the caller can supply any html it likes
+body:enlist"<table border=1><tr><th>sym</th><th>price</th></tr>",
+  "<tr><td>AAPL</td><td>182.5</td></tr>",
+  "<tr><td>GOOG</td><td>141.3</td></tr></table>"
 email.senddefault`to`subject`body!(`$"ops@example.com";"EOD Prices";body)
 ```
 
@@ -219,7 +240,28 @@ email.senddefault`to`subject`body`attachments!(
   `:/tmp/report1.csv`:/tmp/report2.csv)
 ```
 
-### 5. Test transport connectivity
+### 5. Attach a q table without writing a file first
+
+```q
+email:use`di.email
+email.init[
+  `mailfrom`enabled!("me@example.com";1b);
+  enlist[`log]!enlist logdep]
+
+trades:select sum size by sym from trade
+
+/ the table is written as csv, attached, and the temp file removed afterwards
+email.senddata`to`subject`body`attachments!(
+  `$"ops@example.com";"EOD volume";enlist"see attached";
+  (enlist`volume.csv)!enlist trades)
+
+/ several objects, each rendered by its type
+email.senddata`to`subject`body`attachments!(
+  `$"ops@example.com";"EOD pack";enlist"see attached";
+  `volume.csv`summary.txt!(trades;"generated automatically"))
+```
+
+### 6. Test transport connectivity
 
 ```q
 email:use`di.email
@@ -229,7 +271,7 @@ email.init[
 email.test[`$"me@example.com"]
 ```
 
-### 6. Schedule history clearing with a timer
+### 7. Schedule history clearing with a timer
 
 Wire `clearhistory` into `di.timer` so it runs once a day, keeping memory bounded:
 
@@ -244,7 +286,7 @@ email.init[`mailfrom`enabled!("me@example.com";1b);enlist[`log]!enlist logdep]
 timer.addjob[`emailhistoryclear;email.clearhistory;();0D01:00:00:00;`repeat;()!()]
 ```
 
-### 7. Testing without real sends
+### 8. Testing without real sends
 
 Override the internal send function after `init` to intercept calls without hitting a mail server:
 

@@ -2,6 +2,7 @@ action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,email:use`di.email,1,1,load module into session
 before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
 before,0,0,q,"mocksend:{[frm;to;sub;body;att]}",1,1,define no-op mock send for direct state injection
+before,0,0,q,mockcapture:{[frm;to;sub;body;att]lastatt::att;lastfiles::read0 each att;1b},1,1,define capturing mock send for senddata tests
 
 / Test 0: init with defaults leaves email disabled and config empty
 run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with defaults and injected logger
@@ -256,3 +257,33 @@ true,0,0,q,"""test email""~first exec subject from email.getstatus[]",1,1,test u
 / Test 39: test[] respects the enabled gate
 run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist mocklog]",1,1,re-init disabled
 true,0,0,q,"-1~email.test[`$""a@b.com""]",1,1,test returns -1 when email is disabled
+
+/ Test 40: dataaslines renders each kind of q object
+true,0,0,q,"(""sym,px"";""a,1.5"";""b,2.5"")~.m.di.0email.dataaslines ([]sym:`a`b;px:1.5 2.5)",1,1,a table becomes csv
+true,0,0,q,"(""k,v"";""1,3"";""2,4"")~.m.di.0email.dataaslines ([k:1 2]v:3 4)",1,1,a keyed table becomes csv
+true,0,0,q,"(enlist ""one line"")~.m.di.0email.dataaslines ""one line""",1,1,a string becomes a single line
+true,0,0,q,"(""aa"";""bb"")~.m.di.0email.dataaslines (""aa"";""bb"")",1,1,a list of strings passes through
+true,0,0,q,"(enlist ""`x`y!1 2"")~.m.di.0email.dataaslines `x`y!1 2",1,1,anything else gets its text form
+
+/ Test 41: senddata attaches q objects and removes the temp files afterwards
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
+run,0,0,q,.m.di.0email.send:mockcapture,1,1,override send with the capturing mock
+run,0,0,q,email.clearhistory[],1,1,start from an empty history
+true,0,0,q,"1b~email.senddata `to`subject`body`attachments!(`$""a@b.com"";""with data"";enlist""see attached"";`trades.csv`notes.txt!(([]sym:`a`b;px:1.5 2.5);""a line of text""))",1,1,senddata returns 1b
+true,0,0,q,2=count lastatt,1,1,both objects were attached
+true,0,0,q,"(""sym,px"";""a,1.5"";""b,2.5"")~first lastfiles",1,1,the table arrived as csv
+true,0,0,q,"(enlist""a line of text"")~last lastfiles",1,1,the string arrived as text
+true,0,0,q,"(`trades.csv;`notes.txt)~`$last each""/""vs/:1_'string lastatt",1,1,the given filenames are used
+true,0,0,q,all ()~/:key each lastatt,1,1,the temp files are removed after the send
+true,0,0,q,1=count email.getstatus[],1,1,senddata logs one history row
+
+/ Test 42: senddata rejects attachment specifications it cannot write safely
+fail,0,0,q,"email.senddata `to`subject`body!(`$""a@b.com"";""s"";enlist""body text"")",1,1,senddata needs an attachments key
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";`:/tmp/x)",1,1,senddata rejects a non-dict attachments value
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(enlist `$""sub/dir/x.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a path separator in a filename
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(enlist `$""../escaped.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a parent directory reference
+
+/ Test 43: values interpolated into shell commands are quoted
+true,0,0,q,"""'abc'""~.m.di.0email.shquote ""abc""",1,1,a plain value is wrapped in single quotes
+true,0,0,q,"""'a'\\''b'""~.m.di.0email.shquote ""a'b""",1,1,an embedded single quote is escaped
+true,0,0,q,"""\""a\\\""b\""""~.m.di.0email.curlquote ""a\""b""",1,1,an embedded double quote is escaped for the curl config file

@@ -11,16 +11,22 @@ utilityexists:{@[system;"which ",x," 2>/dev/null";0b]};
 
 hsym2str:{[x] $[":"=first s:string x;1_s;s]};
 
+// quote a string for use as a single shell argument
+shquote:{[x]"'",(ssr[x;"'";"'\\''"]),"'"};
+
+// escape a value for a double-quoted entry in a curl --config file
+curlquote:{[x]"\"",(ssr[ssr[x;"\\";"\\\\"];"\"";"\\\""]),"\""};
+
 checkfile:{if[not x~key x:hsym x;'"file not found: ",hsym2str x]};
 
 encodefile:{[x]
   checkfile x;
-  system "base64 \"",hsym2str[x],"\""
+  system "base64 ",(shquote hsym2str x)
   };
 
 mimetype:{[a]
   if[0b~utilityexists "file"; :"application/octet-stream"];
-  r:@[system;"file --mime-type ",hsym2str a;{[e]enlist ": application/octet-stream"}];
+  r:@[system;"file --mime-type ",(shquote hsym2str a);{[e]enlist ": application/octet-stream"}];
   if[not count r; :"application/octet-stream"];
   mt:trim last ":" vs first r;
   $[10h=type mt;mt;"application/octet-stream"]};
@@ -81,9 +87,11 @@ mailsend:{[frm;to;sub;body;att]
   // att  - "" for no attachment, or list of hsym file paths
   if[0b~utilityexists "sendmail";'"sendmail not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
+  // build the message first so a bad attachment cannot orphan a temp file
+  msg:mailtemplate[frm;to;sub;body;att];
   fn:hsym`$first system"mktemp /tmp/qmail.XXXXXXXXXX";
-  fn 0: mailtemplate[frm;to;sub;body;att];
-  @[system;"sendmail -t < ",1_string fn;{[fn;e]hdel fn;'"sendmail error: ",e}[fn]];
+  .[{[a;b]a 0: b};(fn;msg);{[fn;e]hdel fn;'"sendmail write error: ",e}[fn]];
+  @[system;"sendmail -t < ",(shquote 1_string fn);{[fn;e]hdel fn;'"sendmail error: ",e}[fn]];
   hdel fn;
   };
 
@@ -242,17 +250,40 @@ smtpsend_:{[frm;to;sub;body;att]
   // signature matches mailsend: frm to sub body att
   if[0b~utilityexists "curl";'"curl not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
-  // keep tmpfile as a plain string to avoid type issues when building cmd
+  // build the message first so a bad attachment cannot orphan a temp file
+  msg:mailtemplate[frm;to;sub;body;att];
+  // keep paths as plain strings to avoid type issues when building cmd
   tmpfile:first system"mktemp /tmp/qmail.XXXXXXXXXX";
+  // mktemp creates the file 0600, so credentials written here never reach the command line
+  cfgfile:first system"mktemp /tmp/qmail.XXXXXXXXXX";
   fn:hsym`$tmpfile;
-  .[{[a;b]a 0: b};(fn;mailtemplate[frm;to;sub;body;att]);{[fn;e]hdel fn;'"smtp write error: ",e}[fn]];
-  rcpts:" " sv {[r]"--mail-rcpt '",r,"'"}each ","vs to;
+  cf:hsym`$cfgfile;
+  onwritefail:{[fn;cf;e]hdel fn;hdel cf;'"smtp write error: ",e}[fn;cf];
+  .[{[a;b]a 0: b};(fn;msg);onwritefail];
+  .[{[a;b]a 0: b};(cf;enlist("user = ",curlquote[smtpuser,":",smtppassword]));onwritefail];
+  rcpts:" " sv {[r]"--mail-rcpt ",(shquote r)}each ","vs to;
   sslopt:$[smtpssl;"--ssl-reqd ";""];
-  cmd:"curl --url '",smtpurl,"' ",sslopt,"--crlf --mail-from '",frm,"' ",rcpts," --user '",smtpuser,":",smtppassword,"' --upload-file ",tmpfile," 2>&1";
-  @[{system x};cmd;{[fn;e]hdel fn;'"curl smtp error: ",e}[fn]];
+  cmd:"curl --config ",(shquote cfgfile)," --url ",(shquote smtpurl)," ",sslopt;
+  cmd,:"--crlf --mail-from ",(shquote frm)," ",rcpts," --upload-file ",(shquote tmpfile)," 2>&1";
+  @[{system x};cmd;{[fn;cf;e]hdel fn;hdel cf;'"curl smtp error: ",e}[fn;cf]];
   hdel fn;
+  hdel cf;
   };
 
+// render a q object as the lines of an attachment file
+// a table becomes csv, a string or list of strings is taken as text, anything else gets its text form
+dataaslines:{[x]
+  $[.Q.qt x;csv 0: x;
+    10h=type x;enlist x;
+    (0h=type x) and all 10h=type each x;x;
+    enlist -3!x]
+  };
+
+// remove a temp attachment directory and everything in it
+cleantmpdir:{[dir]
+  hdel each .Q.dd[dir]each key dir;
+  hdel dir;
+  };
 
 // ============================================================
 // public api
@@ -273,11 +304,30 @@ senddefault:{[msgdict]
   att:$[`attachments in key msgdict;$[-11h=type msgdict`attachments;enlist msgdict`attachments;msgdict`attachments];""];
   res:.[send;(mailfrom;to;msgdict`subject;htmlbody;att);{[e].z.m.logerr[`email;"send failed: ",e];0b}];
   ok:not res~0b;
-  if[historyenabled;loghistory[msgdict`to;msgdict`subject;`failed`sent ok;$[ok;0j;-1j]]];
+  if[historyenabled;.z.m.loghistory[msgdict`to;msgdict`subject;`failed`sent ok;$[ok;0j;-1j]]];
   $[ok;
     .z.m.loginfo[`email;"email sent"];
     .z.m.logerr[`email;"failed to send email"]];
   :ok;
+  };
+
+senddata:{[msgdict]
+  // send an html email whose attachments are q objects rather than files on disk
+  // msgdict is as senddefault, except attachments maps filename to a q object:
+  //   `attachments!enlist `trades.csv`notes.txt!(tradetable;"a line of text")
+  // a table is written as csv, a string or list of strings as text, anything else as its text form
+  // the objects are written to a private temp directory which is removed again after the send
+  if[not `attachments in key msgdict;'"di.email: senddata needs an attachments dict of filename!qobject"];
+  data:msgdict`attachments;
+  if[not 99h=type data;'"di.email: senddata attachments must be a dict of filename!qobject"];
+  // names become paths under the temp directory, so a separator could write outside it
+  if[any "/" in/:string key data;'"di.email: senddata attachment names must be plain filenames"];
+  dir:hsym`$first system"mktemp -d /tmp/qmail.XXXXXXXXXX";
+  paths:.Q.dd[dir]each key data;
+  .[{[fs;vals]{x 0: dataaslines y}'[fs;vals];};(paths;value data);{[dir;e]cleantmpdir dir;'"senddata write error: ",e}[dir]];
+  res:.[senddefault;enlist @[msgdict;`attachments;:;paths];{[dir;e]cleantmpdir dir;'e}[dir]];
+  cleantmpdir dir;
+  :res;
   };
 
 test:{[to]

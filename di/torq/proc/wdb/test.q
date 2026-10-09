@@ -48,7 +48,7 @@ setup:{[]
   starttp[];
   };
 
-cfg:{[] `savedir`hdbdir`sortcsv`numrows`eodwaittime`reloadorder`ignorelist!("wdb";"hdb";"appconfig/sort.csv";100000;0;`hdb;`heartbeat`logmsg`calls)};
+cfg:{[] `savedir`hdbdir`sortcsv`numrows`eodwaittime`reloadorder`ignorelist!("wdb";"hdb";"appconfig/sort.csv";100000;0;`hdb;`heartbeat`logmsg`calls`scalls)};
 
 today:{[] .z.D};
 hdbpart:{[t] hsym `$BASE,"/hdb/",(string today[]),"/",string t};

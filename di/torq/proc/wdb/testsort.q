@@ -6,6 +6,7 @@
 / a failing row can be diagnosed with `show LAST`. Helpers live here because CSV fields cannot hold commas.
 
 BASE:"/tmp/di_sort_k4unit";
+OSSYSCALL:`.m.di.0os.syscall;
 PDATE:2026.01.05;
 
 chk:{[d] `LAST set d; all value d};
@@ -203,10 +204,21 @@ idbreloadorder:{[]
     not loggedlike[`warn;"*is neither*"])
   };
 
+/ run f with di.os's shell calls silenced: a deliberately failing mv writes to stderr, which q does
+/ not capture, so the suite prints it even though the failure is the point. The module's own error
+/ log still fires, which is what the check below asserts.
+quietshell:{[f]
+  o:get OSSYSCALL;
+  OSSYSCALL set {system x," 2>/dev/null"};
+  r:@[f;::;{x}];
+  OSSYSCALL set o;
+  r
+  };
+
 / a date with no working partition logs the failed move rather than throwing
 emptypartition:{[]
   freshwire config[];
-  tail[savedir[];PDATE+10;`];
+  quietshell {tail[savedir[];PDATE+10;`]};
   chk `logged`nothdb!(
     loggedlike[`error;"Failed to move data from wdb*"];
     0=count key hsym `$hdbdir[],"/",string PDATE+10)

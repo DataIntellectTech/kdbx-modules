@@ -15,7 +15,7 @@ zwired:0b;
 normlog:{[logdict]
   / normalise a log dict: if it looks like a kx.log instance (has getlvl/sinks/fmts keys),
   / wrap each level into a dyadic {[c;m]} function that embeds the context symbol into the message
-  $[any `getlvl`sinks`fmts in key logdict;
+  :$[any `getlvl`sinks`fmts in key logdict;
     `info`warn`error!(
       {[fn;c;m] fn[string[c],": ",m]}[logdict`info;];
       {[fn;c;m] fn[string[c],": ",m]}[logdict`warn;];
@@ -24,14 +24,15 @@ normlog:{[logdict]
   };
 
 jstsiso8601:{[x]
-  / converts a list of timestamps or datetimes to iso 8601 strings e.g. "2024-01-02T12:00:00Z"
+  / converts a list of timestamps or datetimes to iso 8601 strings e.g. "2024-01-02T12:00:00.000Z"
   / vectorised: stringifies the date and time parts in bulk rather than per element; nulls return ""
   i:where 10=count each d:string `date$x;
   r:(count d)#enlist "";
   if[not count i;:r];
   dd:d i;
   dd[;4 7]:"-";
-  r[i]:dd,'("T",/:string `second$x i),\:"Z";
+  / `time keeps milliseconds, which javascript Date parses; `second would drop them
+  r[i]:dd,'("T",/:string `time$x i),\:"Z";
   :r;
   };
 
@@ -65,8 +66,14 @@ dataformat:{[msgtype;msgdata]
   :(`name`data)!(msgtype;jsformat each msgdata);
   };
 
-/ filter applied before sending data to a subscriber - returns full table (no filtering)
-sel:{[tbl;syms] tbl};
+sel:{[tbl;syms]
+  / filter applied before sending data to a subscriber
+  / a null sym in the filter means all syms; tables without a sym column are never filtered
+  :$[(any null syms) or not `sym in cols tbl;tbl;select from tbl where sym in syms];
+  };
+
+/ coerces json-shaped args to symbols: "" becomes `, a string a symbol, a list of strings a symbol list
+tosym:{$[10h=abs type x;`$x;0h=type x;`$x;x]};
 
 del:{[tbl;handle]
   / removes a handle from the subscriber list for a table
@@ -79,13 +86,20 @@ add:{[tbl;syms]
   / adds the current handle to the subscriber list for a table
   / if already subscribed, updates the sym filter by taking union with new syms
   / if not subscribed, appends a new (handle; syms) pair to the list
-  / returns (tablename; current data) so the subscriber can initialise their local copy
+  / returns (tablename; snapshot) so the subscriber can initialise their local copy
   i:subs[tbl;;0]?.z.w;
   .z.m.subs:$[(count subs tbl)>i;
     .[subs;(tbl;i;1);union;syms];
     @[subs;tbl;,;enlist(.z.w;syms)]
     ];
-  :(tbl;$[99=type v:value tbl;sel[v;syms];@[0#v;`sym;`g#]]);
+  :(tbl;snapshot[get tbl;syms]);
+  };
+
+snapshot:{[tbl;syms]
+  / tickerplant semantics: keyed tables send their filtered contents, others only their empty schema
+  / the empty schema gets the grouped sym attribute only if the table actually has a sym column
+  if[99h=type tbl;:sel[tbl;syms]];
+  :$[`sym in cols tbl;@[0#tbl;`sym;`g#];0#tbl];
   };
 
 closehandle:{[handle]
@@ -96,14 +110,23 @@ closehandle:{[handle]
 execdict:{[inputdict]
   / extracts the func key and any additional args from a dictionary and calls the function
   / args are passed to the function in the order the keys appear after func
-  / checks the module funcmap first (module-local functions), then falls back to value for globals
+  / checks the module funcmap first (module-local functions), then falls back to a global function by name
   if[not `func in key inputdict;'"no func in dictionary"];
   fname:`$inputdict`func;
-  f:$[fname in key funcmap;
-    funcmap fname;
-    @[value;inputdict`func;{'"unknown function: ",x}]];
+  f:$[fname in key funcmap;funcmap fname;globalfn fname];
   args:value inputdict _ `func;
   :$[1=count key inputdict;f @ 1;f . args];
+  };
+
+globalfn:{[fname]
+  / looks up a host-defined global function by name for websocket dispatch
+  / get only looks a name up and never evaluates it as code, unlike value on the client's string;
+  / single-letter namespaces (.q .Q .z .h ...) are reserved by kx and hold functions such as .q.system
+  n:string fname;
+  if[n like ".?.*";'"function not allowed: ",n];
+  f:@[get;fname;{[n;e]'"unknown function: ",n}[n]];
+  if[not type[f] in 100 104h;'"not a function: ",n];
+  :f;
   };
 
 / websocket message handler - module-level so it carries the module context for evaluate
@@ -134,6 +157,9 @@ sub:{[tbl;syms]
   / subscribes the current handle to a table with an optional sym filter
   / pass backtick as tbl to subscribe to all registered tables
   / removes any existing subscription for this handle before re-adding
+  / accepts strings as well as symbols, since websocket clients send json
+  tbl:tosym tbl;
+  syms:tosym syms;
   if[tbl~`;:sub[;syms] each subtables];
   if[not tbl in subtables;'tbl];
   del[tbl;.z.w];
@@ -152,22 +178,23 @@ evaluate:{[inputdict]
   };
 
 / module-local functions callable via websocket evaluate
-/ execdict checks here first before falling back to value for global lookups
+/ execdict checks here first before falling back to globalfn
 funcmap:`sub`addtables`pub`dataformat!(sub;addtables;pub;dataformat);
 
 init:{[deps]
   / initialise the module; deps must contain a log key
-  / deps: dict with `log key -> dict with at minimum `info!{[c;m]} (dyadic: ctx symbol, msg string)
+  / deps: dict with `log key -> `info`warn`error!{[c;m]} (dyadic: ctx symbol, msg string)
   / kx.log instances are normalised automatically via normlog
   / wires .z.ws/.z.wc/.z.pc handlers once; .h.HOME set from KDBHTML env var (else "html")
   if[99h<>type deps;
     '"di.html: deps must be a dict with `log key"];
   if[not `log in key deps;
-    '"di.html: log dependency is required; pass at minimum `info!{[c;m]} keyed on `log"];
+    '"di.html: log dependency is required; pass `info`warn`error!{[c;m]} keyed on `log"];
   if[99h<>type deps`log;
-    '"di.html: log value must be a dict; pass at minimum `info!{[c;m]}"];
-  if[not `info in key deps`log;
-    '"di.html: log dict must have at minimum an `info key; got: ",(", " sv string key deps`log)];
+    '"di.html: log value must be a dict; pass `info`warn`error!{[c;m]}"];
+  / all three levels are required: evaluate's error path logs at error
+  if[not all `info`warn`error in key deps`log;
+    '"di.html: log dict must have `info`warn`error keys; got: ",", " sv string key deps`log];
   .z.m.log:normlog deps`log;
   hd:$[count e:getenv`KDBHTML;e;"html"];
   / .h.HOME lets the default http handler serve static assets; set from KDBHTML env var (else "html")

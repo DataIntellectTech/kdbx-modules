@@ -27,7 +27,7 @@ You need two things:
 
 | Key | Type | Required | Description |
 |---|---|---|---|
-| `` `log `` | dict | yes | Logging functions keyed on at minimum `` `info ``, each `{[ctx;msg]}` where `ctx` is a symbol and `msg` is a string. kx.log instances are normalised automatically. |
+| `` `log `` | dict | yes | Logging functions keyed on `` `info`warn`error ``, each `{[ctx;msg]}` where `ctx` is a symbol and `msg` is a string. All three are required. kx.log instances are normalised automatically. |
 
 The HTML home directory is configured via the `KDBHTML` environment variable (not a deps key). kdb-x sets `KDBHTML` by default to the `analyst/html` directory in the kdb-x installation, which contains the KX Analyst UI. If `KDBHTML` is unset, `"html"` (relative to the working directory) is used as a fallback. Set or override `KDBHTML` before calling `init` to point at your own HTML files.
 
@@ -68,7 +68,11 @@ Publishes `data` for `tbl` to all currently subscribed handles, applying the per
 html.sub[tbl;syms]
 ```
 
-Subscribes the current handle (`.z.w`) to `tbl`. Pass `` ` `` as `syms` to receive all data. Pass `` ` `` as `tbl` to subscribe to all registered tables. Returns `(tablename; current data)` so the subscriber can initialise their local copy before live updates arrive.
+Subscribes the current handle (`.z.w`) to `tbl`, replacing any existing subscription that handle has to it. `syms` filters which rows the subscriber receives from `pub`: pass `` ` `` (or any list containing a null symbol) to receive all syms. Tables without a `sym` column are never filtered. Pass `` ` `` as `tbl` to subscribe to all registered tables.
+
+Returns `(tablename; snapshot)` so the subscriber can initialise their local copy before live updates arrive. The snapshot follows tickerplant semantics: a keyed table returns its current rows, filtered by `syms`; any other table returns its empty schema.
+
+Both arguments may be symbols or strings (a list of strings for several syms), so JSON from a browser can be passed straight through.
 
 Browser clients call `sub` via the evaluate dispatch:
 
@@ -76,7 +80,7 @@ Browser clients call `sub` via the evaluate dispatch:
 {"func": "sub", "arg1": "trades", "arg2": ""}
 ```
 
-`arg1` is the table name (empty string = all tables), `arg2` is the sym filter (empty string = all syms). The caller is responsible for converting strings to q symbols before passing to `evaluate`.
+`arg1` is the table name (empty string = all tables), `arg2` is the sym filter: a string, a list of strings, or an empty string for all syms.
 
 ### setmodifier
 
@@ -108,19 +112,19 @@ Wraps a message into a `` `name`data `` dictionary, javascript-formatting each t
 html.evaluate[inputdict]
 ```
 
-Extracts the `func` key from a q dictionary, calls the named function with any additional keys as arguments, and returns the result. Used internally by `.z.ws` — the handler deserialises JSON before calling this. Functions in `funcmap` (`sub`, `addtables`, `pub`, `dataformat`) are resolved first; other global functions are reachable by name.
+Extracts the `func` key from a q dictionary, calls the named function with any additional keys as arguments, and returns the result. Used internally by `.z.ws` — the handler deserialises JSON before calling this. Functions in `funcmap` (`sub`, `addtables`, `pub`, `dataformat`) are resolved first; after that, `func` must name a global lambda or projection defined by the host process (e.g. `getdata` or `.dash.getdata`).
+
+`func` is only ever looked up as a name, never evaluated as q code. q primitives (`system`, `value`, ...), non-function globals and anything in a single-letter namespace reserved by KX (`.q`, `.Q`, `.z`, `.h`, ...) are refused with an error.
 
 ## Usage Example
 
 ```q
 html:use`di.html
-log:use`di.log
-
-logdep:`info`warn`error!(log.info;log.warn;log.error)
+logging:use`di.util.log
 
 / set static file directory before init
 setenv[`KDBHTML;"/opt/app/html"]
-html.init[enlist[`log]!enlist logdep]
+html.init[logging.logdict]
 
 / register tables
 html.addtables[`trades`quotes]
@@ -152,10 +156,10 @@ For interactive browser testing, use the included integration test script:
 q di/html/integrationtest.q -p 5678
 ```
 
-This starts a process with a plain-text JSON websocket handler (no c.js required). Navigate to `http://localhost:5678/test.html` to subscribe to tables and push live data via `tick[\`trades;5]` in the q session.
+This starts a process with a plain-text JSON websocket handler and plain-JSON modifiers (no c.js required). Navigate to `http://localhost:5678/test.html` to subscribe to tables and push live data via `tick[\`trades;5]` in the q session. `tick` publishes through `pub`, so each subscriber's sym filter applies.
 
 ## Notes
 
 - The default `.z.ws` handler sends kdb+ binary IPC (`-8!`) and requires the KX c.js library in the browser. Use `setmodifier` to switch individual tables to plain JSON text for clients without c.js.
 - `.z.wc` fires on WebSocket close; `.z.pc` fires on any IPC port close. Both are wired so that `sub` works over plain IPC handles as well as WebSocket connections.
-- `evaluate` resolves function names first from the module `funcmap`, then from the global namespace. Restrict which globals are reachable by controlling what is defined in the process.
+- Any host-defined global function can be called by a websocket client through `evaluate`. Don't define functions in a process serving websockets that you would not want a browser to call.

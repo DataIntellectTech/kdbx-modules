@@ -4,6 +4,10 @@ before,0,0,q,"mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})",1,,mock log de
 before,0,0,q,"setenv[`KDBHTML;""/tmp""]",1,,set KDBHTML so init picks up homedir from env
 before,0,0,q,"html.init[enlist[`log]!enlist mocklog]",1,,initialise module with log dep only
 before,0,0,q,htmltestfn:{x-y},1,,helper function for multi-arg evaluate test
+before,0,0,q,htmlnegfn:{neg x},1,,host-defined global function reachable through evaluate
+before,0,0,q,".htmltest.double:{2*x}",1,,host-defined function in a non-reserved namespace
+before,0,0,q,"kquotes:([sym:`AAPL`MSFT]bid:1 2f)",1,,keyed table so the snapshot path returns data
+before,0,0,q,"nosym:([]px:1 2f)",1,,unkeyed table without a sym column
 before,0,0,q,"trades:([]sym:`g#`symbol$();px:`float$())",1,,real global table so sub success path can read its contents
 before,0,0,q,"quotes:([]sym:`g#`symbol$();bid:`float$())",1,,real global table so subscribing to all tables can read its contents
 before,0,0,q,"hns:` sv `.m.di,first (key `.m.di) where (key `.m.di) like ""*html""",1,,resolve the html module's internal namespace (avoids hardcoding the load-order prefix)
@@ -25,9 +29,17 @@ true,0,0,q,"1=count(get ` sv hns,`subs)[`trades]",1,,sub adds the current handle
 run,0,0,q,"html.sub[`;`]",1,,subscribing with backtick subscribes to all registered tables
 true,0,0,q,"all 1=count each(get ` sv hns,`subs)each `trades`quotes",1,,subscribing with backtick registers handle across all tables
 
-true,0,0,q,"-42~html.evaluate[`func`arg1!(""neg"";42)]",1,,evaluate calls a global function with one arg correctly
+true,0,0,q,"-42~html.evaluate[`func`arg1!(""htmlnegfn"";42)]",1,,evaluate calls a global function with one arg correctly
 true,0,0,q,"-1~html.evaluate[`func`arg1`arg2!(""htmltestfn"";1;2)]",1,,evaluate calls a global function with multiple args correctly
-true,0,0,q,"-1~html.evaluate[(enlist `func)!enlist ""neg""]",1,,evaluate with only func key calls f@1 - preserving TorQ behaviour
+true,0,0,q,"-1~html.evaluate[(enlist `func)!enlist ""htmlnegfn""]",1,,evaluate with only func key calls f@1 - preserving TorQ behaviour
+true,0,0,q,"4~html.evaluate[`func`arg1!("".htmltest.double"";2)]",1,,evaluate reaches a host function in a non-reserved namespace
+fail,0,0,q,"html.evaluate[`func`arg1!(""system"";""echo x"")]",1,,evaluate refuses q primitives such as system
+fail,0,0,q,"html.evaluate[(enlist `func)!enlist ""{x}[1]""]",1,,evaluate never runs the func string as code
+fail,0,0,q,"html.evaluate[`func`arg1!("".q.system"";""echo x"")]",1,,evaluate refuses functions in kx-reserved single-letter namespaces
+fail,0,0,q,"html.evaluate[`func`arg1!("".Q.s"";1)]",1,,evaluate refuses .Q functions
+fail,0,0,q,"html.evaluate[(enlist `func)!enlist ""trades""]",1,,evaluate refuses a global that is not a function
+true,0,0,q,"`trades~first html.evaluate[`func`arg1`arg2!(""sub"";""trades"";"""")]",1,,sub works with json-shaped string args through evaluate
+true,0,0,q,"1=count(get ` sv hns,`subs)[`trades]",1,,a json-shaped re-subscribe replaces rather than duplicates the handle
 true,0,0,q,"all `sub`addtables`pub`dataformat in key get ` sv hns,`funcmap",1,,funcmap contains the module functions callable via websocket dispatch
 true,0,0,q,"not any `wssub`end in key get ` sv hns,`funcmap",1,,wssub and end are not in funcmap
 fail,0,0,q,"html.evaluate[(enlist `arg1)!enlist 1]",1,,evaluate throws when the func key is missing
@@ -36,8 +48,9 @@ true,0,0,q,"""/tmp""~.h.HOME",1,,init sets .h.HOME so the default http handler s
 true,0,0,q,"""start""~html.dataformat[""start"";enlist convtest][`name]",1,,dataformat returns the message type as name
 true,0,0,q,"1704153600000~first (first html.dataformat[""start"";enlist convtest][`data])[`d]",1,,dataformat javascript-formats each table in a list
 true,0,0,q,"`t1`t2~key html.dataformat[""start"";`t1`t2!(convtest;convtest)][`data]",1,,dataformat preserves table names when given a dictionary of tables
-true,0,0,q,"""2024-01-02T12:00:00Z""~first html.dataformat[""start"";`t1`t2!(convtest;convtest)][`data][`t1][`ts]",1,,dataformat javascript-formats each table in a dictionary
-true,0,0,q,"""2024-01-02T12:00:00Z""~first (jsf convtest)`ts",1,,jsformat converts a timestamp column to an iso 8601 string
+true,0,0,q,"""2024-01-02T12:00:00.000Z""~first html.dataformat[""start"";`t1`t2!(convtest;convtest)][`data][`t1][`ts]",1,,dataformat javascript-formats each table in a dictionary
+true,0,0,q,"""2024-01-02T12:00:00.000Z""~first (jsf convtest)`ts",1,,jsformat converts a timestamp column to an iso 8601 string
+true,0,0,q,"""2024-01-02T12:00:00.123Z""~first (jsf ([]ts:enlist 2024.01.02D12:00:00.123))`ts",1,,jsformat keeps milliseconds
 true,0,0,q,"1704153600000~first (jsf convtest)`d",1,,jsformat converts a date column to javascript epoch milliseconds
 true,0,0,q,"43200000~first (jsf convtest)`tm",1,,jsformat converts a time column to milliseconds since midnight
 true,0,0,q,"`AAPL~first (jsf convtest)`sym",1,,jsformat leaves columns whose type is not in the typemap unchanged
@@ -54,5 +67,16 @@ true,0,0,q,"42~(get ` sv hns,`modifier)[`trades]@()",1,,setmodifier replaces the
 fail,0,0,q,"html.init[(::)]",1,,init rejects a non-dict deps arg
 fail,0,0,q,"html.init[enlist[`homedir]!enlist ""/tmp""]",1,,init rejects a dict missing the log key
 fail,0,0,q,"html.init[enlist[`log]!enlist 42]",1,,init rejects a non-dict log value
-run,0,0,q,"html.init[enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,,log dict with only an info key is accepted (warn/error not required by validation)
+fail,0,0,q,"html.init[enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,,init rejects a log dict missing warn and error
+true,0,0,q,"mocklog~(get ` sv hns,`normlog) mocklog",1,,normlog passes a di-shaped log dict through unchanged
 true,0,0,q,"(@[html.init;(::);{x}]) like ""*log*""",1,,init with a non-dict arg signals an error naming log
+
+true,0,0,q,"(enlist `AAPL)~exec sym from (get ` sv hns,`sel)[([]sym:`AAPL`MSFT;px:1 2f);enlist `AAPL]",1,,sel keeps only the subscribed syms
+true,0,0,q,"2=count (get ` sv hns,`sel)[([]sym:`AAPL`MSFT;px:1 2f);`]",1,,sel with a null sym returns every row
+true,0,0,q,"2=count (get ` sv hns,`sel)[([]sym:`AAPL`MSFT;px:1 2f);``AAPL]",1,,a null anywhere in the filter means all syms
+true,0,0,q,"2=count (get ` sv hns,`sel)[nosym;`AAPL]",1,,sel does not filter a table without a sym column
+run,0,0,q,"html.addtables[`kquotes`nosym]",1,,register a keyed table and a table without a sym column
+true,0,0,q,"([]sym:enlist `AAPL)~key last html.sub[`kquotes;`AAPL]",1,,keyed table snapshot is filtered by the subscribed syms
+true,0,0,q,"(0=count s) and (enlist `px)~cols s:last html.sub[`nosym;`]",1,,empty snapshot of a table without a sym column does not gain a sym column
+true,0,0,q,"`AAPL`MSFT~(get ` sv hns,`tosym) (""AAPL"";""MSFT"")",1,,tosym converts a json list of strings to a symbol list
+true,0,0,q,"`~(get ` sv hns,`tosym) """"",1,,tosym converts an empty json string to the null symbol

@@ -78,7 +78,7 @@ Passed as the first dictionary to `init`. All keys are optional.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `mailfrom` | string or symbol | `"torq@localhost"` | From address on outgoing emails |
+| `mailfrom` | string or symbol | `"kdbx@localhost"` | From address on outgoing emails |
 | `enabled` | boolean | `0b` | Set `1b` to allow emails to be sent |
 | `historyenabled` | boolean | `1b` | Set `0b` to disable send history recording |
 | `smtpurl` | string or symbol | `""` | SMTP server URL e.g. `"smtp://smtp.gmail.com:587"`. When set, curl is used instead of sendmail |

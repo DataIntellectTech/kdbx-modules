@@ -6,7 +6,7 @@ before,0,0,q,"mocksend:{[frm;to;sub;body;att]}",1,1,define no-op mock send for d
 / Test 0: init with defaults leaves email disabled and config empty
 run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with defaults and injected logger
 true,0,0,q,not .m.di.0email.enabled,1,1,email disabled by default
-true,0,0,q,"""torq@localhost""~.m.di.0email.mailfrom",1,1,default mailfrom is torq@localhost
+true,0,0,q,"""kdbx@localhost""~.m.di.0email.mailfrom",1,1,default mailfrom is kdbx@localhost
 
 / Test 1: init with custom config sets values correctly
 run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist mocklog]",1,1,init with string mailfrom

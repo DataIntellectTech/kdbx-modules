@@ -1,4 +1,7 @@
 // load core functionality and bundled sendmail/html utilities
 \l ::email.q
 
-export:([init;senddefault;test;getstatus;clearhistory])
+// module version, read from the on-disk VERSION file (module-local `:::` path)
+version:first read0`:::VERSION
+
+export:([init;senddefault;test;getstatus;clearhistory;version])

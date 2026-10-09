@@ -214,7 +214,7 @@ colorizestereo:{[color_min;color_max;min_val;max_val;pivot_val;x]
 // ============================================================
 
 // from address used in all outgoing emails - overwritten by init
-mailfrom:"torq@localhost";
+mailfrom:"kdbx@localhost";
 
 // email gate - overwritten by init
 enabled:0b;
@@ -312,7 +312,7 @@ init:{[config;deps]
   // pass (::) for config to use defaults (email disabled, sendmail transport)
   // deps - (enlist`log)!enlist logdict
   //   `log: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required; init throws if absent
-  .z.m.mailfrom:"torq@localhost";
+  .z.m.mailfrom:"kdbx@localhost";
   .z.m.enabled:0b;
   .z.m.historyenabled:1b;
   // initialise history only once; subsequent init calls preserve existing rows

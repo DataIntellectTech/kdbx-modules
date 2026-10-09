@@ -239,3 +239,20 @@ true,0,0,q,0<count email.getstatus[],1,1,history has rows before clear
 run,0,0,q,email.clearhistory[],1,1,clear history
 true,0,0,q,0=count email.getstatus[],1,1,history is empty after clearhistory
 true,0,0,q,`time`recipients`subject`status`bytes~cols email.getstatus[],1,1,schema preserved after clearhistory
+
+/ Test 37: version is exported and read from the VERSION file
+true,0,0,q,10h=abs type email.version,1,1,version is a string
+true,0,0,q,0<count email.version,1,1,version is not empty
+true,0,0,q,2=sum "."=email.version,1,1,version is semver-shaped (two dots)
+
+/ Test 38: test[] sends a canned message through senddefault
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
+run,0,0,q,.m.di.0email.send:mocksend,1,1,override send with mock to avoid real smtp
+run,0,0,q,email.clearhistory[],1,1,start from an empty history
+true,0,0,q,"1b~email.test[`$""a@b.com""]",1,1,test returns 1b with a working send
+true,0,0,q,1=count email.getstatus[],1,1,test logged exactly one send
+true,0,0,q,"""test email""~first exec subject from email.getstatus[]",1,1,test uses its canned subject
+
+/ Test 39: test[] respects the enabled gate
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist mocklog]",1,1,re-init disabled
+true,0,0,q,"-1~email.test[`$""a@b.com""]",1,1,test returns -1 when email is disabled

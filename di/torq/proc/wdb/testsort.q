@@ -210,9 +210,9 @@ idbreloadorder:{[]
 quietshell:{[f]
   o:get OSSYSCALL;
   OSSYSCALL set {system x," 2>/dev/null"};
-  r:@[f;::;{x}];
+  r:@[{(1b;x[])};f;{(0b;x)}];
   OSSYSCALL set o;
-  r
+  $[first r;last r;'last r]
   };
 
 / a date with no working partition logs the failed move rather than throwing

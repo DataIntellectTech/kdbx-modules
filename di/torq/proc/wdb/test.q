@@ -163,6 +163,21 @@ pattrcheck:{[]
   loggedlike[`error;"default table not defined in sort.csv*"]
   };
 
+/ di.timer's addjob raises on an id that already exists, so a second init must not collide
+initidempotent:{[]
+  `calls set 0#calls;
+  system "rm -rf ",BASE,"/wdb ",BASE,"/hdb";
+  `tjobs set `symbol$();
+  d:recdeps[];
+  d[`timer]:`addjob`deletejobs!(
+    {[a;b;c;e;f;g] if[a in tjobs;'"duplicate job id ",string a];`tjobs set tjobs,a;};
+    {[x] `tjobs set tjobs except x;});
+  wdb.init[cfg[];d];
+  added:`wdbsave in tjobs;
+  again:@[{[c;dd] wdb.init[c;dd];1b}[cfg[]];d;{0b}];
+  chk `registered`reinitok`noduplicate!(added;again;1=sum tjobs=`wdbsave)
+  };
+
 numtabdefault:{[]
   / legacy wdb/writedown.q defaults numtab to `quote`trade!10000 50000, and replaynumtab follows it
   freshwdb (cfg[] _ `numtab) _ `replaynumtab;

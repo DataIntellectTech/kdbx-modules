@@ -68,7 +68,9 @@ savetables:{[dir;pt;forcesave;tabname]
     .z.m.log[`info][`rowcheck;"the ",(string tabname)," table consists of ",(string arows)," rows"];
     .z.m.log[`info][`save;"saving ",(string tabname)," data to partition ",string pt];
     / upsert data to partition
-    .[upsert;(` sv .Q.par[dir;pt;tabname],`;.Q.en[.z.m.hdbdir;r:0!manipulate[tabname;`. tabname]]);{[e] .z.m.log[`error][`savetables;"Failed to save table to disk : ",e];'e}];
+    .[upsert;
+      (` sv .Q.par[dir;pt;tabname],`;.Q.en[.z.m.hdbdir;r:0!manipulate[tabname;`. tabname]]);
+      {[e] .z.m.log[`error][`savetables;"Failed to save table to disk : ",e];'e}];
     / make addition to tabsizes
     .z.m.log[`info][`track;"appending table details to tabsizes"];
     .z.m.tabsizes+:([tablename:enlist tabname]rowcount:enlist arows;bytes:enlist -22!r);
@@ -123,7 +125,9 @@ savetablesbypart:{[dir;pt;forcesave;tablename;writedownmode]
     / get additional partition(s) defined by parted attribute in sort.csv
     extrapartitiontype:getextrapartitiontype[tablename];
     if[(writedownmode in `partbyenum`partbyfirstchar) and 1<c:count extrapartitiontype;
-      .z.m.log[`error][writedownmode;"only 1 parted attribute should be defined on table when using partbyenum and partbyfirstchar writedown modes, but we have ",string c]];
+      .z.m.log[`error][writedownmode;
+        "only 1 parted attribute should be defined on table when using partbyenum and ",
+        "partbyfirstchar writedown modes, but we have ",string c]];
     / check each partition type actually is a column in the selected table
     (.z.m.mrg`checkpartitiontype)[tablename;extrapartitiontype];
     / check if provided column extrapartitiontype indeed has an enumerable type in table
@@ -152,7 +156,9 @@ savetab:{[dir;pt;forcesave;t] $[.z.m.writedownmode in .z.m.partwritemodes;saveta
 / flushes a table to disk during replay if it exceeds the replay row limit
 replaymaxrowcheck:{[t;lmt]
   if[(rpc:count value t) > lmt;
-    .z.m.log[`info][`replayupd;"row limit (",(string lmt),") exceeded for ",(string t),". Table count is : ",(string rpc),". Flushing table to disk..."];
+    .z.m.log[`info][`replayupd;
+      "row limit (",(string lmt),") exceeded for ",(string t),
+      ". Table count is : ",(string rpc),". Flushing table to disk..."];
     savetab[.z.m.savedir;getpartition[];0b;t]];
   }
 
@@ -191,7 +197,10 @@ fixpartition:{[tplogdate]
       / delete any data in the current partition directory
       clearwdbdata[];
       .z.m.log[`info][`fixpartition;"Moving data from partition ",pth1," to partition ",pth2];
-      .[.z.m.os`mv;(pth1;pth2);{[p1;p2;e] .z.m.log[`error][`fixpartition;"Failed to move data from wdb partition ",p1," to wdb partition ",p2," : ",e]}[pth1;pth2]]]];
+      .[.z.m.os`mv;
+        (pth1;pth2);
+        {[p1;p2;e] .z.m.log[`error][`fixpartition;
+          "Failed to move data from wdb partition ",p1," to wdb partition ",p2," : ",e]}[pth1;pth2]]]];
   }
 
 / fills missing tables in the partition so it is usable intraday
@@ -224,7 +233,9 @@ handler:{[x]
   .z.m.log[`info][`reloadproc;"the ",(string x 0)," process ",string x 2];
   if[(.z.p>.z.m.timeouttime) or count[.z.m.reloadsummary]=.z.m.countreload;
     .z.m.log[`info][`handler;"releasing processes"];
-    .z.m.log[`info][`reload;(string count select from .z.m.reloadsummary where status)," out of ",(string count .z.m.reloadsummary)," processes successfully reloaded"];
+    .z.m.log[`info][`reload;
+      (string count select from .z.m.reloadsummary where status)," out of ",
+      (string count .z.m.reloadsummary)," processes successfully reloaded"];
     flushend[];
     .z.m.reloadsummary:0#.z.m.reloadsummary];
   }
@@ -281,8 +292,12 @@ movetohdb:{[dw;hw;pt]
        }[hsym `$hw]'[dw,/:"/",/:string key hsym `$dw];
      $[0=count key hsym `$dw;
        @[.z.m.os`deldir;dw;{[x;y] .z.m.log[`error][`mvtohdb;"Failed to delete folder ",x," with error: ",y]}[dw]];
-       .z.m.log[`error][`mvtohdb;"Table(s) ",(", " sv string key hsym `$dw)," are still in ",dw," - the partition is split across the wdb and the hdb"]]];
-    .z.m.log[`error][`mvtohdb;raze "Table(s) ",string[(key hsym `$hw) inter key hsym `$dw]," is present in both location. Operation will be aborted to avoid corrupting the hdb"]]
+       .z.m.log[`error][`mvtohdb;
+         "Table(s) ",(", " sv string key hsym `$dw)," are still in ",dw,
+         " - the partition is split across the wdb and the hdb"]]];
+    .z.m.log[`error][`mvtohdb;
+      raze "Table(s) ",string[(key hsym `$hw) inter key hsym `$dw],
+      " is present in both location. Operation will be aborted to avoid corrupting the hdb"]]
   }
 
 / root sym is set with @[`.;...]: a bare load from a use-loaded module lands in its private namespace
@@ -322,7 +337,9 @@ endofdaysortdate:{[dir;pt;tablist;hdbsettings]
   sortall[tablist,'.Q.par[dir;pt;] each tablist;hdbsettings];
   .z.m.log[`info][`sort;"finished sorting data"];
   / move data into hdb
-  .z.m.log[`info][`mvtohdb;"Moving partition from the temp wdb ",(dw:(.z.m.os`topath) -1_string .Q.par[dir;pt;`])," directory to the hdb directory ",hw:(.z.m.os`topath) -1_string .Q.par[hdbsettings`hdbdir;pt;`]];
+  .z.m.log[`info][`mvtohdb;
+    "Moving partition from the temp wdb ",(dw:(.z.m.os`topath) -1_string .Q.par[dir;pt;`]),
+    " directory to the hdb directory ",hw:(.z.m.os`topath) -1_string .Q.par[hdbsettings`hdbdir;pt;`]];
   .z.m.log[`info][`mvtohdb;"Attempting to move ",(", " sv string key hsym `$dw)," from ",dw," to ",hw];
   .[movetohdb;(dw;hw;pt);{[e] .z.m.log[`error][`mvtohdb;"Function movetohdb failed with error: ",e]}];
   / call the posteod function
@@ -480,7 +497,10 @@ reloadproc:{[h;d;ptype;f]
   reloadfunc:{[f;d;ptype] r:@[{(1b;x y)}[f];d;{(0b;x)}];
     (neg .z.w)(`.wdb.handler;(ptype;first r;$[first r;`$"reloaded successfully";`$"reload failed with error ",last r]));(neg .z.w)[]};
   / reload function to be executed if eodwaitime = 0 - sync message processes to reload and log if reload was successful or failed
-  syncreloadfunc:{[h;f;d;ptype] r:@[h;({[f;d] (1b;f d)};f;d);{[ptype;e] .z.m.log[`error][`reloadproc;"failed to reload the ",(string ptype),". The error was : ",e];(0b;e)}[ptype]];
+  syncreloadfunc:{[h;f;d;ptype]
+    r:@[h;({[f;d] (1b;f d)};f;d);
+      {[ptype;e] .z.m.log[`error][`reloadproc;
+        "failed to reload the ",(string ptype),". The error was : ",e];(0b;e)}[ptype]];
     .z.m.log[`info][`reloadproc;"the ",(string ptype)," ",$[first r;"successfully reloaded";"failed to reload"]]};
   .z.m.log[`info][`reloadproc;"sending reload call to ",string ptype];
   $[.z.m.eodwaittime>0;sendfunc[(reloadfunc;f;d;ptype);h;ptype];syncreloadfunc[h;f;d;ptype]];
@@ -520,7 +540,8 @@ informsortandreload:{[dir;pt;tablist;writedownmode;mergelimits;hdbsettings;merge
   if[mergemethod in `hybrid`part;
     {[p;h] neg[h](`.merge.syncpartsizes;p);neg[h][]}[(.z.m.mrg`getpartsizes)[]] each h];
   msg:(`.wdb.endofdaysort;dir;pt;tablist;writedownmode;mergelimits;hdbsettings;mergemethod);
-  {[msg;wh] @[{[msg;wh] neg[wh] msg;neg[wh][]}[msg];wh;{[e] .z.m.log[`error][`informsortandreload;"unable to run command on sort and reload process: ",e]}]}[msg] each h;
+  {[msg;wh] @[{[msg;wh] neg[wh] msg;neg[wh][]}[msg];wh;
+    {[e] .z.m.log[`error][`informsortandreload;"unable to run command on sort and reload process: ",e]}]}[msg] each h;
   }
 
 / send an intraday reload message to idbs
@@ -537,7 +558,9 @@ idbreload:{[pt;writedownmode]
   if[writedownmode in `partbyenum`default`partbyfirstchar;
     .z.m.log[`info][`eod;"initialising wdbhdb for partition: ",string pt];
     $[.z.m.mode~`sort;
-      {[pt;w] @[w;(`.wdb.initmissingtables;pt);{[e] .z.m.log[`error][`idb;"initmissingtables failed on the wdb: ",e]}]}[pt] each raze {exec w from x} each (.z.m.svc`getservers) each .z.m.wdbtypes;
+      {[pt;w] @[w;(`.wdb.initmissingtables;pt);
+        {[e] .z.m.log[`error][`idb;"initmissingtables failed on the wdb: ",e]}]}[pt] each
+        raze {exec w from x} each (.z.m.svc`getservers) each .z.m.wdbtypes;
       @[initmissingtables;pt;{[e] .z.m.log[`error][`idb;"initmissingtables failed: ",e]}]];
     .z.m.log[`info][`eod;"notifying idbs for newly created partition"];
     notifyidbs[`.idb.rollover;enlist pt]];
@@ -673,6 +696,7 @@ setroot:{[]
 
 / reads deps and config; a save mode then connects, subscribes and replays the tp log, a sort mode waits to be called
 init:{[config;deps]
+  if[99h<>type deps;'"di.torq.proc.wdb: deps must be a dictionary of `log`timer`servers - injected by di.torq"];
   if[not `log in key deps;'"di.torq.proc.wdb: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.wdb: timer dependency is required - see di.timer"];
   if[not `servers in key deps;'"di.torq.proc.wdb: servers dependency is required - injected by di.torq, see di.torq.servers"];
@@ -696,7 +720,9 @@ init:{[config;deps]
     conns:distinct .z.m.hdbtypes,.z.m.rdbtypes,.z.m.idbtypes,.z.m.gatewaytypes,.z.m.sortworkertypes,.z.m.wdbtypes;
     (.z.m.svc`startup)[config,(enlist`connections)!enlist conns];
     setroot[];
-    .z.m.log[`info][`init;"initialised, mode=sort, savedir=",.z.m.savedirs,", hdbdir=",(1_string .z.m.hdbdir),", waiting to be called at .wdb.endofdaysort"];
+    .z.m.log[`info][`init;
+      "initialised, mode=sort, savedir=",.z.m.savedirs,", hdbdir=",(1_string .z.m.hdbdir),
+      ", waiting to be called at .wdb.endofdaysort"];
     :()];
 
   .z.m.subs:use`di.subscriptions;
@@ -721,6 +747,8 @@ init:{[config;deps]
     {replaymaxrowcheck[x;maxrows x]} each tablelist[]];
 
   setroot[];
+  / addjob raises on an id that already exists, so clear any job a previous init left
+  @[.z.m.timer`deletejobs;`wdbsave;{}];
   (.z.m.timer`addjob)[`wdbsave;savetodisk;();.z.m.settimer;1h;()!()];
   msg:"initialised, mode=",(string .z.m.mode),", writedownmode=",(string .z.m.writedownmode),", savedir=",.z.m.savedirs;
   msg,:", hdbdir=",(1_string .z.m.hdbdir),", flush every ",(string .z.m.settimer),"s";

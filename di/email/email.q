@@ -306,6 +306,10 @@ senddefault:{[msgdict]
   ];
   to:","sv string$[-11h=type msgdict`to;enlist msgdict`to;msgdict`to];
   htmlbody:{$[10h=type x;$[count x;$["<"=first x;x;addtext x];""];x]}'[msgdict[`body],enlist "email generated at ",(string .z.p)];
+  // TorQ's .email.senddefault took a singular `attachment; silently sending nothing and
+  // returning success is the worst failure shape available, so say so
+  if[`attachment in key msgdict;
+    .z.m.logwarn[`email;"msgdict has an `attachment key - this module uses `attachments (plural), so nothing was attached"]];
   att:$[`attachments in key msgdict;$[-11h=type msgdict`attachments;enlist msgdict`attachments;msgdict`attachments];""];
   res:.[send;(mailfrom;to;msgdict`subject;htmlbody;att);{[e].z.m.logerr[`email;"send failed: ",e];0b}];
   ok:not res~0b;

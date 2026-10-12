@@ -147,6 +147,47 @@ Returns the full `history` table.
 ### `clearhistory`
 Truncates the `history` table, preserving its schema. Intended to be scheduled via a timer to bound memory growth — see [example 7](#7-schedule-history-clearing-with-a-timer).
 
+## Migrating from TorQ's `.email`
+
+This module replaces `code/common/email.q`. It is **not** a drop-in replacement: config arrives as
+a dictionary, so a key this module does not know is ignored silently.
+
+| TorQ `.email` | this module |
+| --- | --- |
+| `url` | `smtpurl` |
+| `user` | `smtpuser` |
+| `password` | `smtppassword` |
+| `usessl` | `smtpssl` |
+| `from` | `mailfrom` (default `"kdbx@localhost"`, was `"torq@localhost"`) |
+| `debug` | dropped — it set the C library's verbosity |
+| `img` | dropped, see below |
+| `` `attachment `` in `msgdict` | `` `attachments `` (**plural**) |
+
+**The `attachment` key is the one that bites.** TorQ's reporter called
+`` senddefault[`to`subject`body`attachment!(...)] ``. Passing the singular key here attaches
+nothing, and the send still reports success — so `senddefault` logs a warning when it sees it.
+
+**Behaviour changes:**
+
+- **Disabled:** TorQ logged and then **threw**. This module logs and returns `-1`.
+- **Return value:** TorQ returned the message size in bytes (`res>0` meant sent). This module
+  returns `1b` / `0b` / `-1`.
+- **Footer:** TorQ's `defaultfooter` carried proctype, procname, host and local/GMT. This module
+  appends only `"email generated at <timestamp>"`, since it has no `.proc` coupling.
+
+**Not ported:**
+
+- **The `torQemail.so` layer** — `connect`, `disconnect`, `create`, `g`, `getSocket`,
+  `connectdefault`, `connected`, `lib`, `libfile`, `libexists`. There is no C library and no
+  persistent connection; each send invokes `sendmail` or `curl`. TorQ disabled email entirely on
+  64-bit Windows for want of that library, which no longer applies.
+- **`img`** — TorQ embedded a configurable image at the foot of every message. There is no image
+  support here. A caller wanting one can pass its own HTML in `body`, which is passed through
+  unchanged, but the image still has to be hosted or attached separately.
+- **`sendviaservice` / `servicesend` / `servicecallback`** — delegating a send to another process
+  over IPC, via `.servers.gethandlebytype` and `.async.postback`. This module has no `servers`
+  dependency; a caller that wants the same shape can post to the mail-capable process itself.
+
 ## HTML Helpers
 
 These are **internal** to the module — they are not in the `export` dictionary and cannot be called through the `use` binding. They are listed here because they shape how bodies are rendered.

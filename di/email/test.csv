@@ -3,6 +3,9 @@ before,0,0,q,email:use`di.email,1,1,load module into session
 before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
 before,0,0,q,"mocksend:{[frm;to;sub;body;att]}",1,1,define no-op mock send for direct state injection
 before,0,0,q,mockcapture:{[frm;to;sub;body;att]lastatt::att;lastfiles::read0 each att;1b},1,1,define capturing mock send for senddata tests
+before,0,0,q,emaillogs:([]lvl:`symbol$();msg:()),1,1,table to capture log calls
+before,0,0,q,reclogfn:{[l;c;m] `emaillogs upsert `lvl`msg!(l;m);},1,1,recording log function
+before,0,0,q,reclog:`info`warn`error!(reclogfn[`info;;];reclogfn[`warn;;];reclogfn[`error;;]),1,1,capturing mock logger
 
 / Test 0: init with defaults leaves email disabled and config empty
 run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with defaults and injected logger
@@ -298,3 +301,16 @@ run,0,0,q,tmpcount:{count key`:/tmp},1,1,helper to count entries in /tmp
 run,0,0,q,before:tmpcount[],1,1,record the temp file count
 fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";""s"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
 true,0,0,q,before=tmpcount[],1,1,mailsend left no temp file behind
+
+/ Test 46: the singular `attachment key TorQ used is reported rather than silently ignored
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist reclog]",1,1,init with the capturing logger
+run,0,0,q,.m.di.0email.send:mocksend,1,1,override send with mock
+run,0,0,q,delete from `emaillogs,1,1,start from an empty log
+run,0,0,q,"email.senddefault`to`subject`body`attachment!(`$""a@b.com"";""subj"";enlist""body text"";`:/tmp/nothing.csv)",1,1,send with TorQ's singular attachment key
+true,0,0,q,"0<count select from emaillogs where lvl=`warn,msg like ""*attachments*""",1,1,the singular key is warned about
+run,0,0,q,delete from `emaillogs,1,1,clear the log again
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""body text"")",1,1,a send with no attachment key at all
+true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,no warning when the key is absent
+run,0,0,q,delete from `emaillogs,1,1,clear the log again
+run,0,0,q,"email.senddefault`to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";`:/tmp/nothing.csv)",1,1,send with the plural key
+true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,no warning when the plural key is used

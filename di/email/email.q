@@ -439,7 +439,12 @@ init:{[config;deps]
     if[`smtpuser in key config;.z.m.smtpuser:$[10h=type config`smtpuser;config`smtpuser;string config`smtpuser]];
     if[`smtppassword in key config;.z.m.smtppassword:$[10h=type config`smtppassword;config`smtppassword;string config`smtppassword]];
     if[`smtpssl in key config;.z.m.smtpssl:config`smtpssl];
-    if[`img in key config;.z.m.img:$[-11h=type config`img;hsym config`img;hsym`$config`img]];
+    if[`img in key config;
+      .z.m.img:$[-11h=type config`img;hsym config`img;hsym`$config`img];
+      // an unreadable or empty image yields a part with no content, which renders
+      // as a broken image rather than failing, so say so at init
+      if[0=@[hcount;.z.m.img;0];
+        .z.m.logwarn[`email;"img ",(hsym2str .z.m.img)," is missing or empty - messages will carry a broken image"]]];
   ];
   // select transport: curl smtp if smtpurl is set, otherwise sendmail
   .z.m.send:$[count smtpurl;smtpsend_;mailsend];

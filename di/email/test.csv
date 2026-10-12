@@ -345,3 +345,13 @@ true,0,0,q,"2=count imgatt where imgatt like ""--====*--""",1,1,two closing boun
 run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,re-init with no img
 true,0,0,q,"not any (.m.di.0email.mailtemplate[""f@x"";""t@x"";""subj"";enlist""body text"";""""]) like ""Content-Type: multipart*""",1,1,without an img a plain message stays single-part
 run,0,0,q,hdel imgfile,1,1,clean up the stand-in image
+
+/ Test 50: an empty or missing img would render as a broken image, so init says so
+run,0,0,q,"emptyimg:hsym`$first system""mktemp /tmp/qempty.XXXXXXXXXX""",1,1,mktemp leaves a zero byte file
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,"email.init[`mailfrom`enabled`img!(""me@example.com"";1b;1_string emptyimg);enlist[`log]!enlist reclog]",1,1,init with an empty image
+true,0,0,q,"0<count select from emaillogs where lvl=`warn,msg like ""*broken image*""",1,1,an empty img is warned about
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,"email.init[`mailfrom`enabled`img!(""me@example.com"";1b;""/tmp/definitelynotthere.png"");enlist[`log]!enlist reclog]",1,1,init with a missing image
+true,0,0,q,"0<count select from emaillogs where lvl=`warn,msg like ""*missing or empty*""",1,1,a missing img is warned about
+run,0,0,q,hdel emptyimg,1,1,clean up

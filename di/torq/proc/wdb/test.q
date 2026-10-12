@@ -261,7 +261,8 @@ partlimitpassed:{[]
   freshwdb cfg[],(enlist`partlimit)!enlist 7;
   set7:.m.di.0merge.partlimit;
   freshwdb cfg[];
-  chk `passed`defaulted!(7=set7;1000=.m.di.0merge.partlimit)
+  / compare against di.merge's own default rather than a literal, so the two cannot drift apart
+  chk `passed`defaulted!(7=set7;.m.di.0merge.partlimitdefault=.m.di.0merge.partlimit)
   };
 
 / legacy called root `reload` on any proctype in reloadorder, not just hdb/rdb/idb

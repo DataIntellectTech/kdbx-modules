@@ -33,7 +33,8 @@ mergemode = "part"                 # part | col | hybrid (partitioned writedown 
 mergebybytelimit = false           # true: merge limits are byte estimates (mergenumbytes), not rows
 mergenumrows = 100000              # default rows per merge batch; mergenumtab overrides per table
 mergenumbytes = 500000000          # bytes per merge batch when mergebybytelimit is true
-partlimit = 1000                   # max partitions di.merge batches together (passed to di.merge init)
+partlimit = 1000                   # max partitions di.merge batches together; omitted, di.merge's
+                                   # own default applies - this module does not restate it
 tickerplanttypes = "tickerplant"   # proctype(s) to subscribe to
 sorttypes = "sort"                 # proctype(s) to hand the tail to in save mode
 sortworkertypes = "sortworker"     # proctype(s) to fan the sort out to (needs a negative -s)
@@ -225,6 +226,18 @@ not know is **ignored silently**. These TorQ names changed:
 `settimer` is a **number of seconds**, not a timespan: a TorQ-style `0D00:00:10` throws. `numtab`
 and `mergenumtab` keep legacy's `` `quote`trade!10000 50000 `` default, so `numrows` /
 `mergenumrows` do **not** apply to those two tables unless you override `numtab` / `mergenumtab`.
+
+### Upgrading from 0.2.0 — behaviour change
+
+**`numtab` now defaults to `` `quote`trade!10000 50000 ``; 0.2.0 defaulted it to an empty
+dictionary.** A config with no `numtab` key therefore flushes `quote` at 10,000 rows and `trade`
+at 50,000 instead of at `numrows`, so those two tables write down more often than they did on
+0.2.0. This restores TorQ's default (`code/wdb/writedown.q`) and matches `mergenumtab`, which
+already shipped it. To keep 0.2.0's behaviour, set `numtab` explicitly:
+
+```toml
+numtab = {}        # every table uses numrows, as in 0.2.0
+```
 
 ## Module-namespace notes
 

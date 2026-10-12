@@ -314,3 +314,30 @@ true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,no warning when the
 run,0,0,q,delete from `emaillogs,1,1,clear the log again
 run,0,0,q,"email.senddefault`to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";`:/tmp/nothing.csv)",1,1,send with the plural key
 true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,no warning when the plural key is used
+
+/ Test 47: both keys together use the plural, so no warning is due
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,"email.senddefault`to`subject`body`attachment`attachments!(`$""a@b.com"";""subj"";enlist""body text"";`:/tmp/singular.csv;`:/tmp/plural.csv)",1,1,send with both keys
+true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,"both keys given means the plural was used, so no warning"
+
+/ Test 48: a configured img is embedded inline at the foot of every message
+run,0,0,q,"imgfile:hsym`$first system""mktemp /tmp/qimg.XXXXXXXXXX""",1,1,a file to stand in for the image
+run,0,0,q,"imgfile 0: enlist ""the mime structure is what is asserted here""",1,1,give it some content to base64
+run,0,0,q,"email.init[`mailfrom`enabled`img!(""me@example.com"";1b;1_string imgfile);enlist[`log]!enlist mocklog]",1,1,init with an img configured
+run,0,0,q,"imgmsg:.m.di.0email.mailtemplate[""f@x"";""t@x"";""subj"";enlist""body text"";""""]",1,1,build a message with no attachments
+true,0,0,q,"any imgmsg like ""Content-Type: multipart*""",1,1,an img alone makes the message multipart
+true,0,0,q,"any imgmsg like ""*<img src=\""cid:*""",1,1,the html body references the image by content id
+true,0,0,q,"any imgmsg like ""Content-Disposition: inline*""",1,1,"the image part is inline, not an attachment"
+true,0,0,q,"1=count imgmsg where imgmsg like ""Content-ID: <*>""",1,1,exactly one content id header
+run,0,0,q,"imgcid:first ""\"""" vs last ""cid:"" vs first imgmsg where imgmsg like ""*cid:*""",1,1,pull the cid out of the html
+true,0,0,q,"any imgmsg like ""Content-ID: <"",imgcid,"">""",1,1,the html cid matches the part cid
+true,0,0,q,"last[imgmsg] like ""--====*--""",1,1,the message still closes its boundary
+
+/ Test 49: img and an attachment coexist, and no img means no multipart
+run,0,0,q,"imgatt:.m.di.0email.mailtemplate[""f@x"";""t@x"";""subj"";enlist""body text"";imgfile]",1,1,build a message with both
+true,0,0,q,"any imgatt like ""Content-Disposition: attachment*""",1,1,the attachment part is present
+true,0,0,q,"any imgatt like ""Content-Disposition: inline*""",1,1,the inline image part is present too
+true,0,0,q,"1=count imgatt where imgatt like ""--====*--""",1,1,only one closing boundary
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,re-init with no img
+true,0,0,q,"not any (.m.di.0email.mailtemplate[""f@x"";""t@x"";""subj"";enlist""body text"";""""]) like ""Content-Type: multipart*""",1,1,without an img a plain message stays single-part
+run,0,0,q,hdel imgfile,1,1,clean up the stand-in image

@@ -49,9 +49,27 @@ template0:{[frm;to;sub;body]
   mailfooter
   };
 
+// inline image part for the foot of the message, referenced from the html by its content id
+imagepart:{[a;boundary;cid]
+  fn:last "/"vs hsym2str a;
+  enlist[""],
+  enlist["--",boundary],
+  enlist["Content-Transfer-Encoding: base64"],
+  enlist["Content-Type: ",mimetype[a],"; name=\"",fn,"\""],
+  enlist["Content-ID: <",cid,">"],
+  enlist["Content-Disposition: inline; filename=\"",fn,"\""],
+  enlist[""],
+  encodefile[a],
+  enlist[""]
+  };
+
 mailtemplate:{[frm;to;sub;body;att]
-  if[not count att where not null att,:();:template0[frm;to;sub;body]];
+  // an image makes the message multipart even with no attachments
+  img:.z.m.img;
+  hasimg:not null img;
+  if[(not count att where not null att,:()) and not hasimg;:template0[frm;to;sub;body]];
   boundary:"====",string[rand 0Ng],"====";
+  cid:"img",string rand 0Ng;
   enlist["From: ",frm],
   enlist["To: ",to],
   enlist["Subject: ",sub],
@@ -63,6 +81,7 @@ mailtemplate:{[frm;to;sub;body;att]
   enlist[""],
   mailheader[],
   body,
+  $[hasimg;enlist "<p><img src=\"cid:",cid,"\"></p>";()],
   mailfooter,
   (raze {[a;boundary]
     fn:last "/"vs hsym2str a;
@@ -75,6 +94,7 @@ mailtemplate:{[frm;to;sub;body;att]
     encodefile[a],
     enlist[""]
   }[;boundary] each att),
+  $[hasimg;imagepart[img;boundary;cid];()],
   enlist["--",boundary,"--"]
   };
 
@@ -235,6 +255,9 @@ history:([]time:`timestamp$();recipients:`symbol$();subject:();status:`symbol$()
 
 send:mailsend;
 
+// image embedded at the foot of every message - overwritten by init, null for none
+img:`;
+
 // smtp config - set by init when smtpurl is provided; used by smtpsend_
 smtpurl:"";
 smtpuser:"";
@@ -308,7 +331,8 @@ senddefault:{[msgdict]
   htmlbody:{$[10h=type x;$[count x;$["<"=first x;x;addtext x];""];x]}'[msgdict[`body],enlist "email generated at ",(string .z.p)];
   // TorQ's .email.senddefault took a singular `attachment; silently sending nothing and
   // returning success is the worst failure shape available, so say so
-  if[`attachment in key msgdict;
+  // only when `attachments is absent: with both keys the plural is used and nothing is lost
+  if[(`attachment in key msgdict) and not `attachments in key msgdict;
     .z.m.logwarn[`email;"msgdict has an `attachment key - this module uses `attachments (plural), so nothing was attached"]];
   att:$[`attachments in key msgdict;$[-11h=type msgdict`attachments;enlist msgdict`attachments;msgdict`attachments];""];
   res:.[send;(mailfrom;to;msgdict`subject;htmlbody;att);{[e].z.m.logerr[`email;"send failed: ",e];0b}];
@@ -368,6 +392,7 @@ init:{[config;deps]
   //   smtpuser        (string or symbol) - smtp username
   //   smtppassword    (string)           - smtp password
   //   smtpssl         (boolean)          - require tls (default 1b)
+  //   img             (hsym or string)   - image embedded at the foot of every message
   // pass (::) for config to use defaults (email disabled, sendmail transport)
   // deps - (enlist`log)!enlist logdict
   //   `log: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required; init throws if absent
@@ -381,6 +406,7 @@ init:{[config;deps]
   .z.m.loghistory:{[recipients;subject;status;bytes]
     .z.m.history:.z.m.history,enlist `time`recipients`subject`status`bytes!(.z.p;recipients;subject;status;`long$bytes);
     };
+  .z.m.img:`;
   .z.m.smtpurl:"";
   .z.m.smtpuser:"";
   .z.m.smtppassword:"";
@@ -398,6 +424,7 @@ init:{[config;deps]
     if[`smtpuser in key config;.z.m.smtpuser:$[10h=type config`smtpuser;config`smtpuser;string config`smtpuser]];
     if[`smtppassword in key config;.z.m.smtppassword:$[10h=type config`smtppassword;config`smtppassword;string config`smtppassword]];
     if[`smtpssl in key config;.z.m.smtpssl:config`smtpssl];
+    if[`img in key config;.z.m.img:$[-11h=type config`img;hsym config`img;hsym`$config`img]];
   ];
   // select transport: curl smtp if smtpurl is set, otherwise sendmail
   .z.m.send:$[count smtpurl;smtpsend_;mailsend];

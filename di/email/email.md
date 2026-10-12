@@ -85,6 +85,7 @@ Passed as the first dictionary to `init`. All keys are optional.
 | `smtpuser` | string or symbol | `""` | SMTP username |
 | `smtppassword` | string | `""` | SMTP password. Written to a temporary `0600` file read by `curl --config`, so it never appears in the command line or in `ps` output |
 | `smtpssl` | boolean | `1b` | Require TLS (`--ssl-reqd`). Set `0b` to disable |
+| `img` | hsym or string | `` ` `` (none) | Image embedded inline at the foot of **every** message |
 
 ## Dependencies
 
@@ -160,7 +161,7 @@ a dictionary, so a key this module does not know is ignored silently.
 | `usessl` | `smtpssl` |
 | `from` | `mailfrom` (default `"kdbx@localhost"`, was `"torq@localhost"`) |
 | `debug` | dropped — it set the C library's verbosity |
-| `img` | dropped, see below |
+| `img` | `img` — same meaning, see [Embedded image](#embedded-image) |
 | `` `attachment `` in `msgdict` | `` `attachments `` (**plural**) |
 
 **The `attachment` key is the one that bites.** TorQ's reporter called
@@ -181,12 +182,55 @@ nothing, and the send still reports success — so `senddefault` logs a warning 
   `connectdefault`, `connected`, `lib`, `libfile`, `libexists`. There is no C library and no
   persistent connection; each send invokes `sendmail` or `curl`. TorQ disabled email entirely on
   64-bit Windows for want of that library, which no longer applies.
-- **`img`** — TorQ embedded a configurable image at the foot of every message. There is no image
-  support here. A caller wanting one can pass its own HTML in `body`, which is passed through
-  unchanged, but the image still has to be hosted or attached separately.
 - **`sendviaservice` / `servicesend` / `servicecallback`** — delegating a send to another process
   over IPC, via `.servers.gethandlebytype` and `.async.postback`. This module has no `servers`
   dependency; a caller that wants the same shape can post to the mail-capable process itself.
+
+### Why these were left out
+
+Each omission was a decision, not an oversight, and the reasoning is recorded here so it does not
+have to be rediscovered.
+
+- **The C library.** Binding `torQemail.so` meant `LD_LIBRARY_PATH` setup, a per-platform build,
+  and a hard dependency that could not be satisfied at all on 64-bit Windows — TorQ disabled email
+  outright there. Shelling out to `sendmail` or `curl` removes the build and deployment burden and
+  works wherever one of those two exists, which is checked at send time by `utilityexists`.
+- **The persistent connection** (`connectdefault`, `connected`). It existed because opening a
+  libcurl session was expensive enough to cache. Each send now invokes a short-lived process, so
+  there is no session to hold, and no reconnect logic to get wrong.
+- **`sendviaservice` / `servicesend` / `servicecallback`.** These reached into `.servers` and
+  `.async`. Review feedback asked for the TorQ coupling to be removed so the module stands alone
+  and can be used outside the framework; taking a `servers` dependency purely to forward a
+  dictionary would have reintroduced it. A caller that wants the same shape can post
+  `` (`senddefault;msgdict) `` to the mail-capable process itself — that is all the original did.
+- **The reporter-specific entry point.** Review feedback asked for it to go, while keeping the
+  capability it existed for — emailing a q object — in a general form. That is what `senddata`
+  provides: any table, string or other object, named by the caller, with no report machinery.
+- **The proctype/procname/host footer.** It read `.proc`, which is framework state this module
+  does not have. The timestamp is kept because it needs nothing but `.z.p`.
+- **`debug`.** It set the C library's verbosity level and has no meaning without the library.
+
+Conversely, `historyenabled` and `clearhistory` exist **because** of review feedback: the send
+history is useful but must be switchable and bounded, rather than growing for the life of the
+process.
+
+### Embedded image
+
+`img` is the equivalent of TorQ's setting: a path to an image embedded at the foot of every
+message. It is sent as an inline MIME part with a `Content-ID`, and the HTML body gets an
+`` <img src="cid:..."> `` referencing it, so the image travels with the message rather than being
+fetched from a server. Setting `img` makes every message multipart, even one with no attachments;
+leaving it unset keeps the single-part message exactly as before.
+
+```q
+email.init[
+  `mailfrom`enabled`img!("me@example.com";1b;"/opt/kdb/img/logo.png");
+  enlist[`log]!enlist logdep]
+```
+
+Rendering of `cid:` images is up to the receiving client. The suite asserts the MIME structure —
+one `Content-ID`, an inline disposition, and a body reference whose cid matches the part — but
+whether a given client displays it inline can only be confirmed by sending a real message.
 
 ## HTML Helpers
 

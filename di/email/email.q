@@ -49,18 +49,47 @@ template0:{[frm;to;sub;body]
   mailfooter
   };
 
-// inline image part for the foot of the message, referenced from the html by its content id
-imagepart:{[a;boundary;cid]
+// one part body, without the boundary line the caller emits before it
+attachpart:{[a]
   fn:last "/"vs hsym2str a;
+  enlist["Content-Transfer-Encoding: base64"],
+  enlist["Content-Type: ",mimetype[a],"; name=\"",fn,"\""],
+  enlist["Content-Disposition: attachment; filename=\"",fn,"\""],
   enlist[""],
-  enlist["--",boundary],
+  encodefile[a]
+  };
+
+// the image, referenced from the html by its content id
+imagepart:{[a;cid]
+  fn:last "/"vs hsym2str a;
   enlist["Content-Transfer-Encoding: base64"],
   enlist["Content-Type: ",mimetype[a],"; name=\"",fn,"\""],
   enlist["Content-ID: <",cid,">"],
   enlist["Content-Disposition: inline; filename=\"",fn,"\""],
   enlist[""],
-  encodefile[a],
-  enlist[""]
+  encodefile[a]
+  };
+
+// the html body; with an image it and the image go in a multipart/related together,
+// which is what makes a client resolve the cid rather than treat it as an attachment
+htmlpart:{[body;cid;img]
+  h:enlist["Content-Type: text/html; charset=UTF-8"],
+    enlist[""],
+    mailheader[],
+    body,
+    $[null img;();enlist "<p><img src=\"cid:",cid,"\"></p>"],
+    mailfooter;
+  if[null img;:h];
+  rb:"====rel",string[rand 0Ng],"====";
+  enlist["Content-Type: multipart/related; type=\"text/html\"; boundary=\"",rb,"\""],
+  enlist[""],
+  enlist["--",rb],
+  h,
+  enlist[""],
+  enlist["--",rb],
+  imagepart[img;cid],
+  enlist[""],
+  enlist["--",rb,"--"]
   };
 
 mailtemplate:{[frm;to;sub;body;att]
@@ -69,7 +98,8 @@ mailtemplate:{[frm;to;sub;body;att]
   hasimg:not null img;
   if[(not count att where not null att,:()) and not hasimg;:template0[frm;to;sub;body]];
   boundary:"====",string[rand 0Ng],"====";
-  cid:"img",string rand 0Ng;
+  // a content id is a message id, so it needs the addr-spec form with an @
+  cid:$[hasimg;"img",(string rand 0Ng),"@kdbx.local";""];
   enlist["From: ",frm],
   enlist["To: ",to],
   enlist["Subject: ",sub],
@@ -77,24 +107,9 @@ mailtemplate:{[frm;to;sub;body;att]
   enlist["MIME-Version: 1.0"],
   enlist[""],
   enlist["--",boundary],
-  enlist["Content-Type: text/html; charset=UTF-8"],
+  htmlpart[body;cid;img],
+  (raze {[a;boundary] enlist[""],enlist["--",boundary],attachpart a}[;boundary] each att),
   enlist[""],
-  mailheader[],
-  body,
-  $[hasimg;enlist "<p><img src=\"cid:",cid,"\"></p>";()],
-  mailfooter,
-  (raze {[a;boundary]
-    fn:last "/"vs hsym2str a;
-    enlist[""],
-    enlist["--",boundary],
-    enlist["Content-Transfer-Encoding: base64"],
-    enlist["Content-Type: ",mimetype[a],"; name=\"",fn,"\""],
-    enlist["Content-Disposition: attachment; filename=\"",fn,"\""],
-    enlist[""],
-    encodefile[a],
-    enlist[""]
-  }[;boundary] each att),
-  $[hasimg;imagepart[img;boundary;cid];()],
   enlist["--",boundary,"--"]
   };
 

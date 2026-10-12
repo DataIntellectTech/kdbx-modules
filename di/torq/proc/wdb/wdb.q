@@ -465,11 +465,11 @@ endofdaysort:{[dir;pt;tablist;writedownmode;mergelimits;hdbsettings;mergemethod]
   }
 
 / the call each reloadorder type makes on the far side
+/ anything other than an hdb or idb gets legacy's root `reload`, which is what the rdb exposes
 reloadexpr:{[ptype]
   $[ptype in .z.m.hdbtypes;{[d] .hdb.reload[]};
-    ptype in .z.m.rdbtypes;{[d] `. [`reload] d};
     ptype in .z.m.idbtypes;{[d] .idb.intradayreload[]};
-    (::)]
+    {[d] `. [`reload] d}]
   }
 
 / function to send reload message to rdbs/hdbs/idbs
@@ -488,9 +488,7 @@ reloadproc:{[h;d;ptype;f]
 
 / function to discover rdbs/hdbs and attempt to reconnect
 getprocs:{[x;y]
-  if[(::)~f:reloadexpr x;
-    .z.m.log[`warn][`doreload;"reloadorder entry ",(string x)," is neither an hdb, rdb, nor idb type - skipped"];
-    :()];
+  f:reloadexpr x;
   a:exec w from (.z.m.svc`getservers) x;
   / exit if no valid handle
   if[0=count a;.z.m.log[`error][`connection;"no connection to the ",(string x)," could be established... failed to reload ",string x];:()];
@@ -619,7 +617,7 @@ setconfig:{[config]
   .z.m.mergenumrows:$[`mergenumrows in key config;tolong config`mergenumrows;100000];
   .z.m.mergenumtab:$[`mergenumtab in key config;config`mergenumtab;`quote`trade!10000 50000];
   .z.m.numrows:$[`numrows in key config;tolong config`numrows;100000];
-  .z.m.numtab:$[`numtab in key config;config`numtab;(`symbol$())!`long$()];
+  .z.m.numtab:$[`numtab in key config;config`numtab;`quote`trade!10000 50000];
   .z.m.replaynumrows:$[`replaynumrows in key config;tolong config`replaynumrows;.z.m.numrows];
   .z.m.replaynumtab:$[`replaynumtab in key config;config`replaynumtab;.z.m.numtab];
   .z.m.immediate:$[`immediate in key config;tobool config`immediate;0b];
@@ -642,6 +640,12 @@ setconfig:{[config]
   .z.m.currentpartition:0N;
   }
 
+/ logging stub for the period roll, as legacy's writedown.q shipped
+/ monadic: di.pubsub.callendofperiod sends (`endofperiod;(currentpd;nextpd;data)) as one argument
+endofperiod:{[x]
+  .z.m.log[`info][`endofperiod;"received endofperiod ",.Q.s1 x];
+  }
+
 / publishes the root names other processes and legacy's peach lambdas call
 setroot:{[]
   set[`.wdb.endofdaysort;endofdaysort];
@@ -658,6 +662,7 @@ setroot:{[]
   @[`.z;`pd;:;{[] `u#raze {exec w from x} each (.z.m.svc`getservers) each .z.m.sortworkertypes}];
   @[`.;`upd;:;.z.m.upd];
   @[`.;`endofday;:;endofday];
+  @[`.;`endofperiod;:;endofperiod];
   set[`.u.end;endofday];
   / the idb reads these at startup; currentpartition is republished at each end of day
   set[`.wdb.savedir;.z.m.savedir];
@@ -682,7 +687,9 @@ init:{[config;deps]
   .z.m.os:use`di.os;
   initdbwrite[config;deps];
   .z.m.mrg:use`di.merge;
-  (.z.m.mrg`init)[`log`mergebybytelimit!(deps`log;.z.m.mergebybytelimit)];
+  mrgdeps:`log`mergebybytelimit!(deps`log;.z.m.mergebybytelimit);
+  if[`partlimit in key config;mrgdeps[`partlimit]:tolong config`partlimit];
+  (.z.m.mrg`init)[mrgdeps];
   checksortparams[];
 
   if[.z.m.mode~`sort;

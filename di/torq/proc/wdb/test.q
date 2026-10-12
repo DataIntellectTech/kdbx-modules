@@ -48,7 +48,11 @@ setup:{[]
   starttp[];
   };
 
-cfg:{[] `savedir`hdbdir`sortcsv`numrows`eodwaittime`reloadorder`ignorelist!("wdb";"hdb";"appconfig/sort.csv";100000;0;`hdb;`heartbeat`logmsg`calls`scalls)};
+/ numtab is pinned empty so numrows governs every table; the shipped default is covered by numtabdefault[]
+cfg:{[]
+  `savedir`hdbdir`sortcsv`numrows`numtab`replaynumtab`eodwaittime`reloadorder`ignorelist!
+    ("wdb";"hdb";"appconfig/sort.csv";100000;(`symbol$())!`long$();(`symbol$())!`long$();0;`hdb;`heartbeat`logmsg`calls`scalls)
+  };
 
 today:{[] .z.D};
 hdbpart:{[t] hsym `$BASE,"/hdb/",(string today[]),"/",string t};
@@ -159,6 +163,27 @@ pattrcheck:{[]
   loggedlike[`error;"default table not defined in sort.csv*"]
   };
 
+numtabdefault:{[]
+  / legacy wdb/writedown.q defaults numtab to `quote`trade!10000 50000, and replaynumtab follows it
+  freshwdb (cfg[] _ `numtab) _ `replaynumtab;
+  chk `quote`trade`other`replayfollows!(
+    10000=.m.di.0torq.0proc.0wdb.maxrows`quote;
+    50000=.m.di.0torq.0proc.0wdb.maxrows`trade;
+    100000=.m.di.0torq.0proc.0wdb.maxrows`heartbeat;
+    50000=.m.di.0torq.0proc.0wdb.replaymaxrows`trade)
+  };
+
+endofperiodstub:{[]
+  / legacy shipped a logging endofperiod so an stp's period roll does not raise in the wdb
+  / di.pubsub.callendofperiod sends (`endofperiod;(curr;next;data)) - one argument, so the stub is monadic
+  freshwdb cfg[];
+  r:@[{(1b;`. [`endofperiod] x)};(09:00;10:00;enlist[`p]!enlist 10:00);{(0b;x)}];
+  chk `published`callable`logged!(
+    `endofperiod in key `.;
+    first r;
+    loggedlike[`info;"received endofperiod*"])
+  };
+
 replaythreshold:{[]
   freshwdb cfg[],`replaynumrows`numrows!(2;100000);
   chk `replay`live!(2=.m.di.0torq.0proc.0wdb.replaymaxrows`trade;100000=.m.di.0torq.0proc.0wdb.maxrows`trade)
@@ -175,7 +200,8 @@ logq:("LOGS:([]lvl:`symbol$();ctx:`symbol$();msg:());";"lg:{[l;c;m] `LOGS upsert
 peerscript:(!) . flip (
   (`sortworker;logq,("w:use`di.torq.proc.wdb;";"w.init[(((enlist`mode)!enlist`sort),`tickerplanttypes`hdbtypes`rdbtypes`idbtypes`gatewaytypes`sorttypes`sortworkertypes`wdbtypes!8#enlist`symbol$()),(enlist`sortcsv)!enlist \"appconfig/sort.csv\";`log`timer`servers!(ld;(`symbol$())!();",mockserversq,")];"));
   (`sort;logq,("s:use`di.torq.proc.wdb;";"s.init[`mode`savedir`hdbdir`sortcsv`eodwaittime`reloadorder!(`sort;\"wdb\";\"hdb\";\"appconfig/sort.csv\";0;`hdb);`log`timer`servers!(ld;(`symbol$())!();",mockserversq,")];"));
-  (`hdb;enlist "RELOADS:0;.hdb.reload:{[] RELOADS+:1;};"));
+  (`hdb;enlist "RELOADS:0;.hdb.reload:{[] RELOADS+:1;};");
+  (`custom;enlist "RELOADS:0;reload:{[d] RELOADS+:1;};"));
 
 startpeer:{[kind]
   port:NEXTPORT;`NEXTPORT set NEXTPORT+1;
@@ -228,6 +254,25 @@ eodok:{[c]
     (count distinct s)=sum differ s;
     2=count get hdbpart`quote;
     0=count key wdbpart[])
+  };
+
+/ partlimit is a di.merge setting, reachable from wdb config; omitted, di.merge keeps its own default
+partlimitpassed:{[]
+  freshwdb cfg[],(enlist`partlimit)!enlist 7;
+  set7:.m.di.0merge.partlimit;
+  freshwdb cfg[];
+  chk `passed`defaulted!(7=set7;1000=.m.di.0merge.partlimit)
+  };
+
+/ legacy called root `reload` on any proctype in reloadorder, not just hdb/rdb/idb
+customreload:{[]
+  `PEERS set enlist[`custom]!enlist enlist h:startpeer`custom;
+  freshwdb cfg[],(enlist`reloadorder)!enlist `custom;
+  feed[];
+  endofday today[];
+  r:chk `reloaded`noerror!(1=h"RELOADS";not loggedlike[`error;"*custom*"]);
+  stoppeers[];
+  r
   };
 
 / with eodwaittime on, the hdb reloads asynchronously and calls .wdb.handler back

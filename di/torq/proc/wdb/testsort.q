@@ -186,12 +186,12 @@ reloadattempted:{[]
     loggedlike[`error;"no connection to the hdb*"])
   };
 
-/ an unknown reloadorder entry is reported rather than silently skipped
+/ an unknown reloadorder entry gets the root `reload` call and simply has nothing connected
 badreloadorder:{[]
   freshwire config[],(enlist`reloadorder)!enlist `hdb`nosuchtype;
   tail[savedir[];PDATE;`trade`quote];
   chk `warned`stillmoved!(
-    loggedlike[`warn;"*is neither an hdb, rdb, nor idb type*"];
+    loggedlike[`error;"*no connection to the nosuchtype*"];
     `quote`trade~partitiontables hdbdir[])
   };
 

@@ -33,6 +33,7 @@ mergemode = "part"                 # part | col | hybrid (partitioned writedown 
 mergebybytelimit = false           # true: merge limits are byte estimates (mergenumbytes), not rows
 mergenumrows = 100000              # default rows per merge batch; mergenumtab overrides per table
 mergenumbytes = 500000000          # bytes per merge batch when mergebybytelimit is true
+partlimit = 1000                   # max partitions di.merge batches together (passed to di.merge init)
 tickerplanttypes = "tickerplant"   # proctype(s) to subscribe to
 sorttypes = "sort"                 # proctype(s) to hand the tail to in save mode
 sortworkertypes = "sortworker"     # proctype(s) to fan the sort out to (needs a negative -s)
@@ -53,7 +54,8 @@ settimer = 10                     # seconds between flush checks (di.timer mode 
 immediate = false                 # true: flush every table on every timer tick (ignore numrows)
 replaylog = true                  # replay the tp log on startup
 tpwaittimeout = 30000             # ms to wait for the tickerplant at startup before init fails
-reloadorder = "hdb rdb idb"       # order to reload at EOD
+reloadorder = "hdb rdb idb"       # order to reload at EOD; an hdb gets .hdb.reload[], an idb
+                                   # .idb.intradayreload[], anything else legacy's root `reload`
 eodwaittime = 10                  # seconds to wait for reload callbacks before releasing (0: sync reloads)
 permitreload = true               # false: sort and move, but leave downstream alone
 # compression (optional) -> e.g. 17 2 6, applied (.z.zd) while sorting/merging, then reset to 16 0 0
@@ -199,7 +201,30 @@ sort process with `.merge.syncpartsizes` before the hand-off.
 
 ## Not included (deprecated)
 
-- **FinSpace/AWS** and the `endofperiod` STP stub — stripped.
+- **FinSpace/AWS** — stripped.
+
+The `endofperiod` stub legacy shipped in `writedown.q` **is** kept: `di.pubsub.callendofperiod`
+broadcasts `` (`endofperiod;(current;next;data)) `` to every subscriber on each period roll, so a wdb
+pointed at a segmented tickerplant would otherwise raise `'endofperiod` every period. The stub is
+published at root by `init` and only logs. It is **monadic**, matching `callendofperiod`, which
+sends the triple as a single argument.
+
+## Migrating a TorQ wdb settings file
+
+Config comes from the merged config dictionary, not `@[value;...]`, so a setting this module does
+not know is **ignored silently**. These TorQ names changed:
+
+| TorQ setting | this module |
+| --- | --- |
+| `subtabs` | `subscribeto` |
+| `subsyms` | `subscribesyms` |
+| `replay` | `replaylog` |
+| `tpconnsleepintv`, `tpcheckcycles` | `tpwaittimeout` (a single ms budget) |
+| `schema` | dropped — the schema always comes from the tickerplant's `subdetails` |
+
+`settimer` is a **number of seconds**, not a timespan: a TorQ-style `0D00:00:10` throws. `numtab`
+and `mergenumtab` keep legacy's `` `quote`trade!10000 50000 `` default, so `numrows` /
+`mergenumrows` do **not** apply to those two tables unless you override `numtab` / `mergenumtab`.
 
 ## Module-namespace notes
 

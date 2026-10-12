@@ -2,7 +2,7 @@
 
 A set of analytical utilities designed to streamline and make common data manipulation operations more efficient in kdb+/q.
 
-The library provides specialized functions for handling typical analytical workflows, including forward filling missing values, creating custom time intervals, pivoting tables, and generating cross-product expansions. Each function accepts dictionary parameters or a table for flexible configuration and includes robust error handling with informative messages.
+The library provides specialized functions for handling typical analytical workflows, including forward filling missing values, creating custom time intervals, pivoting tables, generating cross-product expansions, and simplifying time series down to the points that carry their shape. Each function accepts dictionary parameters or a table for flexible configuration and includes robust error handling with informative messages.
 
 ---
 
@@ -13,6 +13,8 @@ The library provides specialized functions for handling typical analytical workf
 - **`intervals`** – Generate custom time/value intervals with configurable step and rounding.
 - **`pivot`** – Transform tables into cross-tab (wide) format using a pivot column.
 - **`rack`** – Build cross products of key columns, optionally with time intervals and base tables.
+- **`shrink`** – Reduce a time series to the points that carry its shape (Ramer-Douglas-Peucker).
+- **`rdprecur`** / **`rdpiter`** – The recursive and iterative simplification kernels behind `shrink`.
 
 ---
 
@@ -195,6 +197,138 @@ rack[`table`keycols!(quotes; `sym`exchange)]
 ```
 
 ---
+<br>
+
+### ⚙️`shrink`
+
+**Description**
+
+Reduces a time series to the handful of points that carry its shape, discarding those that add
+nothing. Spikes, turning points and trend changes survive; flat or near-linear runs collapse to
+their endpoints. Unlike bucketing, nothing is averaged or moved — every returned row is a real row
+from the source table, so neither the time nor the value domain is distorted.
+
+This is the Ramer-Douglas-Peucker algorithm described in
+[Dynamically shrinking big data using timeseries database kdb+](https://code.kx.com/q/wp/ts-shrink/)
+— see [References](#references).
+
+**Parameters**
+- Dictionary containing:
+  - `table`: Source table (**required**)
+  - `xcol`: Name of the x-axis column — one numeric or temporal column (**required**)
+  - `ycol`: Name of the y-axis column — one numeric column (**required**)
+  - `tolerance`: Non-negative numeric atom; how far a point may sit from the line through its
+    neighbours before it is worth keeping (**required**)
+  - `by`: Grouping column(s) — each series is simplified independently (optional)
+  - `method`: `` `recursive`` or `` `iterative`` (optional, default: `` `iterative``)
+
+**Behaviour**
+1. Draw a chord between the first and last points of the series.
+2. Find the point furthest from that chord.
+3. If it is further away than `tolerance`, keep it as a breakpoint and repeat on the two halves
+   either side of it; otherwise discard every point between the endpoints.
+
+- The first and last points of each series are always retained.
+- The guarantee this gives: every discarded point lies within `tolerance` of the straight line
+  joining the two retained points that bracket it.
+- Rows must already be ordered by `xcol` — within each `by` group where `by` is supplied. Out of
+  order input is rejected rather than silently simplified against meaningless chords.
+- `xcol` and `ycol` must not contain nulls; filter or forward fill (see `ffill`) beforehand.
+- All columns are carried through untouched — `shrink` selects rows, it does not project columns.
+- With `by`, groups are simplified independently and the retained rows are returned in the order
+  they appear in the source table, not grouped.
+- Keyed tables are simplified on their unkeyed form and returned unkeyed.
+
+**Examples**
+```q
+// Thin a day of prices down to its shape, to a tolerance of half a tick
+shrink[`table`xcol`ycol`tolerance!(trades; `time; `price; 0.005)]
+
+// Simplify each symbol separately
+shrink[`table`xcol`ycol`tolerance`by!(trades; `time; `price; 0.005; `sym)]
+
+// Use the recursive kernel instead of the default iterative one
+shrink[`table`xcol`ycol`tolerance`method!(trades; `time; `price; 0.005; `recursive)]
+
+// Works on any ordered numeric axis, not just time
+shrink[`table`xcol`ycol`tolerance!(curve; `strike; `vol; 0.001)]
+```
+
+---
+<br>
+
+### ⚙️`rdprecur` / `rdpiter`
+
+**Description**
+
+The two simplification kernels that `shrink` dispatches to, exposed for callers working with plain
+vectors rather than a table. Both take the same arguments and return exactly the same answer — they
+differ only in how the work is sequenced.
+
+**Parameters**
+
+Called positionally as `[tolerance; x; y]`:
+- `tolerance`: Non-negative numeric atom (**required**)
+- `x`: x-axis vector — numeric or temporal, non-decreasing (**required**)
+- `y`: y-axis vector — numeric, same length as `x` (**required**)
+
+**Behaviour**
+- Returns the **indices** of the retained points, in ascending order — not the points themselves.
+  Indices compose better than values: they can be used to select from any parallel vector, or from
+  the whole table, which is what `shrink` does.
+- A series of fewer than three points is returned whole.
+- Neither kernel checks that `x` is ordered; `shrink` does that before it calls them.
+
+**Examples**
+```q
+// Indices of the points worth keeping
+keep: rdpiter[0.005; trades`time; trades`price]
+
+// Use them to select from the source table
+trades keep
+
+// The two kernels agree, by construction
+rdprecur[0.005; x; y] ~ rdpiter[0.005; x; y]    / 1b
+```
+
+---
+<br>
+
+### Choosing a tolerance
+
+The distance being measured is *perpendicular* to the chord, so it mixes the two axes and its
+meaning depends on their relative scale:
+
+- When `x` is a timestamp, its magnitude dwarfs any realistic `y`. The chord is effectively flat in
+  the rescaled space, so the perpendicular distance is the vertical gap between the point and the
+  chord — and `tolerance` reads directly in `y` units (price, volume, basis points).
+- When the axes are comparable — a row number against a price, say — the distance is a genuine
+  perpendicular one and `tolerance` is a distance in that plane.
+
+A tolerance of `0` removes only points that are exactly redundant (collinear runs, repeated values).
+A tolerance wider than the whole series collapses it to its two endpoints. In between, start from a
+small fraction of the `y` range — a tick, a basis point — and adjust against the reduction achieved.
+
+### Recursive or iterative?
+
+| | `rdprecur` | `rdpiter` |
+|---|---|---|
+| Work queue | q's call stack | an explicit list of pending segments, walked with converge (`/`) |
+| Depth risk | recursion depth is driven by the data; the paper reports stack exhaustion on volatile series at a low tolerance | none |
+| Speed | marginally faster | within a few percent |
+
+On a 20,000-point random walk at `tolerance` 0.05 (18% of points discarded), the two kernels ran in
+roughly 106 ms and 112 ms respectively. The paper's own iterative implementation walks its queue one
+segment per pass, which costs it about 3x against recursion; splitting *every* pending segment in a
+single pass instead reduces the number of passes from one per retained point to the depth of the
+split tree, which is what closes the gap here.
+
+Because the difference is small and the failure mode of deep recursion is a hard `'stack` error,
+`shrink` defaults to `` `iterative``. Reach for `` `recursive`` when the series is known to be
+well behaved and the last few percent matter.
+
+---
+<br>
 
 ## Error Handling
 
@@ -210,4 +344,29 @@ The functions implement comprehensive validation with descriptive error messages
 'Input parameter must be a dictionary with at least three keys (an optional key round):-start-end-interval
 'some columns provided do not exist in the table
 'interval start and end data type mismatch
+'tolerance must be a non-negative number
+'xcol must be non-decreasing within each series - sort the table on xcol first
+'xcol and ycol must not contain nulls - remove them before shrinking
 ```
+
+---
+
+## References
+
+The time-series simplification functions (`shrink`, `rdprecur`, `rdpiter`) implement the
+Ramer-Douglas-Peucker approach set out in:
+
+> Sean Keevey and Kevin Smyth, *Dynamically shrinking big data using timeseries database kdb+*,
+> KX whitepaper — <https://code.kx.com/q/wp/ts-shrink/>
+
+The paper supplies the algorithm, the perpendicular-distance formulation and the recursive /
+iterative split. This implementation differs from the listings in it in three respects, all noted
+in the code:
+
+- the kernels return **indices** rather than `(x;y)` pairs, so every column of the source table can
+  be carried through;
+- the x axis is **rebased on its first value** before the distance arithmetic, which keeps full
+  resolution for nanosecond timestamps;
+- the endpoints of each segment have their distance **pinned to zero** rather than left to
+  floating-point noise. Without this a segment can pick one of its own endpoints as the breakpoint
+  and fail to shrink, which recurses forever at a tolerance of `0`.

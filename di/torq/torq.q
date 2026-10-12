@@ -4,7 +4,7 @@
 / same init[config;deps] calling convention.
 
 / built-in process type registry: proctype -> di.* module name
-builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.housekeeping`di.torq.proc.discovery
+builtin:`hdb`tickerplant`rdb`wdb`sort`gateway`idb`segmentedtp`chainedtp`housekeeping`sortworker`discovery!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.housekeeping`di.torq.proc.wdb`di.torq.proc.discovery
 
 reqenv:{[e]
   v:getenv e;
@@ -147,7 +147,8 @@ startcustom:{[proctype;config;deps]
 / plain `system "l"` lets each file's definitions land at the namespace ITS OWN \d directives
 / choose - a bare app query file like code/rdb/examplequeries.q (no \d) lands at ROOT, callable as
 / countbysym[...]. This is the same load mechanism startcustom already uses for code/processes/.
-/ (parentproctype - torq.q's 4th tier, for wdb/sort sharing - is omitted: no sort-worker tier yet.)
+/ (parentproctype - torq.q's 4th tier, which existed so a sort process could load the wdb's code -
+/ is omitted: proctypes sort and sortworker map to di.torq.proc.wdb itself. See wdb.md.)
 optflag:{[config;k;dflt] $[k in key config;`boolean$config k;dflt]}
 
 / load every q/k file in one dir at root: an optional order.txt lists files to load first, then

@@ -40,7 +40,11 @@ mailfooter:("</body>";"</html>");
 // a header value holding CR or LF would start a new header line, letting a crafted
 // address or subject inject headers of its own, so refuse one rather than sanitise it
 headersafe:{[nm;x]
-  if[any x in "\r\n";'"di.email: ",(string nm)," contains a newline, which would inject a header: ",x];
+  // the offending value is echoed with its newlines made visible; pasting it in raw
+  // would let the same payload write its own line into the log
+  if[any x in "\r\n";
+    '"di.email: ",(string nm)," contains a newline, which would inject a header: ",
+      ssr[ssr[x;"\r";"\\r"];"\n";"\\n"]];
   x
   };
 

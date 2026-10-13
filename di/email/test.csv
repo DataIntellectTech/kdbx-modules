@@ -403,3 +403,10 @@ run,0,0,q,delete from `emaillogs,1,1,clear the log
 true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,refuse once more to inspect the log
 true,0,0,q,"0<count select from emaillogs where lvl=`error,msg like ""*inject*""",1,1,the refusal says why
 true,0,0,q,"1b~email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""boss@x.com"";""normal subject"";enlist""body text"")",1,1,an ordinary send is unaffected
+
+/ Test 55: the refusal message must not carry the payload newline into the log
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a refused send
+true,0,0,q,"not any (raze exec msg from emaillogs where lvl=`error) in ""\r\n""",1,1,no real newline reaches the log
+true,0,0,q,"0<count select from emaillogs where lvl=`error,msg like ""*\\nBcc: evil@x.com*""",1,1,"the payload is still shown, escaped"
+true,0,0,q,1=count select from emaillogs where lvl=`error,1,1,"one log line, not two"

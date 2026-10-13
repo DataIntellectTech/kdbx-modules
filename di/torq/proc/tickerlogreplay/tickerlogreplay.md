@@ -15,8 +15,6 @@ at the end, or partition to a temporary directory and merge on disk.
 | Name | What |
 |---|---|
 | `init[config;deps]` | applies the settings, checks them, loads the schema, and replays if `autoreplay` |
-| `initandrun[]` | replays every log, sorts or merges, runs `postreplay`, and exits if `exitwhencomplete` |
-| `replaylog[logfile]` | replays one log and saves its tables |
 | `.replay.upd[t;x]` | inserts a replayed message; set it before `use` to change how messages are applied |
 | `.save.savedownmanipulation` / `.save.postreplay[d;p]` | table!function applied before saving / called after each log is saved; set `.replay.savedownmanipulation` / `.replay.postreplay` before `use` |
 

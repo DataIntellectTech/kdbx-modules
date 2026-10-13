@@ -8,21 +8,22 @@ at the end, or partition to a temporary directory and merge on disk.
 ## Files
 
 `init.q` loads `tickerlogreplay.q`: the module `init`, then the `.save` hooks (`savedownmanipulation`,
-`manipulate`, `postreplay`), each defined if absent, and `.replay`. `sort.csv` is the default sort config.
+`manipulate`, `postreplay`), each defined if absent, and the `.replay.upd` hook. `sort.csv` is the default sort config.
 
 ## Surface
 
 | Name | What |
 |---|---|
 | `init[config;deps]` | applies the settings, checks them, loads the schema, and replays if `autoreplay` |
-| `.replay.initandrun[]` | replays every log, sorts or merges, runs `postreplay`, and exits if `exitwhencomplete` |
-| `.replay.replaylog[logfile]` | replays one log and saves its tables |
+| `initandrun[]` | replays every log, sorts or merges, runs `postreplay`, and exits if `exitwhencomplete` |
+| `replaylog[logfile]` | replays one log and saves its tables |
 | `.replay.upd[t;x]` | inserts a replayed message; set it before `use` to change how messages are applied |
 | `.save.savedownmanipulation` / `.save.postreplay[d;p]` | table!function applied before saving / called after each log is saved; set `.replay.savedownmanipulation` / `.replay.postreplay` before `use` |
 
 ## Settings
 
-Flat `replay_<key>` settings, set onto `.replay.<key>`:
+Every setting is required in `config` and kept module-private; `di/torq/settings/tickerlogreplay.q` declares
+them all with these defaults:
 
 | Key | Default |
 |---|---|
@@ -46,18 +47,16 @@ Flat `replay_<key>` settings, set onto `.replay.<key>`:
 | `exitwhencomplete` / `autoreplay` / `gc` | `1b` / `1b` / `1b` |
 
 The symbol settings (`schemafile`, `hdbdir`, `tplogdir`, `tplogfile`, `tablelist`, `partitiontype`, `sortcsv`,
-`tempdir`, `mergemethod`) also take strings, so they can live in a `.toml` file as quoted keys (`"replay_hdbdir" = "hdb"`).
-`di/torq/settings/tickerlogreplay.q` declares every default except `compression` and `mergenumtab`, so any of them
-can be given on the command line as `-replay_<key>`; an app sets only the keys it overrides.
+`tempdir`, `mergemethod`) also take strings, so they can live in a `.toml` file (`hdbdir = "hdb"`). Any
+basic-typed setting can be given on the command line as `-<key>`; an app sets only the keys it overrides.
 
-`merge_mergebybytelimit` and `merge_partlimit` are passed to di.merge's `init`; `di/torq/settings/tickerlogreplay.q`
-declares its defaults. The `p#` column(s) for each table come from di.merge's `getextrapartitiontype` on the sort config.
+`mergebybytelimit` (`0b`) and `partlimit` (`1000`), also required, are passed to di.merge's `init`. The `p#` column(s) for each table come from di.merge's `getextrapartitiontype` on the sort config.
 
 ## init[config;deps]
 
 Requires `log`. It:
 
-1. initialises di.dbwrite and di.merge, and applies the settings;
+1. signals if any setting is missing, initialises di.dbwrite and di.merge, and applies the settings;
 2. exits on a bad setting:
    - code 1 for a null `schemafile`/`hdbdir`/log, an unknown `partitiontype`, `basicmode` with
      `messagechunks`, a message range in segmented mode, or `partandmerge` into `hdbdir`;

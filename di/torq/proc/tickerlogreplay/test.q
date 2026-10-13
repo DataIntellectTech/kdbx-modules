@@ -16,9 +16,9 @@ replayp:{[pre;cfg] runq(
   "@[r.init[;enlist[`log]!enlist lg];",cfg,";{-1 \"ERR \",x;exit 3}]";
   "exit 0"))}
 replay:replayp[()]
-/ replay settings for the plain log, with overrides
+/ replay settings for the plain log, with overrides; sect puts them over the shipped settings
 plain:{[x] "(`schemafile`hdbdir`tplogfile`segmentedmode!(`$\"",FIXDIR,"/schema.q\";`$\":",FIXDIR,"/hdb\";`$\":",FIXDIR,"/tplog",D,"\";0b)),",x}
-sect:{[x] "{(`$\"replay_\",/:string key x)!value x}",x}
+sect:{[x] "((use`di.torq.config)[`parsefile] \"di/torq/settings/tickerlogreplay.q\"),",x}
 ran:{[x] read0 fp"run.log"}
 logged:{[s] any ran[] like s}
 / was a log named in the list of logs to replay

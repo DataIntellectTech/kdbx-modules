@@ -4,10 +4,6 @@ before,0,0,q,"system ""l di/torq/proc/tickerlogreplay/test.q""",1,,load fixture 
 before,0,0,q,setupfixture[],1,,write the schema and a plain log; run a segmentedtp to write segmented logs
 
 comment,,,,,,,settings
-true,0,0,q,"(0;1b;1b;0W;0W;enlist`all;`date;1b;1b;0b;1b;0b;1b;1b;`;0b;`part)~.replay`firstmessage`segmentedmode`autoreplay`lastmessage`messagechunks`tablelist`partitiontype`emptytables`sortafterreplay`basicmode`exitwhencomplete`checklogfiles`gc`clean`sortcsv`partandmerge`mergemethod",1,,replay defaults
-true,0,0,q,`:tempmergedir~.replay.tempdir,1,,tempdir default
-true,0,0,q,"{all {[c;k] c[k]~get ` sv `,`$""_"" vs string k}[x] each k where (k:key x) like ""replay_*""}(use`di.torq.config)[`parsefile][""di/torq/settings/tickerlogreplay.q""]",1,,the shipped replay keys declare the module's own defaults (so each is overridable from the command line)
-true,0,0,q,"{m:use`di.merge; m[`init] enlist[`log]!enlist `info`error!2#{[c;msg]}; (m[`getmergebybytelimit][];m[`getpartlimit][])~x`merge_mergebybytelimit`merge_partlimit}(use`di.torq.config)[`parsefile][""di/torq/settings/tickerlogreplay.q""]",1,,the shipped merge keys declare di.merge's own defaults
 true,0,0,q,all `savedownmanipulation`manipulate`postreplay in key .save,1,,save helpers defined
 fail,0,0,q,"tlr.init[()!();()!()]",1,,init without log must error
 
@@ -59,8 +55,10 @@ true,0,0,q,"0=replayp[enlist""`.replay.upd set {[t;x] if[t~`trade;insert[t;x]]}"
 true,0,0,q,(3;0)~(rows[D;`trade];rows[D;`quote]),1,,the upd override decided what was inserted
 
 comment,,,,,,,checks at init
+true,0,0,q,"3=replay ""()!()""",1,,init without the settings exits 3
+true,0,0,q,"logged ""*missing settings: firstmessage*""",1,,and names them
 true,0,0,q,"1=replay sect plain ""enlist[`schemafile]!enlist`""",1,,a null schemafile exits 1
-true,0,0,q,"logged ""*Variable .replay.schemafile is null but must be set*""",1,,and says which
+true,0,0,q,"logged ""*Variable schemafile is null but must be set*""",1,,and says which
 true,0,0,q,"1=replay sect plain ""enlist[`partitiontype]!enlist`int""",1,,an unknown partitiontype exits 1
 true,0,0,q,"2=replay sect plain ""enlist[`messagechunks]!enlist 0""",1,,zero messagechunks exits 2
 true,0,0,q,"1=replay sect plain ""`basicmode`messagechunks!(1b;2)""",1,,basic mode with chunks exits 1
@@ -81,7 +79,7 @@ true,0,0,q,"0=replay sect plain ""`partandmerge`tempdir`mergemethod!(1b;"",hp[""
 true,0,0,q,(3;1;`p)~(rows[D;`trade];rows[D;`quote];attr hdb[D;`trade]`sym),1,,merged with p# on sym
 true,0,0,q,"0=count key fp""tmp""",1,,the temp partition was removed
 run,0,0,q,clearhdb[],1,,
-true,0,0,q,"0=replay ""("",(sect plain ""`partandmerge`tempdir`mergemethod!(1b;"",hp[""tmp""],"";`part)""),""),`merge_mergebybytelimit`merge_partlimit!(0b;1000)""",1,,merge with the merge keys set
+true,0,0,q,"0=replay ""("",(sect plain ""`partandmerge`tempdir`mergemethod!(1b;"",hp[""tmp""],"";`part)""),""),`mergebybytelimit`partlimit!(0b;1000)""",1,,merge with the merge keys set
 true,0,0,q,(3;1;`p)~(rows[D;`trade];rows[D;`quote];attr hdb[D;`trade]`sym),1,,merged with p# on sym
 
 comment,,,,,,,segmented logs

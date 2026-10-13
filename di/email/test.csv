@@ -389,3 +389,17 @@ true,0,0,q,"any (.m.di.0email.template0[""f"";""t"";""boss@x.com"";""s"";enlist"
 true,0,0,q,"not any (.m.di.0email.template0[""f"";""t"";"""";""s"";enlist""body""]) like ""Cc:*""",1,1,no Cc header when nothing is copied
 true,0,0,q,"any (.m.di.0email.mailtemplate[""f"";""t"";""boss@x.com"";""s"";enlist""body"";""""]) like ""Cc: boss@x.com""",1,1,a multipart message carries it too
 true,0,0,q,"0=count select from emaillogs where lvl=`warn,msg like ""*cc*""",1,1,"cc is supported, so it is not warned about"
+
+/ Test 54: a newline in any header value would inject a header, so the send is refused
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist reclog]",1,1,init with the capturing logger
+run,0,0,q,.m.di.0email.send:mockcc,1,1,capture whether the transport is reached
+run,0,0,q,"lastcc:""not reached""",1,1,a marker the transport would overwrite
+true,0,0,q,"0b~email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""b@x.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a newline in cc is refused
+true,0,0,q,"""not reached""~lastcc",1,1,the transport was never called
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a newline in to is refused
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com"";""s\nBcc: evil@x.com"";enlist""body text"")",1,1,a newline in subject is refused
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\rBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a bare carriage return is refused too
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,refuse once more to inspect the log
+true,0,0,q,"0<count select from emaillogs where lvl=`error,msg like ""*inject*""",1,1,the refusal says why
+true,0,0,q,"1b~email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""boss@x.com"";""normal subject"";enlist""body text"")",1,1,an ordinary send is unaffected

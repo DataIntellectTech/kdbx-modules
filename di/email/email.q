@@ -37,6 +37,13 @@ mailheader:{[]
 
 mailfooter:("</body>";"</html>");
 
+// a header value holding CR or LF would start a new header line, letting a crafted
+// address or subject inject headers of its own, so refuse one rather than sanitise it
+headersafe:{[nm;x]
+  if[any x in "\r\n";'"di.email: ",(string nm)," contains a newline, which would inject a header: ",x];
+  x
+  };
+
 // the Cc header, omitted entirely when nothing is copied
 ccheader:{[cc] $[count cc;enlist["Cc: ",cc];()]};
 
@@ -365,6 +372,12 @@ senddefault:{[msgdict]
   ];
   to:","sv string$[-11h=type msgdict`to;enlist msgdict`to;msgdict`to];
   cc:$[`cc in key msgdict;","sv string$[-11h=type msgdict`cc;enlist msgdict`cc;msgdict`cc];""];
+  // every value that reaches a header has to be checked, not just the recipients
+  hdrs:.[{headersafe'[`to`cc`subject;(x;y;z)];1b};(to;cc;msgdict`subject);
+    {[e].z.m.logerr[`email;"send refused: ",e];0b}];
+  if[not hdrs;
+    if[historyenabled;.z.m.loghistory[msgdict`to;msgdict`subject;`failed;-1]];
+    :0b];
   lines:raze bodylines each msgdict[`body],enlist "email generated at ",(string .z.p);
   // a line already starting with "<" is taken as pre-built html, everything else is escaped
   htmlbody:{$[count x;$["<"=first x;x;addtext htmlescape x];""]} each lines;

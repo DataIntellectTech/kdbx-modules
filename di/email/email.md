@@ -124,6 +124,10 @@ Sends an HTML email. `msgdict` keys:
 
 Returns `1b` on success, `0b` on send failure, `-1` if disabled. Every attempt is appended to `history` unless `historyenabled` is `0b`.
 
+`to`, `cc` and `subject` reach the message headers, so a value containing CR or LF would start
+a header line of its own and let a crafted address inject, say, a `Bcc:`. Such a send is refused
+before the transport is reached: `senddefault` logs an error naming the field and returns `0b`.
+
 ### `senddata`
 Parameters: `[msgdict]`
 

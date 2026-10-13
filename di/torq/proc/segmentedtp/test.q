@@ -13,11 +13,11 @@ PORTS:`a`b`c`s`p!5#0N
 
 / a: defaultbatch, tabperiod; b: immediate, singular; c: memorybatch, tabular; s: chained, create; p: chained, parent, TOML-style strings
 CFGS:`a`b`c`s`p!(
-  "`procname`schemafile`stplg.kdbtplog!(`stp1;FIXDIR,\"/schema.q\";`$FIXDIR,\"/a\")";
-  "`procname`schemafile`stplg.kdbtplog`stplg.batchmode`stplg.multilog!(`stp2;FIXDIR,\"/schema.q\";`$FIXDIR,\"/b\";`immediate;`singular)";
-  "`procname`schemafile`stplg.kdbtplog`stplg.batchmode`stplg.multilog!(`stp3;FIXDIR,\"/schema.q\";`$FIXDIR,\"/c\";`memorybatch;`tabular)";
-  "`procname`createlogs`autoreconnect`stplg.kdbtplog`sctp.chainedtp`sctp.loggingmode!(`sctp1;0b;0b;`$FIXDIR,\"/s\";1b;`create)";
-  "`procname`createlogs`autoreconnect`stplg.kdbtplog`sctp.chainedtp`sctp.loggingmode`sctp.tickerplantname`sctp.subscribeto!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\")")
+  "`procname`schemafile`stplg_kdbtplog!(`stp1;FIXDIR,\"/schema.q\";`$FIXDIR,\"/a\")";
+  "`procname`schemafile`stplg_kdbtplog`stplg_batchmode`stplg_multilog!(`stp2;FIXDIR,\"/schema.q\";`$FIXDIR,\"/b\";`immediate;`singular)";
+  "`procname`schemafile`stplg_kdbtplog`stplg_batchmode`stplg_multilog!(`stp3;FIXDIR,\"/schema.q\";`$FIXDIR,\"/c\";`memorybatch;`tabular)";
+  "`procname`createlogs`autoreconnect`stplg_kdbtplog`sctp_chainedtp`sctp_loggingmode!(`sctp1;0b;0b;`$FIXDIR,\"/s\";1b;`create)";
+  "`procname`createlogs`autoreconnect`stplg_kdbtplog`sctp_chainedtp`sctp_loggingmode`sctp_tickerplantname`sctp_subscribeto!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\")")
 
 setupfixture:{[]
   system "rm -rf ",FIXDIR; system "mkdir -p ",FIXDIR;

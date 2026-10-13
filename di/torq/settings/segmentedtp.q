@@ -2,20 +2,20 @@
 clients:(enlist`opencloseonly)!enlist 1b
 zpsignore:(enlist`enabled)!enlist 0b
 / every basic-typed stplg and sctp default as a flat key, so each can be overridden from the command line
-/ (-stplg.<key>, -sctp.<key>); must agree with the module's own defaults. kdbtplog comes from the environment
-stplg.multilog:`tabperiod
-stplg.multilogperiod:0D01
-stplg.errmode:1b
-stplg.batchmode:`defaultbatch
-stplg.replayperiod:`day
-stplg.customcsv:`
-stplg.errorlogname:`segmentederrorlogfile
-sctp.chainedtp:0b
-sctp.loggingmode:`none
-sctp.tickerplantname:`stp1
-sctp.tpconnsleep:10
-sctp.tpcheckcycles:0W
-sctp.subscribeto:`
-sctp.subscribesyms:`
-sctp.replay:0b
-sctp.schema:1b
+/ (-stplg_<key>, -sctp_<key>); must agree with the module's own defaults. kdbtplog comes from the environment
+stplg_multilog:`tabperiod
+stplg_multilogperiod:0D01
+stplg_errmode:1b
+stplg_batchmode:`defaultbatch
+stplg_replayperiod:`day
+stplg_customcsv:`
+stplg_errorlogname:`segmentederrorlogfile
+sctp_chainedtp:0b
+sctp_loggingmode:`none
+sctp_tickerplantname:`stp1
+sctp_tpconnsleep:10
+sctp_tpcheckcycles:0W
+sctp_subscribeto:`
+sctp_subscribesyms:`
+sctp_replay:0b
+sctp_schema:1b

@@ -1,7 +1,7 @@
 # di.torq.proc.segmentedtp
 
 A segmented tickerplant. It stamps and logs incoming updates, per table and per period, and publishes them to
-subscribers, filtered or not, immediately or in batches. With `sctp.chainedtp` on, it runs as a chained segmented
+subscribers, filtered or not, immediately or in batches. With `sctp_chainedtp` on, it runs as a chained segmented
 tickerplant: it subscribes to another one and republishes what it receives.
 
 ## Files
@@ -29,7 +29,7 @@ Subscribers get `(`upd;t;x)`, `(`endofperiod;cur;next;data)` and `(`endofday;dat
 
 ## Settings
 
-Flat `stplg.<key>` settings, set onto `.stplg.<key>`:
+Flat `stplg_<key>` settings, set onto `.stplg.<key>`:
 
 | Key | Default |
 |---|---|
@@ -42,13 +42,13 @@ Flat `stplg.<key>` settings, set onto `.stplg.<key>`:
 | `kdbtplog` | `KDBTPLOG` — the log root; logs go in `<kdbtplog>/<procname>_<date>` |
 | `errorlogname` | `` `segmentederrorlogfile `` |
 
-Flat `sctp.<key>` settings, set onto `.sctp.<key>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
+Flat `sctp_<key>` settings, set onto `.sctp.<key>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
 `parent`), `tickerplantname` (`` `stp1 ``), `tpconnsleep` (`10`), `tpcheckcycles` (`0W`), `subscribeto` and
 `subscribesyms` (`` ` ``), `replay` (`0b`), `schema` (`1b`). `loggingmode`, `tickerplantname`, `subscribeto` and
-`subscribesyms` also take strings, so they can live in a `.toml` file as quoted keys (`"sctp.chainedtp" = true`).
+`subscribesyms` also take strings, so they can live in a `.toml` file as quoted keys (`"sctp_chainedtp" = true`).
 
 `di/torq/settings/segmentedtp.q` declares every `stplg` default except `kdbtplog`, and every `sctp` default, so any of
-them can be given on the command line as `-stplg.<key>` or `-sctp.<key>`; an app sets only the keys it overrides.
+them can be given on the command line as `-stplg_<key>` or `-sctp_<key>`; an app sets only the keys it overrides.
 
 An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`.
 

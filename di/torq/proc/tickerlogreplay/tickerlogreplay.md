@@ -22,7 +22,7 @@ at the end, or partition to a temporary directory and merge on disk.
 
 ## Settings
 
-Flat `replay.<key>` settings, set onto `.replay.<key>`:
+Flat `replay_<key>` settings, set onto `.replay.<key>`:
 
 | Key | Default |
 |---|---|
@@ -46,11 +46,11 @@ Flat `replay.<key>` settings, set onto `.replay.<key>`:
 | `exitwhencomplete` / `autoreplay` / `gc` | `1b` / `1b` / `1b` |
 
 The symbol settings (`schemafile`, `hdbdir`, `tplogdir`, `tplogfile`, `tablelist`, `partitiontype`, `sortcsv`,
-`tempdir`, `mergemethod`) also take strings, so they can live in a `.toml` file as quoted keys (`"replay.hdbdir" = "hdb"`).
+`tempdir`, `mergemethod`) also take strings, so they can live in a `.toml` file as quoted keys (`"replay_hdbdir" = "hdb"`).
 `di/torq/settings/tickerlogreplay.q` declares every default except `compression` and `mergenumtab`, so any of them
-can be given on the command line as `-replay.<key>`; an app sets only the keys it overrides.
+can be given on the command line as `-replay_<key>`; an app sets only the keys it overrides.
 
-`merge.mergebybytelimit` and `merge.partlimit` are passed to di.merge's `init`; `di/torq/settings/tickerlogreplay.q`
+`merge_mergebybytelimit` and `merge_partlimit` are passed to di.merge's `init`; `di/torq/settings/tickerlogreplay.q`
 declares its defaults. The `p#` column(s) for each table come from di.merge's `getextrapartitiontype` on the sort config.
 
 ## init[config;deps]

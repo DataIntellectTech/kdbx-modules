@@ -85,7 +85,7 @@ Passed as the first dictionary to `init`. All keys are optional.
 | `smtpuser` | string or symbol | `""` | SMTP username |
 | `smtppassword` | string | `""` | SMTP password. Written to a temporary `0600` file read by `curl --config`, so it never appears in the command line or in `ps` output |
 | `smtpssl` | boolean | `1b` | Require TLS (`--ssl-reqd`). Set `0b` to disable |
-| `img` | hsym or string | `` ` `` (none) | Image embedded inline at the foot of **every** message |
+| `img` | hsym or string | `` ` `` (none) | Image embedded inline at the foot of **every** message. TorQ defaulted to its own logo; here there is no image unless you set one |
 
 ## Dependencies
 
@@ -163,6 +163,8 @@ a dictionary, so a key this module does not know is ignored silently.
 | `debug` | dropped — it set the C library's verbosity |
 | `img` | `img` — same meaning, see [Embedded image](#embedded-image) |
 | `` `attachment `` in `msgdict` | `` `attachments `` (**plural**) |
+| `` `cc `` in `msgdict` | **not supported** — `senddefault` warns and sends to `to` only |
+| `` `bodyType `` in `msgdict` | not supported — the body is always html, see below |
 
 **The `attachment` key is the one that bites.** TorQ's reporter called
 `` senddefault[`to`subject`body`attachment!(...)] ``. Passing the singular key here attaches
@@ -170,9 +172,22 @@ nothing, and the send still reports success — so `senddefault` logs a warning 
 
 **Behaviour changes:**
 
+- **TLS is on by default.** TorQ's `usessl` defaulted to `0b`; `smtpssl` defaults to `1b`. A
+  deployment that relied on the old default and talks to a plain-SMTP relay must now set
+  `smtpssl` to `0b` explicitly, or the send will fail.
+- **Bodies are html, and plain lines are escaped.** TorQ sent `text` by default and html only
+  when asked (`bodyType`). Here every line is html: a line beginning with `<` is passed through
+  untouched, and any other line has `&`, `<` and `>` escaped before being wrapped in `<p>`. A
+  body element that is not a string is rendered rather than rejected — a nested list of strings
+  becomes one line each (which is how TorQ's reporter passes alert text), a symbol becomes its
+  name, and anything else becomes its text form.
 - **Disabled:** TorQ logged and then **threw**. This module logs and returns `-1`.
 - **Return value:** TorQ returned the message size in bytes (`res>0` meant sent). This module
-  returns `1b` / `0b` / `-1`.
+  returns `1b` / `0b` / `-1`, and `history`'s `bytes` column is a status marker (`0j` sent,
+  `-1j` failed or disabled), not the size — the message size is not recorded anywhere.
+- **Unix only.** TorQ ran on 32-bit Windows and disabled email only on 64-bit Windows. This
+  module shells out to `which`, `mktemp`, `base64`, `file` and `sendmail` or `curl`, and writes
+  to `/tmp`, so it needs a Unix-like host. This is narrower than TorQ, not wider.
 - **Footer:** TorQ's `defaultfooter` carried proctype, procname, host and local/GMT. This module
   appends only `"email generated at <timestamp>"`, since it has no `.proc` coupling.
 
@@ -180,8 +195,11 @@ nothing, and the send still reports success — so `senddefault` logs a warning 
 
 - **The `torQemail.so` layer** — `connect`, `disconnect`, `create`, `g`, `getSocket`,
   `connectdefault`, `connected`, `lib`, `libfile`, `libexists`. There is no C library and no
-  persistent connection; each send invokes `sendmail` or `curl`. TorQ disabled email entirely on
-  64-bit Windows for want of that library, which no longer applies.
+  persistent connection; each send invokes `sendmail` or `curl`. That removes the per-platform
+  build, at the cost of Windows support altogether (see above).
+- **`cc`** — TorQ documented an optional `cc` key. There is no Cc header here, so `senddefault`
+  warns when it sees the key rather than quietly not copying anyone. Put the addresses in `to`
+  if they should receive the message.
 - **`sendviaservice` / `servicesend` / `servicecallback`** — delegating a send to another process
   over IPC, via `.servers.gethandlebytype` and `.async.postback`. This module has no `servers`
   dependency; a caller that wants the same shape can post to the mail-capable process itself.

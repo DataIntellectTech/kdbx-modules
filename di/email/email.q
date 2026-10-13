@@ -186,6 +186,19 @@ addstyle:{x," style=\"",(dict2css getstyle[y]),"\""};
 mailwrap:{"<",x,">",y,"</",(first " "vs (),x),">"};
 mailewrap:{enlist["<",x,">"],y,enlist"</",(first " "vs (),x),">"};
 
+// escape the characters that change meaning in html; & first or the others get double escaped
+htmlescape:{[x] ssr[ssr[ssr[x;"&";"&amp;"];"<";"&lt;"];">";"&gt;"]};
+
+// turn one body element into zero or more lines
+// a nested list of strings arrives as a single element from TorQ's reporter, and
+// anything that is not a string has to become text or the message will not write
+bodylines:{[x]
+  $[10h=abs type x;enlist $[10h=type x;x;enlist x];
+    (0h=type x) and (0<count x) and all 10h=type each x;x;
+    -11h=type x;enlist string x;
+    enlist .Q.s1 x]
+  };
+
 addtext:{mailwrap[addstyle["p";`body];x]};
 mailheading:{mailwrap[addstyle["h",x;`body];y]};
 mailbold:{mailwrap[addstyle["b";`body];mailstring x]};
@@ -336,6 +349,8 @@ senddefault:{[msgdict]
   // send an html email via the system sendmail utility
   // msgdict keys: to (symbol or symbol list), subject (string), body (list of strings)
   //               optionally: attachments (hsym or list of hsyms)
+  // body lines are html: a line starting with "<" is passed through, anything else is
+  // escaped and wrapped in <p>. nested lists are flattened, non-strings become text
   // returns 1b on success, 0b on send failure, -1 if disabled
   if[not enabled;
     .z.m.logerr[`email;"email sending is not enabled"];
@@ -343,12 +358,18 @@ senddefault:{[msgdict]
     :-1;
   ];
   to:","sv string$[-11h=type msgdict`to;enlist msgdict`to;msgdict`to];
-  htmlbody:{$[10h=type x;$[count x;$["<"=first x;x;addtext x];""];x]}'[msgdict[`body],enlist "email generated at ",(string .z.p)];
+  lines:raze bodylines each msgdict[`body],enlist "email generated at ",(string .z.p);
+  // a line already starting with "<" is taken as pre-built html, everything else is escaped
+  htmlbody:{$[count x;$["<"=first x;x;addtext htmlescape x];""]} each lines;
   // TorQ's .email.senddefault took a singular `attachment; silently sending nothing and
   // returning success is the worst failure shape available, so say so
   // only when `attachments is absent: with both keys the plural is used and nothing is lost
   if[(`attachment in key msgdict) and not `attachments in key msgdict;
     .z.m.logwarn[`email;"msgdict has an `attachment key - this module uses `attachments (plural), so nothing was attached"]];
+  // TorQ's senddefault documented an optional `cc; silently not copying those
+  // addresses is the same failure shape as the singular `attachment above
+  if[`cc in key msgdict;
+    .z.m.logwarn[`email;"msgdict has a `cc key - this module does not support cc, so those addresses were not copied"]];
   att:$[`attachments in key msgdict;$[-11h=type msgdict`attachments;enlist msgdict`attachments;msgdict`attachments];""];
   res:.[send;(mailfrom;to;msgdict`subject;htmlbody;att);{[e].z.m.logerr[`email;"send failed: ",e];0b}];
   ok:not res~0b;

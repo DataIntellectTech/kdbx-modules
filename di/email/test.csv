@@ -6,6 +6,7 @@ before,0,0,q,mockcapture:{[frm;to;sub;body;att]lastatt::att;lastfiles::read0 eac
 before,0,0,q,emaillogs:([]lvl:`symbol$();msg:()),1,1,table to capture log calls
 before,0,0,q,reclogfn:{[l;c;m] `emaillogs upsert `lvl`msg!(l;m);},1,1,recording log function
 before,0,0,q,reclog:`info`warn`error!(reclogfn[`info;;];reclogfn[`warn;;];reclogfn[`error;;]),1,1,capturing mock logger
+before,0,0,q,mockbody:{[frm;to;sub;body;att]lastbody::body;1b},1,1,capture the rendered body
 
 / Test 0: init with defaults leaves email disabled and config empty
 run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with defaults and injected logger
@@ -355,3 +356,30 @@ run,0,0,q,delete from `emaillogs,1,1,clear the log
 run,0,0,q,"email.init[`mailfrom`enabled`img!(""me@example.com"";1b;""/tmp/definitelynotthere.png"");enlist[`log]!enlist reclog]",1,1,init with a missing image
 true,0,0,q,"0<count select from emaillogs where lvl=`warn,msg like ""*missing or empty*""",1,1,a missing img is warned about
 run,0,0,q,hdel emptyimg,1,1,clean up
+
+/ Test 51: a body element that is not a string is rendered rather than breaking the write
+true,0,0,q,"(""aa"";""bb"")~.m.di.0email.bodylines (""aa"";""bb"")",1,1,a nested list of strings flattens to separate lines
+true,0,0,q,"(enlist ""one line"")~.m.di.0email.bodylines ""one line""",1,1,a string stays one line
+true,0,0,q,"(enlist ""somesym"")~.m.di.0email.bodylines `somesym",1,1,a symbol becomes its text
+true,0,0,q,1=count .m.di.0email.bodylines 42,1,1,a number becomes one text line
+true,0,0,q,1=count .m.di.0email.bodylines ([]a:1 2),1,1,a table becomes one text line
+
+/ Test 52: plain body lines are html escaped, pre-built html is not
+true,0,0,q,"""a &amp; b &lt; c &gt; d""~.m.di.0email.htmlescape ""a & b < c > d""",1,1,the three html characters are escaped
+true,0,0,q,"""&amp;lt;""~.m.di.0email.htmlescape ""&lt;""",1,1,ampersand is escaped first so nothing is double escaped
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist reclog]",1,1,init with the capturing logger
+run,0,0,q,.m.di.0email.send:mockbody,1,1,capture the body instead of sending
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""price < 5 & qty > 3"")",1,1,send a line holding html characters
+true,0,0,q,"any lastbody like ""*price &lt; 5 &amp; qty &gt; 3*""",1,1,the plain line was escaped
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""<b>pre-built</b>"")",1,1,send a line that is already html
+true,0,0,q,"any lastbody like ""<b>pre-built</b>""",1,1,a line starting with < is passed through untouched
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist (""first"";""second""))",1,1,send the reporter's nested-list body
+true,0,0,q,"3=count lastbody where lastbody like ""*<p *""",1,1,two paragraphs from the nested list plus the timestamp footer
+
+/ Test 53: TorQ's cc key is reported rather than dropped in silence
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,"email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""boss@b.com"";""subj"";enlist""body text"")",1,1,send with a cc key
+true,0,0,q,"0<count select from emaillogs where lvl=`warn,msg like ""*cc*""",1,1,the cc key is warned about
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""body text"")",1,1,send without a cc key
+true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,no warning when cc is absent

@@ -7,9 +7,8 @@ at the end, or partition to a temporary directory and merge on disk.
 
 ## Files
 
-`init.q` loads `tickerlogreplay.q`: the module `init`, then the `.os` directory helpers and the `.save` hooks
-(`savedownmanipulation`, `manipulate`, `postreplay`), each defined if absent, `.merge.getextrapartitiontype`, and
-`.replay`. `sort.csv` is the default sort config.
+`init.q` loads `tickerlogreplay.q`: the module `init`, then the `.save` hooks (`savedownmanipulation`,
+`manipulate`, `postreplay`), each defined if absent, and `.replay`. `sort.csv` is the default sort config.
 
 ## Surface
 
@@ -20,7 +19,6 @@ at the end, or partition to a temporary directory and merge on disk.
 | `.replay.replaylog[logfile]` | replays one log and saves its tables |
 | `.replay.upd[t;x]` | inserts a replayed message; set it before `use` to change how messages are applied |
 | `.save.savedownmanipulation` / `.save.postreplay[d;p]` | table!function applied before saving / called after each log is saved; set `.replay.savedownmanipulation` / `.replay.postreplay` before `use` |
-| `.merge.getextrapartitiontype[t]` | the `p#` column(s) for a table from the sort config |
 
 ## Settings
 
@@ -52,7 +50,8 @@ The symbol settings (`schemafile`, `hdbdir`, `tplogdir`, `tplogfile`, `tablelist
 declares every default, so any key can be given on the command line as `-.replay.<key>`, as in TorQ; an app
 `replay` section replaces it, so list there every key to override.
 
-A `merge` section (`mergebybytelimit`, `partlimit`) is set onto `.merge.<name>` and passed to di.merge's `init`.
+A `merge` section (`mergebybytelimit`, `partlimit`) is passed to di.merge's `init`; `di/torq/settings/tickerlogreplay.q`
+declares its defaults. The `p#` column(s) for each table come from di.merge's `getextrapartitiontype` on the sort config.
 
 ## init[config;deps]
 

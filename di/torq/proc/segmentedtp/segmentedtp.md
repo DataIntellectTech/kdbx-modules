@@ -7,7 +7,7 @@ tickerplant: it subscribes to another one and republishes what it receives.
 ## Files
 
 `init.q` loads, in order: `stpps.q` (`.stpps.upd`/`.stpps.zts`), `sctp.q` (`.sctp`, the chained mode), `stplog.q`
-(`.stplg`, logging and batching, and the `.os` directory helpers if absent), `stpmeta.q` (`.stpm`, log metadata) and `segmentedtp.q` (the process and `init`).
+(`.stplg`, logging and batching), `stpmeta.q` (`.stpm`, log metadata) and `segmentedtp.q` (the process and `init`).
 
 ## Surface
 
@@ -46,6 +46,10 @@ A `sctp` section, set onto `.sctp.<name>`: `chainedtp` (`0b`), `loggingmode` (``
 `parent`), `tickerplantname` (`` `stp1 ``), `tpconnsleep` (`10`), `tpcheckcycles` (`0W`), `subscribeto` and
 `subscribesyms` (`` ` ``), `replay` (`0b`), `schema` (`1b`). `loggingmode`, `tickerplantname`, `subscribeto` and
 `subscribesyms` also take strings, so the section can live in a `.toml` file.
+
+`di/torq/settings/segmentedtp.q` declares every `stplg` default except `kdbtplog`, and every `sctp` default, so any of
+them can be given on the command line as `-.stplg.<key>` or `-.sctp.<key>`; an app section replaces it, so list there
+every key to override.
 
 An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`.
 

@@ -10,6 +10,8 @@ fail,0,0,q,"seg.init[()!();enlist[`log]!enlist nolog]",1,,init without timer mus
 fail,0,0,q,"seg.init[()!();`log`timer!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]})]",1,,init without handlers must error
 true,0,0,q,"(`tabperiod;0D01;1b;`defaultbatch;`day;`)~.stplg`multilog`multilogperiod`errmode`batchmode`replayperiod`customcsv",1,,stplg defaults
 true,0,0,q,"(0b;`none;`stp1;10;0W;`;`;0b;1b)~.sctp`chainedtp`loggingmode`tickerplantname`tpconnsleep`tpcheckcycles`subscribeto`subscribesyms`replay`schema",1,,sctp defaults
+true,0,0,q,"{x~(key x)#.stplg}((use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]`stplg)",1,,the shipped stplg section declares the module's own defaults (so each is overridable from the command line)
+true,0,0,q,"{x~(key x)#.sctp}((use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]`sctp)",1,,the shipped sctp section declares the module's own defaults
 true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperiod""",1,,a stplg section overrides the defaults; singular rolls daily
 true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
 true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered

@@ -1,34 +1,32 @@
 / log file metadata: logs opened, tables feeding each, message counts
 
-\d .stpm
-
-metatable:([]seq:`int$();logname:`$();start:`timestamp$();end:`timestamp$();tbls:();msgcount:`int$();schema:();additional:())
+.stpm.metatable:([]seq:`int$();logname:`$();start:`timestamp$();end:`timestamp$();tbls:();msgcount:`int$();schema:();additional:())
 
 / meta update per logging mode, run on log open and close
-updmeta:enlist[`]!enlist ()
+.stpm.updmeta:enlist[`]!enlist ()
 
-updmeta[`tabperiod]:{[x;t;p]
-  getmeta[x;p;;]'[enlist each t;`..currlog[([]tbl:t)]`logname];
-  setmeta[.stplg.dldir;metatable];
+.stpm.updmeta[`tabperiod]:{[x;t;p]
+  .stpm.getmeta[x;p;;]'[enlist each t;`..currlog[([]tbl:t)]`logname];
+  .stpm.setmeta[.stplg.dldir;.stpm.metatable];
  };
 
-updmeta[`singular]:{[x;t;p]
-  getmeta[x;p;t;`..currlog[first t]`logname];
-  setmeta[.stplg.dldir;metatable];
+.stpm.updmeta[`singular]:{[x;t;p]
+  .stpm.getmeta[x;p;t;`..currlog[first t]`logname];
+  .stpm.setmeta[.stplg.dldir;.stpm.metatable];
  };
 
-updmeta[`periodic]:updmeta[`singular]
+.stpm.updmeta[`periodic]:.stpm.updmeta[`singular]
 
-updmeta[`tabular]:updmeta[`tabperiod]
+.stpm.updmeta[`tabular]:.stpm.updmeta[`tabperiod]
 
-updmeta[`custom]:{[x;t;p]
+.stpm.updmeta[`custom]:{[x;t;p]
   pertabs:where `periodic=.stplg.custommode;
-  updmeta[`periodic][x;t inter pertabs;p];
-  updmeta[`tabular][x;t except pertabs;p]
+  .stpm.updmeta[`periodic][x;t inter pertabs;p];
+  .stpm.updmeta[`tabular][x;t except pertabs;p]
  };
 
 / name, start, tables and schema on open; end and message count on close
-getmeta:{[x;p;t;ln]
+.stpm.getmeta:{[x;p;t;ln]
   if[x~`open;
     s:((),t)!(),.stpps.schemas[t];
     `.stpm.metatable upsert (.stplg.i;ln;p;0Np;t;0;s;enlist ()!());
@@ -38,7 +36,7 @@ getmeta:{[x;p;t;ln]
   ]
  };
 
-setmeta:{[dir;mt]
+.stpm.setmeta:{[dir;mt]
   t:(hsym`$string[dir],"/stpmeta");
   .[{x set y};(t;mt);{.z.m.log[`error][`setmeta;"Failed to set metatable with error: ",x]}];
  };

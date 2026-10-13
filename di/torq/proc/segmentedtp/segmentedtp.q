@@ -50,23 +50,21 @@ init:{[config;deps]
   .stplg.init[string .z.m.procname];
   }
 
-\d .
-
 / allow tickerplant to create a log file
-createlogs:@[value;`createlogs;1b];
+@[`.;`createlogs;:;@[value;`createlogs;1b]];
 
 / subscribers use this to determine what type of process they are talking to
-tptype:`segmented
+@[`.;`tptype;:;`segmented];
 
-tablelist:{.stpps.t}
+@[`.;`tablelist;:;{.stpps.t}];
 
 / subscribers who want to replay need this info
-subdetails:{[tabs;instruments]
+@[`.;`subdetails;:;{[tabs;instruments]
  `schemalist`logfilelist`rowcounts`date`logdir!(.ps.subscribe\:[tabs;instruments];.stplg.replaylog[tabs];tabs#.stplg `rowcount;.z.m.eod.getd[];.stplg.kdbtplog)
- }
+ }];
 
 / table and schema information and default table upd functions
-generateschemas:{
+@[`.;`generateschemas;:;{
   .stpps.init[tables[] except `currlog`heartbeat`logmsg`svrstoload];
   .stpps.attrstrip[.stpps.t];
   / table upd functions attach the current timestamp; chained they do nothing
@@ -74,16 +72,16 @@ generateschemas:{
     .stplg.updtab:(.stpps.t!(count .stpps.t)#{[x;y] x}),.stplg.updtab;
     .stplg.updtab:(.stpps.t!(count .stpps.t)#{(enlist(count first x)#y),x}),.stplg.updtab
     ]
-  }
+  }];
 
 / load in schema file and kill proc if not present
-loadschemas:{
+@[`.;`loadschemas;:;{
   if[not `schemafile in key .z.m.params;.z.m.log[`error][`loadschema;"Schema file required!"];exit 1];
   @[{system"l ",x};raze .z.m.params[`schemafile];{.z.m.log[`error][`loadschema;"Failed to load schema file!"];exit 1}];
- };
+ }];
 
 / upd and zts behaviour from the batch mode
-setup:{[batch]
+@[`.;`setup;:;{[batch]
   if[not all batch in/: key'[.stplg`upd`zts];'"mode ",(string batch)," must be defined in both .stplg.upd and .stplg.zts"];
   chainmode:$[.sctp.chainedtp;`chained;`def];
   .stplg.updmsg:.stplg.upd[batch];
@@ -96,4 +94,4 @@ setup:{[batch]
     .u.upd:{[t;x] .[.stp.upd;(t;x);{.stplg.badmsg[x;y;z]}[;t;x]]}
    ];
   if[not system "t";.z.m.log[`info][`timer;"defaulting timer to 1000ms"];system"t 1000"];
- };
+ }];

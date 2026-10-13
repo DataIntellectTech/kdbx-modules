@@ -279,7 +279,7 @@ init:{[proctype;procname;overrides]
   logdep:buildlogdep[overrides];
   cc:use`di.torq.config;
   (cc`init)[enlist[`log]!enlist logdep];
-  / segmentedchainedtp shares segmentedtp's settings tier; dispatch keeps the real proctype
+  / segmentedchainedtp uses segmentedtp's settings
   settingsproctype:$[proctype=`segmentedchainedtp;`segmentedtp;proctype];
   config:(cc`cascade)[r 0;r 1;settingsproctype;procname];
   / command-line override layer - the TOP cascade tier. A launch flag matching a settings name

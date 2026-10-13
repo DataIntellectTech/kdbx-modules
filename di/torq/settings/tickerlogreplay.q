@@ -1,6 +1,5 @@
 / tickerlogreplay settings
-/ every setting and its default; init requires them all. Basic-typed ones can be overridden from the
-/ command line (-<key>)
+/ all required by init; override basic-typed ones as -<key>
 firstmessage:0
 lastmessage:0W
 messagechunks:0W
@@ -27,6 +26,6 @@ mergenumbytes:500000000
 mergemethod:`part
 compression:()
 mergenumtab:`quote`trade!10000 50000
-/ di.merge's mergebybytelimit and partlimit, passed to its init
+/ passed to di.merge's init
 mergebybytelimit:0b
 partlimit:1000

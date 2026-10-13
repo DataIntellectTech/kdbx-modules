@@ -5,9 +5,7 @@
 / per partition by a row-count / byte-size limit
 / merging keeps memory flat - segments are read and upserted a batch at a time rather
 / than held in memory and written once at end-of-day
-/ the parted (`p#) column(s) for a table are supplied by the caller as extrapartitiontype, or
-/ looked up by getextrapartitiontype in a sort config the caller passes in; the module never
-/ reads sort config itself, so it stays independent of di.sort
+/ p# columns come from the caller, or from a sort config it passes in; never read here
 / config and the injected log dependency are passed to init in a single dictionary: config
 / keys (see merge.md) are optional with defaults; log is required and init errors
 / immediately if it is missing or does not provide info/error - see merge.md
@@ -265,8 +263,7 @@ getfirstcharpartitions:{[tablename;extrapartitiontype]
     group ?[tablename;();();({first each string x};(distinct;first extrapartitiontype))]
   };
 
-/ the parted column(s) for a table from a sort config (tabname/column/sort/att): the table's own
-/ p# columns, else the default's
+/ a table's p# columns from a sort config, else the default's
 getextrapartitiontype:{[sortconfig;tablename]
   requireinit[`getextrapartitiontype];
   tabparts:$[count tabparts:distinct exec column from sortconfig where tabname=tablename,sort=1,att=`p;

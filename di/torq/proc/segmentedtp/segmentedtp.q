@@ -7,7 +7,7 @@ init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.segmentedtp: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.segmentedtp: timer dependency is required - see di.timer"];
   if[not `handlers in key deps;'"di.torq.proc.segmentedtp: handlers dependency is required - see di.torq.handlers"];
-  / every setting comes from config - di/torq/settings/segmentedtp.q declares them all
+  / all settings required
   req:`stplg_multilog`stplg_multilogperiod`stplg_errmode`stplg_batchmode`stplg_replayperiod`stplg_customcsv`stplg_errorlogname;
   req,:`sctp_chainedtp`sctp_loggingmode`sctp_tickerplantname`sctp_tpconnsleep`sctp_tpcheckcycles`sctp_subscribeto;
   req,:`sctp_subscribesyms`sctp_replay`sctp_schema`createlogs;

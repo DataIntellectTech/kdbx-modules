@@ -18,7 +18,7 @@ init:{[config;deps]
   .z.m.tplog:use`di.tplog;
   .z.m.dbw:use`di.dbwrite;
   .z.m.dbw.init enlist[`log]!enlist deps`log;
-  / every setting comes from config - di/torq/settings/tickerlogreplay.q declares them all
+  / all settings required
   req:`firstmessage`lastmessage`messagechunks`segmentedmode`autoreplay`schemafile`tablelist`hdbdir`tplogfile`tplogdir;
   req,:`partitiontype`emptytables`sortafterreplay`basicmode`exitwhencomplete`checklogfiles`gc`clean`sortcsv`compression;
   req,:`partandmerge`tempdir`mergenumrows`mergenumtab`mergenumbytes`mergemethod`mergebybytelimit`partlimit;
@@ -97,7 +97,7 @@ if[not `postreplay in key `.save;.save.postreplay:{[d;p]
 
 	}];
 
-/ default upd function used for replaying data; set .replay.upd before use to override
+/ default upd; set .replay.upd before use to override
 .replay.upd:@[value;`.replay.upd;{{[t;x] insert[t;x]}}]
 
 / save down settings

@@ -1,8 +1,7 @@
 / connections only; an app clients section replaces this whole section
 clients:(enlist`opencloseonly)!enlist 1b
 zpsignore:(enlist`enabled)!enlist 0b
-/ every setting and its default; init requires them all. Each can be overridden from the command line
-/ (-stplg_<key>, -sctp_<key>, -createlogs). kdbtplog comes from the environment
+/ all required by init; override as -<key>. kdbtplog comes from the environment
 stplg_multilog:`tabperiod
 stplg_multilogperiod:0D01
 stplg_errmode:1b

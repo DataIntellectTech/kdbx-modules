@@ -29,7 +29,8 @@ Subscribers get `(`upd;t;x)`, `(`endofperiod;cur;next;data)` and `(`endofday;dat
 
 ## Settings
 
-Flat `stplg_<key>` settings, set onto `.stplg.<key>`:
+Every `stplg_<key>` and `sctp_<key>` setting and `createlogs` is required in `config`; the module keeps no defaults of
+its own, and `di/torq/settings/segmentedtp.q` declares them all. `stplg_<key>` settings are set onto `.stplg.<key>`:
 
 | Key | Default |
 |---|---|
@@ -39,20 +40,20 @@ Flat `stplg_<key>` settings, set onto `.stplg.<key>`:
 | `batchmode` | `` `defaultbatch `` — `immediate`, `defaultbatch` or `memorybatch` |
 | `replayperiod` | `` `day `` — `day` or `period` |
 | `customcsv` | `` ` `` — `table,mode` csv for `custom` |
-| `kdbtplog` | `KDBTPLOG` — the log root; logs go in `<kdbtplog>/<procname>_<date>` |
+| `kdbtplog` | `KDBTPLOG` — the log root; logs go in `<kdbtplog>/<procname>_<date>`; optional |
 | `errorlogname` | `` `segmentederrorlogfile `` |
 
-Flat `sctp_<key>` settings, set onto `.sctp.<key>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
+`sctp_<key>` settings are set onto `.sctp.<key>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
 `parent`), `tickerplantname` (`` `stp1 ``), `tpconnsleep` (`10`), `tpcheckcycles` (`0W`), `subscribeto` and
 `subscribesyms` (`` ` ``), `replay` (`0b`), `schema` (`1b`). `loggingmode`, `tickerplantname`, `subscribeto` and
 `subscribesyms` also take strings, so they can live in a `.toml` file as quoted keys (`"sctp_chainedtp" = true`).
 
-`di/torq/settings/segmentedtp.q` declares every `stplg` default except `kdbtplog`, and every `sctp` default, so any of
-them can be given on the command line as `-stplg_<key>` or `-sctp_<key>`; an app sets only the keys it overrides.
+Any of them can be given on the command line as `-stplg_<key>`, `-sctp_<key>` or `-createlogs`; an app sets only the
+keys it overrides.
 
 An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`.
 
-Flat: `schemafile` (required unless chained), `createlogs` (`1b`).
+Flat: `schemafile` (required unless chained), `createlogs` (`1b`, required).
 
 ## init[config;deps]
 

@@ -6,16 +6,8 @@
 / view of log file handles for faster lookups
 value"loghandles::exec tbl!handle from currlog";
 
-/ settings
-.stplg.multilog:`tabperiod                            / [tabperiod|none|periodic|tabular|custom]
-.stplg.multilogperiod:0D01
-.stplg.errmode:1b
-.stplg.batchmode:`defaultbatch                        / [memorybatch|defaultbatch|immediate]
-.stplg.replayperiod:`day                              / [period|day|prior]
-.stplg.customcsv:`
+/ log root; config stplg_kdbtplog overrides it
 .stplg.kdbtplog:`$getenv`KDBTPLOG
-
-.stplg.errorlogname:@[value;`.stplg.errorlogname;`segmentederrorlogfile]
 
 / create log directory `:stplogs/date/tabname_time
 .stplg.createdld:{[name;date]

@@ -7,6 +7,11 @@ init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.segmentedtp: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.segmentedtp: timer dependency is required - see di.timer"];
   if[not `handlers in key deps;'"di.torq.proc.segmentedtp: handlers dependency is required - see di.torq.handlers"];
+  / every setting comes from config - di/torq/settings/segmentedtp.q declares them all
+  req:`stplg_multilog`stplg_multilogperiod`stplg_errmode`stplg_batchmode`stplg_replayperiod`stplg_customcsv`stplg_errorlogname;
+  req,:`sctp_chainedtp`sctp_loggingmode`sctp_tickerplantname`sctp_tpconnsleep`sctp_tpcheckcycles`sctp_subscribeto;
+  req,:`sctp_subscribesyms`sctp_replay`sctp_schema`createlogs;
+  if[count m:req except key config;'"di.torq.proc.segmentedtp: missing settings: ",", " sv string m];
   .z.m.log:deps`log;
   .z.m.procname:config`procname;
   .z.m.proctype:config`proctype;
@@ -18,23 +23,23 @@ init:{[config;deps]
   .z.m.eod:use`di.eodtime;
   .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];
   if[`stplg_kdbtplog in key config;.stplg.kdbtplog:tosym config`stplg_kdbtplog];
-  .stplg.multilog:$[`stplg_multilog in key config;tosym config`stplg_multilog;`tabperiod];
-  .stplg.multilogperiod:$[`stplg_multilogperiod in key config;config`stplg_multilogperiod;0D01];
-  .stplg.errmode:$[`stplg_errmode in key config;config`stplg_errmode;1b];
-  .stplg.batchmode:$[`stplg_batchmode in key config;tosym config`stplg_batchmode;`defaultbatch];
-  .stplg.replayperiod:$[`stplg_replayperiod in key config;tosym config`stplg_replayperiod;`day];
-  .stplg.customcsv:$[`stplg_customcsv in key config;tosym config`stplg_customcsv;`];
-  .stplg.errorlogname:$[`stplg_errorlogname in key config;tosym config`stplg_errorlogname;`segmentederrorlogfile];
-  .sctp.chainedtp:$[`sctp_chainedtp in key config;config`sctp_chainedtp;0b];
-  .sctp.loggingmode:$[`sctp_loggingmode in key config;tosym config`sctp_loggingmode;`none];
-  .sctp.tickerplantname:$[`sctp_tickerplantname in key config;tosym config`sctp_tickerplantname;`stp1];
-  .sctp.tpconnsleep:$[`sctp_tpconnsleep in key config;config`sctp_tpconnsleep;10];
-  .sctp.tpcheckcycles:$[`sctp_tpcheckcycles in key config;config`sctp_tpcheckcycles;0W];
-  .sctp.subscribeto:$[`sctp_subscribeto in key config;tosym config`sctp_subscribeto;`];
-  .sctp.subscribesyms:$[`sctp_subscribesyms in key config;tosym config`sctp_subscribesyms;`];
-  .sctp.replay:$[`sctp_replay in key config;config`sctp_replay;0b];
-  .sctp.schema:$[`sctp_schema in key config;config`sctp_schema;1b];
-  if[`createlogs in key config;set[`createlogs;config`createlogs]];
+  .stplg.multilog:tosym config`stplg_multilog;
+  .stplg.multilogperiod:config`stplg_multilogperiod;
+  .stplg.errmode:config`stplg_errmode;
+  .stplg.batchmode:tosym config`stplg_batchmode;
+  .stplg.replayperiod:tosym config`stplg_replayperiod;
+  .stplg.customcsv:tosym config`stplg_customcsv;
+  .stplg.errorlogname:tosym config`stplg_errorlogname;
+  .sctp.chainedtp:config`sctp_chainedtp;
+  .sctp.loggingmode:tosym config`sctp_loggingmode;
+  .sctp.tickerplantname:tosym config`sctp_tickerplantname;
+  .sctp.tpconnsleep:config`sctp_tpconnsleep;
+  .sctp.tpcheckcycles:config`sctp_tpcheckcycles;
+  .sctp.subscribeto:tosym config`sctp_subscribeto;
+  .sctp.subscribesyms:tosym config`sctp_subscribesyms;
+  .sctp.replay:config`sctp_replay;
+  .sctp.schema:config`sctp_schema;
+  set[`createlogs;config`createlogs];
   / subscribers replay from the parent's logs
   if[.sctp.loggingmode=`parent;.stplg.replaylog:{[t] .sctp.tph (`.stplg.replaylog; t)}];
   / singular or tabular: no intraday roll
@@ -64,9 +69,6 @@ init:{[config;deps]
   if[`addinitlist in key `.proc;.proc.addinitlist(`generateschemas;`)];
   .stplg.init[string .z.m.procname];
   }
-
-/ allow tickerplant to create a log file
-@[`.;`createlogs;:;@[value;`createlogs;1b]];
 
 / subscribers use this to determine what type of process they are talking to
 @[`.;`tptype;:;`segmented];

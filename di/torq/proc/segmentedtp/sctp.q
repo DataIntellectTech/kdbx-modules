@@ -1,13 +1,3 @@
-.sctp.chainedtp:@[value;`.sctp.chainedtp;0b];                    / switches between STP and SCTP
-.sctp.loggingmode:@[value;`.sctp.loggingmode;`none];             / [none|create|parent]
-.sctp.tickerplantname:@[value;`.sctp.tickerplantname;`stp1];
-.sctp.tpconnsleep:@[value;`.sctp.tpconnsleep;10];
-.sctp.tpcheckcycles:@[value;`.sctp.tpcheckcycles;0W];
-.sctp.subscribeto:@[value;`.sctp.subscribeto;`];
-.sctp.subscribesyms:@[value;`.sctp.subscribesyms;`];
-.sctp.replay:@[value;`.sctp.replay;0b];
-.sctp.schema:@[value;`.sctp.schema;1b];
-
 / subscribe to segmented tickerplant
 .sctp.subscribe:{[]
   s:.sub.getsubscriptionhandles[`;.sctp.tickerplantname;()!()];

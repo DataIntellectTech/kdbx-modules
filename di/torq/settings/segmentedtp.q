@@ -1,8 +1,8 @@
 / connections only; an app clients section replaces this whole section
 clients:(enlist`opencloseonly)!enlist 1b
 zpsignore:(enlist`enabled)!enlist 0b
-/ every basic-typed stplg and sctp default as a flat key, so each can be overridden from the command line
-/ (-stplg_<key>, -sctp_<key>); must agree with the module's own defaults. kdbtplog comes from the environment
+/ every setting and its default; init requires them all. Each can be overridden from the command line
+/ (-stplg_<key>, -sctp_<key>, -createlogs). kdbtplog comes from the environment
 stplg_multilog:`tabperiod
 stplg_multilogperiod:0D01
 stplg_errmode:1b
@@ -19,3 +19,4 @@ sctp_subscribeto:`
 sctp_subscribesyms:`
 sctp_replay:0b
 sctp_schema:1b
+createlogs:1b

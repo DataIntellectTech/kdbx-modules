@@ -36,7 +36,7 @@ setupfixture:{[]
     $[n in `s`p;"(use`di.torq.servers)[`init][`log`timer`handlers`proctype`procname`processcsv`connections`discoveryregister`connectionsfromdiscovery!(nolog;notimer;hd;`segmentedtp;`",string[n],";FIXDIR,\"/process.csv\";`segmentedtp;0b;0b)]";""];
     "system \"t 60000\"";
     "seg:use`di.torq.proc.segmentedtp";
-    "seg.init[(enlist[`proctype]!enlist`segmentedtp),",c,";`log`timer`handlers!(nolog;notimer;hd)]";
+    "seg.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/segmentedtp.q\"),(enlist[`proctype]!enlist`segmentedtp),",c,";`log`timer`handlers!(nolog;notimer;hd)]";
     "(`$\":\",FIXDIR,\"/",string[n],".port\") 0: enlist string system \"p\"")}'[key CFGS;value CFGS];
   start each `a`b`c;
   PORTS[`a`b`c]:waitport each `a`b`c;

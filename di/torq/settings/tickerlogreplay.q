@@ -1,7 +1,30 @@
 / tickerlogreplay settings
-/ every basic-typed replay default, so each can be overridden from the command line (-.replay.<key>);
-/ must agree with the module's own defaults. An app replay section replaces this whole section
-replay:`firstmessage`lastmessage`messagechunks`segmentedmode`autoreplay`schemafile`tablelist`hdbdir`tplogfile`tplogdir`partitiontype`emptytables`sortafterreplay`basicmode`exitwhencomplete`checklogfiles`gc`clean`sortcsv`partandmerge`tempdir`mergenumrows`mergenumbytes`mergemethod!(0;0W;0W;1b;1b;`;enlist`all;`;`;`;`date;1b;1b;0b;1b;0b;1b;1b;`;0b;`:tempmergedir;10000000;500000000;`part)
-/ di.merge's mergebybytelimit and partlimit, passed to its init; must agree with di.merge's own
-/ defaults. An app merge section replaces this whole section
-merge:`mergebybytelimit`partlimit!(0b;1000)
+/ every basic-typed replay default as a flat key, so each can be overridden from the command line
+/ (-replay.<key>); must agree with the module's own defaults
+replay.firstmessage:0
+replay.lastmessage:0W
+replay.messagechunks:0W
+replay.segmentedmode:1b
+replay.autoreplay:1b
+replay.schemafile:`
+replay.tablelist:enlist`all
+replay.hdbdir:`
+replay.tplogfile:`
+replay.tplogdir:`
+replay.partitiontype:`date
+replay.emptytables:1b
+replay.sortafterreplay:1b
+replay.basicmode:0b
+replay.exitwhencomplete:1b
+replay.checklogfiles:0b
+replay.gc:1b
+replay.clean:1b
+replay.sortcsv:`
+replay.partandmerge:0b
+replay.tempdir:`:tempmergedir
+replay.mergenumrows:10000000
+replay.mergenumbytes:500000000
+replay.mergemethod:`part
+/ di.merge's mergebybytelimit and partlimit, passed to its init; must agree with di.merge's own defaults
+merge.mergebybytelimit:0b
+merge.partlimit:1000

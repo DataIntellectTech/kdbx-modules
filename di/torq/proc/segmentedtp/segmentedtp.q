@@ -17,8 +17,23 @@ init:{[config;deps]
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];
   .z.m.eod:use`di.eodtime;
   .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];
-  {[c;ns] if[ns in key c;(` sv' (`$".",string ns),'key c ns) set' value c ns]}[config] each `stplg`sctp;
-  @[`.sctp;`loggingmode`tickerplantname`subscribeto`subscribesyms;tosym];
+  if[`stplg.kdbtplog in key config;.stplg.kdbtplog:tosym config`stplg.kdbtplog];
+  .stplg.multilog:$[`stplg.multilog in key config;tosym config`stplg.multilog;`tabperiod];
+  .stplg.multilogperiod:$[`stplg.multilogperiod in key config;config`stplg.multilogperiod;0D01];
+  .stplg.errmode:$[`stplg.errmode in key config;config`stplg.errmode;1b];
+  .stplg.batchmode:$[`stplg.batchmode in key config;tosym config`stplg.batchmode;`defaultbatch];
+  .stplg.replayperiod:$[`stplg.replayperiod in key config;tosym config`stplg.replayperiod;`day];
+  .stplg.customcsv:$[`stplg.customcsv in key config;tosym config`stplg.customcsv;`];
+  .stplg.errorlogname:$[`stplg.errorlogname in key config;tosym config`stplg.errorlogname;`segmentederrorlogfile];
+  .sctp.chainedtp:$[`sctp.chainedtp in key config;config`sctp.chainedtp;0b];
+  .sctp.loggingmode:$[`sctp.loggingmode in key config;tosym config`sctp.loggingmode;`none];
+  .sctp.tickerplantname:$[`sctp.tickerplantname in key config;tosym config`sctp.tickerplantname;`stp1];
+  .sctp.tpconnsleep:$[`sctp.tpconnsleep in key config;config`sctp.tpconnsleep;10];
+  .sctp.tpcheckcycles:$[`sctp.tpcheckcycles in key config;config`sctp.tpcheckcycles;0W];
+  .sctp.subscribeto:$[`sctp.subscribeto in key config;tosym config`sctp.subscribeto;`];
+  .sctp.subscribesyms:$[`sctp.subscribesyms in key config;tosym config`sctp.subscribesyms;`];
+  .sctp.replay:$[`sctp.replay in key config;config`sctp.replay;0b];
+  .sctp.schema:$[`sctp.schema in key config;config`sctp.schema;1b];
   if[`createlogs in key config;set[`createlogs;config`createlogs]];
   / subscribers replay from the parent's logs
   if[.sctp.loggingmode=`parent;.stplg.replaylog:{[t] .sctp.tph (`.stplg.replaylog; t)}];

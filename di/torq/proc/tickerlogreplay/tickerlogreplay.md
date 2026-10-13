@@ -22,7 +22,7 @@ at the end, or partition to a temporary directory and merge on disk.
 
 ## Settings
 
-A `replay` section, set onto `.replay.<name>`:
+Flat `replay.<key>` settings, set onto `.replay.<key>`:
 
 | Key | Default |
 |---|---|
@@ -46,11 +46,11 @@ A `replay` section, set onto `.replay.<name>`:
 | `exitwhencomplete` / `autoreplay` / `gc` | `1b` / `1b` / `1b` |
 
 The symbol settings (`schemafile`, `hdbdir`, `tplogdir`, `tplogfile`, `tablelist`, `partitiontype`, `sortcsv`,
-`tempdir`, `mergemethod`) also take strings, so the section can live in a `.toml` file. `di/torq/settings/tickerlogreplay.q`
-declares every default, so any key can be given on the command line as `-.replay.<key>`, as in TorQ; an app
-`replay` section replaces it, so list there every key to override.
+`tempdir`, `mergemethod`) also take strings, so they can live in a `.toml` file as quoted keys (`"replay.hdbdir" = "hdb"`).
+`di/torq/settings/tickerlogreplay.q` declares every default except `compression` and `mergenumtab`, so any of them
+can be given on the command line as `-replay.<key>`; an app sets only the keys it overrides.
 
-A `merge` section (`mergebybytelimit`, `partlimit`) is passed to di.merge's `init`; `di/torq/settings/tickerlogreplay.q`
+`merge.mergebybytelimit` and `merge.partlimit` are passed to di.merge's `init`; `di/torq/settings/tickerlogreplay.q`
 declares its defaults. The `p#` column(s) for each table come from di.merge's `getextrapartitiontype` on the sort config.
 
 ## init[config;deps]
@@ -63,7 +63,7 @@ Requires `log`. It:
      `messagechunks`, a message range in segmented mode, or `partandmerge` into `hdbdir`;
    - code 2 for zero `messagechunks` or a schema file that fails to load;
 3. loads the schema file at root;
-4. wraps `.replay.realupd` to filter on `tablelist` (plain logs) and to save every `messagechunks` messages;
+4. wraps `realupd` to filter on `tablelist` (plain logs) and to save every `messagechunks` messages;
 5. loads `sortcsv`, or `sort.csv`, into di.dbwrite;
 6. replays when `autoreplay`.
 

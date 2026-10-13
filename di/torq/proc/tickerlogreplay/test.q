@@ -18,7 +18,7 @@ replayp:{[pre;cfg] runq(
 replay:replayp[()]
 / replay settings for the plain log, with overrides
 plain:{[x] "(`schemafile`hdbdir`tplogfile`segmentedmode!(`$\"",FIXDIR,"/schema.q\";`$\":",FIXDIR,"/hdb\";`$\":",FIXDIR,"/tplog",D,"\";0b)),",x}
-sect:{[x] "enlist[`replay]!enlist ",x}
+sect:{[x] "{(`$\"replay.\",/:string key x)!value x}",x}
 ran:{[x] read0 fp"run.log"}
 logged:{[s] any ran[] like s}
 / was a log named in the list of logs to replay
@@ -49,7 +49,7 @@ setupfixture:{[]
     "h:use`di.torq.handlers";
     "h.init enlist[`log]!enlist nolog";
     "seg:use`di.torq.proc.segmentedtp";
-    "seg.init[`proctype`procname`schemafile`stplg!(`segmentedtp;`stp1;\"",FIXDIR,"/schema.q\";enlist[`kdbtplog]!enlist`$\"",FIXDIR,"/stp\");`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list#h)]";
+    "seg.init[`proctype`procname`schemafile`stplg.kdbtplog!(`segmentedtp;`stp1;\"",FIXDIR,"/schema.q\";`$\"",FIXDIR,"/stp\");`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list#h)]";
     ".u.upd[`trade;(`b`a;1 2f;10 20i)]";
     ".u.upd[`quote;(enlist`a;enlist 3f)]";
     ".u.upd[`trade;(enlist`c;enlist 4f;enlist 40i)]";

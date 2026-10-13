@@ -29,7 +29,7 @@ Subscribers get `(`upd;t;x)`, `(`endofperiod;cur;next;data)` and `(`endofday;dat
 
 ## Settings
 
-A `stplg` section, set onto `.stplg.<name>`:
+Flat `stplg.<key>` settings, set onto `.stplg.<key>`:
 
 | Key | Default |
 |---|---|
@@ -42,14 +42,13 @@ A `stplg` section, set onto `.stplg.<name>`:
 | `kdbtplog` | `KDBTPLOG` — the log root; logs go in `<kdbtplog>/<procname>_<date>` |
 | `errorlogname` | `` `segmentederrorlogfile `` |
 
-A `sctp` section, set onto `.sctp.<name>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
+Flat `sctp.<key>` settings, set onto `.sctp.<key>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
 `parent`), `tickerplantname` (`` `stp1 ``), `tpconnsleep` (`10`), `tpcheckcycles` (`0W`), `subscribeto` and
 `subscribesyms` (`` ` ``), `replay` (`0b`), `schema` (`1b`). `loggingmode`, `tickerplantname`, `subscribeto` and
-`subscribesyms` also take strings, so the section can live in a `.toml` file.
+`subscribesyms` also take strings, so they can live in a `.toml` file as quoted keys (`"sctp.chainedtp" = true`).
 
 `di/torq/settings/segmentedtp.q` declares every `stplg` default except `kdbtplog`, and every `sctp` default, so any of
-them can be given on the command line as `-.stplg.<key>` or `-.sctp.<key>`; an app section replaces it, so list there
-every key to override.
+them can be given on the command line as `-stplg.<key>` or `-sctp.<key>`; an app sets only the keys it overrides.
 
 An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`.
 

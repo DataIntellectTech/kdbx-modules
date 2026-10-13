@@ -37,9 +37,13 @@ mailheader:{[]
 
 mailfooter:("</body>";"</html>");
 
-template0:{[frm;to;sub;body]
+// the Cc header, omitted entirely when nothing is copied
+ccheader:{[cc] $[count cc;enlist["Cc: ",cc];()]};
+
+template0:{[frm;to;cc;sub;body]
   enlist["From: ",frm],
   enlist["To: ",to],
+  (ccheader cc),
   enlist["Subject: ",sub],
   enlist["MIME-Version: 1.0"],
   enlist["Content-Type: text/html; charset=UTF-8"],
@@ -92,16 +96,17 @@ htmlpart:{[body;cid;img]
   enlist["--",rb,"--"]
   };
 
-mailtemplate:{[frm;to;sub;body;att]
+mailtemplate:{[frm;to;cc;sub;body;att]
   // an image makes the message multipart even with no attachments
   img:.z.m.img;
   hasimg:not null img;
-  if[(not count att where not null att,:()) and not hasimg;:template0[frm;to;sub;body]];
+  if[(not count att where not null att,:()) and not hasimg;:template0[frm;to;cc;sub;body]];
   boundary:"====",string[rand 0Ng],"====";
   // a content id is a message id, so it needs the addr-spec form with an @
   cid:$[hasimg;"img",(string rand 0Ng),"@kdbx.local";""];
   enlist["From: ",frm],
   enlist["To: ",to],
+  (ccheader cc),
   enlist["Subject: ",sub],
   enlist["Content-Type: multipart/mixed; boundary=\"",boundary,"\""],
   enlist["MIME-Version: 1.0"],
@@ -113,17 +118,18 @@ mailtemplate:{[frm;to;sub;body;att]
   enlist["--",boundary,"--"]
   };
 
-mailsend:{[frm;to;sub;body;att]
+mailsend:{[frm;to;cc;sub;body;att]
   // send an html email via the system sendmail utility
   // frm  - string from address
   // to   - string, comma-delimited recipient addresses
   // sub  - string subject
   // body - list of strings (html content)
+  // cc   - "" for none, or a comma-delimited string of addresses (sendmail -t reads the header)
   // att  - "" for no attachment, or list of hsym file paths
   if[0b~utilityexists "sendmail";'"sendmail not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
   // build the message first so a bad attachment cannot orphan a temp file
-  msg:mailtemplate[frm;to;sub;body;att];
+  msg:mailtemplate[frm;to;cc;sub;body;att];
   fn:hsym`$first system"mktemp /tmp/qmail.XXXXXXXXXX";
   .[{[a;b]a 0: b};(fn;msg);{[fn;e]hdel fn;'"sendmail write error: ",e}[fn]];
   @[system;"sendmail -t < ",(shquote 1_string fn);{[fn;e]hdel fn;'"sendmail error: ",e}[fn]];
@@ -302,13 +308,13 @@ cleansmtptmp:{[cf;fn]
   @[hdel;fn;::];
   };
 
-smtpsend_:{[frm;to;sub;body;att]
+smtpsend_:{[frm;to;cc;sub;body;att]
   // send via curl smtp transport using module smtp config (smtpurl/smtpuser/smtppassword/smtpssl)
-  // signature matches mailsend: frm to sub body att
+  // signature matches mailsend: frm to cc sub body att
   if[0b~utilityexists "curl";'"curl not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
   // build the message first so a bad attachment cannot orphan a temp file
-  msg:mailtemplate[frm;to;sub;body;att];
+  msg:mailtemplate[frm;to;cc;sub;body;att];
   // keep paths as plain strings to avoid type issues when building cmd
   tmpfile:first system"mktemp /tmp/qmail.XXXXXXXXXX";
   // mktemp creates the file 0600, so credentials written here never reach the command line
@@ -318,7 +324,7 @@ smtpsend_:{[frm;to;sub;body;att]
   onwritefail:{[cf;fn;e]cleansmtptmp[cf;fn];'"smtp write error: ",e}[cf;fn];
   .[{[a;b]a 0: b};(fn;msg);onwritefail];
   .[{[a;b]a 0: b};(cf;enlist("user = ",curlquote[smtpuser,":",smtppassword]));onwritefail];
-  rcpts:" " sv {[r]"--mail-rcpt ",(shquote r)}each ","vs to;
+  rcpts:" " sv {[r]"--mail-rcpt ",(shquote r)}each ","vs $[count cc;to,",",cc;to];
   sslopt:$[smtpssl;"--ssl-reqd ";""];
   cmd:"curl --config ",(shquote cfgfile)," --url ",(shquote smtpurl)," ",sslopt;
   cmd,:"--crlf --mail-from ",(shquote frm)," ",rcpts," --upload-file ",(shquote tmpfile)," 2>&1";
@@ -348,7 +354,7 @@ cleantmpdir:{[dir]
 senddefault:{[msgdict]
   // send an html email via the system sendmail utility
   // msgdict keys: to (symbol or symbol list), subject (string), body (list of strings)
-  //               optionally: attachments (hsym or list of hsyms)
+  //               optionally: cc (symbol or symbol list), attachments (hsym or list of hsyms)
   // body lines are html: a line starting with "<" is passed through, anything else is
   // escaped and wrapped in <p>. nested lists are flattened, non-strings become text
   // returns 1b on success, 0b on send failure, -1 if disabled
@@ -358,6 +364,7 @@ senddefault:{[msgdict]
     :-1;
   ];
   to:","sv string$[-11h=type msgdict`to;enlist msgdict`to;msgdict`to];
+  cc:$[`cc in key msgdict;","sv string$[-11h=type msgdict`cc;enlist msgdict`cc;msgdict`cc];""];
   lines:raze bodylines each msgdict[`body],enlist "email generated at ",(string .z.p);
   // a line already starting with "<" is taken as pre-built html, everything else is escaped
   htmlbody:{$[count x;$["<"=first x;x;addtext htmlescape x];""]} each lines;
@@ -366,12 +373,8 @@ senddefault:{[msgdict]
   // only when `attachments is absent: with both keys the plural is used and nothing is lost
   if[(`attachment in key msgdict) and not `attachments in key msgdict;
     .z.m.logwarn[`email;"msgdict has an `attachment key - this module uses `attachments (plural), so nothing was attached"]];
-  // TorQ's senddefault documented an optional `cc; silently not copying those
-  // addresses is the same failure shape as the singular `attachment above
-  if[`cc in key msgdict;
-    .z.m.logwarn[`email;"msgdict has a `cc key - this module does not support cc, so those addresses were not copied"]];
   att:$[`attachments in key msgdict;$[-11h=type msgdict`attachments;enlist msgdict`attachments;msgdict`attachments];""];
-  res:.[send;(mailfrom;to;msgdict`subject;htmlbody;att);{[e].z.m.logerr[`email;"send failed: ",e];0b}];
+  res:.[send;(mailfrom;to;cc;msgdict`subject;htmlbody;att);{[e].z.m.logerr[`email;"send failed: ",e];0b}];
   ok:not res~0b;
   if[historyenabled;.z.m.loghistory[msgdict`to;msgdict`subject;`failed`sent ok;$[ok;0j;-1j]]];
   $[ok;

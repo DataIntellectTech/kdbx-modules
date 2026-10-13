@@ -118,6 +118,8 @@ Sends an HTML email. `msgdict` keys:
 - `to` — symbol or symbol list of recipients
 - `subject` — string
 - `body` — list of strings (plain strings are wrapped in a styled `<p>` tag; pre-built HTML strings are passed through as-is; a timestamp footer is appended automatically)
+- `cc` — (optional) symbol or symbol list of addresses to copy. They get a `Cc:` header and
+  are added to the envelope recipients, so they receive the message
 - `attachments` — (optional) single hsym file path or a list of hsyms
 
 Returns `1b` on success, `0b` on send failure, `-1` if disabled. Every attempt is appended to `history` unless `historyenabled` is `0b`.
@@ -163,7 +165,7 @@ a dictionary, so a key this module does not know is ignored silently.
 | `debug` | dropped — it set the C library's verbosity |
 | `img` | `img` — same meaning, see [Embedded image](#embedded-image) |
 | `` `attachment `` in `msgdict` | `` `attachments `` (**plural**) |
-| `` `cc `` in `msgdict` | **not supported** — `senddefault` warns and sends to `to` only |
+| `` `cc `` in `msgdict` | `` `cc `` — same meaning, see `senddefault` |
 | `` `bodyType `` in `msgdict` | not supported — the body is always html, see below |
 
 **The `attachment` key is the one that bites.** TorQ's reporter called
@@ -197,9 +199,6 @@ nothing, and the send still reports success — so `senddefault` logs a warning 
   `connectdefault`, `connected`, `lib`, `libfile`, `libexists`. There is no C library and no
   persistent connection; each send invokes `sendmail` or `curl`. That removes the per-platform
   build, at the cost of Windows support altogether (see above).
-- **`cc`** — TorQ documented an optional `cc` key. There is no Cc header here, so `senddefault`
-  warns when it sees the key rather than quietly not copying anyone. Put the addresses in `to`
-  if they should receive the message.
 - **`sendviaservice` / `servicesend` / `servicecallback`** — delegating a send to another process
   over IPC, via `.servers.gethandlebytype` and `.async.postback`. This module has no `servers`
   dependency; a caller that wants the same shape can post to the mail-capable process itself.
@@ -395,7 +394,7 @@ Override the internal send function after `init` to intercept calls without hitt
 
 ```q
 mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]})
-mocksend:{[frm;to;sub;body;att]}
+mocksend:{[frm;to;cc;sub;body;att]}
 email:use`di.email
 email.init[
   `mailfrom`enabled!("me@example.com";1b);

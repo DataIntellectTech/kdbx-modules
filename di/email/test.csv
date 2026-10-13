@@ -1,12 +1,13 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,email:use`di.email,1,1,load module into session
 before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
-before,0,0,q,"mocksend:{[frm;to;sub;body;att]}",1,1,define no-op mock send for direct state injection
-before,0,0,q,mockcapture:{[frm;to;sub;body;att]lastatt::att;lastfiles::read0 each att;1b},1,1,define capturing mock send for senddata tests
+before,0,0,q,"mocksend:{[frm;to;cc;sub;body;att]}",1,1,define no-op mock send for direct state injection
+before,0,0,q,mockcapture:{[frm;to;cc;sub;body;att]lastatt::att;lastfiles::read0 each att;1b},1,1,define capturing mock send for senddata tests
 before,0,0,q,emaillogs:([]lvl:`symbol$();msg:()),1,1,table to capture log calls
 before,0,0,q,reclogfn:{[l;c;m] `emaillogs upsert `lvl`msg!(l;m);},1,1,recording log function
 before,0,0,q,reclog:`info`warn`error!(reclogfn[`info;;];reclogfn[`warn;;];reclogfn[`error;;]),1,1,capturing mock logger
-before,0,0,q,mockbody:{[frm;to;sub;body;att]lastbody::body;1b},1,1,capture the rendered body
+before,0,0,q,mockbody:{[frm;to;cc;sub;body;att]lastbody::body;1b},1,1,capture the rendered body
+before,0,0,q,mockcc:{[frm;to;cc;sub;body;att]lastcc::cc;1b},1,1,capture the cc that reaches the transport
 
 / Test 0: init with defaults leaves email disabled and config empty
 run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with defaults and injected logger
@@ -55,7 +56,7 @@ true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
 true,0,0,q,`sent~last exec status from email.getstatus[],1,1,status is sent
 
 / Test 8: senddefault with failing send returns 0b and logs failed status
-run,0,0,q,"failsend:{[frm;to;sub;body;att]'""smtp error""}",1,1,define failing send
+run,0,0,q,"failsend:{[frm;to;cc;sub;body;att]'""smtp error""}",1,1,define failing send
 run,0,0,q,"email.init[(enlist`enabled)!enlist 1b;enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled
 run,0,0,q,.m.di.0email.send:failsend,1,1,override send with failing mock
 run,0,0,q,before:count email.getstatus[],1,1,capture count
@@ -143,7 +144,7 @@ true,0,0,q,"0<count(raze md)ss ""k1""",1,1,maildict renders key
 true,0,0,q,"0<count(raze md)ss ""v1""",1,1,maildict renders value
 
 / Test 23: template0 has blank separator between headers and html body
-run,0,0,q,"tmpl:.m.di.0email.template0[""f"";""t"";""s"";enlist ""body""]",1,1,build template0
+run,0,0,q,"tmpl:.m.di.0email.template0[""f"";""t"";"""";""s"";enlist ""body""]",1,1,build template0
 true,0,0,q,"any """"~/:tmpl",1,1,template0 has blank separator line
 true,0,0,q,"any ""<html>""~/:tmpl",1,1,template0 has html open tag
 true,0,0,q,"(first where """"~/:tmpl)<first where ""<html>""~/:tmpl",1,1,blank separator comes before html body
@@ -218,7 +219,7 @@ run,0,0,q,hdel mt_file,1,1,clean up temp file
 / Test 33: mailtemplate with attachment produces all-string element list (regression: content-type header was type 0h)
 run,0,0,q,mta_file:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create temp attachment for mailtemplate test
 run,0,0,q,mta_file 0: enlist "data",1,1,write content to attachment file
-run,0,0,q,"mta:.m.di.0email.mailtemplate[""f"";""t"";""s"";enlist ""body"";enlist mta_file]",1,1,build multipart template with attachment
+run,0,0,q,"mta:.m.di.0email.mailtemplate[""f"";""t"";"""";""s"";enlist ""body"";enlist mta_file]",1,1,build multipart template with attachment
 true,0,0,q,all 10h=type each mta,1,1,all mailtemplate elements are strings when attachment present
 true,0,0,q,"0<count(raze mta)ss ""multipart/mixed""",1,1,mailtemplate uses multipart/mixed content type with attachment
 true,0,0,q,"0<count(raze mta)ss ""Content-Transfer-Encoding: base64""",1,1,mailtemplate includes base64 transfer encoding header
@@ -300,7 +301,7 @@ fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enl
 / Test 45: a send that fails while building the message leaves no temp file behind
 run,0,0,q,tmpcount:{count key`:/tmp},1,1,helper to count entries in /tmp
 run,0,0,q,before:tmpcount[],1,1,record the temp file count
-fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";""s"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
+fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";"""";""s"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
 true,0,0,q,before=tmpcount[],1,1,mailsend left no temp file behind
 
 / Test 46: the singular `attachment key TorQ used is reported rather than silently ignored
@@ -325,7 +326,7 @@ true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,"both keys given me
 run,0,0,q,"imgfile:hsym`$first system""mktemp /tmp/qimg.XXXXXXXXXX""",1,1,a file to stand in for the image
 run,0,0,q,"imgfile 0: enlist ""the mime structure is what is asserted here""",1,1,give it some content to base64
 run,0,0,q,"email.init[`mailfrom`enabled`img!(""me@example.com"";1b;1_string imgfile);enlist[`log]!enlist mocklog]",1,1,init with an img configured
-run,0,0,q,"imgmsg:.m.di.0email.mailtemplate[""f@x"";""t@x"";""subj"";enlist""body text"";""""]",1,1,build a message with no attachments
+run,0,0,q,"imgmsg:.m.di.0email.mailtemplate[""f@x"";""t@x"";"""";""subj"";enlist""body text"";""""]",1,1,build a message with no attachments
 true,0,0,q,"any imgmsg like ""Content-Type: multipart*""",1,1,an img alone makes the message multipart
 true,0,0,q,"any imgmsg like ""Content-Type: multipart/related*""",1,1,"the image sits in a multipart/related, not loose in the mixed container"
 true,0,0,q,"any imgmsg like ""*type=\""text/html\""*""",1,1,the related container declares its root part
@@ -339,12 +340,12 @@ true,0,0,q,"any imgmsg like ""Content-ID: <"",imgcid,"">""",1,1,the html cid mat
 true,0,0,q,"last[imgmsg] like ""--====*--""",1,1,the message still closes its boundary
 
 / Test 49: img and an attachment coexist, and no img means no multipart
-run,0,0,q,"imgatt:.m.di.0email.mailtemplate[""f@x"";""t@x"";""subj"";enlist""body text"";imgfile]",1,1,build a message with both
+run,0,0,q,"imgatt:.m.di.0email.mailtemplate[""f@x"";""t@x"";"""";""subj"";enlist""body text"";imgfile]",1,1,build a message with both
 true,0,0,q,"any imgatt like ""Content-Disposition: attachment*""",1,1,the attachment part is present
 true,0,0,q,"any imgatt like ""Content-Disposition: inline*""",1,1,the inline image part is present too
 true,0,0,q,"2=count imgatt where imgatt like ""--====*--""",1,1,two closing boundaries: the related container and the mixed one
 run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,re-init with no img
-true,0,0,q,"not any (.m.di.0email.mailtemplate[""f@x"";""t@x"";""subj"";enlist""body text"";""""]) like ""Content-Type: multipart*""",1,1,without an img a plain message stays single-part
+true,0,0,q,"not any (.m.di.0email.mailtemplate[""f@x"";""t@x"";"""";""subj"";enlist""body text"";""""]) like ""Content-Type: multipart*""",1,1,without an img a plain message stays single-part
 run,0,0,q,hdel imgfile,1,1,clean up the stand-in image
 
 / Test 50: an empty or missing img would render as a broken image, so init says so
@@ -376,10 +377,15 @@ true,0,0,q,"any lastbody like ""<b>pre-built</b>""",1,1,a line starting with < i
 run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist (""first"";""second""))",1,1,send the reporter's nested-list body
 true,0,0,q,"3=count lastbody where lastbody like ""*<p *""",1,1,two paragraphs from the nested list plus the timestamp footer
 
-/ Test 53: TorQ's cc key is reported rather than dropped in silence
-run,0,0,q,delete from `emaillogs,1,1,clear the log
-run,0,0,q,"email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""boss@b.com"";""subj"";enlist""body text"")",1,1,send with a cc key
-true,0,0,q,"0<count select from emaillogs where lvl=`warn,msg like ""*cc*""",1,1,the cc key is warned about
-run,0,0,q,delete from `emaillogs,1,1,clear the log
-run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""body text"")",1,1,send without a cc key
-true,0,0,q,0=count select from emaillogs where lvl=`warn,1,1,no warning when cc is absent
+/ Test 53: a cc key produces a real Cc header and copies those addresses
+run,0,0,q,.m.di.0email.send:mockcc,1,1,capture what reaches the transport
+run,0,0,q,"email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""boss@b.com"";""subj"";enlist""body text"")",1,1,send with a single cc
+true,0,0,q,"""boss@b.com""~lastcc",1,1,the cc address reaches the transport
+run,0,0,q,"email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$(""b1@x.com"";""b2@x.com"")";""subj"";enlist""body text"")",1,1,send with a cc list
+true,0,0,q,"""b1@x.com,b2@x.com""~lastcc",1,1,a cc list becomes a comma delimited string
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""body text"")",1,1,send with no cc key
+true,0,0,q,"""""~lastcc",1,1,no cc key gives an empty cc
+true,0,0,q,"any (.m.di.0email.template0[""f"";""t"";""boss@x.com"";""s"";enlist""body""]) like ""Cc: boss@x.com""",1,1,a simple message carries the Cc header
+true,0,0,q,"not any (.m.di.0email.template0[""f"";""t"";"""";""s"";enlist""body""]) like ""Cc:*""",1,1,no Cc header when nothing is copied
+true,0,0,q,"any (.m.di.0email.mailtemplate[""f"";""t"";""boss@x.com"";""s"";enlist""body"";""""]) like ""Cc: boss@x.com""",1,1,a multipart message carries it too
+true,0,0,q,"0=count select from emaillogs where lvl=`warn,msg like ""*cc*""",1,1,"cc is supported, so it is not warned about"

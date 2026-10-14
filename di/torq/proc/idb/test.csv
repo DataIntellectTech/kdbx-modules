@@ -18,16 +18,16 @@ true,0,0,q,`intradayreload in key `.idb,1,,init published reload at the real roo
 true,0,0,q,`a`b`c~sym,1,,init loaded the hdb's sym domain into the root `sym`
 true,0,0,q,`a`b`c~asc distinct value exec name from select name from widgets,1,,the enumerated `name` column resolves to real symbols, not raw indices
 
-run,0,0,q,delete widgets from `.,1,,drop the in-memory table to prove reload actually remounts it
+run,0,0,q,addpartition[TESTDATE-1],1,,a third dated partition appears under the savedir root
 run,0,0,q,.idb.intradayreload[],1,,call the published root-level reload entry point
-true,0,0,q,`widgets in tables[],1,,reload remounted the fixture table
+true,0,0,q,9=count widgets,1,,the partition count changed so reload remounted and sees all three
 
 run,0,0,q,delete widgets from `.,1,,drop it again before testing a savedir that is not on disk
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,setwdbmissingdir[],1,,the wdb reports a savedir that does not exist yet
 run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init against a savedir that does not exist must not throw
 true,0,0,q,not `widgets in tables[],1,,nothing was mounted - the savedir did not exist
-true,0,0,q,0<count select from calls where lvl=`warn,1,,init logged a warning about the missing savedir instead of erroring
+true,0,0,q,0<count select from calls where lvl=`error,1,,init logged the failed load of the missing savedir instead of throwing
 true,0,0,q,`intradayreload in key `.idb,1,,init still published reload even though nothing was mounted
 
 run,0,0,q,resetcalls[],1,,reset call log
@@ -99,7 +99,7 @@ run,0,0,q,setwdbparams[],1,,the wdb will report the fixture dirs
 run,0,0,q,delete widgets from `.,1,,drop the table so the mount has to bring it back
 run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init must ask the wdb for the dirs
 true,0,0,q,askedwdb[],1,,it waited for a wdb and queried it
-true,0,0,q,askedforvars[],1,,and asked for exactly .wdb.savedir/.wdb.hdbdir/.wdb.currentpartition
+true,0,0,q,askedforvars[],1,,and asked for exactly .wdb.savedir/.wdb.hdbdir/.wdb.currentpartition/.wdb.writedownmode
 true,0,0,q,TESTDATE~recordedpartition[],1,,and recorded the wdb's current partition
 true,0,0,q,`widgets in tables[],1,,and mounted the directory the wdb reported
 true,0,0,q,`widgets in .Q.pt,1,,still a partitioned root mount
@@ -123,5 +123,26 @@ comment,,,,,,,a wdb that does not publish everything we ask for
 true,0,0,q,initnovar[`savedir],1,,a wdb missing .wdb.savedir fails init naming that variable
 true,0,0,q,initnovar[`hdbdir],1,,a wdb missing .wdb.hdbdir fails init naming that variable
 true,0,0,q,initnovar[`currentpartition],1,,a wdb missing .wdb.currentpartition fails init naming that variable
+true,0,0,q,initnovar[`writedownmode],1,,a wdb missing .wdb.writedownmode fails init naming that variable
+
+comment,,,,,,,writedown modes - the idb mounts savedir in default mode and savedir/<partition> otherwise
+run,0,0,q,setupfixture[],1,,fixture on disk
+run,0,0,q,setwdbparams[],1,,a default-mode wdb
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init in default mode
+true,0,0,q,rootmounted[],1,,default mode mounts the savedir root
+run,0,0,q,resetcalls[],1,,reset call log
+run,0,0,q,.idb.intradayreload[],1,,an intraday reload with the partition count unchanged
+true,0,0,q,not 0<count select from calls where msg like "loading the db*",1,,does not remount
+run,0,0,q,setupenumfixture[],1,,a partbyenum wdb with two int partitions under the date
+run,0,0,q,delete widgets from `.,1,,drop the table so the mount has to bring it back
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init in partbyenum mode
+true,0,0,q,datemounted TESTDATE,1,,a partitioned mode mounts savedir/<partition>
+true,0,0,q,6=count widgets,1,,both int partitions are visible - 3 rows each
+true,0,0,q,`int in .Q.pf,1,,the mount is int-partitioned
+run,0,0,q,.idb.rollover[TESTDATE+1],1,,the wdb rolls the idb to the next day
+true,0,0,q,datemounted TESTDATE+1,1,,rollover moves the mount to the new partition
+true,0,0,q,0 5~maptoint 0N 5,1,,maptoint is published at root and maps a null int to 0
+true,0,0,q,(.Q.an?"b")~mapfctoint`bob,1,,mapfctoint is published at root
+run,0,0,q,set[`.wdb.writedownmode;`default],1,,restore default mode
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

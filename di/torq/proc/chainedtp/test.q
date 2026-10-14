@@ -29,7 +29,7 @@ setupfixture:{[]
   (`$":",FIXDIR,"/dsub.q") 0: (
     "subs:use`di.subscriptions";
     "nolog:`info`warn`error!3#{[c;m]}";
-    "subs.init[()!();`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list!({[a;b;c;d;e]};{[a;b;c]};{[a]}))]";
+    "subs.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/default.q\");`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list!({[a;b;c;d;e]};{[a;b;c]};{[a]}))]";
     "got:()";"ended:()";"upd:{[t;x] got::got,enlist(t;x)}";"endofday:{ended::ended,x}");
   p:30000+(`int$.z.i mod 20000)+til 500; p:p where isfree each p;
   `UPPORT`DNPORT`DSPORT set' 3#p;
@@ -41,9 +41,10 @@ setupfixture:{[]
 svc:use`di.torq.servers
 initservers:{[] svc.init[`log`timer`handlers`proctype`procname`processcsv`connections`discoveryregister`connectionsfromdiscovery!(mocklog;mocktimer;mockhandlers;`chainedtp;`chainedtp1;FIXDIR,"/process.csv";`tickerplant;0b;0b)]}
 
-cfg:{[] `proctype`procname`autoreconnect`pubinterval!(`chainedtp;`chainedtp1;0b;0D)}
+/ the settings files plus the fixture's identity
+cfg:{[] ((use`di.torq.config)[`parsefile] "di/torq/settings/default.q"),((use`di.torq.config)[`parsefile] "di/torq/settings/chainedtp.q"),`proctype`procname`autoreconnect`pubinterval!(`chainedtp;`chainedtp1;0b;0D)}
 deps:{[] `log`timer`handlers!(mocklog;mocktimer;mockhandlers)}
 
 rows:{[n] ([]time:n#.z.p;sym:n#`a`b;price:`float$til n)}
 
-teardownfixture:{[] {@[{(neg x)"exit 0";(neg x)[]};x;()]} each (.ctp.tph;dh;sh); system "sleep 0.3"; system "rm -rf ",FIXDIR;}
+teardownfixture:{[] {@[{(neg x)"exit 0";(neg x)[]};x;()]} each (.m.di.0torq.0proc.0chainedtp.tph;dh;sh); system "sleep 0.3"; system "rm -rf ",FIXDIR;}

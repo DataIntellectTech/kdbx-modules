@@ -87,13 +87,12 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 
 ## `.stpps`, `.u.sub`, `.ps`
 
-A second pub/sub API at root, in a `\d .stpps` section at the end of `pubsub.q`, with its own state,
-A second pub/sub API at root, in a `\d .stpps` section at the end of `pubsub.q`, with its own state,
-separate from the API above: `.stpps.t`/`subrequestall`/`subrequestfiltered`, `.stpps.endp`/`end`,
-`allsubhandles`, `suball`/`subfiltered`/`add`/`errparse`/`addfiltered`/`selfiltered`/`pub`/`pubclear`,
-`delhandle`/`delhandlef`/`closesub`/`extractschema`/`attrstrip`/`init`, root `.u.sub`/`.u.pub`,
-`.ps.loaded`/`publish`/`subscribe`/`init`/`initialise`/`subtable`/`subtablefiltered`, and
-`.ds.map`/`subreq`/`stripe`.
+A second pub/sub API at root, with its own state, separate from the API above: `.stpps.t`/`subrequestall`/
+`schemas`/`tabcols`, `.stpps.endp`/`end`/`allsubhandles`/`pub`/`pubclear`/`closesub`/`attrstrip`/`init`,
+root `.u.sub`/`.u.pub`, `.ps.loaded`/`publish`/`subscribe`/`init`/`initialise`/`subtable`/`subtablefiltered`,
+and `.ds.map`/`subreq`/`stripe`. Its filtered-subscription registry `subrequestfiltered`,
+`schemasnoattributes` and the helpers `stpsuball`/`stpsubfiltered`/`stpadd`/`errparse`/`stpaddfiltered`/
+`selfiltered`/`stpdelhandle`/`stpdelhandlef`/`stpextractschema` are module-private.
 
 - `endp[cur;next;data]` and `end[date;data]` send `(`endofperiod;cur;next;data)` and `(`endofday;date;data)` to
   every subscriber.

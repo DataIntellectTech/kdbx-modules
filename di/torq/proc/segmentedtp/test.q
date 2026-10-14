@@ -36,7 +36,7 @@ setupfixture:{[]
     $[n in `s`p;"(use`di.torq.servers)[`init][`log`timer`handlers`proctype`procname`processcsv`connections`discoveryregister`connectionsfromdiscovery!(nolog;notimer;hd;`segmentedtp;`",string[n],";FIXDIR,\"/process.csv\";`segmentedtp;0b;0b)]";""];
     "system \"t 60000\"";
     "seg:use`di.torq.proc.segmentedtp";
-    "seg.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/segmentedtp.q\"),(enlist[`proctype]!enlist`segmentedtp),",c,";`log`timer`handlers!(nolog;notimer;hd)]";
+    "seg.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/default.q\"),((use`di.torq.config)[`parsefile] \"di/torq/settings/segmentedtp.q\"),(enlist[`proctype]!enlist`segmentedtp),",c,";`log`timer`handlers!(nolog;notimer;hd)]";
     "(`$\":\",FIXDIR,\"/",string[n],".port\") 0: enlist string system \"p\"")}'[key CFGS;value CFGS];
   start each `a`b`c;
   PORTS[`a`b`c]:waitport each `a`b`c;
@@ -54,8 +54,7 @@ endofday:{[d;x] eods::eods,enlist(d;x)}
 endofperiod:{[c;n;d] eops::eops,enlist(c;n;d)}
 nolog:`info`warn`error!3#{[c;m]}
 subs:use`di.subscriptions
-subs.init[enlist[`autoreconnect]!enlist 0b;`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list!({[a;b;c;d;e]};{[a;b;c]};{[a]}))]
-.sub.AUTORECONNECT:0b
+subs.init[((use`di.torq.config)[`parsefile] "di/torq/settings/default.q"),enlist[`autoreconnect]!enlist 0b;`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list!({[a;b;c;d;e]};{[a;b;c]};{[a]}))]
 subto:{[h;n;tabs;syms] .sub.subscribe[tabs;syms;1b;0b;`procname`proctype`w!(n;`segmentedtp;h)]}
 
 / feed rows: list of columns, time added by the tickerplant

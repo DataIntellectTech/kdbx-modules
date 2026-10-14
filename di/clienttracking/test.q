@@ -8,7 +8,10 @@ peer:{[p] hopen `$":localhost:",string p}
 PORTS:`a`b`c`d!4#0N
 
 / a: defaults; b: opencloseonly; c: disabled; d: INTRUSIVE with a 1s MAXIDLE and RETAIN
-CFGS:`a`b`c`d!("()!()";"enlist[`opencloseonly]!enlist 1b";"enlist[`enabled]!enlist 0b";"`INTRUSIVE`MAXIDLE`RETAIN!(1b;`long$0D00:00:01;`long$0D00:00:01)")
+CFGS:`a`b`c`d!("()!()";"enlist[`clients_opencloseonly]!enlist 1b";"enlist[`clients_enabled]!enlist 0b";"`clients_intrusive`clients_maxidle`clients_retain!(1b;`long$0D00:00:01;`long$0D00:00:01)")
+
+/ the settings file, the base of every peer's config
+SETTINGS:"di/torq/settings/default.q"
 
 setupfixture:{[]
   system "rm -rf ",FIXDIR; system "mkdir -p ",FIXDIR;
@@ -16,7 +19,7 @@ setupfixture:{[]
     "h:use`di.torq.handlers";
     "h.init enlist[`log]!enlist `info`warn`error!3#{[c;m]}";
     "ct:use`di.clienttracking";
-    "ct.init[enlist[`clients]!enlist ",c,";enlist[`handlers]!enlist `register`remove`list#h]")}'[key CFGS;value CFGS];
+    "ct.init[((use`di.torq.config)[`parsefile] \"",SETTINGS,"\"),",c,";enlist[`handlers]!enlist `register`remove`list#h]")}'[key CFGS;value CFGS];
   p:40000+(`int$.z.i mod 20000)+til 500; p:p where isfree each p;
   PORTS::key[PORTS]!4#p;
   {system QBIN," ",FIXDIR,"/",string[x],".q -p ",(string y)," -q </dev/null >/dev/null 2>&1 &"}'[key PORTS;value PORTS];

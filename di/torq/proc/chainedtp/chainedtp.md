@@ -13,13 +13,16 @@ batches.
 | `subdetails[tabs;instruments]` | subscribes the caller and returns `schemalist`, `logfilelist`, `rowcounts`, `date` |
 | `.u.subdetails[tabs;syms]` | root; subscribes the caller and returns `tables`, `schemas`, `logfile`, `rowcount`, `date` |
 | `.u.end[d]` | publishes and clears the batch, rolls to `d+1`, sends `` (`.u.end;d) `` to subscribers |
-| `upd` | set at root to `.ctp.upd` if no `upd` exists |
-| `.ctp.*` | settings, `subscribe`, `writetolog`, `tickpub`, `batchpub`, `publishalltables`, `cleartables`, `openlog`, `clearlog`, `refreshtp`, `createlogfilename`, `notpconnected`, `sub` |
+| `upd` | set at root to the module's `upd` if no `upd` exists |
 | `.u.i`/`.u.j`/`.u.icounts`/`.u.jcounts`/`.u.L`/`.u.l`/`.u.d` | publish and log counts, log file and handle, date |
+
+Everything else is module-private: the settings, `tph`, `upd`, `subscribe`, `writetolog`, `tickpub`,
+`batchpub`, `publishalltables`, `tableschemas`, `cleartables`, `openlog`, `clearlog`, `refreshtp`,
+`createlogfilename`, `notpconnected`, `sub`.
 
 ## Settings
 
-`di/torq/settings/chainedtp.q` (flat config):
+Every setting is required in `config`; `di/torq/settings/chainedtp.q` declares them all:
 
 | Key | Default |
 |---|---|
@@ -34,14 +37,15 @@ batches.
 ## init[config;deps]
 
 Requires `log`, `timer` and `handlers`. It initialises `di.pubsub` (with the log) and
-`di.subscriptions`, registers `.stpps.closesub` on `.z.pc`, applies the settings, then:
+`di.subscriptions`, registers `.stpps.closesub` on `.z.pc`, applies the settings (signalling if any is
+missing), then:
 
 1. registers a `.z.pc` observer that logs and exits 0 when the upstream handle closes;
-2. sets `.ctp.upd` from `createlogfile`/`pubinterval`, and root `upd` if absent;
+2. sets `upd` from `createlogfile`/`pubinterval`, and root `upd` if absent;
 3. `.ps.initialise[]`;
 4. `.servers.startupdepnamecycles[tickerplantname;tpconnsleep;tpcheckcycles]`;
-5. `.ctp.subscribe[]`;
-6. builds `.ctp.tableschemas`;
+5. `subscribe[]`;
+6. builds `tableschemas`;
 7. when `pubinterval` is above 0, adds the `publishalltables` job (seconds, timer mode 2).
 
 di.torq runs `.ps.initialise[]` again after the module loads, which publishes the subscribed tables.
@@ -57,7 +61,7 @@ di.torq runs `.ps.initialise[]` again after the module loads, which publishes th
 
 ## Downstream subscribers
 
-`subdetails` serves `.sub` subscribers. `.u.subdetails[tabs;syms]` subscribes the caller through `.ctp.sub` for
+`subdetails` serves `.sub` subscribers. `.u.subdetails[tabs;syms]` subscribes the caller through `sub` for
 `di.subscriptions` `subscribe`. With `createlogfile` on, `logfile` is `.u.L` and `rowcount` `.u.i`, so
 subscribers replay chainedtp's own log; otherwise `` ` `` and 0. Plain `.u.sub` subscribers are served
 by `di.pubsub`.

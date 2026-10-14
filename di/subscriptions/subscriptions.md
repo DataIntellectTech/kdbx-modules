@@ -17,7 +17,7 @@ classic standard-TP `.u.i`/`.u.L`/`.u.d` global reads.
 
 | Function | Description |
 |---|---|
-| `init[config;deps]` | validate the deps, stash `log`, load di.tplogmgr, apply the `.sub` settings, register `.sub.pc` and the `checksubscriptions` job (once) |
+| `init[config;deps]` | validate the deps, stash `log`, load di.tplogmgr, signal if a setting is missing, apply the settings, register `pc` and the `checksubscriptions` job (once) |
 | `subscribe[tph;tabs;syms;replay]` | subscribe over an open TP handle; returns the subdetails dict |
 | `subscribed[]` | `1b` if any subscription is active |
 | `getsubscriptions[]` | the active-subscriptions registry table |
@@ -55,15 +55,16 @@ in di.tplogmgr's module context) lands in the module's *private* namespace, not 
 
 ## `.sub`
 
-A second subscription API at root `.sub`, in a `\d .sub` section at the end of `subscriptions.q`, with
-its own state: `AUTORECONNECT`, `checksubscriptionperiod`, `SUBSCRIPTIONS`, `getsubscriptionhandles`,
-`updatesubscriptions`, `reconnectinit`, `reducesubs`, `createtables`, `replay`, `subscribe`,
-`replayupd`, `checksubscriptions`, `retrysubscription`, `autoreconnect`, `pc`. `subscribe` asks the
+A second subscription API at root: `.sub.subscribe[tabs;instrs;setschema;replaylog;proc]`,
+`.sub.getsubscriptionhandles[proctype;procname;attributes]` and its registry `.sub.SUBSCRIPTIONS`. It is
+built on the module-private `updatesubscriptions`, `reconnectinit`, `reducesubs`, `createtables`, `replay`,
+`replayupd`, `checksubscriptions`, `retrysubscription`, `resubscribe` and `pc`. `.sub.subscribe` asks the
 publisher for its `tptype` (`standard`, `chained` or `segmented`) and subscribes to match. It calls
 `.servers.getservers`, `.servers.enabled` and `.servers.connectcustom` from `di.torq.servers` 0.5.0.
 
-- Settings (flat config): `autoreconnect` (default `0b`), `checksubscriptionperiod` (default `0D00:00:10`).
-- `init` registers, once per process: `.sub.pc[::;]` on `.z.pc` through `handlers`, and
+- Settings, both required; `di/torq/settings/default.q` declares them: `autoreconnect` (`0b`),
+  `checksubscriptionperiod` (`0D00:00:10`).
+- `init` registers, once per process: `pc[::;]` on `.z.pc` through `handlers`, and
   `checksubscriptions` every `checksubscriptionperiod` (converted to seconds, timer mode 1) through
   `timer` when the period is above 0.
 

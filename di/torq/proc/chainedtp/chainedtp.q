@@ -133,7 +133,7 @@ cleartables:{[t]
   }
 
 createlogfilename:{[d]
-  ` sv (logdir;`$string[.z.m.procname],"_",string d)
+  ` sv (logdir;`$string[procname],"_",string d)
   }
 
 refreshtp:{[d]

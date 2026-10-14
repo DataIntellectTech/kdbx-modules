@@ -26,11 +26,11 @@ Every setting is required in `config`; `di/torq/settings/chainedtp.q` declares t
 
 | Key | Default |
 |---|---|
-| `tickerplantname` | `` `tickerplant1 `` — procname(s) of the upstream |
+| `tickerplantname` | `` `tickerplant1 `` — procname(s) of the upstream; also a string or list of strings |
 | `pubinterval` | `0D00:00:00` — tick by tick; above 0, batches published on a timer. Also a `"0D00:00:01"` string or seconds |
 | `tpconnsleep` / `tpcheckcycles` | `10` / `0W` — seconds between, and number of, upstream checks |
 | `createlogfile` / `logdir` / `clearlogonsubscription` | `0b` / `` `:tplogs `` / `0b` — log file `<logdir>/<procname>_<date>`; `logdir` may be a path string |
-| `subscribeto` / `subscribesyms` | `` ` `` / `` ` `` — all tables, all syms |
+| `subscribeto` / `subscribesyms` | `` ` `` / `` ` `` — all tables, all syms; also strings, `""` for all |
 | `replay` / `schema` | `0b` / `1b` |
 | `connections` / `startup` | `` `tickerplant `` / `1b` |
 

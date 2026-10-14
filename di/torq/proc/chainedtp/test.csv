@@ -13,7 +13,8 @@ fail,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:00.500;deps[]]",1
 fail,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:01.500;deps[]]",1,,a fractional-second pubinterval must error
 
 comment,,,,,,,init - connect and subscribe
-run,0,0,q,"ctp.init[cfg[],`pubinterval`logdir!(""0D00:00:00"";""tplogs"");deps[]]",1,,init with toml-style pubinterval and logdir strings
+run,0,0,q,"ctp.init[cfg[],`pubinterval`logdir`tickerplantname`subscribeto`subscribesyms!(""0D00:00:00"";""tplogs"";""tickerplant1"";"""";"""");deps[]]",1,,init with toml-style strings
+true,0,0,q,"(`tickerplant1;`;`)~.m.di.0torq.0proc.0chainedtp.tickerplantname,.m.di.0torq.0proc.0chainedtp.subscribeto,.m.di.0torq.0proc.0chainedtp.subscribesyms",1,,symbol settings strings become symbols; empty means all
 true,0,0,q,0D~.m.di.0torq.0proc.0chainedtp.pubinterval,1,,a pubinterval string becomes a timespan
 true,0,0,q,`:tplogs~.m.di.0torq.0proc.0chainedtp.logdir,1,,a logdir string becomes a file symbol
 true,0,0,q,".m.di.0torq.0proc.0chainedtp.tph=first exec w from .servers.SERVERS where procname=`tickerplant1",1,,tph is the upstream handle

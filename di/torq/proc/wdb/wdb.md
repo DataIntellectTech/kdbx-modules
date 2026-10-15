@@ -17,7 +17,7 @@ merge over sortworkers. See "Modes" and "Sortworkers" below.
 - **Injected** (from di.torq): `log`, `timer`, `servers`.
 - **Hard** (`use`-imported): `di.subscriptions` (`.sub.subscribe`: subscribe + replay), `di.dbwrite` (the sort and
   attributes), `di.merge` (partition-size tracking and the EOD merge), `di.os` (moving and deleting
-  directories; not in `deps.toml`, as it has no VERSION for depcheck), `di.tplogmgr` (via
+  directories), `di.tplogmgr` (via
   di.subscriptions).
 
 `di.dbwrite` takes the injected **binary** `di.util.log` dep directly — same contract, no adapter

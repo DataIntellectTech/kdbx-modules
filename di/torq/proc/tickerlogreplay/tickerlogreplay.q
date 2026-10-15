@@ -18,7 +18,6 @@ init:{[config;deps]
   .z.m.tplog:use`di.tplog;
   .z.m.dbw:use`di.dbwrite;
   .z.m.dbw.init enlist[`log]!enlist deps`log;
-  / not in deps.toml: di.os has no VERSION, which fails depcheck
   .z.m.os:use`di.os;
   / all settings required
   req:`firstmessage`lastmessage`messagechunks`segmentedmode`autoreplay`schemafile`tablelist`hdbdir`tplogfile`tplogdir;

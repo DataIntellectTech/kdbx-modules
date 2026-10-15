@@ -24,7 +24,6 @@ init:{[config;deps]
   (use`di.pubsub)[`init][enlist[`log]!enlist deps`log];
   r:deps[`handlers]`register;
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];
-  / not in deps.toml: di.os has no VERSION, which fails depcheck
   .z.m.os:use`di.os;
   .z.m.eod:use`di.eodtime;
   .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];

@@ -707,7 +707,6 @@ init:{[config;deps]
   / legacy passes -s -N on the command line; torqx.sh has no per-process flags, so it is a setting
   if[0<w:$[`workers in key config;tolong config`workers;0];system "s -",string w];
 
-  / not in deps.toml: di.os has no VERSION, which fails depcheck
   .z.m.os:use`di.os;
   initdbwrite[config;deps];
   .z.m.mrg:use`di.merge;

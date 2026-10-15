@@ -166,4 +166,6 @@ setdrysyscalls:{[on]
 
 cleardrysyscalls[]
 
+version:first read0`:::VERSION
+
 export:`syscall`drysyscall _ .z.m

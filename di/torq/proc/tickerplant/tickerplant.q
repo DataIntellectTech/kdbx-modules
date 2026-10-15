@@ -157,7 +157,7 @@ init:{[config;deps]
   / tplog: prepared now; log opened after the root upd is published (replay needs it)
   .z.m.tp:use`di.tplogmgr;
   .z.m.logh:0;
-  / classic tickerplant surface read by .sub.subscribe
+  / table names only, read by .sub.subscribe; di.pubsub holds the subscribers
   .u.w:tabs!(count tabs)#();
   .u.i:0;
   .u.icounts:(`symbol$())!0#0;

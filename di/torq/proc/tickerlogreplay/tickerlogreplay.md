@@ -7,8 +7,9 @@ at the end, or partition to a temporary directory and merge on disk.
 
 ## Files
 
-`init.q` loads `tickerlogreplay.q`: the module `init`, then the `.save` hooks (`savedownmanipulation`,
-`manipulate`, `postreplay`), each defined if absent, and the `.replay.upd` hook. `sort.csv` is the default sort config.
+`init.q` loads `tickerlogreplay.q`: the module `init`, then `.save.manipulate` (defined if absent), the `.replay.upd`
+hook, and `.save.savedownmanipulation` / `.save.postreplay` from their `.replay` names. `sort.csv` is the default sort
+config.
 
 ## Surface
 

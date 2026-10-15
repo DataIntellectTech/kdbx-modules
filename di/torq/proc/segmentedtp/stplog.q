@@ -12,8 +12,8 @@ value"loghandles::exec tbl!handle from currlog";
 / create log directory `:stplogs/date/tabname_time
 .stplg.createdld:{[name;date]
   if[not count dir:hsym .stplg.kdbtplog;.z.m.log[`error][`stp;"log directory not defined"];exit 1];
-  system"mkdir -p ",1_string dir;
-  system"mkdir -p ",1_string .stplg.dldir:` sv dir,`$raze/[string name,"_",date];
+  .z.m.os[`mkdir] dir;
+  .z.m.os[`mkdir] .stplg.dldir:` sv dir,`$raze/[string name,"_",date];
  };
 
 .stplg.gentimeformat:{(raze string "dv"$x) except ".:"};

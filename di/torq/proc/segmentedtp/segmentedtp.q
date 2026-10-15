@@ -3,6 +3,9 @@
 / a symbol, a string or a list of strings (TOML has no symbol type)
 tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
 
+/ a relative path is under the app home (TorQ's app config dir)
+apppath:{[x] s:$[":"=first s:string x;1_s;s]; hsym`$$[("/"=first s) or 0=count h:getenv`TORQXAPPHOME;s;h,"/",s]};
+
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.segmentedtp: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.segmentedtp: timer dependency is required - see di.timer"];
@@ -21,6 +24,8 @@ init:{[config;deps]
   (use`di.pubsub)[`init][enlist[`log]!enlist deps`log];
   r:deps[`handlers]`register;
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];
+  / not in deps.toml: di.os has no VERSION, which fails depcheck
+  .z.m.os:use`di.os;
   .z.m.eod:use`di.eodtime;
   .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];
   if[`stplgkdbtplog in key config;.stplg.kdbtplog:tosym config`stplgkdbtplog];
@@ -29,7 +34,7 @@ init:{[config;deps]
   .stplg.errmode:config`stplgerrmode;
   .stplg.batchmode:tosym config`stplgbatchmode;
   .stplg.replayperiod:tosym config`stplgreplayperiod;
-  .stplg.customcsv:tosym config`stplgcustomcsv;
+  .stplg.customcsv:apppath tosym config`stplgcustomcsv;
   .stplg.errorlogname:tosym config`stplgerrorlogname;
   .sctp.chainedtp:config`sctpchainedtp;
   .sctp.loggingmode:tosym config`sctploggingmode;
@@ -47,7 +52,8 @@ init:{[config;deps]
   if[.stplg.multilog in `singular`tabular;.stplg.multilogperiod:1D];
   / custom: logging mode per table
   if[.stplg.multilog~`custom;
-    @[{.stplg.custommode:1_(!) . ("SS";",")0: x};.stplg.customcsv;{.z.m.log[`error][`stp;"failed to load custom mode csv"]}]];
+    @[{.stplg.custommode:1_(!) . ("SS";",")0: x};.stplg.customcsv;
+      {.z.m.log[`error][`stp;m:"failed to load custom mode csv ",string .stplg.customcsv];'"di.torq.proc.segmentedtp: ",m}]];
   / die if the main STP dies
   r[`.z.pc;`;`sctp;0j;{[x] if[.sctp.chainedtp;if[.sctp.tph=x;.z.m.log[`error][`.z.pc;"lost connection to tickerplant : ",string .sctp.tickerplantname];exit 1]]}];
   / close logs on clean exit

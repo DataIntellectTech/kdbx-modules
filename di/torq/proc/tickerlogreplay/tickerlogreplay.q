@@ -18,6 +18,8 @@ init:{[config;deps]
   .z.m.tplog:use`di.tplog;
   .z.m.dbw:use`di.dbwrite;
   .z.m.dbw.init enlist[`log]!enlist deps`log;
+  / not in deps.toml: di.os has no VERSION, which fails depcheck
+  .z.m.os:use`di.os;
   / all settings required
   req:`firstmessage`lastmessage`messagechunks`segmentedmode`autoreplay`schemafile`tablelist`hdbdir`tplogfile`tplogdir;
   req,:`partitiontype`emptytables`sortafterreplay`basicmode`exitwhencomplete`checklogfiles`gc`clean`sortcsv`compression;
@@ -81,21 +83,11 @@ init:{[config;deps]
   if[autoreplay;initandrun[]];
   };
 
-/ save down manipulation and post replay hook, each defined if absent
-
-/ table!function applied to a table before it is enumerated and saved
-if[not `savedownmanipulation in key `.save;.save.savedownmanipulation:@[value;`.save.savedownmanipulation;()!()]];
-
-/ manipulate a table at save down time
+/ manipulate a table at save down time, defined if absent
 if[not `manipulate in key `.save;.save.manipulate:{[t;x]
  $[t in key .save.savedownmanipulation;
   @[.save.savedownmanipulation[t];x;{.z.m.log[`error][`manipulate;"save down manipulation failed : ",y];x}[x]];
   x]}];
-
-/ called after a log's tables are saved, with the directory and partition
-if[not `postreplay in key `.save;.save.postreplay:{[d;p]
-
-	}];
 
 / default upd; set .replay.upd before use to override
 .replay.upd:@[value;`.replay.upd;{{[t;x] insert[t;x]}}]
@@ -258,7 +250,7 @@ mergemaxrows:{[tabname] mergenumrows^mergenumtab[tabname]};
 
 // post replay function for merge replay, invoked after all the tables have been written down for a given log file
 postreplaymerge:{[td;p;h]
- system"mkdir -p ",1_string .Q.par[td;p;`]; // ensures directory exists before removed
+ .z.m.os[`mkdir] .Q.par[td;p;`]; // ensures directory exists before removed
  mergelimits:(tabsincountorder[tablestoreplay],())!$[.z.m.merge.getmergebybytelimit[];(count tabsincountorder[tablestoreplay])#mergenumbytes;({[x] mergenumrows^mergemaxrows[x]}tabsincountorder[tablestoreplay])],();
  // merge the tables from each partition in the tempdir together
  mergetable[td;p;;mergelimits;h] each tabsincountorder[tablestoreplay];

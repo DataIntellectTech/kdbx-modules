@@ -134,7 +134,7 @@ init:{[config;deps]
   .z.m.subs:use`di.subscriptions;
   (.z.m.subs`init)[config;deps];
   sd:.sub.subscribe[subscribeto;subscribesyms;1b;replaylog;first .sub.getsubscriptionhandles[tpt;`;()!()]];
-  .z.m.log[`info][`rdb;"subscribed, partition date ",string sd`d];
+  if[count sd;.z.m.log[`info][`rdb;"subscribed, partition date ",string sd`d]];
 
   / di.dbwrite for savedown (optional sort.csv sort/attr config). Takes the injected binary
   / (ctx;msg) log dep directly - no adapter, since di.dbwrite now uses the same contract.

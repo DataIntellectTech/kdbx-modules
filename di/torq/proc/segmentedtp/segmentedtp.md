@@ -39,7 +39,7 @@ its own, and `di/torq/settings/segmentedtp.q` declares them all. `stplg<key>` se
 | `errmode` | `1b` — failed updates go to an error log |
 | `batchmode` | `` `defaultbatch `` — `immediate`, `defaultbatch` or `memorybatch` |
 | `replayperiod` | `` `day `` — `day` or `period` |
-| `customcsv` | `` ` `` — `table,mode` csv for `custom` |
+| `customcsv` | `"appconfig/stpcustom.csv"` — `table,mode` csv for `custom`; a relative path is under `TORQXAPPHOME`; unreadable fails `init` |
 | `kdbtplog` | `KDBTPLOG` — the log root; logs go in `<kdbtplog>/<procname>_<date>`; optional |
 | `errorlogname` | `` `segmentederrorlogfile `` |
 
@@ -77,6 +77,9 @@ Under di.torq, `generateschemas` is queued with `.proc.addinitlist`, so it runs 
 - End of period and end of day are checked on each update and each timer tick.
 - If the next period or roll is already past, or more than a day has gone by, the `stpzts` job is disabled and
   the check signals; other timer jobs keep running.
+- Server tracking stays on (TorQ's STP turns it off), so the process can register with discovery. Heartbeating is
+  not wired and query logging is off unless `[querylog]` is enabled, as in TorQ's STP.
+- `segmentedchainedtp` has no subscriber cutoff (TorQ's `.subcut`): slow subscribers are not disconnected.
 - The first logs of a day have `seq` 0, and each period roll adds 1.
 - After an end of period, `currperiod` becomes the old `nextperiod`.
 - `period` replay returns `distinct` count and log pairs for the tables asked for; `day` replay returns every log of

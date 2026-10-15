@@ -139,6 +139,7 @@ run,0,0,q,"h(`.stpps.closesub;clt)",1,,closesub for the client handle
 true,0,0,q,"not clt in h"".stpps.allsubhandles[]""",1,,client removed from both registries
 true,0,0,q,"""Table nosuchtable does not exist""~h""@[.stpps.init;enlist`nosuchtable;{x}]""",1,,init signals on a missing table
 true,0,0,q,"(`psinit;""Table nosuchtable does not exist"")~h""lastlog""",1,,and logs it through the injected log
+true,0,0,q,"`currp`nextp`data~h""(value pubsub.callendofperiod)1""",1,,callendofperiod takes the three endofperiod arguments
 
 run,0,0,q,neg[h](exit;0);neg[h](::),1,,close background process and flush
 run,0,0,q,hclose h,1,,close handle

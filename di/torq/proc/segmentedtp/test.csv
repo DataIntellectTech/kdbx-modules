@@ -9,10 +9,13 @@ fail,0,0,q,"seg.init[()!();()!()]",1,,init without log must error
 fail,0,0,q,"seg.init[()!();enlist[`log]!enlist nolog]",1,,init without timer must error
 fail,0,0,q,"seg.init[()!();`log`timer!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]})]",1,,init without handlers must error
 fail,0,0,q,"seg.init[()!();`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};enlist[`register]!enlist {[a;b;c;d;e]})]",1,,init without the settings must error
-true,0,0,q,"(`tabperiod;0D01;1b;`defaultbatch;`day;`)~ha"".stplg`multilog`multilogperiod`errmode`batchmode`replayperiod`customcsv""",1,,stplg defaults from the settings file
+true,0,0,q,"((`tabperiod;0D01;1b;`defaultbatch;`day),hsym`$$[count h:getenv`TORQXAPPHOME;h,""/"";""""],""appconfig/stpcustom.csv"")~ha"".stplg`multilog`multilogperiod`errmode`batchmode`replayperiod`customcsv""",1,,stplg defaults from the settings file; customcsv under the app home
 true,0,0,q,"(0b;`none;`stp1;10;0W;`;`;0b;1b)~ha"".sctp`chainedtp`loggingmode`tickerplantname`tpconnsleep`tpcheckcycles`subscribeto`subscribesyms`replay`schema""",1,,sctp defaults from the settings file
-true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv ``stplg,`$5_string k}[x] each k where (k:key x) like ""stplg*""}(use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]",1,,every shipped stplg key lands unchanged after init
+true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv ``stplg,`$5_string k}[x] each k where (k:key[x] except `stplgcustomcsv) like ""stplg*""}(use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]",1,,every other shipped stplg key lands unchanged after init
 true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv ``sctp,`$4_string k}[x] each k where (k:key x) like ""sctp*""}(use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]",1,,every shipped sctp key lands unchanged after init
+true,0,0,q,"`:/x/c.csv~.m.di.0torq.0proc.0segmentedtp.apppath`$""/x/c.csv""",1,,an absolute customcsv is kept
+true,0,0,q,"`:/x/c.csv~.m.di.0torq.0proc.0segmentedtp.apppath`:/x/c.csv",1,,an hsym customcsv is kept
+true,0,0,q,"(hsym`$$[count h:getenv`TORQXAPPHOME;h,""/"";""""],""a/c.csv"")~.m.di.0torq.0proc.0segmentedtp.apppath`$""a/c.csv""",1,,a relative customcsv is under the app home
 true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperiod""",1,,stplg keys override the defaults; singular rolls daily
 true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
 true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered

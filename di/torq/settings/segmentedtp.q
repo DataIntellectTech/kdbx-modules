@@ -7,7 +7,7 @@ stplgmultilogperiod:0D01
 stplgerrmode:1b
 stplgbatchmode:`defaultbatch
 stplgreplayperiod:`day
-stplgcustomcsv:`
+stplgcustomcsv:"appconfig/stpcustom.csv"
 stplgerrorlogname:`segmentederrorlogfile
 sctpchainedtp:0b
 sctploggingmode:`none

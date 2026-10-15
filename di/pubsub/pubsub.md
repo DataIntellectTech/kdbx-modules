@@ -50,7 +50,7 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 |---------------------------|------------------------------------------------------------------------------|
 | `pubsub.setsubtables`     | Set a specified list of tables that are available for subscription.          | 
 | `pubsub.callendofday`     | Broadcast end of day to all subscribers as `.u.end[d]`.                      |
-| `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
+| `pubsub.callendofperiod`  | Broadcast end of period to all subscribers as `endofperiod[currp;nextp;data]`.|
 | `pubsub.closesub`         | Remove handle upon connection close. Not bound to `.z.pc` by the module - the consumer binds it (see Notes). | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
 | `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas). Takes a deps dict with a required `log`.  |

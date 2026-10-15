@@ -78,7 +78,7 @@ closesub:{[h]
 callendofday:{[d](neg getallhandles[])@\:(`.u.end;d)};
 
 / broadcast to all subscribers upon end of period, client needs to define endofperiod function
-callendofperiod:{(neg getallhandles[])@\:(`endofperiod;x)};
+callendofperiod:{[currp;nextp;data] (neg getallhandles[])@\:(`endofperiod;currp;nextp;data)};
 
 / get table schema
 extractschema:{[table]0#value table};

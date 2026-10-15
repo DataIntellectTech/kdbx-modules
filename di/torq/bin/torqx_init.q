@@ -21,6 +21,7 @@ norun:`norun in key params;
 
 tq:use`di.torq;
 overrides:$[norun;enlist[`norun]!enlist 1b;()!()];
-result:tq.init[proctype;procname;overrides];
+/ an init error is fatal: exit 3 rather than leave a half-started process listening
+result:.[tq.init;(proctype;procname;overrides);{-2 "torqx: init failed: ",x;exit 3}];
 
 -1 "torqx: started ",(string result`proctype)," ",string result`procname;

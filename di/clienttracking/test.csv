@@ -5,8 +5,8 @@ before,0,0,q,setupfixture[],1,,start the server peers
 
 comment,,,,,,,settings and table
 run,0,0,q,"S:(use`di.torq.config)[`parsefile] SETTINGS",1,,read the settings file
-true,0,0,q,"(1b;0b;0b;1b)~S`clients_enabled`clients_opencloseonly`clients_intrusive`clients_autoclean",1,,boolean defaults
-true,0,0,q,"(`long$0D02;0)~S`clients_retain`clients_maxidle",1,,retain two hours and maxidle off
+true,0,0,q,"(1b;0b;0b;1b)~S`clientsenabled`clientsopencloseonly`clientsintrusive`clientsautoclean",1,,boolean defaults
+true,0,0,q,"(`long$0D02;0)~S`clientsretain`clientsmaxidle",1,,retain two hours and maxidle off
 true,0,0,q,"(enlist`w)~keys .clients.clients",1,,table keyed on w
 true,0,0,q,"`ipa`u`a`k`K`c`s`o`f`pid`port`startp`endp`lastp`hits`errs`sz~cols value .clients.clients",1,,table columns
 true,0,0,q,"""iij""~exec t from meta .clients.clients where c in `hits`errs`sz",1,,hits and errs int; sz long
@@ -19,7 +19,7 @@ true,0,0,q,"1=ha""count select from .clients.clients where w=.z.w""",1,,a connec
 true,0,0,q,"(.z.u;`localhost;`int$.Q.addr`localhost)~(mine[ha;""u""];mine[ha;""ipa""];mine[ha;""a""])",1,,row records user and address
 true,0,0,q,"(mine[ha;""startp""]<=mine[ha;""lastp""]) and null mine[ha;""endp""]",1,,startp and lastp set; endp null while open
 true,0,0,q,"ha""all {`clients in exec name from h.list x} each `.z.po`.z.pc`.z.wo`.z.wc""",1,,open and close observers registered
-true,0,0,q,"(S`clients_enabled`clients_opencloseonly`clients_intrusive`clients_autoclean`clients_retain`clients_maxidle)~ha"".m.di.0clienttracking`enabled`opencloseonly`intrusive`autoclean`retain`maxidle""",1,,init stores the settings
+true,0,0,q,"(S`clientsenabled`clientsopencloseonly`clientsintrusive`clientsautoclean`clientsretain`clientsmaxidle)~ha"".m.di.0clienttracking`enabled`opencloseonly`intrusive`autoclean`retain`maxidle""",1,,init stores the settings
 
 comment,,,,,,,usage
 run,0,0,q,"n0:mine[ha;""hits""]; ha""1+1""; n1:mine[ha;""hits""]",1,,two sync queries

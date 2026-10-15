@@ -22,9 +22,9 @@ autoclean:0b                        / drop expired records when a connection clo
 autoreconnect:0b                    / resubscribe to processes previously subscribed to
 checksubscriptionperiod:0D00:00:10  / how often to check subscriptions are connected; 0D means never
 / client tracking
-clients_enabled:1b                  / track connections
-clients_opencloseonly:0b            / track connections but not queries
-clients_intrusive:0b                / ask each new kdb+ client for its details
-clients_autoclean:1b                / not read
-clients_retain:`long$0D02           / nanoseconds to keep a closed row
-clients_maxidle:`long$0D            / nanoseconds of idleness before a handle is closed; 0 means never
+clientsenabled:1b                  / track connections
+clientsopencloseonly:0b            / track connections but not queries
+clientsintrusive:0b                / ask each new kdb+ client for its details
+clientsautoclean:1b                / not read
+clientsretain:`long$0D02           / nanoseconds to keep a closed row
+clientsmaxidle:`long$0D            / nanoseconds of idleness before a handle is closed; 0 means never

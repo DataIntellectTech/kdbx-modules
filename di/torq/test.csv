@@ -30,7 +30,7 @@ run,0,0,q,"zps:.z.ps; .m.di.0torq.zpsignorewired:0b; .m.di.0torq.initzpsignore[e
 true,0,0,q,zps~.z.ps,1,,leaves .z.ps untouched
 run,0,0,q,".m.di.0clienttracking.hit:first ctorig; .m.di.0clienttracking.hite:last ctorig",1,,restore client tracking
 run,0,0,q,"ctp:{(use`di.torq.config)[`cascade] . .m.di.0torq.roots[],x,`$string[x],""1""} each `tickerplant`segmentedtp",1,,cascade the tickerplant and segmentedtp settings
-true,0,0,q,"all {(1b;0b)~(x`clients_opencloseonly;(x`zpsignore)`enabled)} each ctp",1,,tickerplants track connections only and have no zpsignore
+true,0,0,q,"all {(1b;0b)~(x`clientsopencloseonly;(x`zpsignore)`enabled)} each ctp",1,,tickerplants track connections only and have no zpsignore
 
 run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
 true,0,0,q,`hdb~r2`proctype,1,,override path still resolves the same identity

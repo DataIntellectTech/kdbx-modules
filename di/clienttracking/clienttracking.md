@@ -20,12 +20,12 @@ Required in `config`; `di/torq/settings/default.q` declares them all:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `clients_enabled` | `1b` | track connections |
-| `clients_opencloseonly` | `0b` | track connections but not queries |
-| `clients_intrusive` | `0b` | ask each new kdb+ client for `k K c s o f pid port`; don't use with non-kdb+ clients |
-| `clients_autoclean` | `1b` | not read |
-| `clients_retain` | `` `long$0D02 `` | nanoseconds to keep a closed row |
-| `clients_maxidle` | `` `long$0D `` | nanoseconds of idleness before a handle is closed; 0 means never |
+| `clientsenabled` | `1b` | track connections |
+| `clientsopencloseonly` | `0b` | track connections but not queries |
+| `clientsintrusive` | `0b` | ask each new kdb+ client for `k K c s o f pid port`; don't use with non-kdb+ clients |
+| `clientsautoclean` | `1b` | not read |
+| `clientsretain` | `` `long$0D02 `` | nanoseconds to keep a closed row |
+| `clientsmaxidle` | `` `long$0D `` | nanoseconds of idleness before a handle is closed; 0 means never |
 
 ## init[config;deps]
 
@@ -33,8 +33,8 @@ Requires `handlers` (`di.torq.handlers`). It:
 
 1. signals if any setting is missing, then applies them;
 2. registers `pc` on `.z.pc`, whether or not `enabled`;
-3. when `clients_enabled`, registers `po` on `.z.po`, `wo` on `.z.wo` and `pc` on `.z.wc`;
-4. when `clients_enabled` and not `clients_opencloseonly`, wraps `.z.pg`, `.z.ps` and `.z.ws` directly (not through
+3. when `clientsenabled`, registers `po` on `.z.po`, `wo` on `.z.wo` and `pc` on `.z.wc`;
+4. when `clientsenabled` and not `clientsopencloseonly`, wraps `.z.pg`, `.z.ps` and `.z.ws` directly (not through
    `di.torq.handlers`) with `{hit[@[x;y;hite]]}` around the current handler.
    An unset `.z.pg`/`.z.ps` is taken as `value`, and an unset `.z.ws` as an echo.
 
@@ -46,7 +46,7 @@ events through `di.torq.handlers` afterwards replaces the wrap.
 - `hits`, `errs` and `sz` count async (`.z.ps`) and websocket (`.z.ws`) messages too, including the
   bytes of results that are never sent back.
 - A closed row keeps its key with `w` set to null, so several closed rows share a null key.
-- A handle closed by the `clients_maxidle` sweep still has a null `endp`, so the same sweep drops its row
+- A handle closed by the `clientsmaxidle` sweep still has a null `endp`, so the same sweep drops its row
   instead of marking it.
 - The private `unregistered[]` reads a `CLIENTS` table that doesn't exist, and fails.
 - `hits` and `errs` are ints.
@@ -59,7 +59,7 @@ k4unit.moduletest`di.clienttracking
 ```
 
 `test.q`/`test.csv` start four server peers, each configured from the settings file plus overrides
-(defaults, `clients_opencloseonly`, disabled, and `clients_intrusive` with a one-second `clients_maxidle`
-and `clients_retain`), and connect to them. The tests cover the settings, the table, the init checks,
+(defaults, `clientsopencloseonly`, disabled, and `clientsintrusive` with a one-second `clientsmaxidle`
+and `clientsretain`), and connect to them. The tests cover the settings, the table, the init checks,
 the stored settings, connection rows, hits, bytes and errors, closing and `addw`, websocket rows, both
 settings modes, the intrusive reply, idle closing and the retain purge.

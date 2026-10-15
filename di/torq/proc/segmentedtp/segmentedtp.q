@@ -8,11 +8,12 @@ init:{[config;deps]
   if[not `timer in key deps;'"di.torq.proc.segmentedtp: timer dependency is required - see di.timer"];
   if[not `handlers in key deps;'"di.torq.proc.segmentedtp: handlers dependency is required - see di.torq.handlers"];
   / all settings required
-  req:`stplg_multilog`stplg_multilogperiod`stplg_errmode`stplg_batchmode`stplg_replayperiod`stplg_customcsv`stplg_errorlogname;
-  req,:`sctp_chainedtp`sctp_loggingmode`sctp_tickerplantname`sctp_tpconnsleep`sctp_tpcheckcycles`sctp_subscribeto;
-  req,:`sctp_subscribesyms`sctp_replay`sctp_schema`createlogs;
+  req:`stplgmultilog`stplgmultilogperiod`stplgerrmode`stplgbatchmode`stplgreplayperiod`stplgcustomcsv`stplgerrorlogname;
+  req,:`sctpchainedtp`sctploggingmode`sctptickerplantname`sctptpconnsleep`sctptpcheckcycles`sctpsubscribeto;
+  req,:`sctpsubscribesyms`sctpreplay`sctpschema`createlogs;
   if[count m:req except key config;'"di.torq.proc.segmentedtp: missing settings: ",", " sv string m];
   .z.m.log:deps`log;
+  .z.m.timer:deps`timer;
   .z.m.procname:config`procname;
   .z.m.proctype:config`proctype;
   .z.m.params:config;
@@ -22,23 +23,23 @@ init:{[config;deps]
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];
   .z.m.eod:use`di.eodtime;
   .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];
-  if[`stplg_kdbtplog in key config;.stplg.kdbtplog:tosym config`stplg_kdbtplog];
-  .stplg.multilog:tosym config`stplg_multilog;
-  .stplg.multilogperiod:config`stplg_multilogperiod;
-  .stplg.errmode:config`stplg_errmode;
-  .stplg.batchmode:tosym config`stplg_batchmode;
-  .stplg.replayperiod:tosym config`stplg_replayperiod;
-  .stplg.customcsv:tosym config`stplg_customcsv;
-  .stplg.errorlogname:tosym config`stplg_errorlogname;
-  .sctp.chainedtp:config`sctp_chainedtp;
-  .sctp.loggingmode:tosym config`sctp_loggingmode;
-  .sctp.tickerplantname:tosym config`sctp_tickerplantname;
-  .sctp.tpconnsleep:config`sctp_tpconnsleep;
-  .sctp.tpcheckcycles:config`sctp_tpcheckcycles;
-  .sctp.subscribeto:tosym config`sctp_subscribeto;
-  .sctp.subscribesyms:tosym config`sctp_subscribesyms;
-  .sctp.replay:config`sctp_replay;
-  .sctp.schema:config`sctp_schema;
+  if[`stplgkdbtplog in key config;.stplg.kdbtplog:tosym config`stplgkdbtplog];
+  .stplg.multilog:tosym config`stplgmultilog;
+  .stplg.multilogperiod:config`stplgmultilogperiod;
+  .stplg.errmode:config`stplgerrmode;
+  .stplg.batchmode:tosym config`stplgbatchmode;
+  .stplg.replayperiod:tosym config`stplgreplayperiod;
+  .stplg.customcsv:tosym config`stplgcustomcsv;
+  .stplg.errorlogname:tosym config`stplgerrorlogname;
+  .sctp.chainedtp:config`sctpchainedtp;
+  .sctp.loggingmode:tosym config`sctploggingmode;
+  .sctp.tickerplantname:tosym config`sctptickerplantname;
+  .sctp.tpconnsleep:config`sctptpconnsleep;
+  .sctp.tpcheckcycles:config`sctptpcheckcycles;
+  .sctp.subscribeto:tosym config`sctpsubscribeto;
+  .sctp.subscribesyms:tosym config`sctpsubscribesyms;
+  .sctp.replay:config`sctpreplay;
+  .sctp.schema:config`sctpschema;
   set[`createlogs;config`createlogs];
   / subscribers replay from the parent's logs
   if[.sctp.loggingmode=`parent;.stplg.replaylog:{[t] .sctp.tph (`.stplg.replaylog; t)}];
@@ -104,11 +105,11 @@ init:{[config;deps]
   .stplg.updmsg:.stplg.upd[batch];
   .stplg.ts:.stplg.zts[batch];
   .u.upd:.stpps.upd[chainmode];
-  set[`.z.ts;{[f;x] @[;x;()]each f}(@[value;`.z.ts;{{}}];.stpps.zts[chainmode])];
+  / the batch timer and end checks run as a 1s di.timer job; the end guards disable only this job
+  .z.m.timer[`addjob][`stpzts;.stpps.zts[chainmode];();1;1;()!()];
   / error mode: failed updates go to a separate log
   if[.stplg.errmode;
     .stp.upd:.u.upd;
     .u.upd:{[t;x] .[.stp.upd;(t;x);{.stplg.badmsg[x;y;z]}[;t;x]]}
    ];
-  if[not system "t";.z.m.log[`info][`timer;"defaulting timer to 1000ms"];system"t 1000"];
  }];

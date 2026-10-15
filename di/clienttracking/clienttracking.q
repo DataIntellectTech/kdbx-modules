@@ -3,14 +3,14 @@
 init:{[config;deps]
   if[not `handlers in key deps;'"di.clienttracking: handlers dependency is required - see di.torq.handlers"];
   / all settings required
-  req:`clients_enabled`clients_opencloseonly`clients_intrusive`clients_autoclean`clients_retain`clients_maxidle;
+  req:`clientsenabled`clientsopencloseonly`clientsintrusive`clientsautoclean`clientsretain`clientsmaxidle;
   if[count m:req except key config;'"di.clienttracking: missing settings: ",", " sv string m];
-  .z.m.enabled:config`clients_enabled;
-  .z.m.opencloseonly:config`clients_opencloseonly;
-  .z.m.intrusive:config`clients_intrusive;
-  .z.m.autoclean:config`clients_autoclean;
-  .z.m.retain:config`clients_retain;
-  .z.m.maxidle:config`clients_maxidle;
+  .z.m.enabled:config`clientsenabled;
+  .z.m.opencloseonly:config`clientsopencloseonly;
+  .z.m.intrusive:config`clientsintrusive;
+  .z.m.autoclean:config`clientsautoclean;
+  .z.m.retain:config`clientsretain;
+  .z.m.maxidle:config`clientsmaxidle;
   r:deps[`handlers]`register;
   r[`.z.pc;`;`clients;0j;pc[::;]];
   if[enabled;

@@ -1,21 +1,21 @@
 / track connections only
-clients_opencloseonly:1b
+clientsopencloseonly:1b
 zpsignore:(enlist`enabled)!enlist 0b
 / all required by init; override as -<key>. kdbtplog comes from the environment
-stplg_multilog:`tabperiod
-stplg_multilogperiod:0D01
-stplg_errmode:1b
-stplg_batchmode:`defaultbatch
-stplg_replayperiod:`day
-stplg_customcsv:`
-stplg_errorlogname:`segmentederrorlogfile
-sctp_chainedtp:0b
-sctp_loggingmode:`none
-sctp_tickerplantname:`stp1
-sctp_tpconnsleep:10
-sctp_tpcheckcycles:0W
-sctp_subscribeto:`
-sctp_subscribesyms:`
-sctp_replay:0b
-sctp_schema:1b
+stplgmultilog:`tabperiod
+stplgmultilogperiod:0D01
+stplgerrmode:1b
+stplgbatchmode:`defaultbatch
+stplgreplayperiod:`day
+stplgcustomcsv:`
+stplgerrorlogname:`segmentederrorlogfile
+sctpchainedtp:0b
+sctploggingmode:`none
+sctptickerplantname:`stp1
+sctptpconnsleep:10
+sctptpcheckcycles:0W
+sctpsubscribeto:`
+sctpsubscribesyms:`
+sctpreplay:0b
+sctpschema:1b
 createlogs:1b

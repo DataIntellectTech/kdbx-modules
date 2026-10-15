@@ -8,7 +8,7 @@ peer:{[p] hopen `$":localhost:",string p}
 PORTS:`a`b`c`d!4#0N
 
 / a: defaults; b: opencloseonly; c: disabled; d: INTRUSIVE with a 1s MAXIDLE and RETAIN
-CFGS:`a`b`c`d!("()!()";"enlist[`clients_opencloseonly]!enlist 1b";"enlist[`clients_enabled]!enlist 0b";"`clients_intrusive`clients_maxidle`clients_retain!(1b;`long$0D00:00:01;`long$0D00:00:01)")
+CFGS:`a`b`c`d!("()!()";"enlist[`clientsopencloseonly]!enlist 1b";"enlist[`clientsenabled]!enlist 0b";"`clientsintrusive`clientsmaxidle`clientsretain!(1b;`long$0D00:00:01;`long$0D00:00:01)")
 
 / the settings file, the base of every peer's config
 SETTINGS:"di/torq/settings/default.q"

@@ -49,7 +49,7 @@ setupfixture:{[]
     "h:use`di.torq.handlers";
     "h.init enlist[`log]!enlist nolog";
     "seg:use`di.torq.proc.segmentedtp";
-    "seg.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/default.q\"),((use`di.torq.config)[`parsefile] \"di/torq/settings/segmentedtp.q\"),`proctype`procname`schemafile`stplg_kdbtplog!(`segmentedtp;`stp1;\"",FIXDIR,"/schema.q\";`$\"",FIXDIR,"/stp\");`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list#h)]";
+    "seg.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/default.q\"),((use`di.torq.config)[`parsefile] \"di/torq/settings/segmentedtp.q\"),`proctype`procname`schemafile`stplgkdbtplog!(`segmentedtp;`stp1;\"",FIXDIR,"/schema.q\";`$\"",FIXDIR,"/stp\");`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};`register`remove`list#h)]";
     ".u.upd[`trade;(`b`a;1 2f;10 20i)]";
     ".u.upd[`quote;(enlist`a;enlist 3f)]";
     ".u.upd[`trade;(enlist`c;enlist 4f;enlist 40i)]";

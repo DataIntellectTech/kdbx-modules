@@ -6,7 +6,7 @@
 / view of log file handles for faster lookups
 value"loghandles::exec tbl!handle from currlog";
 
-/ log root; config stplg_kdbtplog overrides it
+/ log root; config stplgkdbtplog overrides it
 .stplg.kdbtplog:`$getenv`KDBTPLOG
 
 / create log directory `:stplogs/date/tabname_time
@@ -167,7 +167,7 @@ value"loghandles::exec tbl!handle from currlog";
   .stpps.endp[currentpd;nextpd;data];
   .stplg.currperiod:.stplg.nextperiod;
   if[(data`p)>.stplg.nextperiod:.stplg.multilogperiod+.stplg.currperiod;
-    system"t 0";'"next period is in the past"];
+    .z.m.timer[`disablejobs]`stpzts;'"next period is in the past"];
   .stplg.getnextendUTC[];
   if[rolllogs;.stplg.periodrollover[data]];
   .z.m.log[`info][`stpeoperiod;"end of period complete, new values for current and next period are ",.Q.s1 (currentpd;nextpd)];
@@ -190,7 +190,7 @@ value"loghandles::exec tbl!handle from currlog";
 .stplg.dayrollover:{[data]
   .z.m.eod.setnextroll .z.m.eod.getroll data`p;
   if[(data`p)>.z.m.eod.getnextroll[];
-    system"t 0";'"next roll is in the past"];
+    .z.m.timer[`disablejobs]`stpzts;'"next roll is in the past"];
   .stplg.getnextendUTC[];
   .z.m.eod.setd 1+.z.m.eod.getd[];
   .stpm.updmeta[.stplg.multilog][`close;.stplg.logtabs;(data`p)+.z.m.eod.getdailyadj[]];
@@ -205,7 +205,7 @@ value"loghandles::exec tbl!handle from currlog";
 .stplg.checkends:{
   if[.stplg.nextendUTC > x; :()];
   if[.stplg.nextperiod < x1:x+.z.m.eod.getdailyadj[]; .stplg.stpeoperiod[.stplg`currperiod;.stplg`nextperiod;.stplg.endofdaydata[],(enlist `p)!enlist x1;not .z.m.eod.getnextroll[] < x]];
-  if[.z.m.eod.getnextroll[] < x;if[.z.m.eod.getd[]<("d"$x)-1;system"t 0";'"more than one day?"]; .stplg.endofday[.z.m.eod.getd[];.stplg.endofdaydata[],(enlist `p)!enlist x]];
+  if[.z.m.eod.getnextroll[] < x;if[.z.m.eod.getd[]<("d"$x)-1;.z.m.timer[`disablejobs]`stpzts;'"more than one day?"]; .stplg.endofday[.z.m.eod.getd[];.stplg.endofdaydata[],(enlist `p)!enlist x]];
  };
 
 .stplg.init:{[dbname]

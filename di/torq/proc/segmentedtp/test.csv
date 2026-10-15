@@ -11,12 +11,13 @@ fail,0,0,q,"seg.init[()!();`log`timer!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;
 fail,0,0,q,"seg.init[()!();`log`timer`handlers!(nolog;enlist[`addjob]!enlist {[a;b;c;d;e;f]};enlist[`register]!enlist {[a;b;c;d;e]})]",1,,init without the settings must error
 true,0,0,q,"(`tabperiod;0D01;1b;`defaultbatch;`day;`)~ha"".stplg`multilog`multilogperiod`errmode`batchmode`replayperiod`customcsv""",1,,stplg defaults from the settings file
 true,0,0,q,"(0b;`none;`stp1;10;0W;`;`;0b;1b)~ha"".sctp`chainedtp`loggingmode`tickerplantname`tpconnsleep`tpcheckcycles`subscribeto`subscribesyms`replay`schema""",1,,sctp defaults from the settings file
-true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv `,`$""_"" vs string k}[x] each k where (k:key x) like ""stplg_*""}(use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]",1,,every shipped stplg key lands unchanged after init
-true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv `,`$""_"" vs string k}[x] each k where (k:key x) like ""sctp_*""}(use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]",1,,every shipped sctp key lands unchanged after init
+true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv ``stplg,`$5_string k}[x] each k where (k:key x) like ""stplg*""}(use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]",1,,every shipped stplg key lands unchanged after init
+true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv ``sctp,`$4_string k}[x] each k where (k:key x) like ""sctp*""}(use`di.torq.config)[`parsefile][""di/torq/settings/segmentedtp.q""]",1,,every shipped sctp key lands unchanged after init
 true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperiod""",1,,stplg keys override the defaults; singular rolls daily
 true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
 true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered
 true,0,0,q,"`stplg in ha""exec name from h.list`.z.exit""",1,,.z.exit observer registered
+true,0,0,q,"(`stpzts;1;1)~ha""tickjob""",1,,batch timer added as a 1s timer job
 
 comment,,,,,,,subscribe handshake
 true,0,0,q,"`segmented~ha""tptype""",1,,tptype is segmented
@@ -32,7 +33,7 @@ run,0,0,q,"ha(`.u.upd;`trade;trd`a`b)",1,,send two trades
 true,0,0,q,"(2;0)~(ha""count trade"";count got)",1,,held in memory and not yet published
 true,0,0,q,"1=logcount ha""currlog[`trade;`logname]""",1,,written to the log immediately
 true,0,0,q,"(`trade;1;0)~ha""(first key .stplg.tmpmsgcount;.stplg.tmpmsgcount`trade;.stplg.msgcount`trade)""",1,,counted as pending
-run,0,0,q,"ha"".z.ts .z.p""",1,,timer
+run,0,0,q,"ha""tick[]""",1,,timer
 true,0,0,q,"(1;`trade)~(count got;first first got)",1,,published on the timer
 true,0,0,q,"(`time`sym`price`size;`a`b)~(cols last first got;exec sym from last first got)",1,,time added and rows intact
 true,0,0,q,"(0;1;2;0)~ha""(count trade;.stplg.msgcount`trade;.stplg.rowcount`trade;count .stplg.tmpmsgcount)""",1,,table cleared and counts moved
@@ -53,11 +54,13 @@ true,0,0,q,"1=count distinct hb""exec logname from currlog where tbl in `trade`q
 true,0,0,q,"(string hb""currlog[`trade;`logname]"") like ""*/stp2_2*""",1,,singular log name
 run,0,0,q,"got:(); hb"".u.sub[`quote;1!([]tbl:enlist`quote;filters:enlist\""bid>1\"";columns:enlist\""sym,bid\"")]""; hb(`.u.upd;`quote;(`a`b;1 2f))",1,,filtered subscription with where and columns
 true,0,0,q,"(`sym`bid;enlist`b)~(cols last first got;exec sym from last first got)",1,,only matching rows and columns published
+true,0,0,q,"""next period is in the past""~hb""@[{.stplg.nextperiod:.z.p-2D; .stplg.getnextendUTC[]; .stplg.checkends .z.p};::;::]""",1,,a past next period signals
+true,0,0,q,"(enlist`stpzts;60000i)~hb""(stopped;system\""t\"")""",1,,only the tick job is disabled; the process timer is untouched
 
 comment,,,,,,,memorybatch and tabular
 run,0,0,q,"hc(`.u.upd;`trade;trd`a`b)",1,,send two trades
 true,0,0,q,"(2;0)~(hc""count trade"";logcount hc""currlog[`trade;`logname]"")",1,,held in memory and not logged
-run,0,0,q,"hc"".z.ts .z.p""",1,,timer
+run,0,0,q,"hc""tick[]""",1,,timer
 true,0,0,q,"(0;1;1;2)~(hc""count trade"";logcount hc""currlog[`trade;`logname]"";hc"".stplg.msgcount`trade"";hc"".stplg.rowcount`trade"")",1,,logged and counted on the timer
 true,0,0,q,"(string hc""currlog[`trade;`logname]"") like ""*/stp3_trade2*""",1,,tabular log name
 
@@ -65,7 +68,7 @@ comment,,,,,,,chained
 true,0,0,q,"(`quote`trade;1)~hs""(.stpps.t;count select from .sub.SUBSCRIPTIONS where table=`trade,active)""",1,,subscribed to the upstream
 true,0,0,q,"waitfor {2=hs""count trade""}",1,,upstream publish arrives
 true,0,0,q,"1 2~hs""(.stplg.updtab`trade)[1 2;3]""",1,,chained upd adds no time
-run,0,0,q,"hs"".z.ts .z.p""",1,,timer
+run,0,0,q,"hs""tick[]""",1,,timer
 true,0,0,q,"(0;1;1)~hs""(count trade;.stplg.msgcount`trade;logcount:{-11!(-2;x)} currlog[`trade;`logname])""",1,,published and logged in create mode
 true,0,0,q,"(string hs""currlog[`trade;`logname]"") like ""*/sctp1_"",(string .z.d),""/sctp1_trade2*""",1,,own log in create mode
 true,0,0,q,"(`parent;`stp1;`)~hp"".sctp`loggingmode`tickerplantname`subscribeto""",1,,toml-style sctp strings become symbols
@@ -73,7 +76,7 @@ true,0,0,q,"(ha"".stplg.replaylog`trade"")~hp"".stplg.replaylog`trade""",1,,pare
 true,0,0,q,"hp""all (::)~/:value loghandles""",1,,parent mode writes no logs
 
 comment,,,,,,,end of period
-run,0,0,q,"eops:(); ha"".stplg.nextperiod:.z.p-0D00:00:01; .stplg.getnextendUTC[]; .z.ts .z.p""",1,,force the period end
+run,0,0,q,"eops:(); ha"".stplg.nextperiod:.z.p-0D00:00:01; .stplg.getnextendUTC[]; tick[]""",1,,force the period end
 true,0,0,q,"(1;`proctype`procname`tables`p;`stp1)~(count eops;key last last eops;(last last eops)`procname)",1,,endofperiod sent with process data
 true,0,0,q,"(1;4;0)~ha""(.stplg.i;count .stpm.metatable;.stplg.msgcount`trade)""",1,,logs rolled and counts reset
 true,0,0,q,"(0W;2)~ha""(first first r;count r:.stplg.replaylog`trade)""",1,,day replay lists the closed log as 0W
@@ -81,7 +84,7 @@ true,0,0,q,"1=count ha"".stplg.replayperiod:`period; r:.stplg.replaylog enlist`t
 true,0,0,q,"waitfor {1=hs"".stplg.i""}",1,,chained create mode rolls its logs
 
 comment,,,,,,,end of day
-run,0,0,q,"eods:(); ha""(use`di.eodtime)[`setnextroll] .z.p-0D00:00:01; .stplg.getnextendUTC[]; .z.ts .z.p""",1,,force the day end
+run,0,0,q,"eods:(); ha""(use`di.eodtime)[`setnextroll] .z.p-0D00:00:01; .stplg.getnextendUTC[]; tick[]""",1,,force the day end
 true,0,0,q,"(1;.z.d;`stp1)~(count eods;first first eods;(last first eods)`procname)",1,,endofday sent with date and process data
 true,0,0,q,"(.z.d+1;`$"":"",FIXDIR,""/a/stp1_"",string .z.d+1;2)~ha""((use`di.eodtime)[`getd][];.stplg.dldir;count .stpm.metatable)""",1,,date advanced and logs reopened
 true,0,0,q,"ha"".z.p<(use`di.eodtime)[`getnextroll][]""",1,,next roll is in the future

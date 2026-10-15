@@ -1,7 +1,7 @@
 # di.torq.proc.segmentedtp
 
 A segmented tickerplant. It stamps and logs incoming updates, per table and per period, and publishes them to
-subscribers, filtered or not, immediately or in batches. With `sctp_chainedtp` on, it runs as a chained segmented
+subscribers, filtered or not, immediately or in batches. With `sctpchainedtp` on, it runs as a chained segmented
 tickerplant: it subscribes to another one and republishes what it receives.
 
 ## Files
@@ -29,8 +29,8 @@ Subscribers get `(`upd;t;x)`, `(`endofperiod;cur;next;data)` and `(`endofday;dat
 
 ## Settings
 
-Every `stplg_<key>` and `sctp_<key>` setting and `createlogs` is required in `config`; the module keeps no defaults of
-its own, and `di/torq/settings/segmentedtp.q` declares them all. `stplg_<key>` settings are set onto `.stplg.<key>`:
+Every `stplg<key>` and `sctp<key>` setting and `createlogs` is required in `config`; the module keeps no defaults of
+its own, and `di/torq/settings/segmentedtp.q` declares them all. `stplg<key>` settings are set onto `.stplg.<key>`:
 
 | Key | Default |
 |---|---|
@@ -43,12 +43,12 @@ its own, and `di/torq/settings/segmentedtp.q` declares them all. `stplg_<key>` s
 | `kdbtplog` | `KDBTPLOG` — the log root; logs go in `<kdbtplog>/<procname>_<date>`; optional |
 | `errorlogname` | `` `segmentederrorlogfile `` |
 
-`sctp_<key>` settings are set onto `.sctp.<key>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
+`sctp<key>` settings are set onto `.sctp.<key>`: `chainedtp` (`0b`), `loggingmode` (`` `none ``: `none`, `create` or
 `parent`), `tickerplantname` (`` `stp1 ``), `tpconnsleep` (`10`), `tpcheckcycles` (`0W`), `subscribeto` and
 `subscribesyms` (`` ` ``), `replay` (`0b`), `schema` (`1b`). `loggingmode`, `tickerplantname`, `subscribeto` and
-`subscribesyms` also take strings, so they can live in a `.toml` file as quoted keys (`"sctp_chainedtp" = true`).
+`subscribesyms` also take strings, so they can live in a `.toml` file as quoted keys (`"sctpchainedtp" = true`).
 
-Any of them can be given on the command line as `-stplg_<key>`, `-sctp_<key>` or `-createlogs`; an app sets only the
+Any of them can be given on the command line as `-stplg<key>`, `-sctp<key>` or `-createlogs`; an app sets only the
 keys it overrides.
 
 An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`.
@@ -64,8 +64,8 @@ Requires `log`, `timer` and `handlers`. It:
    `parent` makes `replaylog` ask the upstream;
 3. registers a `.z.pc` observer (chained: exit 1 when the upstream closes) and a `.z.exit` observer (flush
    `memorybatch`, close the logs);
-4. sets `.u.upd` from `batchmode`, wraps `.z.ts` (the existing handler, then the batch timer and the end checks),
-   and sets `\t` to 1000 if it is off;
+4. sets `.u.upd` from `batchmode` and adds the `stpzts` timer job (the batch timer and the end checks, every
+   second);
 5. chained: waits for the upstream and subscribes; otherwise loads `schemafile`;
 6. strips attributes from the published tables and opens the logs.
 
@@ -75,6 +75,8 @@ Under di.torq, `generateschemas` is queued with `.proc.addinitlist`, so it runs 
 ## Behaviour to know
 
 - End of period and end of day are checked on each update and each timer tick.
+- If the next period or roll is already past, or more than a day has gone by, the `stpzts` job is disabled and
+  the check signals; other timer jobs keep running.
 - The first logs of a day have `seq` 0, and each period roll adds 1.
 - After an end of period, `currperiod` becomes the old `nextperiod`.
 - `period` replay returns `distinct` count and log pairs for the tables asked for; `day` replay returns every log of

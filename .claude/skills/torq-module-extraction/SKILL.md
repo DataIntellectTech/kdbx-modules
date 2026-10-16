@@ -97,7 +97,7 @@ Apply every rule below. These are the mistakes you're most likely to make when c
    Always call injected functions through `.z.m` (`.z.m.loginfo[`<name>;"msg"]`). You can store each function separately or the whole dict (`.z.m.log[`info][...]`), but pick one per module.
 5. **Make `init` idempotent** if it registers anything (handlers, timer jobs): guard the registration with a `registered` flag.
 6. **Handlers:** never assign `.z.*` directly. Go through the injected `handlers` dependency.
-7. **Root state and root IPC entry points:** writes inside a module land in its private namespace, while reads fall through to root. To maintain a root table or publish a root function (`upd`, a `reload` peers call by name):
+7. **Root state and root IPC entry points:** what decides where a name resolves is bare-vs-symbol, not read-vs-write. Bare names inside module functions refer only to the module: reading a root-only name signals (`{count trade}` → `'trade`), and writing one (`trade,:x`, `x::v`) quietly creates a private copy, leaving root untouched. Symbols do reach root: `value t`, `exec … from t`, `t insert x`, `t upsert x`, `t set v`, and ``@[`.;t;…]``. To maintain a root table or publish a root function (`upd`, a `reload` peers call by name):
 
    ```q
    @[`.;`upd;:;updfn];
@@ -105,7 +105,7 @@ Apply every rule below. These are the mistakes you're most likely to make when c
    set[`.hdb.reload;reloadfn];
    ```
 
-   A subscriber `upd` written any other way silently drops rows into the module namespace.
+   A subscriber `upd` that isn't published at root is never found: live updates are dropped with only an `'upd` in the subscriber's log (the tickerplant publishes async, so it never sees the error), and `-11!` replay signals `'upd` and replays nothing.
 8. **Paths:** module-local paths use `::`: `\l ::file.q`, `` get`:::data/file ``. Resolve them with `.Q.rp` at load time if a function needs them later.
 9. **Remove FinSpace code** entirely.
 10. **No `show`, `0N!`, `-1`, `-2`.** Log through the injected logger, or not at all.

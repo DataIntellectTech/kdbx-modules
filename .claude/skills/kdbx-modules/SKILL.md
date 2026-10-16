@@ -48,7 +48,7 @@ MULT:2             // private value
 f:{x+1}            // private function
 g:{f[x]*MULT}
 getMult:{MULT}
-setMult:{MULT::x}  // :: to assign the module global from inside a function
+setMult:{.z.m.MULT:x}  // .z.m.x: to assign the module global from inside a function
 export:([g;getMult;setMult])
 ```
 
@@ -64,7 +64,7 @@ Use them when:
 - **A q-sql statement calls a module function**: `select .z.m.f a from t`. A bare `f` there resolves in the *caller's* namespace.
 - **A legacy API needs a global name as a symbol**: `.timer.addTimer[.z.M.cleanup;01:00]`. To replace a member: `.z.M.log set(::)`.
 - **A local and a global share a name**: refer to the global as `.z.M.name`. Renaming one of them is often clearer.
-- **You need a child namespace inside the module**: `\d .z.m.foo`. This is the only acceptable form of `\d` in a module.
+- **You need a child namespace inside the module**: prefix each definition explicitly - `.z.m.foo.a:1`, `.z.m.foo.f:{...}`. Never `\d .z.m.foo`: the conventional `\d .` that follows returns to *root*, not to the module, so every later definition - including `export` - lands at root and `use` fails with `no export`. There is no acceptable form of `\d` in a module.
 - **Merging another module's exports into this one**: `.z.m,:use`foo`.
 
 ```q
@@ -117,9 +117,9 @@ f:{read0 data}
 ## Converting a legacy q library
 
 1. Convert external dependencies to modules first, then replace their imports with `use`.
-2. Remove absolute namespace prefixes (`.lib.func` → `func`) in assignments **and** in global references inside functions. Remove a `\d` that spans the whole file; change any other `\d` to a `.z.m`-based namespace.
+2. Remove absolute namespace prefixes (`.lib.func` → `func`) in assignments **and** in global references inside functions. Remove every `\d`, including one that spans the whole file; to keep a grouping, prefix each definition explicitly (`.z.m.foo.a:1`).
 3. If dropping a prefix makes a local and a global collide, refer to the global as `.z.M.name`, or rename one of them.
-4. Inside functions, change global assignments from `:` to `::`. `.lib.x:1` set a global; `x:1` would now create a local.
+4. Inside functions, change global assignments from `:` to `.z.m.x:` - the house convention (`style.md`). `.lib.x:1` set a global; `x:1` would now create a local. `x::1` also works, but `style.md` says to avoid `::`.
 5. Prefix names that clash with reserved words (`use`, `log`, `parse`, …) with `.z.m`.
 6. Prefix functions called from q-sql with `.z.m`.
 7. Convert relative paths to `::` paths, resolving them with `.Q.rp` at load time if functions use them.

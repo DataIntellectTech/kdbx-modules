@@ -1,4 +1,7 @@
 / fixture helpers for di.subscriptions' tests. Assumes cwd is the kdbx-modules repo root.
+
+/ the settings file plus overrides
+subcfg:{[x] ((use`di.torq.config)[`parsefile] "di/torq/settings/default.q"),x}
 / The tickerplant "handle" is mocked as a FUNCTION: subscribe calls tph(`.u.subdetails;..),
 / and `h(msg)` applies h to the message whether h is an int handle (real IPC) or a
 / function (here). The mock answers with a canned subdetails dict that points at a REAL
@@ -68,7 +71,7 @@ pcclosecheck:{[]
   c:hopen (`$":localhost:",string p;2000);
   c"sub:use`di.subscriptions; system \"l di/subscriptions/test.q\"; BASE::\"/tmp/di_subs_pcclose\"; buildlog[4]";
   c"hz:use`di.torq.handlers; (hz`init)[enlist[`log]!enlist mocklog[]]";
-  c"sub.init[enlist[`autoreconnect]!enlist 0b;`log`timer`handlers!(mocklog[];mocktimer;`register`remove`list!(hz`register;hz`remove;hz`list))]";
+  c"sub.init[subcfg enlist[`autoreconnect]!enlist 0b;`log`timer`handlers!(mocklog[];mocktimer;`register`remove`list!(hz`register;hz`remove;hz`list))]";
   c"spawnpeer[]; .sub.subscribe[`trade;`;1b;0b;peerproc[]]";
   a:c"first exec active from .sub.SUBSCRIPTIONS";
   c"neg[tph]\"exit 0\"; neg[tph][]";

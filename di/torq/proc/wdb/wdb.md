@@ -15,9 +15,9 @@ merge over sortworkers. See "Modes" and "Sortworkers" below.
 ## Dependencies
 
 - **Injected** (from di.torq): `log`, `timer`, `servers`.
-- **Hard** (`use`-imported): `di.subscriptions` (subscribe + replay), `di.dbwrite` (the sort and
+- **Hard** (`use`-imported): `di.subscriptions` (`.sub.subscribe`: subscribe + replay), `di.dbwrite` (the sort and
   attributes), `di.merge` (partition-size tracking and the EOD merge), `di.os` (moving and deleting
-  directories; not in `deps.toml`, as it has no VERSION for depcheck), `di.tplogmgr` (via
+  directories), `di.tplogmgr` (via
   di.subscriptions).
 
 `di.dbwrite` takes the injected **binary** `di.util.log` dep directly — same contract, no adapter
@@ -70,8 +70,9 @@ permitreload = true               # false: sort and move, but leave downstream a
 # sortcsv (optional) -> di.dbwrite sort/attribute config; else $TORQXAPPCONFIG/sort.csv if present, else time asc
 ```
 
-The schema comes from the **tickerplant** (via `subdetails`), not a local `database.q` —
-di.subscriptions defines the tables at root from what the TP returns.
+The schema comes from the **tickerplant**, not a local `database.q`: `.sub.subscribe` finds the
+first `tickerplanttypes` process through `.sub.getsubscriptionhandles`, asks for its `tptype`, and
+defines the tables at root from what it returns.
 
 ## Behaviour
 
@@ -85,8 +86,8 @@ di.subscriptions defines the tables at root from what the TP returns.
   flushed at least one table, the partition is filled (`filldb`) and every connected `idbtypes` process is notified
   (`` .idb.intradayreload[] ``, async) — an all-skipped tick (nothing over threshold) stays silent. This is
   unconditional on `reloadorder`; it only needs an idb to be connected.
-- **End of day** (`endofday[date]`, published at root): the tickerplant
-  broadcasts `(`endofday;date)` at roll (the same trigger as di.torq.proc.rdb). di.torq.proc.wdb flushes what
+- **End of day**: `.u.end[date]` (from a tickerplant or chainedtp) or root `endofday[date;data]` (from a
+  segmented tickerplant, which also calls the logging `endofperiod[currp;nextp;data]` stub). di.torq.proc.wdb flushes what
   remains, then runs `endofdaysort` — `saveandsort` in-process, `save` by an async
   `.wdb.endofdaysort[dir;pt;tablist;writedownmode;mergelimits;hdbsettings;mergemethod]` to each
   connected sort process. With no sort process connected, `save`
@@ -204,11 +205,10 @@ sort process with `.merge.syncpartsizes` before the hand-off.
 
 - **FinSpace/AWS** — stripped.
 
-The `endofperiod` stub legacy shipped in `writedown.q` **is** kept: `di.pubsub.callendofperiod`
-broadcasts `` (`endofperiod;(current;next;data)) `` to every subscriber on each period roll, so a wdb
-pointed at a segmented tickerplant would otherwise raise `'endofperiod` every period. The stub is
-published at root by `init` and only logs. It is **monadic**, matching `callendofperiod`, which
-sends the triple as a single argument.
+The `endofperiod` stub legacy shipped in `writedown.q` **is** kept: a segmented tickerplant broadcasts
+`` (`endofperiod;current;next;data) `` to every subscriber on each period roll, so a wdb pointed at
+it would otherwise raise `'endofperiod` every period. The stub is published at root by `init`, takes
+the three arguments and only logs, the same as di.torq.proc.rdb's.
 
 ## Migrating a TorQ wdb settings file
 

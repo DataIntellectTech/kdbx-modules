@@ -190,6 +190,11 @@ true,0,0,q,"any caplog[`msg] like ""*read 3 sort config*""",1,1,readcsv logs the
 true,0,0,q,all not null (select from caplog where fn=`info)[`ctx],1,1,readcsv logs are tagged with a context symbol
 true,0,0,q,not any caplog[`fn]=`error,1,1,readcsv logs no errors on success
 
+comment,,,,,,,log call verification - gc
+run,0,0,q,caplog:0#caplog,1,1,reset log capture
+run,0,0,q,dbwrite.gc[],1,1,gc runs
+true,0,0,q,2=count select from caplog where ctx=`gc,1,1,gc logs before and after
+
 comment,,,,,,,log call verification - readcsv error logging on file read failure
 run,0,0,q,caplog:0#caplog,1,1,reset log capture
 run,0,0,q,@[dbwrite.readcsv;`:nonexistent_file.csv;{x}],1,1,trigger file read error

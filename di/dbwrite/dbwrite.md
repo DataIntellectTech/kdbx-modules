@@ -69,6 +69,7 @@ default,,time,1
 | `savedown[dir;part;tabname;data]` | Write an in-memory table to an HDB partition, sort it, then run gc |
 | `appenddown[dir;part;tabname;data]` | Append rows to an existing partition (no sort) |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
+| `gc[]` | Run `.Q.gc[]` and log memory stats before and after |
 
 ---
 
@@ -207,5 +208,5 @@ The suite injects binary mock loggers (`{[c;m] ...}`): a no-op logger, and a cap
 ## Exported symbols
 
 ```q
-export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown])
+export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;gc])
 ```

@@ -66,6 +66,8 @@ init:{[deps]
   {[deps;k] set[first .z.m.settings k;$[k in key deps;deps k;last .z.m.settings k]]}[deps] each key .z.m.settings;
   .servers.RETRY:totimespan .servers.RETRY;
   .servers.DISCOVERYRETRY:totimespan .servers.DISCOVERYRETRY;
+  / a string or a list of strings (TOML has no symbol type)
+  .servers.CONNECTIONS:$[11h=abs type c:.servers.CONNECTIONS;c;`$c];
   set[`.servers.NONTORQPROCESSFILE;$[`nontorqprocessfile in key deps;hsym deps`nontorqprocessfile;hsym `$("/" sv -1_"/" vs .z.m.processcsv),"/nontorqprocess.csv"]];
   / live-handle checks
   set[`.dotz.liveh;{x in key .z.W}];
@@ -329,17 +331,14 @@ getapimeta:{[]
     (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };
 
-/ root .servers functions for .sub and startup waits
-\d .servers
-
 / match required attributes against advertised ones
 attributematch:{[req;avail]
     vals:key[req] inter key avail;
     notpresent:noval!(count noval:key[req] except key avail)#enlist(0b;());
     notpresent,vals!{($[0>type y;x~y;all x in y];(x,()) inter y,())}'[req vals;avail vals]}
 
-/ servers matching types or names, optionally reopening closed handles
-getservers:{[nameortype;lookups;req;autoopen;onlyone]
+/ root, for .sub: servers matching types or names, optionally reopening closed handles
+.servers.getservers:{[nameortype;lookups;req;autoopen;onlyone]
     r:$[`~lookups; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS;
         nameortype~`proctype; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where proctype in lookups;
         select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where procname in lookups];
@@ -350,10 +349,10 @@ getservers:{[nameortype;lookups;req;autoopen;onlyone]
             if[(alivecount=0) or (not onlyone) or (any not exec max alive by agg:?[nameortype~`proctype;proctype;procname] from r);
                 retryrows exec index from r where not alive;
                 r:select procname,proctype,lastp,w,hpup,attributes,alive:.dotz.liveh w from .servers.SERVERS where i in r`index]]];
-    select procname,proctype,lastp,w,hpup,attributes,attribmatch:.servers.attributematch[req]each attributes from r where alive}
+    select procname,proctype,lastp,w,hpup,attributes,attribmatch:.z.m.attributematch[req]each attributes from r where alive}
 
-/ run on (re)connected SERVERS rows
-connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}]
+/ root, for .sub: run on (re)connected SERVERS rows
+.servers.connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}];
 
 / are any required processes not connected
 reqprocsnotconn:{[requiredprocs;typeorname]
@@ -378,6 +377,5 @@ startupdepcyclestypename:{[requiredprocs;typeornamefunc;timeintv;cycles]
    ];
  };
 
-startupdepnamecycles:startupdepcyclestypename[;.servers.reqprocnamesnotconn;;];
-
-\d .
+/ root, for chainedtp and segmentedtp
+.servers.startupdepnamecycles:startupdepcyclestypename[;reqprocnamesnotconn;;];

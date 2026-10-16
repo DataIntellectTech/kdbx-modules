@@ -49,8 +49,8 @@ publish data with/without filters. The function takes two arguments: t and x, wh
 | Function                  | Description                                                                  |
 |---------------------------|------------------------------------------------------------------------------|
 | `pubsub.setsubtables`     | Set a specified list of tables that are available for subscription.          | 
-| `pubsub.callendofday`     | Broadcast an end-of-day event to all subscribers (requires `endofday`).      |
-| `pubsub.callendofperiod`  | Broadcast an end-of-period event to all subscribers (requires `endofperiod`).|
+| `pubsub.callendofday`     | Broadcast end of day to all subscribers as `.u.end[d]`.                      |
+| `pubsub.callendofperiod`  | Broadcast end of period to all subscribers as `endofperiod[currp;nextp;data]`.|
 | `pubsub.closesub`         | Remove handle upon connection close. Not bound to `.z.pc` by the module - the consumer binds it (see Notes). | 
 | `pubsub.subclear`         | Publish tables and clear up the contents.                                    |
 | `pubsub.init`             | Initialize variables  - run before calling pub/sub functions to populate required state (e.g., tables/schemas). Takes a deps dict with a required `log`.  |
@@ -87,11 +87,17 @@ q)pubsub.subscribestrfilter["quote";"bid>50.0";"time,sym,bid"]
 
 ## `.stpps`, `.u.sub`, `.ps`
 
-A second pub/sub API at root, in a `\d .stpps` section at the end of `pubsub.q`, with its own state,
-separate from the API above: `.stpps.t`/`subrequestall`/`subrequestfiltered`, `.stpps.allsubhandles`,
-`suball`/`subfiltered`/`add`/`errparse`/`addfiltered`/`selfiltered`/`pub`,
-`delhandle`/`delhandlef`/`closesub`/`extractschema`/`init`, root `.u.sub`, and
-`.ps.loaded`/`publish`/`subscribe`/`init`/`initialise`.
+A second pub/sub API at root, with its own state, separate from the API above: `.stpps.t`/`subrequestall`/
+`schemas`/`tabcols`, `.stpps.endp`/`end`/`allsubhandles`/`pub`/`pubclear`/`closesub`/`attrstrip`/`init`,
+root `.u.sub`/`.u.pub`, `.ps.loaded`/`publish`/`subscribe`/`init`/`initialise`/`subtable`/`subtablefiltered`,
+and `.ds.map`/`subreq`/`stripe`. Its filtered-subscription registry `subrequestfiltered`,
+`schemasnoattributes` and the helpers `stpsuball`/`stpsubfiltered`/`stpadd`/`errparse`/`stpaddfiltered`/
+`selfiltered`/`stpdelhandle`/`stpdelhandlef`/`stpextractschema` are module-private.
+
+- `endp[cur;next;data]` and `end[date;data]` send `(`endofperiod;cur;next;data)` and `(`endofday;date;data)` to
+  every subscriber.
+- `pubclear[tabs]` publishes the tables and resets them to `schemasnoattributes`, which `attrstrip` sets.
+- `.ds.stripe` needs `.ds.numseg` set.
 
 - `.stpps` logs its errors through the `log` passed to `init`.
 - The consumer registers `.stpps.closesub` on `.z.pc` through its handlers dependency.

@@ -3,56 +3,60 @@
 / a timespan, a "0D00:00:01" string or a number of seconds (TOML has no timespan type)
 totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
+/ a symbol, a string or a list of strings (TOML has no symbol type)
+tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
+
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.chainedtp: log dependency is required - see di.util.log"];
   if[not `timer in key deps;'"di.torq.proc.chainedtp: timer dependency is required - see di.timer"];
   if[not `handlers in key deps;'"di.torq.proc.chainedtp: handlers dependency is required - see di.torq.handlers"];
+  / all settings required
+  req:`tickerplantname`pubinterval`tpconnsleep`createlogfile`logdir`subscribeto`subscribesyms`replay`schema`clearlogonsubscription`tpcheckcycles;
+  if[count m:req except key config;'"di.torq.proc.chainedtp: missing settings: ",", " sv string m];
   .z.m.log:deps`log;
   .z.m.procname:config`procname;
   (use`di.pubsub)[`init][enlist[`log]!enlist deps`log];
   (deps[`handlers]`register)[`.z.pc;`;`stpps;0j;.stpps.closesub];
   (use`di.subscriptions)[`init][config;deps];
-  {[config;k] if[k in key config;set[` sv `.ctp,k;config k]]}[config] each `tickerplantname`pubinterval`tpconnsleep`createlogfile`logdir`subscribeto`subscribesyms`replay`schema`clearlogonsubscription`tpcheckcycles;
-  .ctp.pubinterval:totimespan .ctp.pubinterval;
-  if[10h=type .ctp.logdir;.ctp.logdir:hsym`$.ctp.logdir];
-  if[0<>(`long$.ctp.pubinterval) mod 1000000000;'"di.torq.proc.chainedtp: pubinterval must be a whole number of seconds"];
-  (deps[`handlers]`register)[`.z.pc;`;`chainedtp;0j;{[y] if[.ctp.tph=y;.z.m.log[`error][`.z.pc;"lost connection to tickerplant : ",string .ctp.tickerplantname];exit 0]}];
-  .ctp.upd:$[.ctp.createlogfile;
-    $[.ctp.pubinterval;{[t;x] .ctp.writetolog[t;x];.ctp.batchpub[t;x];};{[t;x] .ctp.writetolog[t;x];.ctp.tickpub[t;x];}];
-    $[.ctp.pubinterval;.ctp.batchpub;.ctp.tickpub]];
-  if[not `upd in key `.;set[`upd;.ctp.upd]];
+  .z.m.tickerplantname:tosym config`tickerplantname;
+  .z.m.pubinterval:totimespan config`pubinterval;
+  .z.m.tpconnsleep:config`tpconnsleep;
+  .z.m.createlogfile:config`createlogfile;
+  .z.m.logdir:$[10h=type l:config`logdir;hsym`$l;l];
+  .z.m.subscribeto:tosym config`subscribeto;
+  .z.m.subscribesyms:tosym config`subscribesyms;
+  .z.m.replay:config`replay;
+  .z.m.schema:config`schema;
+  .z.m.clearlogonsubscription:config`clearlogonsubscription;
+  .z.m.tpcheckcycles:config`tpcheckcycles;
+  if[0<>(`long$pubinterval) mod 1000000000;'"di.torq.proc.chainedtp: pubinterval must be a whole number of seconds"];
+  (deps[`handlers]`register)[`.z.pc;`;`chainedtp;0j;{[y] if[tph=y;.z.m.log[`error][`.z.pc;"lost connection to tickerplant : ",string tickerplantname];exit 0]}];
+  .z.m.upd:$[createlogfile;
+    $[pubinterval;{[t;x] writetolog[t;x];batchpub[t;x];};{[t;x] writetolog[t;x];tickpub[t;x];}];
+    $[pubinterval;batchpub;tickpub]];
+  if[not `upd in key `.;set[`upd;upd]];
   .ps.initialise[];
-  .servers.startupdepnamecycles[.ctp.tickerplantname;.ctp.tpconnsleep;.ctp.tpcheckcycles];
-  .ctp.subscribe[];
-  .ctp.tableschemas:{x!(0#)@'value@'x} (),$[any null .ctp.subscribeto;tables[`.];.ctp.subscribeto];
-  if[.ctp.pubinterval;(deps[`timer]`addjob)[`publishalltables;.ctp.publishalltables;();`long$.ctp.pubinterval%0D00:00:01;2;()!()]];
+  .servers.startupdepnamecycles[tickerplantname;tpconnsleep;tpcheckcycles];
+  subscribe[];
+  .z.m.tableschemas:{x!(0#)@'value@'x} (),$[any null subscribeto;tables[`.];subscribeto];
+  if[pubinterval;(deps[`timer]`addjob)[`publishalltables;publishalltables;();`long$pubinterval%0D00:00:01;2;()!()]];
   }
 
-\d .
+/ root: the subscriber contract
+@[`.;`tptype;:;`chained];
 
-tptype:`chained;
+@[`.;`tablelist;:;{.stpps.t}];
 
-tablelist:{.stpps.t}
+@[`.;`subdetails;:;{[tabs;instruments]
+  r:sub[tabs;instruments];
+  `schemalist`logfilelist`rowcounts`date!r@/:(`schema;$[r[`logfile]~();();enlist`i`logfile];`icounts;`d)
+  }];
 
 .u.subdetails:{[tabs;syms]
-  r:.ctp.sub[tabs;syms]; s:r`schema;
+  r:sub[tabs;syms]; s:r`schema;
   if[-11h=type first s;s:enlist s];
-  `tables`schemas`logfile`rowcount`date!(s[;0];s[;0]!s[;1];$[.ctp.createlogfile;r`logfile;`];$[.ctp.createlogfile;r`i;0];.u.d)
+  `tables`schemas`logfile`rowcount`date!(s[;0];s[;0]!s[;1];$[createlogfile;r`logfile;`];$[createlogfile;r`i;0];.u.d)
   }
-
-\d .ctp
-
-tickerplantname:@[value;`tickerplantname;`tickerplant1];
-pubinterval:@[value;`pubinterval;0D00:00:00];
-tpconnsleep:@[value;`tpconnsleep;10];
-createlogfile:@[value;`createlogfile;0b];
-logdir:@[value;`logdir;`:tplogs];
-subscribeto:@[value;`subscribeto;`];
-subscribesyms:@[value;`subscribesyms;`];
-replay:@[value;`replay;0b];
-schema:@[value;`schema;1b];
-clearlogonsubscription:@[value;`clearlogonsubscription;0b];
-tpcheckcycles:@[value;`tpcheckcycles;0W];
 
 tph:0N;
 .u.icounts:.u.jcounts:(`symbol$())!0#0,();
@@ -82,14 +86,19 @@ openlog:{[lgfile]
   }
 
 subscribe:{[]
-  s:.sub.getsubscriptionhandles[`;.ctp.tickerplantname;()!()];
+  s:.sub.getsubscriptionhandles[`;tickerplantname;()!()];
   if[count s;
-    subproc:first s;
-    .ctp.tph:subproc`w;
-    refreshtp @[tph;".u.d";.z.D];
-    .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
-    r:(use`di.subscriptions)[`subscribe][tph;subscribeto;subscribesyms;replay];
-    .u.d::r`date];
+      subproc:first s;
+      .z.m.tph:subproc`w;
+      refreshtp @[tph;".u.d";.z.D];
+      .z.m.log[`info][`subscribe;"subscribing to ", string subproc`procname];
+      r:.sub.subscribe[subscribeto;subscribesyms;schema;replay;subproc];
+      if[`d in key r;.u.d::r[`d]];
+      if[(`icounts in key r) & (not createlogfile);
+	subtabs:$[subscribeto~`;key r`icounts;subscribeto],();
+	.u.jcounts::.u.icounts::$[0=count r`icounts;()!();subtabs!enlist [r`icounts]subtabs];
+      ]
+    ];
   }
 
 writetolog:{[t;x]
@@ -110,7 +119,7 @@ batchpub:{[t;x]
   }
 
 publishalltables:{[]
-  pubtables:$[any null .ctp.subscribeto;tables[`.];.ctp.subscribeto],();
+  pubtables:$[any null subscribeto;tables[`.];subscribeto],();
   .ps.publish'[pubtables;value each pubtables];
   cleartables[pubtables];
   .u.i:.u.j;
@@ -124,7 +133,7 @@ cleartables:{[t]
   }
 
 createlogfilename:{[d]
-  ` sv (.ctp.logdir;`$string[.z.m.procname],"_",string d)
+  ` sv (logdir;`$string[procname],"_",string d)
   }
 
 refreshtp:{[d]
@@ -140,7 +149,7 @@ refreshtp:{[d]
   }
 
 notpconnected:{[]
-  0 = count select from .sub.SUBSCRIPTIONS where procname in .ctp.tickerplantname, active}
+  0 = count select from .sub.SUBSCRIPTIONS where procname in .z.m.tickerplantname, active}
 
 sub:{[subtabs;subsyms]
   r:(`schema`icounts`i`logfile`d)!();
@@ -151,16 +160,10 @@ sub:{[subtabs;subsyms]
   r
   }
 
-\d .u
-
-end:{[d]
+/ root: the upstream ends the day
+.u.end:{[d]
   .z.m.log[`info][`end;"end of day invoked"];
-  .ctp.publishalltables[];
-  .ctp.refreshtp[d+1];
-  (neg union[@[value;(`.stpps.allsubhandles;`);()]; @[{union/[(value x)[;;0]]};`.u.w;()]])@\:(`endofday;d)
+  publishalltables[];
+  refreshtp[d+1];
+  (neg union[@[value;(`.stpps.allsubhandles;`);()]; @[{union/[(value x)[;;0]]};`.u.w;()]])@\:(`.u.end;d)
   }
-
-\d .
-
-endofday:{[d] .u.end d}
-

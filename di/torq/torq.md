@@ -81,10 +81,14 @@ expects.
 
 ### Process-type dispatch
 
-A small built-in registry maps proctype → module name:
+A built-in registry maps proctype → module name, `` `x → `di.torq.proc.x `` for each of `hdb`,
+`tickerplant`, `rdb`, `wdb`, `gateway`, `idb`, `segmentedtp`, `chainedtp`, `housekeeping`, `discovery`
+and `tickerlogreplay`; `segmentedchainedtp` also maps to `di.torq.proc.segmentedtp` and resolves the
+`segmentedtp` settings tier (builtin and app root alike); its chained behaviour comes from the instance's own
+settings, e.g. `sctp1.toml`, as any other per-instance distinction does:
 
 ```q
-builtin:(enlist`hdb)!enlist`di.torq.proc.hdb
+builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery`tickerlogreplay`segmentedchainedtp!`di.torq.proc.hdb`di.torq.proc.tickerplant ...
 ```
 
 If `proctype` is in `builtin`, `startbuiltin` `use`-loads that module and calls its
@@ -129,6 +133,9 @@ already uses for `code/processes/`.
 
 App code loads **after** the process module's `init` (so it can reference the module's tables and
 state) and **before** the `.run` hook (so an app file may define/override `` .<proctype>.run ``).
+
+After `.ps.initialise[]` and connections, `init` runs any functions a process queued with
+`.proc.addinitlist[(func;arg)]` (`.proc.initlist`), then empties the list.
 
 ### The `.run` post-init hook
 
@@ -286,7 +293,8 @@ In practice nothing calls `tq.init` directly like the examples above - that's wh
 does on top of that (start/stop/restart/status across a whole `process.csv`, without
 duplicating any of the identity-resolution logic above - it only reads `process.csv`
 to know *which* processes exist, never to resolve *who a given session is*, which
-stays exclusively `di.torq`'s job).
+stays exclusively `di.torq`'s job). An optional `startwithall` column, as in TorQ, keeps a row with `0` out of
+`torqx.sh start` / `start all`; it can still be started by name.
 
 ### Dev mode (tmux)
 
@@ -323,11 +331,6 @@ freshly-started process. tmux mode is for local development; production stays on
 - **Query logging (`[querylog]`) wraps `.z.*` by direct assignment.** If a phased event's `exec`
   is claimed after startup, logging for that event silently drops to zero with no error. See
   [Query logging](#query-logging-optional).
-- The builtin registry has exactly one entry (`` `hdb ``) so far - every other
-  proctype in a real deployment would be custom, until more `di.*` process-type
-  modules exist.
-- No `di.torq.depcheck`-style pre-flight dependency validation yet (next up per the
-  modularisation plan).
 - `autodetect`'s host-matching has no `-procfile` override and no FinSpace-specific
   host handling - deliberately out of scope, same scoping-down `di.torq.servers` applies
   to its own `process.csv` reading.

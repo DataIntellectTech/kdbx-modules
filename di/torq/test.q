@@ -48,7 +48,10 @@ setupfixture:{[]
   writelines[TESTPROCFILE;
     ("\\d .",string TESTPROCNAME;
      "runcalled:0;";
+     "deferredcalled:0;";
+     "deferred:{[x] deferredcalled::deferredcalled+1};";
      "init:{[config;deps]";
+     "  .proc.addinitlist(`.k4unittestproc.deferred;`);";
      "  capturedconfig::config;";
      "  captureddeps::deps;";
      "  deps[`log][`info][`",(string TESTPROCNAME),";\"custom proctype initialised\"];";

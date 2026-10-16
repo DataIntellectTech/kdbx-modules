@@ -44,7 +44,7 @@ comment,,,,,,,waitfortype - connected vs timeout
 true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
 true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
 comment,,,,,,,root .servers functions
-true,0,0,q,"(enlist[`a]!enlist(1b;enlist 1))~.servers.attributematch[enlist[`a]!enlist 1;enlist[`a]!enlist 1 2]",1,1,attributematch reports a full match and the matched values
+true,0,0,q,"(enlist[`a]!enlist(1b;enlist 1))~.m.di.0torq.0servers.attributematch[enlist[`a]!enlist 1;enlist[`a]!enlist 1 2]",1,1,attributematch reports a full match and the matched values
 true,0,0,q,"(enlist`otherproc)~exec proctype from .servers.getservers[`proctype;`otherproc;()!();0b;0b]",1,1,5-arg getservers returns the live row
 true,0,0,q,"`attribmatch in cols .servers.getservers[`proctype;`otherproc;()!();0b;0b]",1,1,getservers adds attribmatch
 true,0,0,q,"0=count .servers.getservers[`proctype;`deadproc;()!();0b;0b]",1,1,getservers drops dead rows
@@ -61,6 +61,8 @@ true,0,0,q,svc.waitfortype[`tpproc;3000;200],1,1,waitfortype reaches discovery a
 comment,,,,,,,retry periods from toml
 run,0,0,q,"svc.init[svrdeps[`otherproc],`retry`discoveryretry!(""0D00:00:10"";10)]",1,1,retry as a string and discoveryretry as seconds
 true,0,0,q,"(0D00:00:10;0D00:00:10)~(.servers.RETRY;.servers.DISCOVERYRETRY)",1,1,both become timespans
+run,0,0,q,"svc.init svrdeps enlist""otherproc""",1,1,connections as a list of strings
+true,0,0,q,(enlist`otherproc)~.servers.CONNECTIONS,1,1,become symbols
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection

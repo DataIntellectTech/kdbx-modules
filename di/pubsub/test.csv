@@ -133,12 +133,13 @@ run,0,0,q,"r:h(`.u.sub;`nosuch;`)",1,,subscribe to a table that is not published
 true,0,0,q,`nosuch~first r,1,,.u.sub returns the table name
 true,0,0,q,"(`sub;""Table nosuch not in list of stp pub/sub tables"")~h""lastlog""",1,,and logs the error through the injected log
 run,0,0,q,"r:h(`.u.sub;`quote;enlist`IBM)",1,,sym-filtered subscription (a sym list)
-true,0,0,q,"clt in h""exec handle from .stpps.subrequestfiltered where tbl=`quote""",1,,client registered in subrequestfiltered
+true,0,0,q,"clt in h""exec handle from .m.di.0pubsub.subrequestfiltered where tbl=`quote""",1,,client registered in subrequestfiltered
 true,0,0,q,"clt in h"".stpps.allsubhandles[]""",1,,allsubhandles includes the client
 run,0,0,q,"h(`.stpps.closesub;clt)",1,,closesub for the client handle
 true,0,0,q,"not clt in h"".stpps.allsubhandles[]""",1,,client removed from both registries
 true,0,0,q,"""Table nosuchtable does not exist""~h""@[.stpps.init;enlist`nosuchtable;{x}]""",1,,init signals on a missing table
 true,0,0,q,"(`psinit;""Table nosuchtable does not exist"")~h""lastlog""",1,,and logs it through the injected log
+true,0,0,q,"`currp`nextp`data~h""(value pubsub.callendofperiod)1""",1,,callendofperiod takes the three endofperiod arguments
 
 run,0,0,q,neg[h](exit;0);neg[h](::),1,,close background process and flush
 run,0,0,q,hclose h,1,,close handle

@@ -205,6 +205,6 @@ test_repair_garbage_at_end[]
 The module exports:
 
 ```q
-export:([check;repair])
+export:([check;repair;version])
 ```
 

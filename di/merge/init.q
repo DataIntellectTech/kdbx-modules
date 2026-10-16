@@ -18,4 +18,5 @@ if[0=count version;'"di.merge: VERSION file is empty"];
 / public api - only the functions intended to be called externally are exported
 export:([init;checkpartitiontype;checkenumerabletype;getextrapartitions;getfirstcharpartitions;
          getpartchunks;mergebypart;mergebycol;mergehybrid;trackpartition;clearpartsizes;
-         getpartsizes;syncpartsizes;version;getapimeta])
+         getpartsizes;syncpartsizes;getmergebybytelimit;getpartlimit;getextrapartitiontype;
+         version;getapimeta])

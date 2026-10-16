@@ -15,12 +15,7 @@ policy ("old `out_`/`err_` files accumulate forever… external housekeeping is 
 
 - **Injected** (from di.torq): `log`, `timer`.
 - **`use`-imported**: `di.os` (for the `rm` action — it picks the right call for a file vs a
-  directory, and its dry-run mode makes a destructive action testable).
-
-> **No `deps.toml`.** `di.os` ships no `VERSION` file, and `di.torq.depcheck`'s manifest walk
-> fails outright on a declared dependency it can't read a version for. Declaring `di.os` today
-> would break every housekeeping start with a `DEPENDENCY CHECK FAILED … has no VERSION file`.
-> Add the declaration once `di.os` carries a `VERSION`.
+  directory, and its dry-run mode makes a destructive action testable); declared in `deps.toml`.
 
 ## Config
 
@@ -196,8 +191,6 @@ Roughly in the order they'd pay off:
 - **A run summary worth monitoring.** Counts and bytes reclaimed per job, kept as a table (like
   `di.compression`'s stats) so a dashboard or heartbeat can see that housekeeping is actually
   keeping up, rather than reading log lines.
-- **`deps.toml` declaring `di.os`** — blocked purely on `di.os` shipping a `VERSION` file (see
-  Dependencies above).
 - **Windows.** The `.win` branch, if TorqX ever needs it.
 - **Malformed-header reporting.** `0:` pads a too-short header with invented names, so the error
   says `has columns wrong, header, entirely, x, x1, x2, x3`. Reporting the raw header line would

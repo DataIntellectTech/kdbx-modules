@@ -1,5 +1,6 @@
 / fixture helpers for di.torq.proc.wdb's end-to-end tests. Assumes cwd is the kdbx-modules repo root.
-/ A spawned q process answers .u.subdetails as the tickerplant; everything else is mocked.
+/ A spawned q process answers .sub.subscribe as a segmented tickerplant, found through a real di.torq.servers;
+/ everything else is mocked.
 
 BASE:"/tmp/di_wdb_k4unit";
 TPPORT:25961;
@@ -30,7 +31,9 @@ recdeps:{[] `log`timer`servers`handlers!(reclog;`addjob`deletejobs!({[a;b;c;d;e;
 starttp:{[]
   f:BASE,"/faketp.q";
   (hsym `$f) 0: ("sc:`trade`quote!(([]time:`timestamp$();sym:`symbol$();price:`float$());([]time:`timestamp$();sym:`symbol$();bid:`float$()));";
-    ".u.subdetails:{[t;s] `tables`schemas`logfile`rowcount`date!(key sc;sc;`;0;.z.D)};");
+    "tptype:`segmented;";
+    "tablelist:{key sc};";
+    "subdetails:{[t;s] `schemalist`logfilelist`rowcounts`date`logdir!({(x;sc x)} each (),t;();(key sc)!0 0;.z.D;`)};");
   system "timeout 300 ",(first .z.X)," ",f," -p ",(string TPPORT)," -q </dev/null >/dev/null 2>&1 &";
   n:0;
   while[(null TPH) and 50>n+:1;`TPH set @[hopen;(`$"::",string TPPORT;200);{0Ni}];if[null TPH;system "sleep 0.1"]];
@@ -46,11 +49,22 @@ setup:{[]
   setenv[`TORQXAPPCONFIG;BASE,"/appconfig"];
   (hsym `$BASE,"/appconfig/sort.csv") 0: ("tabname,att,column,sort";"default,p,sym,1";"default,,time,1");
   starttp[];
+  initservers[];
+  };
+
+/ .sub.subscribe finds the tickerplant through root .servers
+svc:use`di.torq.servers;
+/ loads root .sub, which freshwdb clears
+use`di.subscriptions;
+initservers:{[]
+  (hsym `$BASE,"/appconfig/process.csv") 0: ("host,port,proctype,procname";"localhost,",(string TPPORT),",tickerplant,tickerplant1");
+  svc.init `log`timer`handlers`proctype`procname`processcsv`connections`discoveryregister`connectionsfromdiscovery!(reclog;`addjob`deletejobs!({[a;b;c;d;e;f]};{[x]});rechandlers;`wdb;`wdb1;BASE,"/appconfig/process.csv";`tickerplant;0b;0b);
+  .servers.startup ()!();
   };
 
 / numtab is pinned empty so numrows governs every table; the shipped default is covered by numtabdefault[]
 cfg:{[]
-  `savedir`hdbdir`sortcsv`numrows`numtab`replaynumtab`eodwaittime`reloadorder`ignorelist!
+  ((use`di.torq.config)[`parsefile] "di/torq/settings/default.q"),`savedir`hdbdir`sortcsv`numrows`numtab`replaynumtab`eodwaittime`reloadorder`ignorelist!
     ("wdb";"hdb";"appconfig/sort.csv";100000;(`symbol$())!`long$();(`symbol$())!`long$();0;`hdb;`heartbeat`logmsg`calls`scalls)
   };
 
@@ -61,6 +75,7 @@ wdbpart:{[] hsym `$BASE,"/wdb/",string today[]};
 freshwdb:{[c]
   `calls set 0#calls;
   system "rm -rf ",BASE,"/wdb ",BASE,"/hdb";
+  delete from `.sub.SUBSCRIPTIONS;
   wdb.init[c;recdeps[]];
   };
 
@@ -76,7 +91,7 @@ feed:{[]
 eodok:{[c]
   freshwdb c;
   feed[];
-  endofday today[];
+  .u.end today[];
   t:select from get hdbpart`trade;
   / enum on disk, but select resolves it once the sym domain is loaded - take the column as-is
   s:t`sym;
@@ -120,7 +135,7 @@ tabsizes:{[]
 manipulation:{[]
   freshwdb cfg[],(enlist`savedownmanipulation)!enlist (enlist`trade)!enlist {update price:2*price from x};
   upd[`trade;([]time:enlist .z.D+0D01;sym:enlist`ibm;price:enlist 5f)];
-  endofday today[];
+  .u.end today[];
   10f~first (get hdbpart`trade)`price
   };
 
@@ -128,14 +143,14 @@ postreplay:{[]
   `POST set ();
   freshwdb cfg[],(enlist`postreplay)!enlist {[d;p] `POST set (d;p)};
   feed[];
-  endofday today[];
+  .u.end today[];
   (last POST)~today[]
   };
 
 compression:{[]
   freshwdb cfg[],(enlist`compression)!enlist 17 2 6;
   feed[];
-  endofday today[];
+  .u.end today[];
   chk `compressed`reset!(
     0<count -21!` sv hdbpart[`trade],`price;
     (16 0 0)~.z.zd)
@@ -190,13 +205,13 @@ numtabdefault:{[]
 
 endofperiodstub:{[]
   / legacy shipped a logging endofperiod so an stp's period roll does not raise in the wdb
-  / di.pubsub.callendofperiod sends (`endofperiod;(curr;next;data)) - one argument, so the stub is monadic
+  / a segmented tickerplant sends (`endofperiod;curr;next;data)
   freshwdb cfg[];
-  r:@[{(1b;`. [`endofperiod] x)};(09:00;10:00;enlist[`p]!enlist 10:00);{(0b;x)}];
+  r:@[{(1b;`. [`endofperiod] . x)};(09:00;10:00;enlist[`p]!enlist 10:00);{(0b;x)}];
   chk `published`callable`logged!(
     `endofperiod in key `.;
     first r;
-    loggedlike[`info;"received endofperiod*"])
+    loggedlike[`info;"Received endofperiod*"])
   };
 
 replaythreshold:{[]
@@ -258,7 +273,7 @@ savemode:{[wm]
 eodok:{[c]
   freshwdb c;
   feed[];
-  endofday today[];
+  .u.end today[];
   if[`sort in key PEERS;(first PEERS`sort)""];
   t:select from get hdbpart`trade;
   / enum on disk, but select resolves it once the sym domain is loaded - take the column as-is
@@ -285,7 +300,7 @@ customreload:{[]
   `PEERS set enlist[`custom]!enlist enlist h:startpeer`custom;
   freshwdb cfg[],(enlist`reloadorder)!enlist `custom;
   feed[];
-  endofday today[];
+  .u.end today[];
   r:chk `reloaded`noerror!(1=h"RELOADS";not loggedlike[`error;"*custom*"]);
   stoppeers[];
   r
@@ -296,7 +311,7 @@ handshake:{[]
   `PEERS set enlist[`hdb]!enlist enlist h:startpeer`hdb;
   freshwdb cfg[],(enlist`eodwaittime)!enlist 5;
   feed[];
-  endofday today[];
+  .u.end today[];
   h"";
   r:chk `reloaded`released`logged!(
     1=h"RELOADS";
@@ -311,7 +326,7 @@ syncreload:{[]
   `PEERS set enlist[`hdb]!enlist enlist h:startpeer`hdb;
   freshwdb cfg[];
   feed[];
-  endofday today[];
+  .u.end today[];
   r:chk `reloaded`logged!(1=h"RELOADS";loggedlike[`info;"the hdb successfully reloaded"]);
   stoppeers[];
   r
@@ -336,7 +351,7 @@ tabsizescleared:{[]
   feed[];
   (mv`savetodisk)[];
   before:count mv`tabsizes;
-  endofday today[];
+  .u.end today[];
   chk `wastracked`nowempty!(0<before;0=count mv`tabsizes)
   };
 
@@ -344,7 +359,7 @@ tabsizescleared:{[]
 nogatewayquiet:{[]
   freshwdb cfg[];
   feed[];
-  endofday today[];
+  .u.end today[];
   chk `noerror`saidso!(not loggedlike[`error;"*gateway*"];loggedlike[`info;"no gateway detected*"])
   };
 

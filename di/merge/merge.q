@@ -5,8 +5,7 @@
 / per partition by a row-count / byte-size limit
 / merging keeps memory flat - segments are read and upserted a batch at a time rather
 / than held in memory and written once at end-of-day
-/ the parted (`p#) column(s) for a table are supplied by the caller as extrapartitiontype;
-/ the module never reads sort config itself, so it stays independent of di.sort
+/ p# columns come from the caller, or from a sort config it passes in; never read here
 / config and the injected log dependency are passed to init in a single dictionary: config
 / keys (see merge.md) are optional with defaults; log is required and init errors
 / immediately if it is missing or does not provide info/error - see merge.md
@@ -87,6 +86,17 @@ clearpartsizes:{[]
 getpartsizes:{[]
   requireinit[`getpartsizes];
   .z.m.partsizes
+  };
+
+/ the configured mergebybytelimit and partlimit
+getmergebybytelimit:{[]
+  requireinit[`getmergebybytelimit];
+  .z.m.mergebybytelimit
+  };
+
+getpartlimit:{[]
+  requireinit[`getpartlimit];
+  .z.m.partlimit
   };
 
 / upsert a partsizes-shaped table received from a peer process into local tracked state
@@ -253,6 +263,20 @@ getfirstcharpartitions:{[tablename;extrapartitiontype]
     group ?[tablename;();();({first each string x};(distinct;first extrapartitiontype))]
   };
 
+/ a table's p# columns from a sort config, else the default's
+getextrapartitiontype:{[sortconfig;tablename]
+  requireinit[`getextrapartitiontype];
+  tabparts:$[count tabparts:distinct exec column from sortconfig where tabname=tablename,sort=1,att=`p;
+    [.z.m.loginfo[`getextraparttype;"parted attribute p found in sort.csv for ",(string tablename)," table"];
+     tabparts];
+    count defaultparts:distinct exec column from sortconfig where tabname=`default,sort=1,att=`p;
+    [.z.m.loginfo[`getextraparttype;"parted attribute p not found in sort.csv for ",(string tablename)," table, using default instead"];
+     defaultparts];
+    [.z.m.logerr[`getextraparttype;"parted attribute p not found in sort.csv for ",(string tablename)," table and default not defined"]]
+    ];
+  tabparts
+  };
+
 / ============================================================
 / initialisation
 / ============================================================
@@ -323,6 +347,11 @@ getapimeta:{[]
       "[symbol: ptdir; long: rowcount; long: bytes]";"null");
     (`clearpartsizes;1b;"drop all tracked segment sizes";"[]";"null");
     (`getpartsizes;  1b;"current tracked segment sizes";"[]";"table: ptdir/rowcount/bytes");
+    (`getmergebybytelimit;1b;"the configured mergebybytelimit";"[]";"boolean");
+    (`getpartlimit;1b;"the configured partlimit";"[]";"long");
+    (`getextrapartitiontype;
+      1b;"the parted column(s) for a table from a sort config, else the default's";
+      "[table: sortconfig; symbol: tablename]";"symbol list: parted columns");
     (`syncpartsizes;
       1b;"upsert a partsizes table received from a peer process into local tracked state";
       "[table: t]";"null");

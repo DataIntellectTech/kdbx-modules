@@ -24,6 +24,9 @@ fail,0,0,q,merge.checkpartitiontype[`t;enlist`sym],1,1,checkpartitiontype reject
 fail,0,0,q,merge.checkenumerabletype[`t;enlist`sym],1,1,checkenumerabletype rejected before init
 fail,0,0,q,merge.getextrapartitions[`t;enlist`sym],1,1,getextrapartitions rejected before init
 fail,0,0,q,merge.getfirstcharpartitions[`t;enlist`sym],1,1,getfirstcharpartitions rejected before init
+fail,0,0,q,merge.getmergebybytelimit[],1,1,getmergebybytelimit rejected before init
+fail,0,0,q,merge.getpartlimit[],1,1,getpartlimit rejected before init
+fail,0,0,q,"merge.getextrapartitiontype[([]tabname:`$();column:`$();sort:`boolean$();att:`$());`t]",1,1,getextrapartitiontype rejected before init
 true,0,0,q,".[merge.trackpartition;(`:g1;1;1);{x}]~""di.merge: trackpartition: init must be called before any other function""",1,1,requireinit error message names the function and is precise
 
 comment,,,,,,,init - dependency injection validation (log is required with info and error keys)
@@ -36,6 +39,7 @@ fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`info]!enlist mylog`info)],1,1,
 fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`error]!enlist mylog`error)],1,1,init rejects a log dict missing the info level
 true,0,0,q,"(8#@[merge.init;(::);{x}])~""di.merge""",1,1,error message is prefixed di.merge
 run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,init with a valid minimal (info+error only) log dep
+true,0,0,q,(0b;1000)~(merge.getmergebybytelimit[];merge.getpartlimit[]),1,1,mergebybytelimit and partlimit default to 0b and 1000
 
 comment,,,,,,,version and getapimeta
 true,0,0,q,`version in key merge,1,1,version is still an export - di.depcheck reads it there
@@ -95,6 +99,7 @@ run,0,0,q,merge.trackpartition[`:b1;1;100],1,1,track b1 with a small row count b
 run,0,0,q,merge.trackpartition[`:b2;1;100],1,1,track b2
 run,0,0,q,merge.trackpartition[`:b3;1;100],1,1,track b3
 true,0,0,q,merge.getpartchunks[`:b1`:b2`:b3;250]~(`:b1`:b2;enlist`:b3),1,1,batching uses bytes not row count (row count alone would fit all three)
+true,0,0,q,merge.getmergebybytelimit[],1,1,getmergebybytelimit returns the configured value
 run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore row-count batching (default)
 
 comment,,,,,,,getpartchunks splits a batch that exceeds partlimit partitions
@@ -255,6 +260,15 @@ true,0,0,q,(asc raze merge.getextrapartitions[`qsym;enlist`sym])~`a`b`c,1,1,the 
 comment,,,,,,,getfirstcharpartitions groups partition values by first character not by full value
 run,0,0,q,fctbl:([]sym:`aa`ab`ba`bb`ac;px:1 2 3 4 5),1,1,table with symbol values sharing first characters
 true,0,0,q,merge.getfirstcharpartitions[`fctbl;enlist`sym]~(`aa`ab`ac;`ba`bb),1,1,values grouped by first character not by full value
+
+comment,,,,,,,getextrapartitiontype reads the p# columns from the sort config passed in
+run,0,0,q,"sc:([]tabname:`trade`trade`default;column:`sym`time`sym;sort:101b;att:`p``p)",1,1,sort config: trade parted on sym; default parted on sym
+true,0,0,q,(enlist`sym)~merge.getextrapartitiontype[sc;`trade],1,1,the table's own p# column
+true,0,0,q,(enlist`sym)~merge.getextrapartitiontype[sc;`quote],1,1,a table not in the config falls back to the default
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,merge.getextrapartitiontype[delete from sc where tabname=`default;`quote],1,1,no table entry and no default
+true,0,0,q,"any (exec msg from caplog where fn=`error) like ""*default not defined*""",1,1,is error-logged
 
 comment,,,,,,,parted-column checks route through the injected logger and no longer reference sort.csv
 run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger

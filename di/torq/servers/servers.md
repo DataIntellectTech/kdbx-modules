@@ -105,15 +105,13 @@ Published at root by `init`, same bodies as legacy:
 | `.servers.pc` | l.383, run on `.z.pc` |
 | timers `discoveryretry` / `serversretry` | l.387–389 |
 
-Defined directly at root in a `\d .servers` section, for legacy `.sub` and chainedtp:
+Also defined at root, for di.subscriptions' `.sub` and the tickerplants' startup waits:
+- `.servers.getservers` (5-arg; the exported 1-arg `getservers` is separate);
+- `.servers.connectcustom` (called by `retryrows`);
+- `.servers.startupdepnamecycles`.
 
-| Name | trackservers.q |
-|---|---|
-| `.servers.attributematch` | l.64–68 |
-| `.servers.getservers` (legacy 5-arg; the exported 1-arg `getservers` is separate) | l.75–89 |
-| `.servers.connectcustom` (called by `retryrows`) | l.198 |
-| `.servers.reqprocsnotconn` / `.servers.reqprocnamesnotconn` | l.348–351, l.357 |
-| `.servers.startupdepcyclestypename` / `.servers.startupdepnamecycles` | l.360–373, l.379 |
+They are built on the module-private `attributematch`, `reqprocsnotconn`, `reqprocnamesnotconn` and
+`startupdepcyclestypename`.
 
 The discovery process (`di.torq.proc.discovery`) calls `addw`, `removerows`, `cleanup`,
 `startup`, reads `SERVERS`/`nontorqprocesstab`, and pushes `procupdate`/`autodiscovery` to
@@ -158,7 +156,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 - `startup` against a live and a dead peer (discovery off);
 - `gethandlebytype`, and retry recovering an ungraceful kill;
 - `waitfortype`, including a discovery stub that comes up after `startup`;
-- the root `.servers` functions (`attributematch`, 5-arg `getservers`, `startupdepnamecycles`);
+- `attributematch`, the root 5-arg `.servers.getservers` and `.servers.startupdepnamecycles`;
 - input validation and `getapimeta`.
 
 The rest of the discovery protocol is covered by `di.torq.proc.discovery`'s suite. Run in a fresh

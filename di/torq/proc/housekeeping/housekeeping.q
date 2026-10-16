@@ -228,9 +228,7 @@ init:{[config;deps]
   / runtimes:02:00:00 in settings and a dead 12:00 in code - with its -hkusage text quoting 12:00.
   .z.m.runtimes:$[`runtimes in key config;astimespans config`runtimes;enlist 0D02:00:00];
   / di.os for the rm action - it picks file vs directory, and its dry-run mode is what lets the
-  / tests assert on a destructive action without destroying anything. Deliberately NOT declared
-  / in a deps.toml: di.os ships no VERSION file, so declaring it would fail di.torq.depcheck's
-  / manifest walk outright (see housekeeping.md). Add the declaration once di.os carries one.
+  / tests assert on a destructive action without destroying anything
   .z.m.os:use`di.os;
   / publish the IPC-callable surface at a real root-level name - use-loading this file compiles
   / it into a private namespace (see di.torq.proc.hdb.init's identical note), so a remote or

@@ -4,7 +4,7 @@
 / same init[config;deps] calling convention.
 
 / built-in process type registry: proctype -> di.* module name
-builtin:`hdb`tickerplant`rdb`wdb`sort`gateway`idb`segmentedtp`chainedtp`housekeeping`sortworker`discovery!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.housekeeping`di.torq.proc.wdb`di.torq.proc.discovery
+builtin:`hdb`tickerplant`rdb`wdb`sort`gateway`idb`segmentedtp`chainedtp`housekeeping`sortworker`discovery`tickerlogreplay`segmentedchainedtp!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.housekeeping`di.torq.proc.wdb`di.torq.proc.discovery`di.torq.proc.tickerlogreplay`di.torq.proc.segmentedtp
 
 reqenv:{[e]
   v:getenv e;
@@ -280,7 +280,9 @@ init:{[proctype;procname;overrides]
   logdep:buildlogdep[overrides];
   cc:use`di.torq.config;
   (cc`init)[enlist[`log]!enlist logdep];
-  config:(cc`cascade)[r 0;r 1;proctype;procname];
+  / segmentedchainedtp uses segmentedtp's settings
+  settingsproctype:$[proctype=`segmentedchainedtp;`segmentedtp;proctype];
+  config:(cc`cascade)[r 0;r 1;settingsproctype;procname];
   / command-line override layer - the TOP cascade tier. A launch flag matching a settings name
   / overrides it (parsed into that setting's type); reserved launcher/identity flags are excluded,
   / and a flag that doesn't name a real setting is skipped (see di.torq.config.overrideconfig).
@@ -301,6 +303,9 @@ init:{[proctype;procname;overrides]
   / the rolled files too, matching torq.q's own ordering.
   lr:use`di.torq.logroll;
   (lr`init)[config;deps];
+  / init functions a process defers until pubsub and connections are initialised
+  set[`.proc.initlist;()];
+  set[`.proc.addinitlist;{[x] .proc.initlist,:enlist x}];
   $[proctype in key builtin;
     startbuiltin[proctype;config;deps];
     startcustom[proctype;config;deps]
@@ -313,6 +318,8 @@ init:{[proctype;procname;overrides]
   if[@[value;`.ps.loaded;0b];.ps.initialise[]];
   / initialise connections
   if[@[value;`.servers.STARTUP;0b];.servers.startup config];
+  / run deferred init functions
+  if[count .proc.initlist;value each .proc.initlist;.proc.initlist:()];
   / .z.* wrappers: clients, querylog, zpsignore last
   initclients[config;deps];
   / optional query logging - a no-op unless [querylog] enabled=true. LAST of everything that binds .z.*, because

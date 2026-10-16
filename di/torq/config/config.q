@@ -153,16 +153,27 @@ overrideconfig:{[config;params]
       'err;
     ];
   ];
-  defined:vars where vars in key config;
-  undefined:vars except defined;
+  paths:settingpath[config] each vars;
+  undefined:vars where 0=count each paths;
   if[count undefined;
     .z.m.logwarn[`overrideconfig;"skipping unknown setting(s): ",", " sv string undefined];
   ];
-  / fold each defined override into the config dict; a skipped/rejected one leaves it unchanged
-  :{[config;params;name]
-     res:applyoverride[name;config name;params name];
-     $[res 0;@[config;name;:;res 1];config]
-   }[;params;]/[config;defined];
+  / fold each override into the config dict at its path; a skipped/rejected one leaves it unchanged
+  w:where 0<count each paths;
+  :{[config;params;name;path]
+     res:applyoverride[name;config . path;params name];
+     $[res 0;.[config;path;:;res 1];config]
+   }[;params]/[config;vars w;paths w];
+  };
+
+settingpath:{[config;name]
+  / internal - where an override lands: (name) for a top-level setting, (section;key) for a .section.key
+  / (or section.key) naming a key of a dict-valued section, () if neither
+  if[name in key config;:enlist name];
+  p:`$parts where 0<count each parts:"." vs string name;
+  if[not (2=count p) and (first p) in key config;:()];
+  if[not 99h=type sect:config first p;:()];
+  $[(last p) in key sect;p;()]
   };
 
 getapimeta:{[]

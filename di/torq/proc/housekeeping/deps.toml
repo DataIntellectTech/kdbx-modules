@@ -1,0 +1,3 @@
+# Peer modules di.torq.proc.housekeeping `use`s (see di/torq/depcheck/depcheck.md).
+[dependencies]
+"di.os" = "0.1.0"

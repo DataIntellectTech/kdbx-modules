@@ -62,6 +62,11 @@ true,0,0,q,"any (exec msg from logtab) like ""*not a basic type*""",1,1,non-basi
 fail,0,0,q,cfg.overrideconfig[42;()!()],1,1,overrideconfig rejects a non-dict config
 fail,0,0,q,cfg.overrideconfig[basecfg;42],1,1,overrideconfig rejects non-dict params
 fail,0,0,q,"cfg.overrideconfig[basecfg;enlist[1]!enlist enlist""x""]",1,1,overrideconfig rejects non-symbol params keys
+run,0,0,q,"seccfg:`rows`replay!(100;`dir`first`tabs!(""old"";0;`a`b))",1,1,a config with a section dict (as a .toml [section] gives)
+true,0,0,q,"""new""~(cfg.overrideconfig[seccfg;enlist[`.replay.dir]!enlist ""new""])[`replay;`dir]",1,1,a .section.key override sets that key of the section
+true,0,0,q,"7~(cfg.overrideconfig[seccfg;enlist[`replay.first]!enlist enlist""7""])[`replay;`first]",1,1,section.key (no leading dot) works and parses into the key's type
+true,0,0,q,"`xx`yy~(cfg.overrideconfig[seccfg;enlist[`.replay.tabs]!enlist (""xx"";""yy"")])[`replay;`tabs]",1,1,a vector key of a section takes several values
+true,0,0,q,"seccfg~cfg.overrideconfig[seccfg;`.replay.nope`.rows.x`.replay.a.b!3#enlist enlist""1""]",1,1,an unknown section key or a non-dict section or a deeper name is skipped
 comment,,,,,,,getapimeta - module api metadata
 true,0,0,q,(asc key cfg)~asc exec name from cfg.getapimeta[],1,1,getapimeta documents exactly the module's exports
 true,0,0,q,`name`public`descrip`params`return~cols cfg.getapimeta[],1,1,getapimeta rows carry the registry columns

@@ -663,10 +663,9 @@ setconfig:{[config]
   .z.m.currentpartition:0N;
   }
 
-/ logging stub for the period roll, as legacy's writedown.q shipped
-/ monadic: di.pubsub.callendofperiod sends (`endofperiod;(currentpd;nextpd;data)) as one argument
-endofperiod:{[x]
-  .z.m.log[`info][`endofperiod;"received endofperiod ",.Q.s1 x];
+/ logging stub for the period roll, as legacy's writedown.q shipped: a segmented tickerplant sends (`endofperiod;currp;nextp;data)
+endofperiod:{[currp;nextp;data]
+  .z.m.log[`info][`endofperiod;"Received endofperiod. currentperiod, nextperiod and data are ",(string currp),", ", (string nextp),", ", .Q.s1 data];
   }
 
 / publishes the root names other processes and legacy's peach lambdas call
@@ -684,9 +683,10 @@ setroot:{[]
   / define .z.pd in order to connect to any worker processes
   @[`.z;`pd;:;{[] `u#raze {exec w from x} each (.z.m.svc`getservers) each .z.m.sortworkertypes}];
   @[`.;`upd;:;.z.m.upd];
-  @[`.;`endofday;:;endofday];
-  @[`.;`endofperiod;:;endofperiod];
   set[`.u.end;endofday];
+  / segmented tickerplant entry points
+  @[`.;`endofday;:;{[d;x] endofday d}];
+  @[`.;`endofperiod;:;endofperiod];
   / the idb reads these at startup; currentpartition is republished at each end of day
   set[`.wdb.savedir;.z.m.savedir];
   set[`.wdb.hdbdir;.z.m.hdbdir];
@@ -707,7 +707,6 @@ init:{[config;deps]
   / legacy passes -s -N on the command line; torqx.sh has no per-process flags, so it is a setting
   if[0<w:$[`workers in key config;tolong config`workers;0];system "s -",string w];
 
-  / not in deps.toml: di.os has no VERSION, which fails depcheck
   .z.m.os:use`di.os;
   initdbwrite[config;deps];
   .z.m.mrg:use`di.merge;
@@ -738,10 +737,10 @@ init:{[config;deps]
   tpt:first .z.m.tptypes;
   if[not (.z.m.svc`waitfortype)[tpt;.z.m.tpwaittimeout;500];
     '"di.torq.proc.wdb: no ",(string tpt)," connection within ",(string .z.m.tpwaittimeout),"ms - cannot start wdb"];
-  tph:(.z.m.svc`gethandlebytype)[tpt;`any];
-  sd:(.z.m.subs`subscribe)[tph;.z.m.subscribeto;.z.m.subscribesyms;.z.m.replaylog];
-  fixpartition sd`date;
-  .z.m.log[`info][`wdb;"subscribed; replayed ",(string sd`rowcount)," message(s), partition ",string .z.m.currentpartition];
+  sd:.sub.subscribe[.z.m.subscribeto;.z.m.subscribesyms;1b;.z.m.replaylog;first .sub.getsubscriptionhandles[tpt;`;()!()]];
+  / () when re-initialised: already subscribed
+  if[count sd;fixpartition sd`d];
+  .z.m.log[`info][`wdb;"subscribed, partition ",string .z.m.currentpartition];
   if[.z.m.writedownmode in `default`partbyenum;initmissingtables .z.m.currentpartition];
   if[(not .z.m.numtab~.z.m.replaynumtab) or .z.m.numrows<>.z.m.replaynumrows;
     {replaymaxrowcheck[x;maxrows x]} each tablelist[]];

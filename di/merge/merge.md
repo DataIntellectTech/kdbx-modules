@@ -11,7 +11,7 @@ On-disk data-merging utilities for the write-down flow, extracted from TorQ's `c
 - Sync a partsizes table received from a peer process into local tracked state (`syncpartsizes`) - see "Cross-process partition-size sync" below
 - Re-sort a segment by its parted column(s) when the `p#` attribute cannot otherwise be applied, so the merged partition ends up correctly parted
 - Batch sizing bounded by both a data limit (rows or bytes, per `mergebybytelimit`) and a maximum partition count per batch (`partlimit`)
-- Helpers to validate and enumerate a table's parted columns (`checkpartitiontype`, `checkenumerabletype`, `getextrapartitions`, `getfirstcharpartitions`)
+- Helpers to validate and enumerate a table's parted columns (`checkpartitiontype`, `checkenumerabletype`, `getextrapartitions`, `getfirstcharpartitions`, `getextrapartitiontype`)
 - No hard module dependencies - logging is injected via `init`, and the parted column(s) a merge needs are passed in by the caller rather than read from sort config, so `di.merge` stays independent of `di.sort`
 
 ---
@@ -24,7 +24,7 @@ On-disk data-merging utilities for the write-down flow, extracted from TorQ's `c
 
 **Hard dependency:** none - the only runtime dependency (`log`) is injected via `init`, so any module exporting the contracted signatures can be supplied.
 
-The parted (`` `p# ``) column(s) for a table - `extrapartitiontype` in the function signatures below - are **passed in by the caller**. TorQ's original `merge.q` read these from the `.sort.params` global (populated from `sort.csv`); on extraction that coupling was removed so `di.merge` does not depend on `di.sort`. The caller (e.g. `di.wdb`) obtains the parted columns from its own sort configuration and passes them to `mergebypart` / `mergehybrid` / the check functions.
+The parted (`` `p# ``) column(s) for a table - `extrapartitiontype` in the function signatures below - are **passed in by the caller**. TorQ's original `merge.q` read these from the `.sort.params` global (populated from `sort.csv`); on extraction that coupling was removed so `di.merge` does not depend on `di.sort`. The caller (e.g. `di.wdb`) obtains the parted columns from its own sort configuration and passes them to `mergebypart` / `mergehybrid` / the check functions. `getextrapartitiontype` looks them up in a sort config the caller passes in.
 
 **`tablename` must resolve as a real global/root table.** `checkpartitiontype`, `checkenumerabletype`, `getextrapartitions` and `getfirstcharpartitions` all take `tablename` and dereference it directly - `checkpartitiontype` via `cols get tablename`, the other three via `meta[tablename]` or a functional select (`` ?[tablename;...] ``). None of them accept an in-memory table value in place of a resolvable symbol; this matches legacy TorQ's own behaviour and is not a limitation introduced by this module.
 
@@ -79,6 +79,9 @@ merge.trackpartition[`:tmp/2025.01.01/trade; count data; -22!data]
 ### `getpartsizes[]`
 Return the current tracked segment sizes (keyed on `ptdir`), e.g. to sync to sort-worker processes.
 
+### `getmergebybytelimit[]` / `getpartlimit[]`
+Return the `mergebybytelimit` and `partlimit` this module was initialised with.
+
 ### `clearpartsizes[]`
 Drop all tracked segment sizes. Call once end-of-day merging is complete.
 
@@ -117,6 +120,12 @@ Return the distinct combinations of the parted column values - one per partition
 
 ### `getfirstcharpartitions[tablename;extrapartitiontype]`
 Return the partition values grouped by the first character of the (single) parted column.
+
+### `getextrapartitiontype[sortconfig;tablename]`
+Return the parted (`p#`) column(s) for `tablename` from `sortconfig` (a sort table with `tabname`, `column`, `sort` and `att` columns, e.g. di.dbwrite's `getconfig[]`): the table's own sorted `p#` columns, else those of the `default` row. Error-logs when neither is defined.
+```q
+merge.getextrapartitiontype[dbw.getconfig[]; `trade]
+```
 
 ### `version`
 Module version string (from the `VERSION` file), for `di.depcheck` to check against dependants' minimum-version requirements.
@@ -284,7 +293,7 @@ Mock loggers only check that a message was logged at the right level - they do n
 
 ## Notes
 
-- Extracted from TorQ `code/common/merge.q`. The one behavioural change on extraction is the removal of the `.sort.params`/`sort.csv` lookup (`getextrapartitiontype`): the parted column(s) are now a parameter (`extrapartitiontype`) supplied by the caller, keeping the module standalone. All error/info messages that referenced `sort.csv` in the legacy source have been reworded accordingly.
+- Extracted from TorQ `code/common/merge.q`. The one behavioural change on extraction is the removal of the `.sort.params`/`sort.csv` lookup (`getextrapartitiontype`): the parted column(s) are now a parameter (`extrapartitiontype`) supplied by the caller, and `getextrapartitiontype` takes the sort config as a parameter, keeping the module standalone. The other error/info messages that referenced `sort.csv` in the legacy source have been reworded accordingly.
 - `init` must be called before any other function - enforced by the `requireinit` guard on every other exported function, not just documented convention.
 - The `VERSION`-file read pattern (fail loud on missing/unreadable/empty, `trim` against trailing whitespace) follows `di.servers`, not `di.eodtime` (which has no `VERSION` handling at all).
 - The merge functions operate on on-disk paths (`get`/`set`/`upsert` against file symbols); they do not manage the segment or destination directory lifecycle - that remains the caller's responsibility.

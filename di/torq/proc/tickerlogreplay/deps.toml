@@ -1,0 +1,6 @@
+# Peer modules di.torq.proc.tickerlogreplay `use`s (see di/torq/depcheck/depcheck.md).
+[dependencies]
+"di.tplog" = "0.1.0"
+"di.merge" = "0.2.0"
+"di.dbwrite" = "0.2.0"
+"di.os" = "0.1.0"

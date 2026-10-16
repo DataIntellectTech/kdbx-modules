@@ -75,8 +75,9 @@ Under di.torq, `generateschemas` is queued with `.proc.addinitlist`, so it runs 
 ## Behaviour to know
 
 - End of period and end of day are checked on each update and each timer tick.
-- If the next period or roll is already past, or more than a day has gone by, the `stpzts` job is disabled and
-  the check signals; other timer jobs keep running.
+- If the next period or roll is already past, or more than a day has gone by, the tick stops
+  (`.stplg.stopped`) and the check signals; other timer jobs keep running. Any other error in the tick is retried
+  on the next tick.
 - Server tracking stays on (TorQ's STP turns it off), so the process can register with discovery. Heartbeating is
   not wired and query logging is off unless `[querylog]` is enabled, as in TorQ's STP.
 - `segmentedchainedtp` has no subscriber cutoff (TorQ's `.subcut`): slow subscribers are not disconnected.

@@ -20,7 +20,7 @@ true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperi
 true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
 true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered
 true,0,0,q,"`stplg in ha""exec name from h.list`.z.exit""",1,,.z.exit observer registered
-true,0,0,q,"(`stpzts;1;1)~ha""tickjob""",1,,batch timer added as a 1s timer job
+true,0,0,q,"(`stpzts;1;1;(enlist`disableonfail)!enlist 0b)~ha""tickjob""",1,,batch timer added as a 1s timer job that retries on failure
 
 comment,,,,,,,subscribe handshake
 true,0,0,q,"`segmented~ha""tptype""",1,,tptype is segmented
@@ -58,7 +58,8 @@ true,0,0,q,"(string hb""currlog[`trade;`logname]"") like ""*/stp2_2*""",1,,singu
 run,0,0,q,"got:(); hb"".u.sub[`quote;1!([]tbl:enlist`quote;filters:enlist\""bid>1\"";columns:enlist\""sym,bid\"")]""; hb(`.u.upd;`quote;(`a`b;1 2f))",1,,filtered subscription with where and columns
 true,0,0,q,"(`sym`bid;enlist`b)~(cols last first got;exec sym from last first got)",1,,only matching rows and columns published
 true,0,0,q,"""next period is in the past""~hb""@[{.stplg.nextperiod:.z.p-2D; .stplg.getnextendUTC[]; .stplg.checkends .z.p};::;::]""",1,,a past next period signals
-true,0,0,q,"(enlist`stpzts;60000i)~hb""(stopped;system\""t\"")""",1,,only the tick job is disabled; the process timer is untouched
+true,0,0,q,"(1b;`symbol$();60000i)~hb""(.stplg.stopped;stopped;system\""t\"")""",1,,the tick is stopped by flag; no jobs disabled; the process timer is untouched
+true,0,0,q,"hb""n:.stplg.nextperiod; tick[]; n~.stplg.nextperiod""",1,,a stopped tick does nothing
 
 comment,,,,,,,memorybatch and tabular
 run,0,0,q,"hc(`.u.upd;`trade;trd`a`b)",1,,send two trades

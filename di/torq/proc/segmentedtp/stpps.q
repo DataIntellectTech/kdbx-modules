@@ -17,11 +17,13 @@
 
 / call inner zts and check for end of day/period
 .stpps.zts.def:{
+  if[.stplg.stopped;:()];
   .stplg.ts now:.z.p;
   .stplg.checkends now
  };
 
 / chained: no period/day end check
 .stpps.zts.chained:{
+  if[.stplg.stopped;:()];
   .stplg.ts now:.z.p
  };

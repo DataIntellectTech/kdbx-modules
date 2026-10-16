@@ -167,7 +167,7 @@ value"loghandles::exec tbl!handle from currlog";
   .stpps.endp[currentpd;nextpd;data];
   .stplg.currperiod:.stplg.nextperiod;
   if[(data`p)>.stplg.nextperiod:.stplg.multilogperiod+.stplg.currperiod;
-    .z.m.timer[`disablejobs]`stpzts;'"next period is in the past"];
+    .stplg.stopped:1b;'"next period is in the past"];
   .stplg.getnextendUTC[];
   if[rolllogs;.stplg.periodrollover[data]];
   .z.m.log[`info][`stpeoperiod;"end of period complete, new values for current and next period are ",.Q.s1 (currentpd;nextpd)];
@@ -190,7 +190,7 @@ value"loghandles::exec tbl!handle from currlog";
 .stplg.dayrollover:{[data]
   .z.m.eod.setnextroll .z.m.eod.getroll data`p;
   if[(data`p)>.z.m.eod.getnextroll[];
-    .z.m.timer[`disablejobs]`stpzts;'"next roll is in the past"];
+    .stplg.stopped:1b;'"next roll is in the past"];
   .stplg.getnextendUTC[];
   .z.m.eod.setd 1+.z.m.eod.getd[];
   .stpm.updmeta[.stplg.multilog][`close;.stplg.logtabs;(data`p)+.z.m.eod.getdailyadj[]];
@@ -205,7 +205,7 @@ value"loghandles::exec tbl!handle from currlog";
 .stplg.checkends:{
   if[.stplg.nextendUTC > x; :()];
   if[.stplg.nextperiod < x1:x+.z.m.eod.getdailyadj[]; .stplg.stpeoperiod[.stplg`currperiod;.stplg`nextperiod;.stplg.endofdaydata[],(enlist `p)!enlist x1;not .z.m.eod.getnextroll[] < x]];
-  if[.z.m.eod.getnextroll[] < x;if[.z.m.eod.getd[]<("d"$x)-1;.z.m.timer[`disablejobs]`stpzts;'"more than one day?"]; .stplg.endofday[.z.m.eod.getd[];.stplg.endofdaydata[],(enlist `p)!enlist x]];
+  if[.z.m.eod.getnextroll[] < x;if[.z.m.eod.getd[]<("d"$x)-1;.stplg.stopped:1b;'"more than one day?"]; .stplg.endofday[.z.m.eod.getd[];.stplg.endofdaydata[],(enlist `p)!enlist x]];
  };
 
 .stplg.init:{[dbname]

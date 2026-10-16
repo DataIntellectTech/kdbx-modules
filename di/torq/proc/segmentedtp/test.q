@@ -30,7 +30,7 @@ setupfixture:{[]
     "errs:()";
     "nolog:`info`warn`error!({[c;m]};{[c;m]};{[c;m] errs::errs,enlist m})";
     "stopped:`symbol$()";
-    "notimer:`addjob`disablejobs!({[a;b;c;d;e;f] if[a~`stpzts;tickjob::(a;d;e);tick::b]};{[x] stopped::stopped,x})";
+    "notimer:`addjob`disablejobs!({[a;b;c;d;e;f] if[a~`stpzts;tickjob::(a;d;e;f);tick::b]};{[x] stopped::stopped,x})";
     "h:use`di.torq.handlers";
     "h.init enlist[`log]!enlist nolog";
     "hd:`register`remove`list#h";

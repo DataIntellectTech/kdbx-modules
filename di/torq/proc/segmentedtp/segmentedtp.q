@@ -73,6 +73,7 @@ init:{[config;deps]
   (`..generateschemas)[];
   / again after di.torq's .ps.initialise, which registers every root table
   if[`addinitlist in key `.proc;.proc.addinitlist(`generateschemas;`)];
+  .stplg.stopped:0b;
   .stplg.init[string .z.m.procname];
   }
 
@@ -111,7 +112,7 @@ init:{[config;deps]
   .stplg.ts:.stplg.zts[batch];
   .u.upd:.stpps.upd[chainmode];
   / the batch timer and end checks run as a 1s di.timer job; the end guards disable only this job
-  .z.m.timer[`addjob][`stpzts;.stpps.zts[chainmode];();1;1;()!()];
+  .z.m.timer[`addjob][`stpzts;.stpps.zts[chainmode];();1;1;(enlist`disableonfail)!enlist 0b];
   / error mode: failed updates go to a separate log
   if[.stplg.errmode;
     .stp.upd:.u.upd;

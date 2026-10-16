@@ -14,7 +14,7 @@ description: >
 
 The job is to turn TorQ code into a `di.<name>` module that does **what the original did, no more**, and follows this repo's rules.
 
-**Authority order:** `consistency.md` and `style.md` in this repo come first, then existing modules (`di/dbwrite`, `di/eodtime`, `di/timer`), then this skill. Read both guides before writing code. They change, and they beat anything here. For module mechanics (`export`, `.z.m`/`.z.M`, `::` paths, `use`), see the `kdbx-modules` skill. For reading TorQ source, see the TorQ repo's `torq-developer` skill.
+**Authority order:** `consistency.md` and `style.md` in this repo come first, then existing modules (`di/dbwrite`, `di/eodtime`, `di/subscriptions`), then this skill. Read both guides before writing code. They change, and they beat anything here. For module mechanics (`export`, `.z.m`/`.z.M`, `::` paths, `use`), see the `kdbx-modules` skill. For reading TorQ source, see the TorQ repo's `torq-developer` skill.
 
 ## Step 1: Analyse the source (before writing anything)
 
@@ -34,6 +34,7 @@ Check the public/internal split with the user. Don't decide it alone: left alone
   - Library module: `init[deps]`.
   - Framework/process module (anything `di.torq` orchestrates): `init[config;deps]`.
   - Read config with a presence check: ``$[`k in key config;config`k;default]``. This replaces `@[value;`var;default]`.
+  - **Settings sections don't deep-merge.** `di.torq.config`'s `cascade` joins tiers with `,`, and a `[section]` is one key holding a dict - so a proctype or procname tier that sets one key of a section replaces the whole section. Give every section key a code-side default (``opt[`k;default]``, as `di.torq`'s `initquerylog` does) rather than relying on defaults that live in a lower-tier file.
 - **Each dependency is either injected or `use`d:**
 
   | TorQ call | Becomes | Contract |
@@ -72,6 +73,8 @@ version:first read0`:::VERSION
 
 export:([init;func1;func2;version])
 ```
+
+`version` can be published as the `VERSION` file alone, without the `export` entry - `di.torq.depcheck` reads the file pre-load and falls back to it post-load. Do that when a `getapimeta` contract test asserts the exact export set (`di.torq.config`, `di.torq.servers`, `di.util.toml`). The `VERSION` file is required either way.
 
 ## Step 4: Convert the code
 
@@ -164,6 +167,14 @@ q)mymod.init logging.logdict                 / or mymod.init[config;deps] for fr
 q)k4unit:use`di.k4unit
 q)k4unit.moduletest`di.mymod
 ```
+
+**One `moduletest` per q process.** `KUT`/`KUTR` accumulate, so a second call in the same session re-runs the first module's suite and the pass/fail summary covers both. Test several modules with one process each, with a `runner.q` that does a single `moduletest` and exits:
+
+```sh
+for m in di.mymod di.other; do q runner.q -q $m; done
+```
+
+Several suites also spawn child processes and mutate real process state, so a failure seen in a combined run is unverified until it reproduces in a fresh process.
 
 Report the k4unit results honestly, including any failures. Also check that the module loads in a fresh session **without** `di.torq`.
 

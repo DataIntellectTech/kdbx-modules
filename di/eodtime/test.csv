@@ -61,6 +61,11 @@ run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$
 true,0,0,q,-16h=type eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns timespan type
 true,0,0,q,0D<=eodtime.getdailyadjustment[],1,1,Europe/London datatimezone returns non-negative offset
 
+comment,,,,,,,the daily adjustment is an exact offset (Asia/Tokyo is +9h with no DST)
+run,0,0,q,eodtime.init[`rolltimezone`datatimezone`rolltimeoffset`log!(`$"GMT";`$"Asia/Tokyo";0D00:00:00.000;logdep)],1,1,reinit with Tokyo datatimezone
+true,0,0,q,0D09=eodtime.getdailyadj[],1,1,the adjustment stored at init is exactly 9 hours
+true,0,0,q,all 0D09={eodtime.getdailyadjustment[]} each til 100,1,1,every computed adjustment is exactly 9 hours
+
 comment,,,,,,,init - empty config (just log dep) applies all defaults
 run,0,0,q,eodtime.init[enlist[`log]!enlist logdep],1,1,init with just log dep applies all defaults
 true,0,0,q,0D=eodtime.getdailyadj[],1,1,default datatimezone (GMT) produces zero daily adjustment

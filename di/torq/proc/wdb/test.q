@@ -118,6 +118,17 @@ segments:{[]
     3=count select from ps where ptdir like "*trade*")
   };
 
+/ a merge that fails (hdb destination with a mismatched sym type) stops end of day before the segments are deleted
+failedmerge:{[]
+  freshwdb cfg[],`writedownmode`mergemode!(`partbyattr;`part);
+  feed[];
+  (` sv hdbpart[`trade],`) set ([]time:`timestamp$();sym:`long$();price:`float$());
+  ok:@[{.u.end x;1b};today[];{0b}];
+  segs:@[{key hsym `$(1_string x),"/trade"};wdbpart[];{()}];
+  (use`di.merge)[`clearpartsizes][];
+  chk `signalled`segskept!(not ok;`aapl`ibm`msft~asc segs)
+  };
+
 / startup writes empty schemas into the working partition for the idb
 missingtables:{[]
   freshwdb cfg[];

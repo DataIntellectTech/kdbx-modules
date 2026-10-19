@@ -47,6 +47,7 @@ true,0,0,q,partbyfirstchar`part,1,,partbyfirstchar sorted then merged by whole p
 true,0,0,q,partbyfirstchar`col,1,,partbyfirstchar sorted then merged column by column
 true,0,0,q,partbyfirstchar`hybrid,1,,partbyfirstchar sorted then merged by the hybrid method
 true,0,0,q,segments[],1,,an intraday flush writes one segment per parted value and tracks its size
+true,0,0,q,failedmerge[],1,,a failed merge signals out of end of day and leaves the segments on disk
 true,0,0,q,missingtables[],1,,startup writes empty table schemas into the working partition
 true,0,0,q,tabsizes[],1,,tablelist orders tables by bytes written
 true,0,0,q,manipulation[],1,,savedownmanipulation is applied before a table is written

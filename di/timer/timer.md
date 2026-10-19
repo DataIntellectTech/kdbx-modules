@@ -102,10 +102,13 @@ The timer system includes a suite of control functions that let you start, stop,
 
 #### init
 ```q
-timer.init[]
+logging:use`di.util.log
+timer.init[enlist[`log]!enlist `info`warn`error!(logging.info;logging.warn;logging.error)]
 ```
 - Purpose: Initializes the timer scheduler by hooking .z.ts to main[].
+- Deps: the dict must hold the injected `log` dependency (`` `info`warn`error `` functions); init errors without it. Optional `debug`, `logcall` and `cycletime` keys set the customisations below.
 - Effect: Establishes a recurring loop that checks for jobs due to run based on cycletime. If .z.ts is already defined, it safely preserves and wraps it.
+- Failed jobs: every failed run is logged through `log`error`, whatever `debug` is set to, naming the job id and the error, as TorQ's timer does. A job with `disableonfail` set (the default) is disabled, and the message says it will not be rescheduled.
 - Usage: Call once when starting your timer system or restarting after timer.disable[].
 
 #### disable
@@ -164,17 +167,17 @@ These are global control variables and can be adjusted by the user, if no change
 #### Debug
 The debug variable can be modified by providing the init function a dictionary including `debug as the key and a boolean as the corresponding value.
 ```q
-timer.init[(enlist `debug)!enlist 1b]
+timer.init[`log`debug!(logdep;1b)]
 ```
 - Purpose: Enables verbose logging for job execution.
 - Type: Boolean (1b for enabled, 0b for disabled).
-- Usage: When set to 1b, job execution attempts, successes, and errors will be logged to the console with timestamps and context via .msg.info and .msg.err.
+- Usage: When set to 1b, job execution attempts and errors are also written to the console with timestamps and context via .msg.info and .msg.err. Failed jobs go to the injected `log` whatever this is set to.
 - Default: 0b (disabled).
 This is useful during development or troubleshooting to inspect scheduler behavior.
 #### Log Call
 The logcall variable can be modified by providing the init function a dictionary including `logcall as the key and a boolean as the corresponding value.
 ```q
-timer.init[(enlist `logcall)!enlist 1b]
+timer.init[`log`logcall!(logdep;1b)]
 ```
 - Purpose: Logs function execution in usage logs through 0 handle.
 - Type: Boolean (1b for enabled, 0b for disabled).
@@ -184,7 +187,7 @@ This is useful for production use to ensure application is operating as expected
 #### Cycle Time
 The cycletime variable can be modified by providing the init function a dictionary including `cycletime as the key and a integer value (in ms) as the corresponding value.
 ```q
-timer.init[(enlist `cycletime)!enlist 1000]
+timer.init[`log`cycletime!(logdep;1000)]
 ```
 - Purpose: Sets the interval (in milliseconds) between scheduler checks for jobs that are due to run.
 - Type: Integer.
@@ -221,8 +224,9 @@ timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;(enlist `maxruns)!(e
 .func.timeAligned:{show "On the quarter hour"};
 timer.addjob.default[`job3;`.func.timeAligned;();15;5];
 
-// Initialize and set the cycletime
-timer.init[(enlist `cycletime)!enlist 500];
+// Initialize with the injected logger and set the cycletime
+logging:use`di.util.log;
+timer.init[`log`cycletime!(`info`warn`error!(logging.info;logging.warn;logging.error);500)];
 
 // Enable and disable jobs manually if needed
 timer.disablejobs[`job3]

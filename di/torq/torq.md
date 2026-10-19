@@ -74,8 +74,8 @@ for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
 contract dependencies (`log`, `timer`, `handlers`), defaulting to `di.util.log`/`di.timer`/
 `di.torq.handlers` respectively, with an override escape hatch - the `overrides` dict passed
 into `init` can specify a different module name under the `` `log ``/`` `timer ``/
-`` `handlers `` key. `buildtimerdep` also initializes `di.timer` itself (with no deps
-of its own - it's Tier 1 standalone) and reshapes its exported `addjob` (a dict of
+`` `handlers `` key. `buildtimerdep` also initializes `di.timer` itself (with the
+injected `log` dep, through which di.timer logs failed jobs) and reshapes its exported `addjob` (a dict of
 `custom`/`default`/`simple` variants) down to the one signature the DI contract
 expects.
 

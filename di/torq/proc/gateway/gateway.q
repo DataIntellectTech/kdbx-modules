@@ -131,10 +131,11 @@ init:{[config;deps]
   set[`.gw.getdata;.z.m.da`getdata];
   set[`.gw.reload;reload];
 
-  / housekeeping timers (asyncdispatch leaves scheduling to the caller). mode 1h period = seconds.
-  (.z.m.timer`addjob)[`gwtimeout;{(.z.m.ad`checktimeout)[]};();5;1h;()!()];
-  (.z.m.timer`addjob)[`gwrmqueries;{(.z.m.ad`removequeries)[0D00:30]};();60;1h;()!()];
-  (.z.m.timer`addjob)[`gwrminactive;{(.z.m.ad`removeinactive)[0D01:00]};();300;1h;()!()];
+  / housekeeping timers (asyncdispatch leaves scheduling to the caller), period in seconds.
+  / mode 3h reschedules from the end of the previous run, as TorQ's .timer.repeat does
+  (.z.m.timer`addjob)[`gwtimeout;{(.z.m.ad`checktimeout)[]};();5;3h;()!()];
+  (.z.m.timer`addjob)[`gwrmqueries;{(.z.m.ad`removequeries)[0D00:30]};();60;3h;()!()];
+  (.z.m.timer`addjob)[`gwrminactive;{(.z.m.ad`removeinactive)[0D01:00]};();300;3h;()!()];
   (.z.m.timer`addjob)[`gwrmclients;{(.z.m.ad`removeclients)[0D01:00]};();300;1h;()!()];
 
   .z.m.log[`info][`gateway;"initialised, backendtypes=",(", " sv string .z.m.backendtypes)];

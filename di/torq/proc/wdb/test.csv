@@ -58,6 +58,7 @@ true,0,0,q,tpretry[],1,,init fails when no tickerplant connects within tpwaittim
 true,0,0,q,pattrcheck[],1,,a partitioned writedown mode without a default p attribute is reported
 true,0,0,q,replaythreshold[],1,,replay uses replaynumrows while live flushing uses numrows
 true,0,0,q,initidempotent[],1,,init can be called twice without colliding on its timer job
+true,0,0,q,savejobmode[],1,,the flush job is scheduled from the end of the previous run (mode 3)
 true,0,0,q,numtabdefault[],1,,numtab defaults to legacy quote/trade thresholds and replaynumtab follows it
 true,0,0,q,endofperiodstub[],1,,a root endofperiod stub is published so an stp period roll does not raise
 true,0,0,q,customreload[],1,,a custom proctype in reloadorder is reloaded with legacy root reload

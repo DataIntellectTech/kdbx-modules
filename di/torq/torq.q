@@ -70,16 +70,16 @@ buildlogdep:{[overrides]
   }
 
 / builds the timer dependency dict, using di.timer (kdbx-modules) unless overridden.
-/ di.timer needs no injected deps of its own (Tier-1 standalone). It exports `setcp`
+/ di.timer is initialised with the injected logger, through which it logs failed jobs. It exports `setcp`
 / rather than a bare `cp`, so the plan's timer contract's `cp` key is omitted here - not
 / currently used by anything that consumes this dep.
 / di.timer's exported `addjob` is itself a dict of variants (custom/default/simple),
 / not a directly-callable function - `custom` is the one matching the plan's timer
 / contract signature {[id;func;params;period;mode;opts] ...}
-buildtimerdep:{[overrides]
+buildtimerdep:{[overrides;logdep]
   modname:$[`timer in key overrides;overrides`timer;`di.timer];
   tm:use modname;
-  (tm`init)[()!()];
+  (tm`init)[enlist[`log]!enlist logdep];
   `addjob`deletejobs`enablejobs`disablejobs`getactivejobs!((tm`addjob)`custom;tm`deletejobs;tm`enablejobs;tm`disablejobs;tm`getactivejobs)
   }
 
@@ -231,7 +231,7 @@ initquerylog:{[config;deps]
   ft:"j"$opt[`flushtime;86400];
   if[ft>0;
     .z.m.qlflushtime:ft*0D00:00:01;
-    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];1h;()!()]];
+    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];3h;()!()]];
   msg:"query logging on (level ",(string cfg`level),", memory=",(string cfg`logtomemory),", disk=",(string cfg`logtodisk),")";
   deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
   }
@@ -292,7 +292,7 @@ init:{[proctype;procname;overrides]
   / the process.csv phone-book path, so di.torq.servers (and any consumer building its own startup config
   / slice from this config) can dial peers without reading env itself - keeps di.servers' env-free boundary.
   config:config,enlist[`processcsv]!enlist reqenv[`TORQXAPPCONFIG],"/process.csv";
-  timerdep:buildtimerdep[overrides];
+  timerdep:buildtimerdep[overrides;logdep];
   handlersdep:buildhandlersdep[overrides;logdep];
   / servers is built LAST (it consumes log/timer/handlers at init) and injected alongside
   / them, so consumers read deps`servers instead of `use`+init-ing di.torq.servers themselves.

@@ -78,6 +78,7 @@ true,0,0,q,"(`upd;`.u.upd;""upd"";"".u.upd"")~.m.di.0torq.qlignore (""upd"";"".u
 run,0,0,q,.m.di.0torq.initquerylog[qlcfg 1b;r4`deps],1,,enable with defaults - memory-only log plus the flush timer job
 true,0,0,q,.m.di.0torq.querylogwired,1,,the wired flag is set
 true,0,0,q,`querylogflush in exec id from (r4[`deps][`timer][`getactivejobs])[],1,,the in-memory flush job was scheduled on the injected timer
+true,0,0,q,3h=exec first mode from (r4[`deps][`timer][`getactivejobs])[] where id=`querylogflush,1,,the flush job reschedules from the end of the previous run (mode 3) as TorQ's .timer.repeat does
 run,0,0,q,n0:qlcompleted`pg,1,,baseline sync-query completions
 run,0,0,q,qlsync[],1,,one sync query through the wrapped .z.pg
 true,0,0,q,1=(qlcompleted`pg)-n0,1,,one sync query logs exactly one completion row

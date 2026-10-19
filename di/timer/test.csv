@@ -83,3 +83,39 @@ true,0,0,q,.test.exec2,1,,Test run succeeded for exec 2
 run,0,0,q,testexec3:{.test.exec3:x+y};timer.addjob.default[`testexec3;`testexec3;(2;3);10;1],1,,Add job for exec 3
 run,0,0,q,.m.di.0timer.runandschedule[`testexec3],1,,Test timer function exec 3
 true,0,0,q,.test.exec3=5,1,,Test run succeeded for exec 3
+
+comment,,,,,,,init requires the injected logger and a failed job is logged through it
+fail,0,0,q,timer.init[()!()],1,,init without a log dependency must error
+fail,0,0,q,timer.init[(::)],1,,init without deps must error
+run,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,,capture table for the log assertions
+run,0,0,q,logcap:`info`warn`error!({[c;m]`caplog upsert(`info;c;m)};{[c;m]`caplog upsert(`warn;c;m)};{[c;m]`caplog upsert(`error;c;m)}),1,,capturing logger
+run,0,0,q,timer.init[`log`debug!(logcap;0b)],1,,init with the capturing logger and debug off
+run,0,0,q,system"t 0",1,,stop the timer cycle so jobs only run when the test calls them
+run,0,0,q,timer.addjob.custom[`testfail1;{'"boom"};();10;1;()!()],1,,add a job that fails
+run,0,0,q,.m.di.0timer.runandschedule[`testfail1],1,,run the failing job
+true,0,0,q,1=count select from caplog where fn=`error,1,,the failure is logged once as an error with debug off
+true,0,0,q,"any {all 0<count each x ss/:(""testfail1"";""boom"";""will not be rescheduled"")} each caplog`msg",1,,the log names the job and the error and says it will not be rescheduled
+true,0,0,q,not .m.di.0timer.jobs[`testfail1][`status],1,,the failed job is disabled
+run,0,0,q,timer.addjob.custom[`testfail2;{'"boom"};();10;1;(enlist`disableonfail)!enlist 0b],1,,add a failing job that stays enabled on failure
+run,0,0,q,.m.di.0timer.runandschedule[`testfail2],1,,run it
+true,0,0,q,2=count select from caplog where fn=`error,1,,its failure is logged too
+true,0,0,q,.m.di.0timer.jobs[`testfail2][`status],1,,and it stays enabled
+run,0,0,q,timer.addjob.custom[`testfail3;{1+`a};();10;1;()!()],1,,add a job that fails with a q error rather than a signalled string
+run,0,0,q,.m.di.0timer.runandschedule[`testfail3],1,,run it through the 0 handle (logcall on)
+true,0,0,q,"any {all 0<count each x ss/:(""testfail3"";""type"")} each caplog`msg",1,,the q error text reaches the log line
+run,0,0,q,.m.di.0timer.logcall:0b,1,,run jobs through value instead of the 0 handle
+run,0,0,q,"timer.addjob.custom[`testfail4;{'""boomvalue""};();10;1;()!()]",1,,add a failing job for the value path
+run,0,0,q,.m.di.0timer.runandschedule[`testfail4],1,,run it through value
+true,0,0,q,"any {all 0<count each x ss/:(""testfail4"";""boomvalue"")} each caplog`msg",1,,the error text reaches the log line on the value path too
+run,0,0,q,.m.di.0timer.logcall:1b,1,,restore logcall
+
+comment,,,,,,,a failing job does not stop other jobs due in the same tick
+run,0,0,q,caplog:0#caplog,1,,reset the capture
+run,0,0,q,.test.good:0b,1,,flag set by the healthy job
+run,0,0,q,timer.addjob.custom[`testbad;{'"bad"};();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,a failing job already due
+run,0,0,q,timer.addjob.custom[`testgood;{.test.good:1b};();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,a healthy job due in the same tick
+run,0,0,q,.m.di.0timer.main[],1,,one scheduler tick
+true,0,0,q,.test.good,1,,the healthy job still ran
+true,0,0,q,(enlist`timer)~exec ctx from caplog where fn=`error,1,,only the failing job is logged as an error
+true,0,0,q,not .m.di.0timer.jobs[`testbad][`status],1,,the failing job is disabled
+true,0,0,q,.m.di.0timer.jobs[`testgood][`status],1,,the healthy job stays enabled

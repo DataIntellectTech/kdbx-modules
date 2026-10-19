@@ -51,7 +51,7 @@ numrows = 100000                  # global row threshold for an intraday flush
 replaynumrows = 100000            # row threshold during log replay (default numrows); replaynumtab per table
 partitiontype = "date"            # date | month | year
 gc = true                         # .Q.gc[] after each save and after sorting
-settimer = 10                     # seconds between flush checks (di.timer mode 1h = seconds)
+settimer = 10                     # seconds from the end of one flush check to the next (di.timer mode 3h)
 immediate = false                 # true: flush every table on every timer tick (ignore numrows)
 replaylog = true                  # replay the tp log on startup
 tpwaittimeout = 30000             # ms to wait for the tickerplant at startup before init fails

@@ -102,14 +102,21 @@ getalljobs:{jobs}
 nextruntime:-0Wp;
 
 / configurable function to alter how timer functions are executed
-execute:{.[{$[count y; x . (),y; x@`];1b};(x;y);{if[debug;msg.err"Job execution failed for function: ",(-3!x)," with error: ",y]0b}[x]]};
+execute:{$[count y; x . (),y; x@`];1b};
+
+jobfailed:{[id;dof;e]
+  / logs a failed job, as TorQ's timer does, and reports the failure to runandschedule
+  if[debug;msg.err"Job start failed for job id : ",(string id)," with error: ",e];
+  .z.m.logerr[`timer;"timer ID ",(string id)," failed with error ",e,$[dof;".  The function will not be rescheduled";""]];
+  :0b;
+  };
 
 runandschedule:{[id]
   / runs function, schedules next runs and updates any additional status info if applicable for given job id
   r:.z.M.jobs[id];
   if[debug;msg.info"Executing job id: ",(string id)," for start time: ",(string r`nextstart)];
   r[`actualstart]:cp[];
-  ret:@[$[logcall;0;value];(execute;r`func;r`params);{if[debug;msg.err"Job start failed for job id : ",(string x)," with error: ",y];0b}[id]];
+  ret:@[$[logcall;0;value];(execute;r`func;r`params);jobfailed[id;r`disableonfail]];
   if[(not ret)&r`disableonfail;r[`status]:0b];
   r:upd.status[r]; / update status based on job status and configurable options
   @[.z.M.jobs;id;:;r];
@@ -131,16 +138,17 @@ main:{
 setcp:{.z.m.cp:x};
 
 init:{[configs]
-  / sets default config vars
+  / sets default config vars; configs must carry the injected `log dependency
+  if[not (99h=type configs) and `log in key configs;
+    '"di.timer: log dependency is required; pass `info`warn`error functions keyed on `log - see di.util.log"];
+  .z.m.logerr:configs[`log]`error;
   .z.m.debug:0b; / if enabled displays messages for jobs starting and any errors in execution
   .z.m.logcall:1b; / if enabled will execute timer functions through 0 handle
   .z.m.cycletime:100; / frequency to check for new jobs to start (in ms)
 
   / set custom config vars
-  if[not configs~(::);
-    vars:`logcall`cycletime`debug inter key configs;
-    (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs];
-  ];
+  vars:`logcall`cycletime`debug inter key configs;
+  (.Q.dd[.z.M] each key[vars#configs]) set' value[vars#configs];
   / appends to any existing .z.ts logic and start system cycle for timer job evaluation
   $[enabled;:();.z.m.enabled:1b]; / bomb out of function if already enabled
   $[@[{value x;1b};`.z.ts;0b]; / test if there is a pre-existing .z.ts definition

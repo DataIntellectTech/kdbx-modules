@@ -204,6 +204,15 @@ initidempotent:{[]
   chk `registered`reinitok`noduplicate!(added;again;1=sum tjobs=`wdbsave)
   };
 
+/ the flush job reschedules from the end of the previous run (di.timer mode 3), as TorQ's .timer.repeat does
+savejobmode:{[]
+  `tmodes set (`symbol$())!`short$();
+  d:recdeps[];
+  d[`timer]:`addjob`deletejobs!({[a;b;c;e;f;g] tmodes[a]:`short$f;};{[x]});
+  wdb.init[cfg[];d];
+  3h=tmodes`wdbsave
+  };
+
 numtabdefault:{[]
   / legacy wdb/writedown.q defaults numtab to `quote`trade!10000 50000, and replaynumtab follows it
   freshwdb (cfg[] _ `numtab) _ `replaynumtab;

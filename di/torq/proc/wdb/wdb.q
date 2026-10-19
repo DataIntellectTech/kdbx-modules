@@ -748,7 +748,8 @@ init:{[config;deps]
   setroot[];
   / addjob raises on an id that already exists, so clear any job a previous init left
   @[.z.m.timer`deletejobs;`wdbsave;{}];
-  (.z.m.timer`addjob)[`wdbsave;savetodisk;();.z.m.settimer;1h;()!()];
+  / mode 3h reschedules from the end of the previous flush, as TorQ's .timer.repeat does
+  (.z.m.timer`addjob)[`wdbsave;savetodisk;();.z.m.settimer;3h;()!()];
   msg:"initialised, mode=",(string .z.m.mode),", writedownmode=",(string .z.m.writedownmode),", savedir=",.z.m.savedirs;
   msg,:", hdbdir=",(1_string .z.m.hdbdir),", flush every ",(string .z.m.settimer),"s";
   .z.m.log[`info][`wdb;msg,$[.z.m.sortenabled;"";", sort handed to ",", " sv string .z.m.sorttypes]];

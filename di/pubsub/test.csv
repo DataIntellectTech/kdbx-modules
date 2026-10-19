@@ -74,7 +74,7 @@ run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table in `trade",
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(in;`sym;enlist `AAPL`GOOG),1,, test symbols are listed under filters
 
-run,0,0,q,"conditions:([tabname:`trade`quote]filts:("""";""bid>100,bid<200"");columns:(""time,sym,price"";""""))",1,,create custom conditions for subscription
+run,0,0,q,"conditions:([tabname:`trade`quote]filters:("""";""bid>100,bid<200"");columns:(""time,sym,price"";""""))",1,,create custom conditions for subscription
 run,0,0,q,res:h(`pubsub.subscribe;`;conditions),1,,test subscribe with custom conditions
 true,0,0,q,`trade`quote~res[0],1,,client receives subscribed table confirmation
 true,0,0,q,98h~type res[1;0],1,,client receives table schema
@@ -113,6 +113,18 @@ true,0,0,q,98h~type first res[1],1,,client receives table schema
 run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters
+
+run,0,0,q,"tconds:([tabname:enlist`trade]filters:enlist""price>10"";columns:enlist""sym,price"")",1,,conditions in TorQ's tabname/filters/columns shape
+run,0,0,q,res:h(`pubsub.subscribe;`trade;tconds),1,,subscribe trade with TorQ-shaped conditions
+run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`trade",1,,check filtered table for the subscription
+run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
+true,0,0,q,(enlist enlist enlist(>;`price;10))~res`filts,1,,filters column is parsed into the where clause
+true,0,0,q,(enlist`sym`price!`sym`price)~res`columns,1,,columns are parsed into the column list
+run,0,0,q,delete from `trade,1,,clear the local trade table
+run,0,0,q,"h(`pubsub.publish;`trade;([]time:3#.z.p;sym:`IBM`AAPL`IBM;price:5 20 30f;tsize:1 2 3i))",1,,publish rows either side of the filter
+true,0,0,q,20 30f~trade`price,1,,only rows meeting the filter are received
+true,0,0,q,all null trade`tsize,1,,only the selected columns are received
+fail,0,0,q,"h(`pubsub.subscribe;`trade;([tabname:enlist`trade]filters:enlist""price>>"";columns:enlist""""))",1,,an invalid filter is rejected
 
 comment,,,,,,,root .stpps/.u.sub/.ps
 true,0,0,q,"h"".ps.loaded""",1,,.ps.loaded is set when the module loads

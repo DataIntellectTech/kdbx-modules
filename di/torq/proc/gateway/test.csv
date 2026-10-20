@@ -32,6 +32,15 @@ run,0,0,q,"GWH"".gw.reload[`reloadstart]""",1,,the wdb's reloadstart
 run,0,0,q,G1:gwgetdata[],1,,getdata over yesterday..now during the reload
 true,0,0,q,"(enlist""error: gateway in eod reload - retry shortly"")~G1`replies",1,,getdata is rejected during the reload with the same reply as asyncexec
 true,0,0,q,0 0~G1`sent,1,,and nothing is sent to the rdb or the hdb
+run,0,0,q,G3:gwasync[`hdb],1,,asyncexec to the hdb alone during the reload
+true,0,0,q,(enlist enlist 2)~G3`replies,1,,a single-type query runs during the reload and is answered as outside it (as TorQ's checkeod)
+true,0,0,q,0 1~G3`sent,1,,and is sent to the hdb only
+run,0,0,q,G4:gwasync[`rdb`hdb],1,,asyncexec to the rdb and the hdb during the reload
+true,0,0,q,"(enlist""error: gateway in eod reload - retry shortly"")~G4`replies",1,,a multi-type query is rejected during the reload
+true,0,0,q,0 0~G4`sent,1,,and nothing is sent
+run,0,0,q,G5:gwgetdatatoday[],1,,getdata over today only (the rdb partition alone) during the reload
+true,0,0,q,(1=count G5`replies)&98h=type first G5`replies,1,,a getdata covering one partition runs during the reload
+true,0,0,q,1 0~G5`sent,1,,and is sent to the rdb only
 run,0,0,q,"GWH"".gw.reload[`reloadend]""",1,,the wdb's reloadend
 run,0,0,q,G2:gwgetdata[],1,,getdata again after the reload
 true,0,0,q,(1=count G2`replies)&2=count first G2`replies,1,,getdata works again: one reply with both rows

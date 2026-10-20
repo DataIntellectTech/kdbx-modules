@@ -49,17 +49,21 @@ registerbackends:{[]
     .z.m.log[`info][`gateway;"registered ",(string count ct)," backend server(s): ",", " sv string exec distinct proctype from ct]];
   }
 
-/ the reload rule for every client entry point: during an eod reload reply with an error and return 1b (caller returns)
-ineod:{[] if[.z.m.eod;@[neg .z.w;.z.m.errorprefix,"gateway in eod reload - retry shortly";()]]; .z.m.eod}
+/ the reload rule for every client entry point, as TorQ's checkeod (gateway.q:93): during an eod reload a query
+/ spanning more than one server type is rejected with an error reply (returns 1b; the caller returns); one type runs
+ineod:{[types] r:.z.m.eod and 1<count distinct types; if[r;@[neg .z.w;.z.m.errorprefix,"gateway in eod reload - retry shortly";()]]; r}
 
-/ client entry point (published at root as .gw.getdata): di.dataaccess's getdata, behind the reload rule
-getdata:{[tablename;starttime;endtime;by;aggs] if[ineod[];:()]; (.z.m.da`getdata)[tablename;starttime;endtime;by;aggs]}
+/ client entry point (published at root as .gw.getdata): di.dataaccess's getdata, behind the reload rule; its server
+/ types are those of the partitions the range covers, from the same table di.dataaccess routes with
+getdata:{[tablename;starttime;endtime;by;aggs]
+  if[ineod exec servertype from .z.m.partitions where coverfrom<=endtime,coverto>=starttime;:()];
+  (.z.m.da`getdata)[tablename;starttime;endtime;by;aggs]}
 
 / client entry point (published at root as .gw.asyncexecjpt): full control over join/postback/timeout.
 / protected so a routing/dispatch error becomes a formatted reply to the client rather than an
 / uncaught error on the async handler.
 asyncexecjpt:{[query;servertype;join;postback;timeout]
-  if[ineod[];:()];
+  if[ineod @[resolvetypes;servertype;()];:()];
   .[{[q;s;j;p;t] (.z.m.ad`execquery)[q;resolvetypes s;j;p;t;0b]};
     (query;servertype;join;postback;timeout);
     {[e] @[neg .z.w;.z.m.errorprefix,e;()]}];
@@ -74,9 +78,9 @@ asyncexec:{[query;servertype] asyncexecjpt[query;servertype;raze;();0Wn]}
 / window. v1 rejects rather than queues-and-resumes; on reloadend it refreshes the backend registry.
 reload:{[msg]
   $[msg~`reloadstart;
-    [.z.m.eod:1b; .z.m.log[`info][`gateway;"eod reload start - rejecting new queries until reloadend"]];
+    [.z.m.eod:1b; .z.m.log[`info][`gateway;"eod reload start - rejecting multi-type queries until reloadend"]];
    msg~`reloadend;
-    [.z.m.eod:0b; registerbackends[]; (.z.m.da`setpartitions)[buildpartitions[]]; .z.m.log[`info][`gateway;"eod reload end - resuming queries"]];
+    [.z.m.eod:0b; registerbackends[]; (.z.m.da`setpartitions)[.z.m.partitions:buildpartitions[]]; .z.m.log[`info][`gateway;"eod reload end - resuming queries"]];
    .z.m.log[`warn][`gateway;"unknown .gw.reload message: ",string msg]];
   }
 
@@ -124,7 +128,7 @@ init:{[config;deps]
   / coverage for routing is built from .z.d (buildpartitions) and refreshed at EOD reloadend via
   / (.z.m.da`setpartitions), so post-roll queries for the just-saved day route to the hdb not the rdb.
   .z.m.da:use`di.dataaccess;
-  (.z.m.da`init)[`log`timer`partitions!(deps`log;deps`timer;buildpartitions[])];
+  (.z.m.da`init)[`log`timer`partitions!(deps`log;deps`timer;.z.m.partitions:buildpartitions[])];
 
   / handler callbacks via the injected handlers dep (di.torq.handlers): track client connect, and on any
   / handle close clean up whichever role it was - backend (asyncdispatch in-flight cleanup +

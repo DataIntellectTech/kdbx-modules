@@ -51,6 +51,11 @@ true,0,0,q,"0=count .servers.getservers[`proctype;`deadproc;()!();0b;0b]",1,1,ge
 run,0,0,q,".servers.startupdepnamecycles[`otherinst;0;1]",1,1,startupdepnamecycles returns once otherinst is connected
 fail,0,0,q,".servers.startupdepnamecycles[`nosuchinst;0;0]",1,1,startupdepnamecycles signals after its cycles are used up
 true,0,0,q,`connectionreport in exec ctx from logrows where lvl=`error,1,1,the failure was logged as a connectionreport error
+run,0,0,q,".servers.startupdepcycles[`otherproc;0;1]",1,1,startupdepcycles returns once otherproc is connected
+fail,0,0,q,".servers.startupdepcycles[`deadproc;0;0]",1,1,startupdepcycles signals after its cycles are used up
+true,0,0,q,"any (exec msg from logrows where lvl=`error,ctx=`connectionreport) like ""*cannot connect to deadproc""",1,1,the error names the proctype it could not reach
+run,0,0,q,".servers.startupdependent[`otherproc;0]",1,1,startupdependent returns once otherproc is connected
+true,0,0,q,0W~last value .servers.startupdependent,1,1,startupdependent never gives up waiting (its cycle count is 0W)
 comment,,,,,,,waitfortype - discovery comes up after startup
 run,0,0,q,setupdisc[],1,1,add a discovery row to process.csv and write a discovery stub naming a tpproc peer
 run,0,0,q,"svc.init[svrdeps[`tpproc],`discoveryregister`connectionsfromdiscovery!11b]",1,1,re-init taking connections from discovery

@@ -359,6 +359,8 @@ reqprocsnotconn:{[requiredprocs;typeorname]
     not all requiredprocs in ?[`.servers.SERVERS;enlist (`.dotz.liveh;`w);();typeorname]
   };
 
+reqproctypesnotconn:reqprocsnotconn[;`proctype];
+
 reqprocnamesnotconn:reqprocsnotconn[;`procname];
 
 / block until all required processes are connected
@@ -379,3 +381,7 @@ startupdepcyclestypename:{[requiredprocs;typeornamefunc;timeintv;cycles]
 
 / root, for chainedtp and segmentedtp
 .servers.startupdepnamecycles:startupdepcyclestypename[;reqprocnamesnotconn;;];
+
+/ root, as TorQ's: block until all required proctypes are connected, for a number of cycles or forever
+.servers.startupdepcycles:startupdepcyclestypename[;reqproctypesnotconn;;];
+.servers.startupdependent:startupdepcyclestypename[;reqproctypesnotconn;;0W];

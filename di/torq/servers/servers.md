@@ -108,10 +108,10 @@ Published at root by `init`, same bodies as legacy:
 Also defined at root, for di.subscriptions' `.sub` and the tickerplants' startup waits:
 - `.servers.getservers` (5-arg; the exported 1-arg `getservers` is separate);
 - `.servers.connectcustom` (called by `retryrows`);
-- `.servers.startupdepnamecycles`.
+- `.servers.startupdepnamecycles`, `.servers.startupdepcycles` and `.servers.startupdependent`.
 
-They are built on the module-private `attributematch`, `reqprocsnotconn`, `reqprocnamesnotconn` and
-`startupdepcyclestypename`.
+They are built on the module-private `attributematch`, `reqprocsnotconn`, `reqproctypesnotconn`,
+`reqprocnamesnotconn` and `startupdepcyclestypename`.
 
 The discovery process (`di.torq.proc.discovery`) calls `addw`, `removerows`, `cleanup`,
 `startup`, reads `SERVERS`/`nontorqprocesstab`, and pushes `procupdate`/`autodiscovery` to
@@ -137,8 +137,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 - `getserverbytype`/`gethpbytype`;
 - `names`/`types`/`unregistered`/`checkw`/`reset`;
 - the `addprocscustom` hook;
-- `refreshattributes`;
-- `reqproctypesnotconn`/`startupdepcycles`/`startupdependent`.
+- `refreshattributes`.
 
 **Legacy behaviour that differs from di.torq.servers 0.3.0:**
 - `startup` no longer excludes this process's own row.
@@ -151,12 +150,13 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 
 ## Tests
 
-`test.q` + `test.csv` (56 checks) spawn real q peers. They cover:
+`test.q` + `test.csv` (63 checks) spawn real q peers. They cover:
 - init validation, wiring and idempotency;
 - `startup` against a live and a dead peer (discovery off);
 - `gethandlebytype`, and retry recovering an ungraceful kill;
 - `waitfortype`, including a discovery stub that comes up after `startup`;
-- `attributematch`, the root 5-arg `.servers.getservers` and `.servers.startupdepnamecycles`;
+- `attributematch`, the root 5-arg `.servers.getservers`, `.servers.startupdepnamecycles`,
+  `.servers.startupdepcycles` and `.servers.startupdependent`;
 - input validation and `getapimeta`.
 
 The rest of the discovery protocol is covered by `di.torq.proc.discovery`'s suite. Run in a fresh

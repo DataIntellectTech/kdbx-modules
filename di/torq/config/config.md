@@ -14,7 +14,7 @@ files into namespaces or hold any global store. This is the shape `di.torq` cons
 
 ```q
 config:use`di.torq.config
-cfg:config.cascade[builtinroot;approot;`rdb;`rdb1]   / -> `subscribeto`rows`... !(...)
+cfg:config.cascade[builtinroot;approot;`;`rdb;`rdb1]   / -> `subscribeto`rows`... !(...); ` = no parentproctype
 / di.torq stamps identity and hands the whole dict to each module's init:
 cfg:cfg,`proctype`procname!(`rdb;`rdb1)
 rdb.init[cfg;`log`timer!(logdep;timerdep)]
@@ -27,8 +27,9 @@ requires `init`.
 
 ## Precedence
 
-The cascade is resolved over **two roots** (`builtinroot`, `approot`) × a **three-tier
-name sequence** (`default` → `{proctype}` → `{procname}`). Precedence is **name-major**:
+The cascade is resolved over **two roots** (`builtinroot`, `approot`) × a **name sequence**
+(`default` → `{parentproctype}` → `{proctype}` → `{procname}`, as TorQ's `torq.q:593`; the
+`{parentproctype}` tier only when one is given, a null symbol meaning none). Precedence is **name-major**:
 
 1. A more specific **name** always wins — `{procname}` beats `{proctype}` beats `default`.
 2. **Within a name**, the later (app) root overrides the builtin root.
@@ -40,8 +41,8 @@ proctype** value, not the app default (name beats root). Effective load order, l
 priority:
 
 ```
-builtin/default(.q,.toml) → app/default → builtin/{proctype} → app/{proctype}
-  → builtin/{procname} → app/{procname}   (each tier: .toml overrides .q)
+builtin/default(.q,.toml) → app/default → [builtin/{parentproctype} → app/{parentproctype}]
+  → builtin/{proctype} → app/{proctype} → builtin/{procname} → app/{procname}   (each tier: .toml overrides .q)
 ```
 
 `overrideconfig` sits on **top** of all of this — the command-line layer (see below).
@@ -101,7 +102,7 @@ first — di.torq.config does no wrapping.
 
 | Function | Signature | Description |
 |---|---|---|
-| `cascade` | `cascade[builtinroot;approot;proctype;procname]` | Resolve the settings cascade over the two roots × the `default`/`{proctype}`/`{procname}` name sequence and **return one flat dict**. Pure — no `init`, no logger, no globals. Precedence is name-major with `.toml > .q` within a tier (see above). A key set nowhere is simply absent; an all-missing cascade returns an empty dict. |
+| `cascade` | `cascade[builtinroot;approot;parentproctype;proctype;procname]` | Resolve the settings cascade over the two roots × the `default`/`{parentproctype}`/`{proctype}`/`{procname}` name sequence (`parentproctype` a null symbol for none) and **return one flat dict**. Pure — no `init`, no logger, no globals. Precedence is name-major with `.toml > .q` within a tier (see above). A key set nowhere is simply absent; an all-missing cascade returns an empty dict. |
 | `getconfig` | `getconfig[builtinroot;approot;path;level]` | The config file(s) for `path` (relative to a root), as TorQ's `.proc.getconfig`. App before builtin. Level `0`: the first that exists, else the builtin path; `1`: the app path if it exists, then the builtin path; `2`: both, whether or not they exist. An empty `approot` is an unset app root. Returns a symbol list, as legacy. Pure: the roots are arguments, nothing is read from the environment. TorQ's middle `$KDBSERVCONFIG` tier has no port equivalent (two roots), so it is not searched. |
 | `getconfigfile` | `getconfigfile[builtinroot;approot;path]` | `getconfig` at level 0, as TorQ's `.proc.getconfigfile`. |
 | `parsefile` | `parsefile[path]` | Parse a single settings file into a flat dict. A `.toml` path is delegated to `di.util.toml` (loaded lazily, behind the guard rail below); a `.q` path is flat `name:value` lines. A missing file (either extension) → empty dict. An existing `.toml` file with no `di.util.toml` on `QPATH` signals a clear error naming the file. Pure. |

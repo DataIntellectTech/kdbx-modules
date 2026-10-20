@@ -147,8 +147,7 @@ startcustom:{[proctype;config;deps]
 / plain `system "l"` lets each file's definitions land at the namespace ITS OWN \d directives
 / choose - a bare app query file like code/rdb/examplequeries.q (no \d) lands at ROOT, callable as
 / countbysym[...]. This is the same load mechanism startcustom already uses for code/processes/.
-/ (parentproctype - torq.q's 4th tier, which existed so a sort process could load the wdb's code -
-/ is omitted: proctypes sort and sortworker map to di.torq.proc.wdb itself. See wdb.md.)
+/ parentproctype (torq.q's 4th tier) loads code/<parentproctype>/ between common and proctype, gated by loadprocesscode, as torq.q:643.
 optflag:{[config;k;dflt] $[k in key config;`boolean$config k;dflt]}
 
 / load every q/k file in one dir at root: an optional order.txt lists files to load first, then
@@ -165,6 +164,7 @@ loadappcodedir:{[lg;dir]
 loadappcode:{[lg;config;proctype;procname]
   base:reqenv[`TORQXAPPHOME],"/code/";
   if[optflag[config;`loadcommoncode;1b]; loadappcodedir[lg;base,"common"]];
+  if[optflag[config;`loadprocesscode;1b] and not null ppt:$[`parentproctype in key config;config`parentproctype;`]; loadappcodedir[lg;base,string ppt]];
   if[optflag[config;`loadprocesscode;1b]; loadappcodedir[lg;base,string proctype]];
   if[optflag[config;`loadnamecode;0b];    loadappcodedir[lg;base,string procname]];
   }
@@ -249,7 +249,7 @@ initzpsignore:{[config]
 / reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
 / di.torq itself (identity, stack id, port, norun), NOT config settings. Everything else on the
 / command line is a candidate config override.
-reservedflags:`proctype`procname`torqxstackid`p`norun;
+reservedflags:`proctype`procname`parentproctype`torqxstackid`p`norun;
 
 / the config-override params from a parsed command-line opt dict (.Q.opt .z.x): drop the reserved
 / flags, keep the rest. di.torq.config.overrideconfig then applies each to the matching setting
@@ -279,19 +279,22 @@ init:{[proctype;procname;overrides]
     (dc`checkversiongraph)[enlist builtin proctype];
     (dc`checkversiongraphfile)[proctype;reqenv[`TORQXAPPHOME],"/code/processes/",(string proctype),".deps.toml"]];
   r:roots[];
+  / -parentproctype, as torq.q:376-380: a symbol atom, null if not given
+  parentproctype:$[`parentproctype in key o:.Q.opt .z.x;first `$o`parentproctype;`];
   / the logger is built before config so di.torq.config's command-line override layer (below) can log through it
   logdep:buildlogdep[overrides];
   cc:use`di.torq.config;
   (cc`init)[enlist[`log]!enlist logdep];
   / segmentedchainedtp uses segmentedtp's settings
   settingsproctype:$[proctype=`segmentedchainedtp;`segmentedtp;proctype];
-  config:(cc`cascade)[r 0;r 1;settingsproctype;procname];
+  if[not null parentproctype;logdep[`info][`init;"read in process parameter of parentproctype=",string parentproctype]];
+  config:(cc`cascade)[r 0;r 1;parentproctype;settingsproctype;procname];
   / command-line override layer - the TOP cascade tier. A launch flag matching a settings name
   / overrides it (parsed into that setting's type); reserved launcher/identity flags are excluded,
   / and a flag that doesn't name a real setting is skipped (see di.torq.config.overrideconfig).
   config:(cc`overrideconfig)[config; clioverrideparams .Q.opt .z.x];
   / self-identity is resolved by di.torq and authoritative - stamped AFTER overrides so it always wins
-  config:config,`proctype`procname!(proctype;procname);
+  config:config,`proctype`procname`parentproctype!(proctype;procname;parentproctype);
   / the process.csv phone-book path, so di.torq.servers (and any consumer building its own startup config
   / slice from this config) can dial peers without reading env itself - keeps di.servers' env-free boundary.
   config:config,enlist[`processcsv]!enlist reqenv[`TORQXAPPCONFIG],"/process.csv";

@@ -29,7 +29,7 @@ true,0,0,q,"(2;3)~(HITS;UPD)",1,,is not skipped: the ignorelist check only match
 run,0,0,q,"zps:.z.ps; .m.di.0torq.zpsignorewired:0b; .m.di.0torq.initzpsignore[enlist[`zpsignore]!enlist enlist[`enabled]!enlist 0b]",1,,zpsignore with enabled 0b
 true,0,0,q,zps~.z.ps,1,,leaves .z.ps untouched
 run,0,0,q,".m.di.0clienttracking.hit:first ctorig; .m.di.0clienttracking.hite:last ctorig",1,,restore client tracking
-run,0,0,q,"ctp:{(use`di.torq.config)[`cascade] . .m.di.0torq.roots[],x,`$string[x],""1""} each `tickerplant`segmentedtp",1,,cascade the tickerplant and segmentedtp settings
+run,0,0,q,"ctp:{(use`di.torq.config)[`cascade] . .m.di.0torq.roots[],(`;x),`$string[x],""1""} each `tickerplant`segmentedtp",1,,cascade the tickerplant and segmentedtp settings
 true,0,0,q,"all {(1b;0b)~(x`clientsopencloseonly;(x`zpsignore)`enabled)} each ctp",1,,tickerplants track connections only and have no zpsignore
 
 run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
@@ -42,6 +42,9 @@ true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reach
 true,0,0,q,"(`timerms in key .k4unittestproc.capturedconfig)&0N~.k4unittestproc.capturedconfig`timerms",1,,init stamps timerms from q's own -t (null here: this test process runs without -t)
 true,0,0,q,"200~launchtimerms["" -t 200""]",1,,a process launched through torqx_init.q with -t 200 has timerms 200 in its config
 true,0,0,q,"0N~launchtimerms[""""]",1,,a process launched without -t has a null timerms
+true,0,0,q,"(`pptparent;1;1;1b;0b)~launchppt["" -parentproctype pptparent""]",1,,-parentproctype: stamped as a symbol; its settings tier read; proctype beats it; code/<parent>/ loaded before code/<proctype>/
+true,0,0,q,"((`);0N;1;0b;0N)~launchppt[""""]",1,,without -parentproctype: parentproctype is a null symbol and no parent tier or code is loaded
+true,0,0,q,"(`pptparent;1;1;0b;0N)~launchppt["" -parentproctype pptparent -loadprocesscode 0""]",1,,loadprocesscode 0b: the parent's code is not loaded (gated as torq.q:643); its settings still are
 true,0,0,q,(`handlers`log`servers`timer)~asc key .k4unittestproc.captureddeps,1,,deps (incl injected servers) were passed through to the custom proctype's init exactly like a built-in one
 true,0,0,q,1=.k4unittestproc.runcalled,1,,the .run hook fired automatically after init - no launcher-side proctype knowledge needed
 true,0,0,q,1=.k4unittestproc.deferredcalled,1,,a function queued with .proc.addinitlist ran once after init
@@ -71,6 +74,7 @@ true,0,0,q,not any `proctype`procname`torqxstackid`p`norun in key .m.di.0torq.cl
 true,0,0,q,(enlist"7")~(.m.di.0torq.clioverrideparams[cliopts])`myrows,1,,kept override values are unchanged (the .Q.opt string-list shape overrideconfig expects)
 true,0,0,q,0=count .m.di.0torq.clioverrideparams[()!()],1,,an empty command line yields no overrides
 true,0,0,q,0=count .m.di.0torq.clioverrideparams[`proctype`p!((enlist"hdb");(enlist"5560"))],1,,a command line of only reserved flags yields no overrides
+true,0,0,q,"0=count .m.di.0torq.clioverrideparams[enlist[`parentproctype]!enlist enlist""wdb""]",1,,-parentproctype is a reserved flag (an identity input) not a config override
 
 comment,,,,,,,optional query logging - initquerylog wires di.querylog from a [querylog] settings section (init calls it last)
 run,0,0,q,.m.di.0torq.initquerylog[qlcfg 0b;r4`deps],1,,a [querylog] section with enabled=false is a silent no-op

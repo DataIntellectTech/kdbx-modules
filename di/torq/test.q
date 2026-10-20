@@ -29,6 +29,11 @@ setupfixture:{[]
   writelines[APPBASE,"/code/common/appcommon.q";enlist "APPCOMMON_LOADED:1b"];
   writelines[APPBASE,"/code/",string[TESTPROCNAME],"/appproc.q";enlist "APPPROC_LOADED:1b"];
   writelines[APPBASE,"/code/testinst/appname.q";enlist "APPNAME_LOADED:1b"];
+  / -parentproctype fixtures: a parent settings tier (a parent-only key, a key the proctype also sets, and loadprocesscode
+  / declared so -loadprocesscode can override it) and parent code recording whether the proctype's code had loaded yet
+  writelines[APPBASE,"/settings/pptparent.q";("pptonly:1";"widget:0";"loadprocesscode:1b")];
+  system "mkdir -p ",APPBASE,"/code/pptparent";
+  writelines[APPBASE,"/code/pptparent/pptcode.q";("PPTCODE:1b";"PPTBEFOREPROC:@[value;`APPPROC_LOADED;0b]")];
 
   / a scratch hdb: just a serialized table, the simplest thing \l can load
   (hsym `$HDBDIR,"/widgets") set ([]id:1 2 3);
@@ -66,6 +71,19 @@ setupfixture:{[]
      "(hsym`$getenv[`TORQXAPPHOME],\"/timerms.txt\") 0: enlist .Q.s1 .k4unittestproc.capturedconfig`timerms;";
      "exit 0")];
   }
+
+/ a launcher that starts a real process through torqx_init.q and writes what -parentproctype changed
+pptlauncher:{[] writelines[APPBASE,"/launchppt.q";
+  ("system \"l \",getenv[`TORQXHOME],\"/di/torq/bin/torqx_init.q\";";
+   "c:.k4unittestproc.capturedconfig;";
+   "(hsym`$getenv[`TORQXAPPHOME],\"/ppt.txt\") 0: enlist .Q.s1 (c`parentproctype;$[`pptonly in key c;c`pptonly;0N];c`widget;@[value;`PPTCODE;0b];@[value;`PPTBEFOREPROC;0N]);";
+   "exit 0")]}
+
+/ launch a real process with extra q flags; return (parentproctype;pptonly;widget;parent code loaded;proctype code loaded before it)
+launchppt:{[flags]
+  pptlauncher[]; f:APPBASE,"/ppt.txt"; system "rm -f ",f;
+  system QBIN," ",APPBASE,"/launchppt.q -proctype ",(string TESTPROCNAME)," -procname testinst",flags," -q </dev/null >",APPBASE,"/ppt.log 2>&1";
+  value first read0 hsym`$f}
 
 / launch a real process through torqx_init.q with extra q flags; return the timerms in its config
 launchtimerms:{[flags]

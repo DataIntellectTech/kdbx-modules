@@ -116,15 +116,20 @@ The cascade mirrors the config cascade's shape:
 | tier | directory | flag | default |
 |------|-----------|------|---------|
 | common | `code/common/` | `loadcommoncode` | on |
+| parentproctype | `code/<parentproctype>/` | `loadprocesscode`, and `-parentproctype` given | on when given |
 | proctype | `code/<proctype>/` | `loadprocesscode` | on |
 | procname | `code/<procname>/` | `loadnamecode` | **off** |
 
 So **yes, it supports per-procname customisation** just like the config cascade — but, exactly
 as in TorQ (`.proc.loadnamecode` defaults `0b`), the procname tier is **off by default** and
 opt-in via `loadnamecode:1b` in that process's settings. Each flag is read from the merged
-config (so it's overridable per-process in settings). `parentproctype` (TorQ's 4th tier, for
-sharing code between a WDB and its sort workers) is omitted: proctypes `sort` and `sortworker` are
-built in and run `di.torq.proc.wdb` itself, with `settings/sort.q` and `settings/sortworker.q`.
+config (so it's overridable per-process in settings). `-parentproctype` (TorQ's 4th tier, read
+from the command line as `torq.q:376-380` and stamped into config as a symbol atom, null if not
+given) adds a `{parentproctype}` settings tier between `default` and `{proctype}`, and loads
+`code/<parentproctype>/` between `common` and `<proctype>`, gated by `loadprocesscode` as `torq.q:643`.
+It is a reserved flag, not a config override. Proctypes `sort` and `sortworker` still run
+`di.torq.proc.wdb` with `settings/sort.q` and `settings/sortworker.q`; `-parentproctype wdb` adds
+only what an app puts in a `wdb` settings tier or `code/wdb/`.
 
 Within a directory, files load in this order: an optional `order.txt` (one filename per line)
 is loaded first, then the remaining `*.q`/`*.k` files alphabetically — matching TorQ's `loaddir`.

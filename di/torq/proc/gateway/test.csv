@@ -25,3 +25,15 @@ run,0,0,q,hdbandrdb[],1,,the rdb connects after startup - di.torq.servers' retry
 run,0,0,q,fireconnectcustom[],1,,di.torq.servers' retryrows fires the hook with the connected rows
 true,0,0,q,`rdb in routable[],1,,REGRESSION: a backend that connected after startup becomes routable without a restart
 true,0,0,q,`hdb in routable[],1,,the already-registered hdb is undisturbed
+
+comment,,,,,,,reload gate covers getdata (a real gateway process and two counting backends)
+run,0,0,q,startgwfixture[],1,,spawn two backends and a port gateway built as di.torq builds it
+run,0,0,q,"GWH"".gw.reload[`reloadstart]""",1,,the wdb's reloadstart
+run,0,0,q,G1:gwgetdata[],1,,getdata over yesterday..now during the reload
+true,0,0,q,"(enlist""error: gateway in eod reload - retry shortly"")~G1`replies",1,,getdata is rejected during the reload with the same reply as asyncexec
+true,0,0,q,0 0~G1`sent,1,,and nothing is sent to the rdb or the hdb
+run,0,0,q,"GWH"".gw.reload[`reloadend]""",1,,the wdb's reloadend
+run,0,0,q,G2:gwgetdata[],1,,getdata again after the reload
+true,0,0,q,(1=count G2`replies)&2=count first G2`replies,1,,getdata works again: one reply with both rows
+true,0,0,q,1 1~G2`sent,1,,one shard sent to each backend
+run,0,0,q,stopgwfixture[],1,,stop the gateway and backends

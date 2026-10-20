@@ -45,8 +45,8 @@ di.serverselect — see the scope note). `query` is any value passed to `value` 
 
 The wdb calls `(`.gw.reload;`reloadstart)` before moving its partition into the hdb and
 `(`.gw.reload;`reloadend)` after the hdb/rdb have reloaded (di.torq.proc.wdb's `informgateway` already sends
-these — building this module makes that loop live). While gated, new queries are rejected with a
-retry message so none straddle the rdb-drop / hdb-reload window; `reloadend` clears the gate and
+these — building this module makes that loop live). While gated, new queries (`asyncexec`, `asyncexecjpt` and
+`getdata`, through one helper, `ineod`) are rejected with a retry message so none straddle the rdb-drop / hdb-reload window; `reloadend` clears the gate and
 refreshes the backend registry.
 
 ## How it wires together (init)

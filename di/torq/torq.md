@@ -68,6 +68,10 @@ Three independent, explicitly-set env vars - not derived from each other:
 can find out who it is just by looking at its own `config` dict - no global to reach
 for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
 
+It also adds `timerms`: q's own `-t` in milliseconds, or null without `-t`. q consumes `-t`, so
+`cmdlinet` reads it from the full command line `.z.X`, once. The tickerplants batch on it, as TorQ's
+`.z.ts` runs at `-t`, without reading the command line themselves.
+
 ### Dependency building
 
 `buildlogdep`/`buildtimerdep`/`buildhandlersdep` each build one of the three DI

@@ -14,6 +14,7 @@ APPBASE:"/tmp/di_torq_k4unit_app"
 HDBDIR:APPBASE,"/hdb"
 TESTPROCNAME:`k4unittestproc
 TESTPROCFILE:APPBASE,"/code/processes/",string[TESTPROCNAME],".q"
+QBIN:first system "readlink -f /proc/",(string .z.i),"/exe"
 
 writelines:{[path;lines] (hsym `$path) 0: lines; }
 
@@ -58,7 +59,19 @@ setupfixture:{[]
      "  };";
      "run:{[] runcalled::runcalled+1};";
      "\\d .")];
+
+  / a launcher that starts a real process through torqx_init.q and writes the timerms its config carried
+  writelines[APPBASE,"/launch.q";
+    ("system \"l \",getenv[`TORQXHOME],\"/di/torq/bin/torqx_init.q\";";
+     "(hsym`$getenv[`TORQXAPPHOME],\"/timerms.txt\") 0: enlist .Q.s1 .k4unittestproc.capturedconfig`timerms;";
+     "exit 0")];
   }
+
+/ launch a real process through torqx_init.q with extra q flags; return the timerms in its config
+launchtimerms:{[flags]
+  f:APPBASE,"/timerms.txt"; system "rm -f ",f;
+  system QBIN," ",APPBASE,"/launch.q -proctype ",(string TESTPROCNAME)," -procname testinst",flags," -q </dev/null >",APPBASE,"/launch.log 2>&1";
+  value first read0 hsym`$f}
 
 / helper so the test.csv cell stays comma-free (k4unit's CSV splits unquoted commas): writes
 / loadnamecode into the procname settings tier to turn on the procname-tier app-code cascade.

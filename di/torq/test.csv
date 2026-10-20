@@ -39,6 +39,9 @@ true,0,0,q,`di.torq.proc.segmentedtp~.m.di.0torq.builtin`segmentedchainedtp,1,,s
 run,0,0,q,r3:tq.init[TESTPROCNAME;`testinst;()!()],1,,explicit-identity init for a custom proctype
 true,0,0,q,TESTPROCNAME~r3`proctype,1,,identity resolved for the custom proctype
 true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reached the custom proctype's own settings file
+true,0,0,q,"(`timerms in key .k4unittestproc.capturedconfig)&0N~.k4unittestproc.capturedconfig`timerms",1,,init stamps timerms from q's own -t (null here: this test process runs without -t)
+true,0,0,q,"200~launchtimerms["" -t 200""]",1,,a process launched through torqx_init.q with -t 200 has timerms 200 in its config
+true,0,0,q,"0N~launchtimerms[""""]",1,,a process launched without -t has a null timerms
 true,0,0,q,(`handlers`log`servers`timer)~asc key .k4unittestproc.captureddeps,1,,deps (incl injected servers) were passed through to the custom proctype's init exactly like a built-in one
 true,0,0,q,1=.k4unittestproc.runcalled,1,,the .run hook fired automatically after init - no launcher-side proctype knowledge needed
 true,0,0,q,1=.k4unittestproc.deferredcalled,1,,a function queued with .proc.addinitlist ran once after init

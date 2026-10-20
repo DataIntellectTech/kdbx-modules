@@ -256,6 +256,9 @@ reservedflags:`proctype`procname`torqxstackid`p`norun;
 / (parsed into its type) and skips any that don't name a real setting. Pure - unit-testable without .z.x.
 clioverrideparams:{[cmdlineopts] (key[cmdlineopts] except reservedflags)#cmdlineopts}
 
+/ q's own -t in ms, null if not given; q consumes -t, so it is read from the full command line .z.X
+cmdlinet:{[] $[`t in key o:.Q.opt .z.X;"J"$first o`t;0N]}
+
 init:{[proctype;procname;overrides]
   / dependency check runs first, before anything else - a version mismatch should
   / be caught before identity resolution, config, or any module load even starts.
@@ -292,6 +295,8 @@ init:{[proctype;procname;overrides]
   / the process.csv phone-book path, so di.torq.servers (and any consumer building its own startup config
   / slice from this config) can dial peers without reading env itself - keeps di.servers' env-free boundary.
   config:config,enlist[`processcsv]!enlist reqenv[`TORQXAPPCONFIG],"/process.csv";
+  / the process -t interval in ms, null if not given
+  config:config,enlist[`timerms]!enlist cmdlinet[];
   timerdep:buildtimerdep[overrides;logdep];
   handlersdep:buildhandlersdep[overrides;logdep];
   / servers is built LAST (it consumes log/timer/handlers at init) and injected alongside

@@ -95,6 +95,12 @@ Provides a fast way to schedule a job using sensible defaults — ideal for quic
 timer.addjob.simple[`job5;{show "Hi"};30]
 ```
 
+#### addjob.once
+A one-off job that runs once at `runtime`, as TorQ's `.timer.once`.
+```q
+timer.addjob.once[`job6;{show x};enlist "once";2025.07.30D09:00:00]
+```
+
 ---
 
 ### Control & Monitoring
@@ -143,6 +149,12 @@ timer.deletejobs[`job4`job5]
 ```
 - Purpose: Removes jobs from jobs table. Can be done without disabling loop.
 - Usage: Ideal for re-defining job params wihtout interrupting other jobs.
+
+#### removefunc
+```q
+timer.removefunc[myfunc;enlist 1]
+```
+- Purpose: Removes every job running `func` with `params`, as TorQ's `.timer.removefunc`.
 
 #### getactivejobs
 ```q

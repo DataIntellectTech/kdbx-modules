@@ -131,6 +131,22 @@ true,0,0,q,.m.di.0timer.jobs[`dt2][`status],1,,still enabled - its next run is i
 run,0,0,q,.m.di.0timer.runandschedule[`dt2],1,,second run (next would be 12:00:30)
 true,0,0,q,not .m.di.0timer.jobs[`dt2][`status],1,,disabled - its next run would fall after the end time
 
+comment,,,,,,,once - a one-off job that runs at a set time
+run,0,0,q,.test.once:0,1,,run counter
+run,0,0,q,timer.addjob.once[`once1;{.test.once+:1};();2025.03.03D11:00:00.000],1,,add a one-off job
+true,0,0,q,2025.03.03D11:00:00.000=.m.di.0timer.jobs[`once1][`nextstart],1,,it is due at the requested time
+run,0,0,q,.m.di.0timer.runandschedule[`once1],1,,run it
+true,0,0,q,1=.test.once,1,,it ran once
+true,0,0,q,not .m.di.0timer.jobs[`once1][`status],1,,and is then disabled
+
+comment,,,,,,,removefunc - remove jobs by function and parameters
+run,0,0,q,.test.rf:{x},1,,shared job function
+run,0,0,q,timer.addjob.custom[`rf1;.test.rf;enlist 1;10;1;()!()],1,,job on .test.rf with parameter 1
+run,0,0,q,timer.addjob.custom[`rf2;.test.rf;enlist 2;10;1;()!()],1,,job on .test.rf with parameter 2
+run,0,0,q,timer.removefunc[.test.rf;enlist 1],1,,remove the job with parameter 1
+true,0,0,q,not `rf1 in key .m.di.0timer.jobs,1,,the matching job is removed
+true,0,0,q,`rf2 in key .m.di.0timer.jobs,1,,the job with other parameters stays
+
 comment,,,,,,,params of any type, an atom first, do not type the params column
 run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,empty the jobs table
 run,0,0,q,"timer.addjob.custom[`pt1;{x+1};5;10;1;()!()]",1,,first job takes an atom parameter
@@ -139,6 +155,13 @@ run,0,0,q,"timer.addjob.custom[`pt3;{x,y};(1;`x);10;1;()!()]",1,,and another a m
 true,0,0,q,all `pt1`pt2`pt3 in exec id from timer.getalljobs[],1,,all three jobs are added
 true,0,0,q,"(6;`sym;(1;`x))~{$[count y; x . (),y; x@`]}'[exec func from .m.di.0timer.jobs;exec params from .m.di.0timer.jobs]",1,,each job's function still gets its parameter as passed
 
+comment,,,,,,,removefunc and once failure cases
+run,0,0,q,timer.addjob.custom[`rfx;.test.rf;enlist 9;10;1;()!()],1,,a job on .test.rf
+run,0,0,q,.test.n0:count timer.getalljobs[],1,,job count before
+run,0,0,q,"timer.removefunc[{x+1};()]",1,,removefunc on a function that is not scheduled does not error
+true,0,0,q,.test.n0=count timer.getalljobs[],1,,and removes nothing
+fail,0,0,q,"timer.addjob.once[`rfx;{x};();2025.03.03D11:00:00.000]",1,,once rejects a job id that already exists
+
 comment,,,,,,,a job added after the jobs table has emptied still runs (D-T3)
 run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,empty the jobs table
 run,0,0,q,.m.di.0timer.main[],1,,a scheduler tick on the empty table
@@ -146,3 +169,11 @@ run,0,0,q,.test.dt3:0,1,,run counter
 run,0,0,q,timer.addjob.custom[`dt3;{.test.dt3+:1};();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,add a job that is already due
 run,0,0,q,.m.di.0timer.main[],1,,the next tick
 true,0,0,q,1=.test.dt3,1,,the job runs
+run,0,0,q,timer.deletejobs `dt3,1,,remove it
+run,0,0,q,".test.n3:0;.test.f3:{.test.n3+:1}",1,,counter and job function for the removefunc case
+run,0,0,q,timer.addjob.custom[`dt3b;.test.f3;();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,a job on .test.f3
+run,0,0,q,timer.removefunc[.test.f3;()],1,,removefunc empties the jobs table
+run,0,0,q,.m.di.0timer.main[],1,,a scheduler tick on the empty table
+run,0,0,q,timer.addjob.custom[`dt3c;.test.f3;();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,add a new job that is already due
+run,0,0,q,.m.di.0timer.main[],1,,the next tick
+true,0,0,q,1=.test.n3,1,,the new job runs

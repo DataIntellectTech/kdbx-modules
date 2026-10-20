@@ -42,6 +42,8 @@ addjob.custom:{[id;func;params;period;mode;opts]
 
 addjob.default:addjob.custom[;;;;;()!()];
 addjob.simple:addjob.custom[;;();;1;()!()];
+/ one-off job at runtime, as TorQ's .timer.once
+addjob.once:{[id;func;params;runtime] addjob.custom[id;func;params;1;1;`startattime`maxruns!(runtime;1)]};
 
 / internal utility functions
 msg.custom:{[code;msg]neg[1] (string cp[])," ### ",code," ### ",msg;};
@@ -94,6 +96,8 @@ enable:{.[.z.M.enabled;();:;1b];};
 enablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:1b from jobs where id in ids};
 disablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:0b from jobs where id in ids};
 deletejobs:{[ids] ids:(),ids;.z.m.jobs:delete from jobs where id in ids};
+/ remove jobs by function and parameters, as TorQ's .timer.removefunc
+removefunc:{[f;p] .z.m.jobs:delete from jobs where (f~/:func)&((),p)~/:params};
 
 getactivejobs:{select from jobs where status};
 
@@ -163,4 +167,4 @@ init:{[configs]
   };
 
 
-export:([init;getactivejobs;getalljobs;addjob;deletejobs;enablejobs;disablejobs;enable;disable;setcp])
+export:([init;getactivejobs;getalljobs;addjob;deletejobs;removefunc;enablejobs;disablejobs;enable;disable;setcp])

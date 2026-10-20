@@ -12,3 +12,16 @@ run,0,0,q,gjobs:(`symbol$())!`short$(),1,,record of timer job modes
 run,0,0,q,"gdeps:`log`timer`handlers`servers!(mlog;`addjob`deletejobs!({[id;f;p;per;md;o] gjobs[id]:`short$md;};{[x]});`register`remove`list!({[ev;ph;nm;pri;fn]};{[ev;ph;nm]};{[ev]});`startup`getservers!({[c]};{[t] ([]w:`int$();proctype:`$();procname:`$();hpup:`$())}))",1,,mock deps with a recording timer and no backends
 run,0,0,q,gw.init[()!();gdeps],1,,init the gateway
 true,0,0,q,all 3h=gjobs`gwtimeout`gwrmqueries`gwrminactive,1,,query housekeeping jobs reschedule from the end of the previous run (mode 3) as TorQ's .timer.repeat does
+
+before,0,0,q,system "l di/torq/proc/gateway/test.q",1,,mock log/timer/handlers/servers deps
+before,0,0,q,hdbonly[],1,,only the hdb is connected when the gateway starts
+
+run,0,0,q,gw[`init][cfg[];mockdeps[]],1,,init with the hdb up and the rdb down
+true,0,0,q,`hdb in routable[],1,,the connected hdb is registered into di.serverselect at init
+true,0,0,q,not `rdb in routable[],1,,the rdb was down at init so it is not routable
+true,0,0,q,hookinstalled[],1,,init installs the .servers.connectcustom hook di.torq.servers fires on a new connection
+
+run,0,0,q,hdbandrdb[],1,,the rdb connects after startup - di.torq.servers' retry has reconnected it
+run,0,0,q,fireconnectcustom[],1,,di.torq.servers' retryrows fires the hook with the connected rows
+true,0,0,q,`rdb in routable[],1,,REGRESSION: a backend that connected after startup becomes routable without a restart
+true,0,0,q,`hdb in routable[],1,,the already-registered hdb is undisturbed

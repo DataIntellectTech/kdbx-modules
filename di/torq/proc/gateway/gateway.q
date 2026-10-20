@@ -108,6 +108,10 @@ init:{[config;deps]
   sconfig:config,(enlist`connections)!enlist .z.m.backendtypes;
   (.z.m.svc`startup)[sconfig];
   registerbackends[];
+  / a backend that was down at startup connects later through di.torq.servers' retry/discovery,
+  / which fires .servers.connectcustom - hook it so serverselect learns about the late arrival.
+  / Without this the gateway holds a live handle it can never route to until a restart or EOD.
+  set[`.servers.connectcustom;{[rows] registerbackends[]}];
 
   / di.dataaccess - the getdata query-normalisation layer, on top of the SAME asyncdispatch
   / instance (idempotent use) so it dispatches via the callbacks/registry set up above. Partition

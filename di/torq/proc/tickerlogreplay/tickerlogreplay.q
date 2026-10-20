@@ -17,7 +17,10 @@ init:{[config;deps]
   .z.m.log:deps`log;
   .z.m.tplog:use`di.tplog;
   .z.m.dbw:use`di.dbwrite;
-  .z.m.dbw.init enlist[`log]!enlist deps`log;
+  / the save down hooks from .replay.*, set before init, defaulting as TorQ's tickerlogreplay.q:40-41, go to di.dbwrite
+  sdm:@[value;`.replay.savedownmanipulation;()!()];
+  pr:@[value;`.replay.postreplay;{{[d;p]}}];
+  .z.m.dbw.init `log`savedownmanipulation`postreplay!(deps`log;sdm;pr);
   .z.m.os:use`di.os;
   / all settings required
   req:`firstmessage`lastmessage`messagechunks`segmentedmode`autoreplay`schemafile`tablelist`hdbdir`tplogfile`tplogdir;
@@ -82,18 +85,8 @@ init:{[config;deps]
   if[autoreplay;initandrun[]];
   };
 
-/ manipulate a table at save down time, defined if absent
-if[not `manipulate in key `.save;.save.manipulate:{[t;x]
- $[t in key .save.savedownmanipulation;
-  @[.save.savedownmanipulation[t];x;{.z.m.log[`error][`manipulate;"save down manipulation failed : ",y];x}[x]];
-  x]}];
-
 / default upd; set .replay.upd before use to override
 .replay.upd:@[value;`.replay.upd;{{[t;x] insert[t;x]}}]
-
-/ save down settings
-.save.savedownmanipulation:@[value;`.replay.savedownmanipulation;()!()]         // table!function applied to a table at save
-.save.postreplay:@[value;`.replay.postreplay;{{[d;p] }}]                        // invoked after a log's tables are saved
 
 // the path to the table to save
 pathtotable:{[h;p;t] `$(string .Q.par[h;partitiontype$p;t]),"/"}
@@ -111,7 +104,7 @@ savetabdata:{[h;p;t;data;UPSERT;td]
  $[partandmerge;path:pathtotable[td;p;t];path:pathtotable[h;p;t]];
  if[not partandmerge;.z.m.log[`info][`replay;"saving table ",(string t)," to ",string path]];
  .z.m.pathlist[t],:path;
- $[partandmerge;savetablesbypart[td;p;t;h];$[UPSERT;upsert;set] . (path;.Q.en[h;0!.save.manipulate[t;data]])]
+ $[partandmerge;savetablesbypart[td;p;t;h];$[UPSERT;upsert;set] . (path;.Q.en[h;0!.z.m.dbw.manipulate[t;data]])]
   }
 
 savetabdatatrapped:{[h;p;t;data;UPSERT;td] .[savetabdata;(h;p;t;data;UPSERT;td);{.z.m.log[`error][`replay;"failed to save table : ",x]}]}
@@ -152,7 +145,7 @@ finishreplay:{[h;p;td]
  // save down any tables which haven't been saved
  savetab[td;h;p] each tabsincountorder[tablestoreplay];
  // invoke any user defined post replay function
- .save.postreplay[h;p];
+ .z.m.dbw.postreplay[h;p];
  }
 
 // takes in log file directories made with segmented tickerplant

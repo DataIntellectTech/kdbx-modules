@@ -16,6 +16,11 @@ replayp:{[pre;cfg] runq(
   "@[r.init[;enlist[`log]!enlist lg];",cfg,";{-1 \"ERR \",x;exit 3}]";
   "exit 0"))}
 replay:replayp[()]
+/ as replayp, but the q lines run after the module is loaded and before init, as a user setting hooks would
+replayi:{[post;cfg] runq(
+  enlist["lg:`info`warn`error!({[c;m] -1 \"I \",string[c],\": \",m};{[c;m] -1 \"W \",string[c],\": \",m};{[c;m] -1 \"E \",string[c],\": \",m})"],(enlist"r:use`di.torq.proc.tickerlogreplay"),post,(
+  "@[r.init[;enlist[`log]!enlist lg];",cfg,";{-1 \"ERR \",x;exit 3}]";
+  "exit 0"))}
 / replay settings for the plain log, with overrides
 plain:{[x] "(`schemafile`hdbdir`tplogfile`segmentedmode!(`$\"",FIXDIR,"/schema.q\";`$\":",FIXDIR,"/hdb\";`$\":",FIXDIR,"/tplog",D,"\";0b)),",x}
 sect:{[x] "((use`di.torq.config)[`parsefile] \"di/torq/settings/tickerlogreplay.q\"),",x}

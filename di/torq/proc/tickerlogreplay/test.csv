@@ -4,7 +4,7 @@ before,0,0,q,"system ""l di/torq/proc/tickerlogreplay/test.q""",1,,load fixture 
 before,0,0,q,setupfixture[],1,,write the schema and a plain log; run a segmentedtp to write segmented logs
 
 comment,,,,,,,settings
-true,0,0,q,all `savedownmanipulation`manipulate`postreplay in key .save,1,,save helpers defined
+true,0,0,q,"not any `savedownmanipulation`manipulate`postreplay in @[key;`.save;()]",1,,no root .save hooks: they live in di.dbwrite
 fail,0,0,q,"tlr.init[()!();()!()]",1,,init without log must error
 
 comment,,,,,,,plain log
@@ -50,6 +50,10 @@ run,0,0,q,clearhdb[],1,,
 true,0,0,q,"0=replayp[(""`.replay.savedownmanipulation set enlist[`trade]!enlist {update price:2*price from x}"";""`.replay.postreplay set {[d;p] ("",hp[""post""],"") set p}"");sect plain ""()!()""]",1,,replay with savedownmanipulation and postreplay
 true,0,0,q,2 4 8f~asc hdb[D;`trade]`price,1,,the manipulation ran before saving
 true,0,0,q,"(""D""$D)~get fp""post""",1,,postreplay ran with the partition
+run,0,0,q,clearhdb[],1,,
+true,0,0,q,"0=replayi[(""`.replay.savedownmanipulation set enlist[`trade]!enlist {update price:2*price from x}"";""`.replay.postreplay set {[d;p] ("",hp[""post2""],"") set p}"");sect plain ""()!()""]",1,,hooks set after the module loads and before init (read at init)
+true,0,0,q,2 4 8f~asc hdb[D;`trade]`price,1,,the .replay.savedownmanipulation hook is applied once through di.dbwrite
+true,0,0,q,"(""D""$D)~get fp""post2""",1,,the .replay.postreplay hook is called with the partition
 run,0,0,q,clearhdb[],1,,
 true,0,0,q,"0=replayp[enlist""`.replay.upd set {[t;x] if[t~`trade;insert[t;x]]}"";sect plain ""()!()""]",1,,replay with an upd override
 true,0,0,q,(3;0)~(rows[D;`trade];rows[D;`quote]),1,,the upd override decided what was inserted

@@ -92,4 +92,17 @@ true,0,0,q,30~count z:cmp.getstatstab[],1,,Checking rest of files have been deco
 true,0,0,q,0i~sum 0<(select from cmp.getstatstab[] where algo=0)`compressionratio,1,,Negative compression ratio for decompression
 true,0,0,q,0i~sum exec distinct algo from cmp.getstatstab[],1,,Only algo 0 (decompression) required here
 
+comment,,,,,,,worker processes (s below 0): each worker compresses and cleans one table, as TorQ #732
+run,0,0,q,"system ""l di/compression/test.q""",1,,load fixture helpers
+run,0,0,q,startworkers[],1,,start two worker processes with di.compression loaded
+run,0,0,q,WR:workerrun[],1,,compress a two-table hdb with s -2 over the workers
+true,0,0,q,`ok~WR`result,1,,compression over worker processes completes
+true,0,0,q,0=WR`mainclean,1,,no cleancompressed runs on the main process: each worker cleans its own table (old code: 6 on main)
+true,0,0,q,all 2i=WR`algos,1,,every file ends gzip compressed
+true,0,0,q,6=WR`stats,1,,statstab has a row per file
+run,0,0,q,stopworkers[],1,,stop the workers
+
+comment,,,,,,,single-file compress (as legacy housekeeping's kdbzip calls it)
+true,0,0,q,all value onefile[],1,,"compress[f;2;17;4;hcount f] writes f_kdbtempzip gzip 17 4 with the same contents, leaving f uncompressed"
+
 after,0,0,q,system"rm cmpMockBadConfig.csv;rm cmpMockParams.csv;rm decompMockParams.csv;rm -r cmpTestHDB",1,,Clearing up on-disk mock data

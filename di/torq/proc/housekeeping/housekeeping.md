@@ -14,8 +14,8 @@ policy ("old `out_`/`err_` files accumulate forever… external housekeeping is 
 ## Dependencies
 
 - **Injected** (from di.torq): `log`, `timer`.
-- **`use`-imported**: `di.os` (for the `rm` action — it picks the right call for a file vs a
-  directory, and its dry-run mode makes a destructive action testable); declared in `deps.toml`.
+- **`use`-imported**: `di.os` (for the `rm` action — its dry-run mode makes a destructive action
+  testable); declared in `deps.toml`.
 
 ## Config
 
@@ -66,23 +66,29 @@ settings file can introduce it either way; it is the *command-line* tier that ne
 
 ## The job csv
 
-One row per cleanup job. All seven columns are required:
+One row per cleanup job, in legacy TorQ's format (`housekeeping.q:44-51`), so a TorQ or starter-pack
+csv works unchanged:
 
 | column | type | meaning |
 |---|---|---|
-| `action` | symbol | `rm`, `gzip` or `tar` |
+| `function` | symbol | `rm`, `zip` (gzip) or `tardir` (tar the directory and remove it) |
 | `path` | string | directory to search (not recursive — `find -maxdepth 1`) |
 | `match` | string | glob to match, e.g. `*.log` |
 | `exclude` | string | glob to exclude; may be empty |
-| `age` | int | minimum age, in `unit`s |
-| `unit` | symbol | `d` (days) or `m` (minutes) |
-| `dirs` | boolean | `1` to match directories instead of files (what `tar` wants) |
+| `age` | int | minimum age, in days (or minutes if `agemin`) |
+| `agemin` | boolean | `1` if `age` is in minutes; may be empty |
+| `checkfordirectory` | boolean | `1` to match directories instead of files (what `tardir` wants); may be empty |
+
+The last two columns are named by position, and may be left out: TorQ's own
+`config/housekeeping.csv` has only the first five, and gets both as `0`. A row with a null
+`function` or `age` is skipped and logged. `rm` on a matched directory is skipped and logged as an
+error, as legacy's `rm -f` fails on one.
 
 ```csv
-action,path,match,exclude,age,unit,dirs
-rm,{TORQXLOGDIR}/,*.log,keepme.log,10,d,0
-gzip,{TORQXLOGDIR}/,*.log,,2,d,0
-tar,{TORQXDATAHOME}/oldruns/,run_*,,30,d,1
+function,path,match,exclude,age,agemin,checkfordirectory
+rm,{TORQXLOGDIR}/,*.log,keepme.log,10,,
+zip,{TORQXLOGDIR}/,*.log,,2,,
+tardir,{TORQXDATAHOME}/oldruns/,run_*,,30,,1
 ```
 
 `{ENVVAR}` placeholders in `path` are expanded from the environment, so a csv follows a
@@ -107,7 +113,7 @@ This is the front door for what legacy TorQ got from `wrapper` calling `value` o
 root-level function the csv named — genuinely extensible, but unbounded: a csv naming `exit`, or
 any other root function, got it called with file paths. Dispatch here stays closed over one
 dictionary that an app adds to deliberately. `addaction` rejects a non-symbol name, a
-non-function handler, and any attempt to shadow `rm`/`gzip`/`tar` (silently swapping `rm` out
+non-function handler, and any attempt to shadow `rm`/`zip`/`tardir` (silently swapping `rm` out
 from under a job csv that already names it helps nobody); re-registering an existing custom action
 is allowed but warns.
 
@@ -119,19 +125,11 @@ logged it.
 
 The csv is **re-read on every run**, so jobs can be edited without bouncing the process.
 
-### Migrating a TorQ housekeeping csv
+### Differences from a TorQ housekeeping csv
 
-Columns were renamed for clarity; the behaviour is the same:
-
-| legacy TorQ | here |
-|---|---|
-| `function` | `action` |
-| `agemin` (boolean: age is in minutes) | `unit` (`d`/`m`) |
-| `checkfordirectory` | `dirs` |
-
-Legacy also allowed the last two columns to be omitted, and needed a fragile column-rename dance
-to cope. Here all seven are required and a mismatched header is a clear error naming both the
-columns found and the columns expected.
+The format is TorQ's. Two things differ: a `function` must be `rm`, `zip`, `tardir` or one registered
+with `addaction` (legacy called any root function of that name), and each job is trapped, so one
+failing row is logged and the rest still run (legacy's `wrapper each` is not trapped per row).
 
 ## Behaviour
 
@@ -163,8 +161,10 @@ explicit opt-in via `runnow`. A test asserts nothing is published at `.housekeep
   errors on Windows rather than starting half-working — legacy's own Windows `zip`/`tar` were
   never implemented either, and the framework tier has dropped Windows elsewhere (see
   `logroll.md`). Add if TorqX ever needs it.
-- **`kdbzip`** (kdb `-19!` column compression). That whole concern belongs to `di.compression`,
-  which does it far more thoroughly, csv-driven, with its own stats.
+- **`kdbzip`** (`housekeeping.q:63-67`). Legacy calls `.cmp.compress[f;2;17;4;hcount f]`, which only
+  writes a compressed `f_kdbtempzip` copy; nothing renames or cleans it, so every run leaves the
+  original uncompressed plus a copy. It is not in TorQ's `apidetails`, and neither TorQ's nor the
+  starter pack's csv uses it.
 - **"Run once and exit"** (legacy's `runnow` semantics). Exiting from inside `init` would fight
   `torqx.sh`, which owns this process's lifecycle. `runnow` here means "also run once now"; a
   genuine one-shot is a cron job calling `.housekeeping.runjobs[]` over IPC.
@@ -178,11 +178,8 @@ Roughly in the order they'd pay off:
 - **Dry-run / report mode.** The highest-value gap for a process whose whole job is deleting
   things: ask "what *would* this csv remove tonight?" and get the match list without acting.
   `di.os` already has the machinery (`setdrysyscalls` caches calls instead of running them), but
-  it only covers the `rm` action — `gzip`/`tar` shell out directly, and `di.os` doesn't export
+  it only covers the `rm` action — `zip`/`tardir` shell out directly, and `di.os` doesn't export
   `syscall`, so a complete dry run needs either an export from `di.os` or a local indirection.
-- **kdb-native compression as an action.** Legacy's `kdbzip` (`.cmp.compress`, `-19!`). Deliberately
-  dropped because `di.compression` does it far more thoroughly; a v2 could wire that module in as
-  a `kdbcompress` action rather than reimplementing it.
 - **Per-job schedules.** Every job runs at every `runtimes` entry. Retention policies usually want
   different cadences (nightly log sweep, weekly archive), which today needs two processes.
 - **Recursion / depth control.** `find -maxdepth 1` is hardcoded, so a job only sees the directory
@@ -192,9 +189,6 @@ Roughly in the order they'd pay off:
   `di.compression`'s stats) so a dashboard or heartbeat can see that housekeeping is actually
   keeping up, rather than reading log lines.
 - **Windows.** The `.win` branch, if TorqX ever needs it.
-- **Malformed-header reporting.** `0:` pads a too-short header with invented names, so the error
-  says `has columns wrong, header, entirely, x, x1, x2, x3`. Reporting the raw header line would
-  read better.
 - **`tar` path noise.** Absolute paths make `tar` emit `Removing leading '/' from member names` to
   stderr on every archive. Harmless and matches legacy, but `-C` would silence it.
 
@@ -233,11 +227,13 @@ only reads the action dictionary, which exists from load — and a test asserts 
 either way.
 
 **All three actions** are exercised, each against its own fixture directory (the `rm` job really
-deletes its inputs, so a shared directory would make test order significant): `rm`, `gzip`
-(asserting the `.gz` appears *and* the original is consumed), and `tar` with `dirs = 1`
+deletes its inputs, so a shared directory would make test order significant): `rm`, `zip`
+(asserting the `.gz` appears *and* the original is consumed), and `tardir` with `checkfordirectory = 1`
 (asserting the archive appears *and* that `--remove-files` deleted the original directory — the
-most destructive thing this module does). A separate job uses `unit = m` to exercise `find`'s
+most destructive thing this module does). A separate job uses `agemin = 1` to exercise `find`'s
 `-mmin` branch, which is otherwise one character from `-mtime` and would ship broken unnoticed.
+The legacy layouts are covered too: TorQ's 5-column csv, a null-age row skipped while the next row
+runs, and `rm` matching a directory, which leaves it in place and logs an error.
 
 `runnow` is tested in **both** directions: that setting it performs a run, and — asserted on the
 earlier no-`runnow` init, *before* the runnow test consumes the fixture — that omitting it does

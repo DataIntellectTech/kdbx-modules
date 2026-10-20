@@ -53,6 +53,9 @@ setupfixture:{[]
   / for the addaction test - a custom handler records rather than deletes, so this survives
   system "mkdir -p ",FIXTUREDIR,"/custom";
   system "touch -d '20 days ago' ",FIXTUREDIR,"/custom/target.dat";
+  / legacy-format cases: TorQ's 5-column csv, a null row, and rm matching a directory
+  system "mkdir -p ",FIXTUREDIR,"/five ",FIXTUREDIR,"/nulls ",FIXTUREDIR,"/rmdir/olddir";
+  system "touch -d '20 days ago' ",FIXTUREDIR,"/five/old.log ",FIXTUREDIR,"/nulls/old.log ",FIXTUREDIR,"/rmdir/olddir";
   system "mkdir -p ",FIXTUREDIR,"/appconfig";
   writevalidcsv[];
   setenv[`DIHKFIXTURE;FIXTUREDIR];
@@ -65,37 +68,37 @@ writecsv:{[s] (hsym `$FIXTUREDIR,"/appconfig/housekeeping.csv") 0: enlist s; }
 
 / the valid job csv the fixture starts with: remove *.log older than 10 days, except excluded.log
 writevalidcsv:{[]
-  writecsv "action,path,match,exclude,age,unit,dirs\nrm,{DIHKFIXTURE}/logs/,*.log,excluded.log,10,d,0";
+  writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nrm,{DIHKFIXTURE}/logs/,*.log,excluded.log,10,0,0";
   }
 
 / a csv naming an action that does not exist - the run must log and skip it, not throw
 writeunknownactioncsv:{[]
-  writecsv "action,path,match,exclude,age,unit,dirs\nnosuchaction,{DIHKFIXTURE}/logs/,*.log,,10,d,0";
+  writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nnosuchaction,{DIHKFIXTURE}/logs/,*.log,,10,0,0";
   }
 
 / a csv with entirely the wrong columns - the run must log and abandon, not throw
 writemalformedcsv:{[] writecsv "wrong,header,entirely\na,b,c"; }
 
-/ gzip *.log older than 10 days
+/ zip *.log older than 10 days
 writegzipcsv:{[]
-  writecsv "action,path,match,exclude,age,unit,dirs\ngzip,{DIHKFIXTURE}/gz/,*.log,,10,d,0";
+  writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nzip,{DIHKFIXTURE}/gz/,*.log,,10,0,0";
   }
 
-/ tar directories (dirs=1) named old* older than 10 days - the only action that takes a
+/ tardir directories (checkfordirectory=1) named old* older than 10 days - the only action that takes a
 / directory, and the most destructive one here, since tar --remove-files deletes the original
 writetarcsv:{[]
-  writecsv "action,path,match,exclude,age,unit,dirs\ntar,{DIHKFIXTURE}/arch/,old*,,10,d,1";
+  writecsv "function,path,match,exclude,age,agemin,checkfordirectory\ntardir,{DIHKFIXTURE}/arch/,old*,,10,0,1";
   }
 
 / rm *.log older than 2 MINUTES - exercises the -mmin branch of findmatches, which is otherwise
 / one character away from the -mtime branch and would ship broken without a test
 writeminutescsv:{[]
-  writecsv "action,path,match,exclude,age,unit,dirs\nrm,{DIHKFIXTURE}/mins/,*.log,,2,m,0";
+  writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nrm,{DIHKFIXTURE}/mins/,*.log,,2,1,0";
   }
 
 / a csv naming a custom action an app registered via addaction, rather than a built-in
 writecustomactioncsv:{[]
-  writecsv "action,path,match,exclude,age,unit,dirs\nnoted,{DIHKFIXTURE}/custom/,*.dat,,10,d,0";
+  writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nnoted,{DIHKFIXTURE}/custom/,*.dat,,10,0,0";
   }
 
 / records what a registered custom action was handed, so a test can prove dispatch reached it
@@ -112,8 +115,17 @@ throwinghandler:{[f] '"deliberate failure"}
 / a throwing job followed by a working one: if the throw escapes applyjob the second job never
 / runs, and di.timer's disableonfail would take the whole schedule down with it
 writethrowingcsv:{[]
-  writecsv "action,path,match,exclude,age,unit,dirs\nthrows,{DIHKFIXTURE}/custom/,*.dat,,10,d,0\nnoted,{DIHKFIXTURE}/custom/,*.dat,,10,d,0";
+  writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nthrows,{DIHKFIXTURE}/custom/,*.dat,,10,0,0\nnoted,{DIHKFIXTURE}/custom/,*.dat,,10,0,0";
   }
+
+/ TorQ's own 5-column layout (config/housekeeping.csv): agemin and checkfordirectory default to 0b
+writefivecsv:{[] writecsv "function,path,match,exclude,age\nrm,{DIHKFIXTURE}/five/,*.log,,10"; }
+
+/ a row with a null age is skipped and the next row still runs, as legacy housekeeping.q:50-51
+writenullcsv:{[] writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nrm,{DIHKFIXTURE}/nulls/,*.log,,,,\nrm,{DIHKFIXTURE}/nulls/,*.log,,10,,"; }
+
+/ rm matching a directory: skipped and logged, as legacy's rm -f fails on one
+writermdircsv:{[] writecsv "function,path,match,exclude,age,agemin,checkfordirectory\nrm,{DIHKFIXTURE}/rmdir/,old*,,10,0,1"; }
 
 / delete the job csv entirely - the run must log and abandon, not throw
 deletecsv:{[] system "rm -f ",FIXTUREDIR,"/appconfig/housekeeping.csv"; }
@@ -123,6 +135,7 @@ survivors:{[] asc key hsym `$FIXTUREDIR,"/logs"}
 gzfiles:{[] asc key hsym `$FIXTUREDIR,"/gz"}
 archfiles:{[] asc key hsym `$FIXTUREDIR,"/arch"}
 minfiles:{[] asc key hsym `$FIXTUREDIR,"/mins"}
+dirfiles:{[d] asc key hsym `$FIXTUREDIR,"/",d}
 
 teardownfixture:{[] system "rm -rf ",FIXTUREDIR; }
 

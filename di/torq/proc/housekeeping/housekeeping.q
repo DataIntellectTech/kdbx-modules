@@ -1,13 +1,13 @@
 / di.torq.proc.housekeeping - scheduled file-maintenance process type. Applies a list of
-/ cleanup jobs (remove / gzip / tar files or directories older than some age) read from a csv,
+/ cleanup jobs (remove / zip / tardir files or directories older than some age) read from a csv,
 / on a daily schedule. Ported from TorQ/code/processes/housekeeping.q.
 / ---
 / Scope (v1): unix only. Legacy shipped parallel .unix.*/.win.* implementations and dispatched
 / on .z.o; the .win branch is NOT ported (its own zip/tar were never implemented there, and the
 / framework tier has dropped Windows elsewhere - see di.torq.logroll's same note). init errors
-/ on Windows rather than starting half-working. Also NOT ported: legacy's kdbzip action (kdb
-/ -19! column compression) - that whole concern belongs to di.compression, which does it far
-/ more thoroughly; and legacy's "runnow then exit" one-shot mode (see runnow below).
+/ on Windows rather than starting half-working. Also NOT ported: legacy's kdbzip action, which
+/ leaves the original uncompressed plus a _kdbtempzip copy on every run (see housekeeping.md);
+/ and legacy's "runnow then exit" one-shot mode (see runnow below).
 / ---
 / Why a csv for the jobs and settings for the rest: the job list is tabular and
 / variable-length (one row per path/match/action), which a .q/.toml settings file models
@@ -77,26 +77,17 @@ expandenv:{[s]
   first[c],raze {i:x?"}";$[i=count x;"{",x;getenv[`$i#x],(i+1)_x]} each 1_c
   }
 
-/ the job csv's schema: column name -> its 0: type char, in order. Deliberately ONE structure
-/ rather than a name list beside a "S***ISB" literal - they have to agree positionally, and
-/ nothing but care keeps two parallel lists in step when a column is added.
-/ NOT a setting, despite looking like config: these names are compiled into the field accesses
-/ in findmatches/applyjob (j`action, j`path, ...), so an operator who renamed one would get a
-/ csv that passes the header check and then fails on first use. Renamed from legacy TorQ's
-/ function/agemin/checkfordirectory for clarity; housekeeping.md has the migration mapping.
-jobschema:`action`path`match`exclude`age`unit`dirs!"S***ISB"
-
-/ read the job list. Re-read on every run rather than cached at init, so an operator can edit
-/ the csv without bouncing the process (legacy read it per run too). All columns are required -
-/ legacy allowed trailing optional ones and needed a fragile rename dance to cope; a strict
-/ header with a clear error is easier to get right than to debug.
+/ read the job list, as legacy housekeeping.q:44-51; re-read on every run so the csv can be edited without a restart
 readjobs:{[path]
   f:hsym `$path;
   if[not count key f;'"job csv not found at ",path];
-  t:(value jobschema;enlist ",") 0: f;
-  if[not (key jobschema)~cols t;
-    '"job csv ",path," has columns ",(", " sv string cols t),"; expected ",", " sv string key jobschema];
-  t
+  t:("S***IBB";enlist ",") 0: f;
+  / columns 6 and 7 are named by position; a 5-column csv gets them as 0b
+  t:@[cols t;5 6;:;`agemin`checkfordirectory] xcol t;
+  if[not all `function`path`match`exclude`age`agemin`checkfordirectory in cols t;'"job csv ",path," has incorrect layout"];
+  / rows with a null function or age are skipped
+  if[any n:null[t`function] or null t`age;.z.m.log[`info][`readjobs;"Null values found in file, skipping line(s)  ",", " sv string where n]];
+  t where not n
   }
 
 / locate the paths one job matches. Shells out to find because kdb has no native stat, so file
@@ -106,32 +97,34 @@ readjobs:{[path]
 / values reach the shell - they are quoted, but a csv is not a place to accept untrusted input.
 findmatches:{[j]
   p:expandenv j`path;
-  flag:$[j`dirs;"d";"f"];
-  agearg:$[`m=j`unit;"-mmin";"-mtime"];
+  flag:$[j`checkfordirectory;"d";"f"];
+  agearg:$[j`agemin;"-mmin";"-mtime"];
   cmd:"find \"",p,"\" -maxdepth 1 -type ",flag," -name \"",(j`match),"\" ",agearg," +",string j`age;
   if[count j`exclude;cmd,:" ! -name \"",(j`exclude),"\""];
   @[system;cmd;{[e] .z.m.log[`error][`findmatches;"find failed: ",e];()}]
   }
 
-/ one handler per action, dispatched by the csv's `action` column. rm goes through di.os so it
-/ picks the right call for a file vs a directory (and honours di.os's dry-run mode); gzip/tar
-/ have no di.os equivalent and shell out directly - part of why this module is unix-only.
+/ one handler per action, dispatched by the csv's `function` column, named as legacy's rm/zip/tardir. rm goes through
+/ di.os (and honours its dry-run mode); zip/tardir have no di.os equivalent and shell out directly - part of why this
+/ module is unix-only.
 / None of these traps its own work: applyjob traps every action per match, so a handler here reads
 / the same as one an app registers.
 actions:()!()
 
 actions[`rm]:{[f]
+  / a directory is skipped and logged, as legacy's rm -f fails on one
+  if[(.z.m.os`isdir)f;'"cannot remove ",f,": Is a directory"];
   .z.m.log[`info][`rm;"removing ",f];
-  ($[(.z.m.os`isdir)f;.z.m.os`deldir;.z.m.os`del]) f;
+  (.z.m.os`del) f;
   }
 
-actions[`gzip]:{[f]
-  .z.m.log[`info][`gzip;"compressing ",f];
+actions[`zip]:{[f]
+  .z.m.log[`info][`zip;"compressing ",f];
   system "gzip \"",f,"\"";
   }
 
-actions[`tar]:{[f]
-  .z.m.log[`info][`tar;"archiving ",f];
+actions[`tardir]:{[f]
+  .z.m.log[`info][`tardir;"archiving ",f];
   system "tar -czf \"",f,".tar.gz\" \"",f,"\" --remove-files";
   }
 
@@ -158,9 +151,9 @@ addaction:{[name;handler]
   requireinit[`addaction];
   if[not -11h=type name;'"di.torq.proc.housekeeping: addaction name must be a symbol"];
   if[not 100h=type handler;'"di.torq.proc.housekeeping: addaction handler must be a function taking one matched path"];
-  / refuse to shadow a built-in: silently swapping rm/gzip/tar out from under a job csv that
+  / refuse to shadow a built-in: silently swapping rm/zip/tardir out from under a job csv that
   / already names them is a footgun no caller wants, and a typo'd name should say so loudly
-  if[name in `rm`gzip`tar;
+  if[name in `rm`zip`tardir;
     '"di.torq.proc.housekeeping: cannot redefine the built-in action ",string name];
   if[name in key actions;
     .z.m.log[`warn][`addaction;"replacing already-registered action ",string name]];
@@ -177,12 +170,12 @@ addaction:{[name;handler]
 / process's housekeeping job for good - and silently, as di.timer only logs that when its debug is
 / set. A custom handler registered via addaction must not be able to cost every later run.
 applyjob:{[j]
-  if[not (j`action) in key actions;
-    .z.m.log[`error][`applyjob;"unknown action ",(string j`action),"; expected one of ",", " sv string key actions];
+  if[not (j`function) in key actions;
+    .z.m.log[`error][`applyjob;"unknown action ",(string j`function),"; expected one of ",", " sv string key actions];
     :()];
   m:findmatches j;
-  .z.m.log[`info][`applyjob;(string j`action)," ",(j`match)," in ",(expandenv j`path),": ",(string count m)," match(es)"];
-  {[a;f] @[actions a;f;{[a;f;e] .z.m.log[`error][`applyjob;"action ",(string a)," failed on ",f,": ",e]}[a;f]]}[j`action;] each m;
+  .z.m.log[`info][`applyjob;(string j`function)," ",(j`match)," in ",(expandenv j`path),": ",(string count m)," match(es)"];
+  {[a;f] @[actions a;f;{[a;f;e] .z.m.log[`error][`applyjob;"action ",(string a)," failed on ",f,": ",e]}[a;f]]}[j`function;] each m;
   }
 
 / run every job in the csv once. Called by the timer, by runnow at startup, and by an operator
@@ -194,7 +187,7 @@ runjobs:{[]
   .z.m.log[`info][`runjobs;"housekeeping starting, reading ",.z.m.jobcsv];
   jobs:@[readjobs;.z.m.jobcsv;{[e] .z.m.log[`error][`runjobs;"cannot read job csv: ",e];()}];
   if[not count jobs;:()];
-  {[j] @[applyjob;j;{[j;e] .z.m.log[`error][`runjobs;"job ",(string j`action)," failed: ",e]}[j]]} each jobs;
+  {[j] @[applyjob;j;{[j;e] .z.m.log[`error][`runjobs;"job ",(string j`function)," failed: ",e]}[j]]} each jobs;
   .z.m.log[`info][`runjobs;"housekeeping complete, ran ",(string count jobs)," job(s)"];
   }
 
@@ -227,8 +220,7 @@ init:{[config;deps]
   / tier). Tests assert both halves, because a silently disagreeing pair is how legacy TorQ shipped
   / runtimes:02:00:00 in settings and a dead 12:00 in code - with its -hkusage text quoting 12:00.
   .z.m.runtimes:$[`runtimes in key config;astimespans config`runtimes;enlist 0D02:00:00];
-  / di.os for the rm action - it picks file vs directory, and its dry-run mode is what lets the
-  / tests assert on a destructive action without destroying anything
+  / di.os for the rm action - its dry-run mode is what lets the tests assert on a destructive action without destroying anything
   .z.m.os:use`di.os;
   / publish the IPC-callable surface at a real root-level name - use-loading this file compiles
   / it into a private namespace (see di.torq.proc.hdb.init's identical note), so a remote or

@@ -65,7 +65,7 @@ Requires `log`, `timer` and `handlers`. It:
 3. registers a `.z.pc` observer (chained: exit 1 when the upstream closes) and a `.z.exit` observer (flush
    `memorybatch`, close the logs);
 4. sets `.u.upd` from `batchmode` and adds the `stpzts` timer job (the batch timer and the end checks, every
-   second);
+   `-t` milliseconds from the q command line, or every second without `-t`, as TorQ's `.z.ts`);
 5. chained: waits for the upstream and subscribes; otherwise loads `schemafile`;
 6. strips attributes from the published tables and opens the logs.
 

@@ -111,8 +111,9 @@ init:{[config;deps]
   .stplg.updmsg:.stplg.upd[batch];
   .stplg.ts:.stplg.zts[batch];
   .u.upd:.stpps.upd[chainmode];
-  / the batch timer and end checks run as a 1s di.timer job; the end guards disable only this job
-  .z.m.timer[`addjob][`stpzts;.stpps.zts[chainmode];();0D00:00:01;1;(enlist`disableonfail)!enlist 0b];
+  / the batch timer and end checks run every -t ms (config timerms, 1000 if unset), as TorQ's .z.ts; the end guards disable only this job
+  ms:$[`timerms in key .z.m.params;.z.m.params`timerms;0N];
+  .z.m.timer[`addjob][`stpzts;.stpps.zts[chainmode];();0D00:00:00.001*$[ms>0;ms;1000];1;(enlist`disableonfail)!enlist 0b];
   / error mode: failed updates go to a separate log
   if[.stplg.errmode;
     .stp.upd:.u.upd;

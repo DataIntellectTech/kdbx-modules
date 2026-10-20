@@ -13,7 +13,7 @@ mocklog:`info`warn`error!(
 / timer mock: records (id;period;mode) for the wiring asserts AND captures each job's func by id, so a
 / test can fire the retry cycle exactly as the real timer would (retry/cleanup are INTERNAL - not
 / exported - so they are driven only via this captured callback).
-timercalls:([]id:`symbol$();period:`long$();mode:`long$());
+timercalls:([]id:`symbol$();period:`timespan$();mode:`long$());
 timerjobs:(`symbol$())!();
 mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] timerjobs[id]:func; `timercalls upsert (id;period;`long$mode);};
 

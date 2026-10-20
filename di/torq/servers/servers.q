@@ -80,8 +80,8 @@ init:{[deps]
     (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pc];
     / retry timers
     if[.servers.enabled;
-      if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;3;()!()]];
-      if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;3;()!()]]];
+      if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();.servers.DISCOVERYRETRY;3;()!()]];
+      if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();.servers.RETRY;3;()!()]]];
     .z.m.registered:1b;
     ];
   .z.m.loginfo[`init;"di.torq.servers initialised"];

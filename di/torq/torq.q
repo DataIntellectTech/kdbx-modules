@@ -231,7 +231,7 @@ initquerylog:{[config;deps]
   ft:"j"$opt[`flushtime;86400];
   if[ft>0;
     .z.m.qlflushtime:ft*0D00:00:01;
-    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];3h;()!()]];
+    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();0D00:00:01*"j"$opt[`flushinterval;1800];3h;()!()]];
   msg:"query logging on (level ",(string cfg`level),", memory=",(string cfg`logtomemory),", disk=",(string cfg`logtodisk),")";
   deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
   }

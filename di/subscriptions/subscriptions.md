@@ -65,7 +65,7 @@ publisher for its `tptype` (`standard`, `chained` or `segmented`) and subscribes
 - Settings, both required; `di/torq/settings/default.q` declares them: `autoreconnect` (`0b`),
   `checksubscriptionperiod` (`0D00:00:10`).
 - `init` registers, once per process: `pc[::;]` on `.z.pc` through `handlers`, and
-  `checksubscriptions` every `checksubscriptionperiod` (converted to seconds, timer mode 1) through
+  `checksubscriptions` every `checksubscriptionperiod` (a timespan, timer mode 1) through
   `timer` when the period is above 0.
 
 ## Not yet (future)

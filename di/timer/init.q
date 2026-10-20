@@ -9,7 +9,7 @@ jobs:(
   func:();                     / function to be ran, can be passed as symbol reference or as a function itself
   params:();                   / function parameters to be passed to function at execution
   created:`timestamp$();       / timestamp of function initiation
-  period:`int$();              / time period to base timer scheduling on
+  period:`timespan$();         / time period to base timer scheduling on
   mode:`short$();              / mode to base scheduling logic on 
   prevstart:`timestamp$();     / scheduled start timestamp of previous run
   actualstart:`timestamp$();   / start timestamp of previous run
@@ -20,20 +20,32 @@ jobs:(
   maxruns:`int$();             / optional flag to disable time function after number of runs 
   maxtime:`timestamp$();       / optional flag to disable job after timestamp
   disableonfail:`boolean$();   / if job fails will disable future runs
-  startattime:`timestamp$()    / optional custom start time to run for the first time
+  startattime:`timestamp$();   / optional custom start time to run for the first time
+  description:()               / free text description, as TorQ's timer
   );
 
 / job functions for adding new functions to be scheduled and executed
-addjob.opts:(`maxruns`maxtime`disableonfail`startattime)!(0Wi;0Wp;1b;0Np);
+addjob.opts:(`maxruns`maxtime`disableonfail`startattime`dupcheck`description)!(0Wi;0Wp;1b;0Np;1b;"");
+
+/ jobs running function f with parameters p
+fpjobs:{[f;p] select from jobs where (f~/:func)&((),p)~/:params};
 
 addjob.custom:{[id;func;params;period;mode;opts]
   / fully configurable base version of adding a timer job to in memory table
   if[id in key .z.M.jobs;'"Cannot add id : ",(string id)," already exists in jobs"];
+  / as TorQ's .timer.rep, the period is a timespan and the mode one of the scheduling modes
+  if[-16h<>type period;'"period must be a timespan"];
+  if[not (mode:`short$mode) in key nextstart;'"mode can only be one of ",-3!key nextstart];
   if[-11h=type func;get func];
   opts:addjob.opts,opts;
-  row:cols[.z.M.jobs]!(id;func;(),params;cp[];`int$period;`short$mode;0Np;0Np;0Np;0Np;0i;1b;`int$(opts`maxruns);opts`maxtime;opts`disableonfail;opts`startattime);
+  / as TorQ's timer check, a duplicate function and parameters is rejected unless dupcheck is off
+  if[opts[`dupcheck]&0<count fpjobs[func;params];'"duplicate timer already exists for function ",(-3!(func;params)),". Set dupcheck to 0b to force the value"];
+  row:cols[.z.M.jobs]!(id;func;(),params;cp[];period;mode;0Np;0Np;0Np;0Np;0i;1b;`int$(opts`maxruns);opts`maxtime;opts`disableonfail;opts`startattime;opts`description);
   / params is stored as a list so an atom parameter cannot type the column
   .z.M.jobs upsert 1!enlist row;
+  / first run as TorQ's timer (modes 1-3): an unset start runs now, a past start aligns forward on its period
+  st:(now:cp[])^opts`startattime;
+  if[mode in 1 2 3h;:.[.z.M.jobs;(id;`nextstart);:;st+$[st<now;period*ceiling(now-st)%period;0D]]];
   $[null (r:.z.M.jobs[id])`startattime;
     upd.start[id];
     [r[`nextstart]:r`startattime;@[.z.M.jobs;id;:;r]]
@@ -43,7 +55,11 @@ addjob.custom:{[id;func;params;period;mode;opts]
 addjob.default:addjob.custom[;;;;;()!()];
 addjob.simple:addjob.custom[;;();;1;()!()];
 / one-off job at runtime, as TorQ's .timer.once
-addjob.once:{[id;func;params;runtime] addjob.custom[id;func;params;1;1;`startattime`maxruns!(runtime;1)]};
+addjob.once:{[jid;f;p;runtime]
+  addjob.custom[jid;f;p;0D00:00:01;1;`startattime`maxruns!(runtime;1)];
+  / due at runtime as given, past or not, as TorQ's .timer.once
+  .z.m.jobs:update nextstart:runtime from jobs where id=jid;
+  };
 
 / internal utility functions
 msg.custom:{[code;msg]neg[1] (string cp[])," ### ",code," ### ",msg;};
@@ -63,18 +79,18 @@ upd.status:{[r]
 
 nextstart:()!();
 nextstart[1h]:{[id;r]
-  / updates nextstart to x seconds after previously scheduled start time
-  r[`nextstart]:(0D00:00:01*r`period)+$[null r`prevstart;r`created;r`prevstart];
+  / updates nextstart to one period after previously scheduled start time
+  r[`nextstart]:r[`period]+$[null r`prevstart;r`created;r`prevstart];
   @[.z.M.jobs;id;:;r];
   };
 nextstart[2h]:{[id;r]
-  / updates nextstart to x seconds after previous actual start time
-  r[`nextstart]:(0D00:00:01*r`period)+$[null r`actualstart;r`created;r`actualstart];
+  / updates nextstart to one period after previous actual start time
+  r[`nextstart]:r[`period]+$[null r`actualstart;r`created;r`actualstart];
   @[.z.M.jobs;id;:;r];
   };
 nextstart[3h]:{[id;r]
-  / updates nextstart to x seconds after previous end time
-  r[`nextstart]:(0D00:00:01*r`period)+$[null r`prevend;r`created;r`prevend];
+  / updates nextstart to one period after previous end time
+  r[`nextstart]:r[`period]+$[null r`prevend;r`created;r`prevend];
   @[.z.M.jobs;id;:;r];
   };
 nextstart[4h]:{[id;r]
@@ -85,7 +101,7 @@ nextstart[4h]:{[id;r]
   };
 nextstart[5h]:{[id;r]
   / updates nextstart on the hour in x minute intervals after previous start time
-  r[`nextstart]:{(`date$x)+y xbar (`minute$y)+`minute$x}[;r`period] $[null r`prevstart;r`created;r`prevstart];
+  r[`nextstart]:{(`date$x)+(`minute$y) xbar (`minute$y)+`minute$x}[;r`period] $[null r`prevstart;r`created;r`prevstart];
   @[.z.M.jobs;id;:;r];
   };
 

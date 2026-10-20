@@ -39,7 +39,7 @@ init:{[config;deps]
   .servers.startupdepnamecycles[tickerplantname;tpconnsleep;tpcheckcycles];
   subscribe[];
   .z.m.tableschemas:{x!(0#)@'value@'x} (),$[any null subscribeto;tables[`.];subscribeto];
-  if[pubinterval;(deps[`timer]`addjob)[`publishalltables;publishalltables;();`long$pubinterval%0D00:00:01;2;()!()]];
+  if[pubinterval;(deps[`timer]`addjob)[`publishalltables;publishalltables;();pubinterval;2;()!()]];
   }
 
 / root: the subscriber contract

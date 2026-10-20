@@ -20,7 +20,7 @@ run,0,0,q,hk[`init][basecfg[];mockdeps[]],1,,init with a jobcsv - bracket-indexe
 true,0,0,q,`runjobs in key `.housekeeping,1,,init published runjobs at the real root namespace .housekeeping - NOT run, which di.torq would auto-fire at startup
 true,0,0,q,not `run in key `.housekeeping,1,,nothing is published at .housekeeping.run - di.torq's runhook fires that name after init, which would make every process start do a destructive cleanup pass
 true,0,0,q,1=count scheduled,1,,one runtime configured means one scheduled job
-true,0,0,q,86400=first exec period from scheduled,1,,the scheduled job repeats daily
+true,0,0,q,1D=first exec period from scheduled,1,,the scheduled job repeats daily
 true,0,0,q,1h=first exec mode from scheduled,1,,mode 1h pins reruns to the scheduled time not the finish time
 true,0,0,q,not null first exec opts[;`startattime] from scheduled,1,,the first fire is pinned to a start time rather than firing immediately
 true,0,0,q,expectedfire[02:00:00]~first exec opts[;`startattime] from scheduled,1,,the first fire is computed on di.timer's UTC clock not local time - a local-time startattime fires late by the UTC offset

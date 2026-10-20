@@ -341,5 +341,5 @@ init:{[deps]
   set[`.dataaccess.shardresult;shardresult];
   set[`.dataaccess.sharderror;sharderror];
   .z.m.log[`info][`init;"di.dataaccess initialised"];
-  (.z.m.timer`addjob)[`dataaccesspurge;removerequests;enlist .z.m.requestkeeptime;1800;1h;()!()];
+  (.z.m.timer`addjob)[`dataaccesspurge;removerequests;enlist .z.m.requestkeeptime;0D00:30;1h;()!()];
   };

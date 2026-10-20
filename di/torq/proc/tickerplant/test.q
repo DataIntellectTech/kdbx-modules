@@ -14,9 +14,9 @@ mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 mocklog:{[] `info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;])}
 
 / mock timer - records scheduled jobs
-timercalls:([]id:`symbol$();period:`int$();mode:`short$())
-resettimer:{[] `timercalls set ([]id:`symbol$();period:`int$();mode:`short$()); }
-mockaddjob:{[id;func;params;period;mode;opts] `timercalls insert (id;`int$period;mode); }
+timercalls:([]id:`symbol$();period:`timespan$();mode:`short$())
+resettimer:{[] `timercalls set ([]id:`symbol$();period:`timespan$();mode:`short$()); }
+mockaddjob:{[id;func;params;period;mode;opts] `timercalls insert (id;period;mode); }
 mocktimer:{[] enlist[`addjob]!enlist mockaddjob}
 
 / mock handlers - records (event;name) registrations with di.torq.handlers' register shape
@@ -56,7 +56,7 @@ logcount:{[dir] c:-11!(-2;hsym`$dir,"/tp",string "d"$.z.p); $[0>type c;c;first c
 
 / assertion helpers factored here because they contain raw commas (which split CSV fields)
 loghas:{[sub;n] n=logcount[BASE,"/",sub]}
-flushperiodok:{[] 2=first exec period from timercalls where id=`tpflush}
+flushperiodok:{[] 0D00:00:02=first exec period from timercalls where id=`tpflush}
 rolledfile:{[sub;date] not ()~key hsym`$BASE,"/",sub,"/tp",string date}
 
 / init helpers that store handles / state for assertions

@@ -20,7 +20,7 @@ true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperi
 true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
 true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered
 true,0,0,q,"`stplg in ha""exec name from h.list`.z.exit""",1,,.z.exit observer registered
-true,0,0,q,"(`stpzts;1;1;(enlist`disableonfail)!enlist 0b)~ha""tickjob""",1,,batch timer added as a 1s timer job that retries on failure
+true,0,0,q,"(`stpzts;0D00:00:01;1;(enlist`disableonfail)!enlist 0b)~ha""tickjob""",1,,batch timer added as a 1s timer job that retries on failure
 
 comment,,,,,,,subscribe handshake
 true,0,0,q,"`segmented~ha""tptype""",1,,tptype is segmented

@@ -25,7 +25,7 @@ Timer jobs are tracked in **jobs**, an in-memory table storing job metadata:
 | func          | function  | Function to be executed, passed as a definition or symbol reference   |
 | params        | list      | Parameters passed to the function if required                         |
 | created       | timestamp | Time job was registered                                               |
-| period        | int       | scheduling interval in seconds or minutes depending on mode           |
+| period        | timespan  | Scheduling interval; for modes 4 and 5, its whole minutes             |
 | mode          | short     | Scheduling mode for computing run times, see "Execution Mode" section |
 | prevstart     | timestamp | Scheduled time of previous run                                        |
 | actualstart   | timestamp | Actual start time of previous run                                     |
@@ -36,7 +36,8 @@ Timer jobs are tracked in **jobs**, an in-memory table storing job metadata:
 | maxruns       | int       | Max number of runs before job is disabled                             |
 | maxtime       | timestamp | Cutoff time for job scheduling                                        |
 | disableonfail | boolean   | Flag to disable job on failure if enabled                             |
-| startattime   | timestamp | Start specifically at provided time                                   |  
+| startattime   | timestamp | Start specifically at provided time                                   |
+| description   | string    | Free text description, as TorQ's timer                                |
 
 ---
 
@@ -45,11 +46,11 @@ Timer jobs use one of five scheduling modes, defined by the mode column:
 
 | Mode     | Scheduling Logic                                             | Example                       |
 | -------- | ------------------------------------------------------------ | ----------------------------- |
-| 1        | Jobs scheduled x seconds after previous scheduled start time |                               |
-| 2        | Jobs scheduled x seconds after previous actual start time    |                               |
-| 3        | Jobs scheduled x seconds after previous end time             |                               |
-| 4        | Jobs scheduled for the xth minute of every hour              | x = 10 : 13:10,14:10,15:10... |
-| 5        | Jobs scheduled on the hour and in x minute intervals         | x = 15 : 13:00,13:15,13:30... |
+| 1        | Jobs scheduled one period after previous scheduled start time |                               |
+| 2        | Jobs scheduled one period after previous actual start time    |                               |
+| 3        | Jobs scheduled one period after previous end time             |                               |
+| 4        | Jobs scheduled for the xth minute of every hour              | x = 0D00:10 : 13:10,14:10,15:10... |
+| 5        | Jobs scheduled on the hour and in x minute intervals         | x = 0D00:15 : 13:00,13:15,13:30... |
 
 ---
 
@@ -63,8 +64,8 @@ Functions shown below allow you to register new timer-based jobs with varying de
 | id            | symbol     | Unique function identifier, must not already exist in jobs table     |
 | func          | function   | Function to be executed when job runs                                 |
 | params        | list       | Arguments to pass into the function at run time; stored as a list (`(),params`), so jobs with parameters of any type can share the table |
-| period        | int        | Time period in seconds or minutes for next run time calculations      |
-| mode          | short      | Scheduling more to determine next run time                            |
+| period        | timespan   | Time period for next run time calculations, as TorQ's `.timer.repeat`; anything else is rejected |
+| mode          | short      | Scheduling mode to determine next run time; a mode outside 1-5 is rejected |
 | opts          | dictionary | Optional additional configuration parameters, specifics below         |
 
 ###### Function Options
@@ -73,26 +74,28 @@ Functions shown below allow you to register new timer-based jobs with varying de
 | maxruns       | int       | Number of times for function to execute before being disabled |
 | maxtime       | timestamp | End time: as in TorQ, a job whose next run would fall after it is disabled |
 | disableonfail | boolean   | By default: 1b, will automatically disable jobs if they fail  |
-| startattime   | timestmap | Specfic timestamp for intial function run                     |
+| startattime   | timestamp | First run time. As TorQ's timer, for modes 1-3 an unset start runs now and a past start aligns forward on its period |
+| dupcheck      | boolean   | By default: 1b, as TorQ's `repeat`/`once`: a job with the same function and parameters as an existing one is rejected |
+| description   | string    | Free text description. Default "" |
 
 #### addjob.custom
 Lets you fully define a scheduled job by specifying its function, parameters, timing, mode, and options.
 ```q
-timer.addjob.custom[`job1;{show x};("Hello!");10;4;(enlist `maxruns)!(enlist 3)];
-timer.addjob.custom[`job2;{show x+y};(2;3);15;5;(`maxtime`startattime)!(2025.07.30D17:00:000;2025.07.30D09:00:000)];
-timer.addjob.custom[`job3;{show "Hello, world!"};5;1;()!()];
+timer.addjob.custom[`job1;{show x};("Hello!");0D00:10;4;(enlist `maxruns)!(enlist 3)];
+timer.addjob.custom[`job2;{show x+y};(2;3);0D00:15;5;(`maxtime`startattime)!(2025.07.30D17:00:000;2025.07.30D09:00:000)];
+timer.addjob.custom[`job3;{show "Hello, world!"};();0D00:00:05;1;(enlist`description)!enlist "greeting"];
 ```
 
 #### addjob.default
 Streamlined way to create a simple job with set default options i.e. not maxruns,maxtime or startattime and will automically disable on fail
 ```q
-timer.addjob.default[`job4;{show "Mode 2"};();15;2];
+timer.addjob.default[`job4;{show "Mode 2"};();0D00:00:15;2];
 ```
 
 #### addjob.simple 
 Provides a fast way to schedule a job using sensible defaults — ideal for quick setup when you only need to specify a function, its interval, and minimal configuration. Schedule mode is defaulted to 1.
 ```q
-timer.addjob.simple[`job5;{show "Hi"};30]
+timer.addjob.simple[`job5;{show "Hi"};0D00:00:30]
 ```
 
 #### addjob.once
@@ -228,13 +231,13 @@ timer
 // Configure jobs to run
 
 helloFunc:{show "Hello from job 1"};
-timer.addjob.simple[`job1;helloFunc;5];
+timer.addjob.simple[`job1;helloFunc;0D00:00:05];
 
 echoFunc:{show x};
-timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";10;2;(enlist `maxruns)!(enlist 3)];
+timer.addjob.custom[`job2;echoFunc;enlist "Echo this!";0D00:00:10;2;(enlist `maxruns)!(enlist 3)];
 
 .func.timeAligned:{show "On the quarter hour"};
-timer.addjob.default[`job3;`.func.timeAligned;();15;5];
+timer.addjob.default[`job3;`.func.timeAligned;();0D00:15;5];
 
 // Initialize with the injected logger and set the cycletime
 logging:use`di.util.log;

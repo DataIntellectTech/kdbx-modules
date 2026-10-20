@@ -24,7 +24,7 @@ true,0,0,q,1=errfilecount[],1,,exactly one err_ file created
 true,0,0,q,outaliasexists[],1,,out_ alias symlink created by default
 true,0,0,q,erraliasexists[],1,,err_ alias symlink created by default
 true,0,0,q,1=addjobcount[],1,,exactly one timer job scheduled
-true,0,0,q,86400=addjobperiod[],1,,scheduled with a 1-day period
+true,0,0,q,1D=addjobperiod[],1,,scheduled with a 1-day period
 true,0,0,q,1h=addjobmode[],1,,scheduled with fixed-rate mode 1h
 true,0,0,q,addjobhasstartattime[],1,,scheduled with an explicit first-fire startattime
 

@@ -12,11 +12,11 @@ mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 / mock timer: records what would have been scheduled instead of really scheduling it. Keeps the
 / tests independent of di.timer, and sidesteps its "id already exists" guard - several tests
 / init the module repeatedly in one session, which a real timer would reject on the second call.
-scheduled:([]id:`symbol$();period:`int$();mode:`short$();opts:())
+scheduled:([]id:`symbol$();period:`timespan$();mode:`short$();opts:())
 
-resetscheduled:{[] `scheduled set ([]id:`symbol$();period:`int$();mode:`short$();opts:()); }
+resetscheduled:{[] `scheduled set ([]id:`symbol$();period:`timespan$();mode:`short$();opts:()); }
 
-mockaddjob:{[id;func;params;period;mode;opts] `scheduled insert (id;`int$period;`short$mode;opts); }
+mockaddjob:{[id;func;params;period;mode;opts] `scheduled insert (id;period;`short$mode;opts); }
 
 mockdeps:{[]
   `log`timer!(

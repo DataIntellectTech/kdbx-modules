@@ -17,8 +17,8 @@ calls:([]lvl:`symbol$();ctx:`symbol$();msg:())
 resetcalls:{[] `calls set ([]lvl:`symbol$();ctx:`symbol$();msg:()); }
 mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 mocklog:{[] `info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;])}
-timercalls:([]id:`symbol$();period:`long$();mode:`long$())
-mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] `timercalls upsert (id;`long$period;`long$mode);}
+timercalls:([]id:`symbol$();period:`timespan$();mode:`long$())
+mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] `timercalls upsert (id;period;`long$mode);}
 handlercalls:([]event:`symbol$();name:`symbol$())
 mockhandlers:enlist[`register]!enlist {[ev;ph;nm;pri;fn] `handlercalls upsert (ev;nm);}
 deps:{[] `log`timer`handlers!(mocklog[];mocktimer;mockhandlers)}

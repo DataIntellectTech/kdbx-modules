@@ -262,7 +262,7 @@ doreload:{[pt]
   getprocs[;pt] each ro;
   $[.z.m.eodwaittime>0;
     [@[.z.m.timer`deletejobs;`sortflushend;{}];
-     (.z.m.timer`addjob)[`sortflushend;flushend;();1;1h;`startattime`maxruns!(.z.m.timeouttime;1)]];
+     (.z.m.timer`addjob)[`sortflushend;flushend;();0D00:00:01;1h;`startattime`maxruns!(.z.m.timeouttime;1)]];
     flushend[]];
   }
 
@@ -749,7 +749,7 @@ init:{[config;deps]
   / addjob raises on an id that already exists, so clear any job a previous init left
   @[.z.m.timer`deletejobs;`wdbsave;{}];
   / mode 3h reschedules from the end of the previous flush, as TorQ's .timer.repeat does
-  (.z.m.timer`addjob)[`wdbsave;savetodisk;();.z.m.settimer;3h;()!()];
+  (.z.m.timer`addjob)[`wdbsave;savetodisk;();0D00:00:01*.z.m.settimer;3h;()!()];
   msg:"initialised, mode=",(string .z.m.mode),", writedownmode=",(string .z.m.writedownmode),", savedir=",.z.m.savedirs;
   msg,:", hdbdir=",(1_string .z.m.hdbdir),", flush every ",(string .z.m.settimer),"s";
   .z.m.log[`info][`wdb;msg,$[.z.m.sortenabled;"";", sort handed to ",", " sv string .z.m.sorttypes]];

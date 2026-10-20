@@ -205,7 +205,7 @@ runjobs:{[]
 schedule:{[]
   {[i;t]
     id:`$"housekeeping",string i;
-    (.z.m.timer`addjob)[id;runjobs;();86400;1h;enlist[`startattime]!enlist f:nextfire t];
+    (.z.m.timer`addjob)[id;runjobs;();1D;1h;`startattime`dupcheck!(f:nextfire t;0b)];
     .z.m.log[`info][`schedule;"scheduled ",(string id)," first run at ",string f];
     }'[til count .z.m.runtimes;.z.m.runtimes];
   }

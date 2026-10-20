@@ -184,9 +184,9 @@ init:{[config;deps]
     ];
 
   / timer jobs: EOD roll check every second; batched flush every pubperiod seconds
-  (.z.m.timer`addjob)[`tpeodcheck;eodcheck;();1;1h;()!()];
+  (.z.m.timer`addjob)[`tpeodcheck;eodcheck;();0D00:00:01;1h;()!()];
   if[.z.m.publishmode=`batched;
-    (.z.m.timer`addjob)[`tpflush;flush;();.z.m.pubperiod;1h;()!()]];
+    (.z.m.timer`addjob)[`tpflush;flush;();0D00:00:01*.z.m.pubperiod;1h;()!()]];
 
   .z.m.log[`info][`tickerplant;"initialised, mode=",(string .z.m.publishmode),", tables=",", " sv string tabs];
   }

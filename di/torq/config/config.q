@@ -84,6 +84,19 @@ cascade:{[builtinroot;approot;proctype;procname]
   acc _ `
   };
 
+/ the config file(s) for a path relative to the two roots, app before builtin, as TorQ's .proc.getconfig (torq.q:149-172):
+/ level 0 the first existing (else the builtin path), 1 each existing app path then the builtin path, 2 both regardless.
+/ an empty approot is an unset app root, as an unset $KDBAPPCONFIG. pure: no env read.
+getconfig:{[builtinroot;approot;path;level]
+  appconf:$[count approot;`$approot,"/",path;()];
+  if[(level<2) and $[count appconf;()~key hsym appconf;0b];appconf:()];
+  conf:`$builtinroot,"/",path;
+  (),$[level;appconf,conf;first appconf,conf]
+  };
+
+/ the first config file for a path, as TorQ's .proc.getconfigfile (torq.q:174)
+getconfigfile:getconfig[;;;0];
+
 / --- command-line override layer (top of the cascade) ---
 
 hexchars:"0123456789abcdefABCDEF";
@@ -183,6 +196,8 @@ getapimeta:{[]
     (`init;           0b; "wire the injected logger (required by overrideconfig)";       "[dict: deps with a `log key]";                                                    "null");
     (`cascade;        1b; "resolve the settings cascade over two roots -> merged flat dict (name-major, .toml>.q)"; "[string: builtinroot; string: approot; symbol: proctype; symbol: procname]"; "dict: merged setting -> value");
     (`overrideconfig; 1b; "apply the command-line override layer onto a resolved config dict"; "[dict: resolved config; dict: setting name (symbol) -> string or list of strings]";  "dict: updated config");
+    (`getconfig;      1b; "the config file(s) for a path over the two roots, app before builtin (TorQ .proc.getconfig)"; "[string: builtinroot; string: approot (empty if unset); string: path; long: level 0/1/2]"; "symbol list: config file path(s)");
+    (`getconfigfile;  1b; "the first config file for a path over the two roots (TorQ .proc.getconfigfile)"; "[string: builtinroot; string: approot; string: path]"; "symbol list: one config file path");
     (`parsefile;      1b; "parse one .q or .toml settings file into a flat dict";        "[string: file path (.q flat name:value, or .toml via di.util.toml)]";                   "dict: setting -> value (empty if the file is missing)");
     (`getapimeta;     0b; "this module's api metadata rows";                             "[]";                                                                               "table: metadata rows"));
   };

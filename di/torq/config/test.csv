@@ -68,6 +68,16 @@ true,0,0,q,"""new""~(cfg.overrideconfig[seccfg;enlist[`.replay.dir]!enlist ""new
 true,0,0,q,"7~(cfg.overrideconfig[seccfg;enlist[`replay.first]!enlist enlist""7""])[`replay;`first]",1,1,section.key (no leading dot) works and parses into the key's type
 true,0,0,q,"`xx`yy~(cfg.overrideconfig[seccfg;enlist[`.replay.tabs]!enlist (""xx"";""yy"")])[`replay;`tabs]",1,1,a vector key of a section takes several values
 true,0,0,q,"seccfg~cfg.overrideconfig[seccfg;`.replay.nope`.rows.x`.replay.a.b!3#enlist enlist""1""]",1,1,an unknown section key or a non-dict section or a deeper name is skipped
+comment,,,,,,,getconfig / getconfigfile - TorQ's .proc.getconfig levels over the two roots (app before builtin)
+run,0,0,q,"(hsym each `$TD,/:(""app/proc.csv"";""builtin/proc.csv"";""builtin/only.csv"")) 0:\: enlist ""a,b""",1,1,proc.csv in both roots; only.csv in builtin only
+true,0,0,q,"(enlist`$TD,""app/proc.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";0]",1,1,level 0: the app file when it exists
+true,0,0,q,"(enlist`$TD,""builtin/only.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";0]",1,1,level 0: the builtin file when the app one is missing
+true,0,0,q,"(enlist`$TD,""builtin/none.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""none.csv"";0]",1,1,level 0: the builtin path even when neither exists (as legacy)
+true,0,0,q,"(enlist`$TD,""builtin/proc.csv"")~cfg.getconfig[TD,""builtin"";"""";""proc.csv"";0]",1,1,level 0: an empty approot is an unset app root
+true,0,0,q,"(`$TD,/:(""app/proc.csv"";""builtin/proc.csv""))~cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";1]",1,1,level 1: the existing app file then the builtin file
+true,0,0,q,"(enlist`$TD,""builtin/only.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";1]",1,1,level 1: a missing app file is left out
+true,0,0,q,"(`$TD,/:(""app/only.csv"";""builtin/only.csv""))~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";2]",1,1,level 2: both paths whether or not they exist
+true,0,0,q,"cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";0]~cfg.getconfigfile[TD,""builtin"";TD,""app"";""proc.csv""]",1,1,getconfigfile is getconfig at level 0
 comment,,,,,,,getapimeta - module api metadata
 true,0,0,q,(asc key cfg)~asc exec name from cfg.getapimeta[],1,1,getapimeta documents exactly the module's exports
 true,0,0,q,`name`public`descrip`params`return~cols cfg.getapimeta[],1,1,getapimeta rows carry the registry columns

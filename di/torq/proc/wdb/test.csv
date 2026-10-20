@@ -83,7 +83,7 @@ comment,,,,,,,sort mode - proctypes sort and sortworker
 run,0,0,q,"system ""l di/torq/proc/wdb/testsort.q""",1,,load the sort-mode fixture helpers
 run,0,0,q,setupfixture[],1,,fixture dirs and the env the module resolves paths against
 comment,,,,,,,the end of day tail
-true,0,0,q,tailok[],1,,sym reloaded, both tables sorted by time, partition moved into the hdb, working dir gone
+true,0,0,q,tailok[],1,,sym reloaded, both tables sorted by sym then time, partition moved into the hdb, working dir gone
 true,0,0,q,enumintact[],1,,the sym column still resolves after the move - the point of enumerating against hdb/sym
 true,0,0,q,discovertables[],1,,no table list means whatever is in the working partition
 true,0,0,q,defaultsavedir[],1,,an empty savedir on the wire falls back to the configured one
@@ -97,7 +97,7 @@ true,0,0,q,badreloadorder[],1,,a reloadorder entry that is neither an hdb, rdb, 
 true,0,0,q,idbreloadorder[],1,,idb in reloadorder is dispatched rather than reported as unknown
 comment,,,,,,,config
 true,0,0,q,stringconfig[],1,,string (toml / command-line) settings are parsed into the right types
-true,0,0,q,sortcsvhonoured[],1,,a sortcsv overrides di.dbwrite's time-asc default
+true,0,0,q,sortcsvhonoured[],1,,a sortcsv overrides di.dbwrite's sym-then-time p# default
 true,0,0,q,defaultsortcsv[],1,,with no sortcsv the app's sort.csv is used
 comment,,,,,,,the process entry point
 true,0,0,q,initpublishes[],1,,init opens hdb/rdb/idb/gateway/sortworker/wdb connections (never a tickerplant) and publishes the root entry point

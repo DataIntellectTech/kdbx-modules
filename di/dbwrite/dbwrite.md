@@ -68,6 +68,8 @@ default,,time,1
 | `sort[tabname;dirs]` | Sort on-disk partition(s) for a table and apply attributes per stored config |
 | `savedown[dir;part;tabname;data]` | Write an in-memory table to an HDB partition, sort it, then run gc |
 | `appenddown[dir;part;tabname;data]` | Append rows to an existing partition (no sort) |
+| `manipulate[t;x]` | Apply the table's `savedownmanipulation` function, as TorQ's `.save.manipulate`; keeps `x` if it fails |
+| `postreplay[d;p]` | Call the `postreplay` hook after a partition is written, as TorQ's `.save.postreplay` |
 | `applyattr[dloc;colname;att]` | Apply a single kdb+ attribute to an on-disk column |
 | `gc[]` | Run `.Q.gc[]` and log memory stats before and after |
 
@@ -76,6 +78,8 @@ default,,time,1
 ### `init[deps]`
 
 Wire injected dependencies. Must be called before any other function. Also resets the stored sort config to `(::)`.
+
+Optional keys, as TorQ's `.save` hooks: `savedownmanipulation` (dict of table!function, applied to the data before `savedown`/`appenddown` enumerate it) and `postreplay` (`{[d;p]}`, called by writers through `postreplay` once a partition is written). Each is set only when its key is passed, so a later `init` without it keeps the hook; the defaults are `()!()` and `{[d;p]}`.
 
 | Arg | Type | Description |
 |---|---|---|
@@ -128,7 +132,7 @@ dbwrite.getconfig[]
 
 ### `sort[tabname;dirs]`
 
-Sort and apply attributes to the on-disk partition(s) for one table, using the config stored by `readcsv` or `setconfig`. Falls back to the built-in default (sort by `time` ascending) if no config has been loaded.
+Sort and apply attributes to the on-disk partition(s) for one table, using the config stored by `readcsv` or `setconfig`. Falls back to the built-in default, TorQ's `config/sort.csv` (`p#` on `sym`, sorted by `sym` then `time`), if no config has been loaded. A table without `sym` logs the sort and attribute errors and is written unsorted, as in TorQ.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -208,5 +212,5 @@ The suite injects binary mock loggers (`{[c;m] ...}`): a no-op logger, and a cap
 ## Exported symbols
 
 ```q
-export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;gc])
+export:([init;readcsv;setconfig;getconfig;sort;applyattr;savedown;appenddown;manipulate;postreplay;gc;version])
 ```

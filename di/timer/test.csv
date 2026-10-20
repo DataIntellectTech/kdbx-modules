@@ -112,10 +112,37 @@ run,0,0,q,.m.di.0timer.logcall:1b,1,,restore logcall
 comment,,,,,,,a failing job does not stop other jobs due in the same tick
 run,0,0,q,caplog:0#caplog,1,,reset the capture
 run,0,0,q,.test.good:0b,1,,flag set by the healthy job
+run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,only the two jobs below are scheduled
 run,0,0,q,timer.addjob.custom[`testbad;{'"bad"};();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,a failing job already due
 run,0,0,q,timer.addjob.custom[`testgood;{.test.good:1b};();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,a healthy job due in the same tick
+run,0,0,q,timer.setcp[{2025.03.03D13:00:00.000}],1,,move the clock past the scheduler's next scan time
 run,0,0,q,.m.di.0timer.main[],1,,one scheduler tick
+run,0,0,q,timer.setcp[{2025.03.03D12:00:00.000}],1,,restore the test clock
 true,0,0,q,.test.good,1,,the healthy job still ran
 true,0,0,q,(enlist`timer)~exec ctx from caplog where fn=`error,1,,only the failing job is logged as an error
 true,0,0,q,not .m.di.0timer.jobs[`testbad][`status],1,,the failing job is disabled
 true,0,0,q,.m.di.0timer.jobs[`testgood][`status],1,,the healthy job stays enabled
+
+comment,,,,,,,a job's next run past its maxtime disables it before that run (as TorQ's timer checks the next run against the period end)
+run,0,0,q,.test.dt2:0,1,,run counter
+run,0,0,q,timer.addjob.custom[`dt2;{.test.dt2+:1};();10;1;(enlist`maxtime)!enlist 2025.03.03D12:00:25.000],1,,10s job ending at 12:00:25 - first run due 12:00:10
+run,0,0,q,.m.di.0timer.runandschedule[`dt2],1,,first run (next due 12:00:20)
+true,0,0,q,.m.di.0timer.jobs[`dt2][`status],1,,still enabled - its next run is inside the end time
+run,0,0,q,.m.di.0timer.runandschedule[`dt2],1,,second run (next would be 12:00:30)
+true,0,0,q,not .m.di.0timer.jobs[`dt2][`status],1,,disabled - its next run would fall after the end time
+
+comment,,,,,,,params of any type, an atom first, do not type the params column
+run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,empty the jobs table
+run,0,0,q,"timer.addjob.custom[`pt1;{x+1};5;10;1;()!()]",1,,first job takes an atom parameter
+run,0,0,q,"timer.addjob.custom[`pt2;{x};`sym;10;1;()!()]",1,,a later job takes a symbol parameter
+run,0,0,q,"timer.addjob.custom[`pt3;{x,y};(1;`x);10;1;()!()]",1,,and another a mixed list
+true,0,0,q,all `pt1`pt2`pt3 in exec id from timer.getalljobs[],1,,all three jobs are added
+true,0,0,q,"(6;`sym;(1;`x))~{$[count y; x . (),y; x@`]}'[exec func from .m.di.0timer.jobs;exec params from .m.di.0timer.jobs]",1,,each job's function still gets its parameter as passed
+
+comment,,,,,,,a job added after the jobs table has emptied still runs (D-T3)
+run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,empty the jobs table
+run,0,0,q,.m.di.0timer.main[],1,,a scheduler tick on the empty table
+run,0,0,q,.test.dt3:0,1,,run counter
+run,0,0,q,timer.addjob.custom[`dt3;{.test.dt3+:1};();10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,add a job that is already due
+run,0,0,q,.m.di.0timer.main[],1,,the next tick
+true,0,0,q,1=.test.dt3,1,,the job runs

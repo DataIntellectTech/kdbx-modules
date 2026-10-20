@@ -62,7 +62,7 @@ Functions shown below allow you to register new timer-based jobs with varying de
 | ------------- | ---------- | --------------------------------------------------------------------- |
 | id            | symbol     | Unique function identifier, must not already exist in jobs table     |
 | func          | function   | Function to be executed when job runs                                 |
-| params        | list       | Arguments to pass into the function at run time                       |
+| params        | list       | Arguments to pass into the function at run time; stored as a list (`(),params`), so jobs with parameters of any type can share the table |
 | period        | int        | Time period in seconds or minutes for next run time calculations      |
 | mode          | short      | Scheduling more to determine next run time                            |
 | opts          | dictionary | Optional additional configuration parameters, specifics below         |
@@ -71,7 +71,7 @@ Functions shown below allow you to register new timer-based jobs with varying de
 | Option        | Type      | Description                                                   |
 | ------------- | --------- | ------------------------------------------------------------- |
 | maxruns       | int       | Number of times for function to execute before being disabled |
-| maxtime       | timestamp | Max timestamp for new function executions to be scheduled     |
+| maxtime       | timestamp | End time: as in TorQ, a job whose next run would fall after it is disabled |
 | disableonfail | boolean   | By default: 1b, will automatically disable jobs if they fail  |
 | startattime   | timestmap | Specfic timestamp for intial function run                     |
 

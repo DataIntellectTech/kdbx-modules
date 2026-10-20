@@ -31,7 +31,9 @@ addjob.custom:{[id;func;params;period;mode;opts]
   if[id in key .z.M.jobs;'"Cannot add id : ",(string id)," already exists in jobs"];
   if[-11h=type func;get func];
   opts:addjob.opts,opts;
-  .z.M.jobs insert (id;func;params;cp[];`int$period;`short$mode;0Np;0Np;0Np;0Np;0i;1b;`int$(opts`maxruns);opts`maxtime;opts`disableonfail;opts`startattime);
+  row:cols[.z.M.jobs]!(id;func;(),params;cp[];`int$period;`short$mode;0Np;0Np;0Np;0Np;0i;1b;`int$(opts`maxruns);opts`maxtime;opts`disableonfail;opts`startattime);
+  / params is stored as a list so an atom parameter cannot type the column
+  .z.M.jobs upsert 1!enlist row;
   $[null (r:.z.M.jobs[id])`startattime;
     upd.start[id];
     [r[`nextstart]:r`startattime;@[.z.M.jobs;id;:;r]]
@@ -55,7 +57,6 @@ upd.status:{[r]
   r[`prevstart]:r`nextstart;
   r[`runs]+:1;
   if[(not null r[`maxruns])&r[`maxruns]<=r`runs;r[`status]:0b];
-  if[(not null r[`maxtime])&r[`maxtime]<=r`prevend;r[`status]:0b];
   r};
 
 nextstart:()!();
@@ -121,6 +122,11 @@ runandschedule:{[id]
   r:upd.status[r]; / update status based on job status and configurable options
   @[.z.M.jobs;id;:;r];
   if[r[`status];upd.start[id]]; / update next start time after run
+  / as TorQ's timer, a job whose next run would fall after its end time is disabled
+  r:.z.M.jobs id;
+  if[(not null r`maxtime)&r[`maxtime]<r`nextstart;disablejobs id];
+  / next scan time is only recomputed after a run, as TorQ's timer does
+  .z.m.nextruntime:exec min[nextstart] from jobs;
   };
 
 / cycle functions
@@ -131,7 +137,6 @@ main:{
   if[(nextruntime<p:cp[])&enabled;
     torun:exec id from jobs where status,nextstart<p;
     if[count torun;runandschedule each torun];
-    .z.m.nextruntime:exec min[nextstart] from jobs;
     ];
   };
 

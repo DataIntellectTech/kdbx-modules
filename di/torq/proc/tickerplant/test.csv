@@ -29,11 +29,25 @@ true,0,0,q,subdetailsbatchedok[],1,,batched: subdetails flushes the buffer to ex
 
 run,0,0,q,doinit[batchcfg[]],1,,re-init in batched mode
 true,0,0,q,scheduled[`tpflush],1,,batched mode schedules a flush job
-true,0,0,q,flushperiodok[],1,,flush job uses the configured pubperiod
+true,0,0,q,flushperiodok[],1,,flush job runs every timerms (2000ms here)
 run,0,0,q,feedtrades[3],1,,feed three trades in batched mode
 true,0,0,q,3=count trade,1,,batched mode buffers rows locally
 run,0,0,q,(tk`flush)[],1,,flush publishes and clears the buffer
 true,0,0,q,0=count trade,1,,flush emptied the buffered table
+
+comment,,,,,,,-t decides the publish mode, as TorQ's tickerplant.q: batched every -t ms when -t is set, immediate otherwise
+run,0,0,q,doinit[tcfg[200]],1,,init with timerms 200 (q started with -t 200)
+true,0,0,q,0D00:00:00.2=first exec period from timercalls where id=`tpflush,1,,the flush job runs every 200ms
+run,0,0,q,feedtrades[2],1,,feed two trades
+true,0,0,q,2=count trade,1,,the rows are buffered for the flush
+run,0,0,q,doinit[tcfg[0N]],1,,init with a null timerms (no -t)
+true,0,0,q,not scheduled[`tpflush],1,,no flush job without -t
+run,0,0,q,feedtrades[2],1,,feed two trades
+true,0,0,q,0=count trade,1,,published immediately without -t
+run,0,0,q,doinit[tcfg[0]],1,,init with timerms 0 (-t 0)
+true,0,0,q,not scheduled[`tpflush],1,,no flush job with -t 0
+run,0,0,q,feedtrades[2],1,,feed two trades
+true,0,0,q,0=count trade,1,,published immediately with -t 0
 
 run,0,0,q,doinit[replaycfg[]],1,,fresh batched init pointing at an empty replay log dir
 run,0,0,q,feedtrades[4],1,,write four trades to the replay log

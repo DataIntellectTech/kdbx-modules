@@ -19,7 +19,7 @@ resolvedir:{[base;dir]
   }
 
 / consumers coerce at point of use: config values may be symbols (.q) or strings (.toml)
-astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones, publishmode)
+astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones)
 
 / feed payloads may arrive as a table or as a list of columns; normalise to columns
 tocols:{[x] $[98h=type x;value flip x;x]}
@@ -40,7 +40,7 @@ upd:{[t;x]
   x:stamp tocols x;
   if[.z.m.logh>0;(.z.m.tp`write)[.z.m.logh;(`upd;t;x)];.u.i+:1];
   if[count .z.m.tplogdir;.u.icounts[t]+:count first x];
-  $[.z.m.publishmode=`batched;
+  $[.z.m.batchms>0;
     t insert x;
     (.z.m.ps`publish)[t;flip (cols value t)!$[0>type first x;enlist each x;x]]
     ];
@@ -53,7 +53,7 @@ sub:{[x;y]
   if[x~`;:sub[;y] each .z.m.tables];
   if[not x in .z.m.tables;'x];
   / batched: flush first, so a replaying subscriber doesn't receive the buffer twice
-  if[.z.m.publishmode=`batched;(.z.m.ps`pubclear)[.z.m.tables]];
+  if[.z.m.batchms>0;(.z.m.ps`pubclear)[.z.m.tables]];
   r:(.z.m.ps`subscribe)[x;y];
   (first r 0;first r 1)}
 
@@ -75,7 +75,7 @@ subdetails:{[tabs;syms]
   / batched: flush FIRST, to the subscribers that already exist. rowcount counts every message logged, and upd logs
   / before it buffers - so a subscriber registered while rows sat in the buffer would replay them from the log and
   / then receive the same rows again in the next flush. flushed before it registers, it sees them exactly once
-  if[.z.m.publishmode=`batched;(.z.m.ps`pubclear)[.z.m.tables]];
+  if[.z.m.batchms>0;(.z.m.ps`pubclear)[.z.m.tables]];
   sub:(.z.m.ps`subscribe)[tabs;syms];
   d:(.z.m.eod`getd)[];
   lf:$[0<count .z.m.tplogdir;(.z.m.tp`logname)[.z.m.tplogdir;d];`];
@@ -87,7 +87,7 @@ flush:{[] (.z.m.ps`pubclear)[.z.m.tables];}
 
 / EOD roll: flush any buffer, tell subscribers, roll the log, advance eodtime state.
 endofday:{[]
-  if[.z.m.publishmode=`batched;(.z.m.ps`pubclear)[.z.m.tables]];
+  if[.z.m.batchms>0;(.z.m.ps`pubclear)[.z.m.tables]];
   d:(.z.m.eod`getd)[];
   / tell subscribers (e.g. di.torq.proc.rdb) to end the day for partition d - AFTER any final flush
   / above, so they save exactly the day's data. Carries the date (vendored pubsub patch).
@@ -122,8 +122,8 @@ init:{[config;deps]
   .z.m.timer:deps`timer;
   .z.m.handlers:deps`handlers;
   .z.m.cfg:config;
-  .z.m.publishmode:$[`publishmode in key config;astz config`publishmode;`immediate];
-  .z.m.pubperiod:$[`pubperiod in key config;"j"$config`pubperiod;1];
+  / batched every -t ms when -t is set (config timerms), immediate otherwise, as TorQ's tickerplant.q
+  .z.m.batchms:$[`timerms in key config;0^config`timerms;0];
   .z.m.tplogdir:$[`tplogdir in key config;resolvedir[datahome[];config`tplogdir];""];
 
   / schema: load the schema file at root; publishable tables are the UNKEYED ones with
@@ -183,10 +183,10 @@ init:{[config;deps]
     .z.m.log[`info][`tickerplant;"opened tp log, replayed ",(string r 1)," message(s)"];
     ];
 
-  / timer jobs: EOD roll check every second; batched flush every pubperiod seconds
+  / timer jobs: EOD roll check every second; batched flush every -t ms
   (.z.m.timer`addjob)[`tpeodcheck;eodcheck;();0D00:00:01;1h;()!()];
-  if[.z.m.publishmode=`batched;
-    (.z.m.timer`addjob)[`tpflush;flush;();0D00:00:01*.z.m.pubperiod;1h;()!()]];
+  if[.z.m.batchms>0;
+    (.z.m.timer`addjob)[`tpflush;flush;();0D00:00:00.001*.z.m.batchms;1h;()!()]];
 
-  .z.m.log[`info][`tickerplant;"initialised, mode=",(string .z.m.publishmode),", tables=",", " sv string tabs];
+  .z.m.log[`info][`tickerplant;"initialised, mode=",$[.z.m.batchms>0;"batched every ",(string .z.m.batchms),"ms";"immediate"],", tables=",", " sv string tabs];
   }

@@ -40,13 +40,15 @@ setupfixture:{[]
 teardownfixture:{[] system "rm -rf ",BASE; }
 
 / config builders (kept out of test.csv: they contain commas/backticks)
-immcfg:{[] `publishmode`tplogdir`schemafile!(`immediate;BASE,"/log";BASE,"/database.q")}
-batchcfg:{[] `publishmode`pubperiod`tplogdir`schemafile!(`batched;2;BASE,"/batchlog";BASE,"/database.q")}
-nologcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/database.q")}
-badcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/badschema.q")}
-replaycfg:{[] `publishmode`tplogdir`schemafile!(`batched;BASE,"/replog";BASE,"/database.q")}
-subdcfg:{[] `publishmode`tplogdir`schemafile!(`immediate;BASE,"/subdlog";BASE,"/database.q")}
-subdbcfg:{[] `publishmode`pubperiod`tplogdir`schemafile!(`batched;2;BASE,"/subdblog";BASE,"/database.q")}
+immcfg:{[] `tplogdir`schemafile!(BASE,"/log";BASE,"/database.q")}
+batchcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/batchlog";BASE,"/database.q")}
+nologcfg:{[] enlist[`schemafile]!enlist BASE,"/database.q"}
+badcfg:{[] enlist[`schemafile]!enlist BASE,"/badschema.q"}
+replaycfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/replog";BASE,"/database.q")}
+subdcfg:{[] `tplogdir`schemafile!(BASE,"/subdlog";BASE,"/database.q")}
+subdbcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/subdblog";BASE,"/database.q")}
+/ -t decides the mode, as TorQ's tickerplant.q: timerms (q's -t, stamped by di.torq) 200, null or 0
+tcfg:{[ms] `timerms`schemafile!(ms;BASE,"/database.q")}
 
 / feed n trade rows through the published root upd (columns form, single record each)
 feedtrades:{[n] {upd[`trade;(.z.p;`$"S",string x;1.0*x;`int$x)]} each til n; }

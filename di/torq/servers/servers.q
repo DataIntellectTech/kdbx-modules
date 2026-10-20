@@ -73,7 +73,8 @@ init:{[deps]
   set[`.dotz.liveh;{x in key .z.W}];
   set[`.dotz.livehn;{x in 0Ni,key .z.W}];
   set[`.dotz.liveh0;{x in 0i,key .z.W}];
-  pub:`opencon`cleanup`addnthawc`getdetails`addhw`addw`retry`retrydiscovery`autodiscovery`retryrows`removerows`register`querydiscovery`registerfromdiscovery`addprocs`procupdate`domainsocketsenabled`formathp`formatprocs`startup`pc!(opencon;cleanup;addnthawc;getdetails;addhw;addw;retry;retrydiscovery;autodiscovery;retryrows;removerows;register;querydiscovery;registerfromdiscovery;addprocs;procupdate;domainsocketsenabled;formathp;formatprocs;startup;pc);
+  pub:`opencon`cleanup`addnthawc`getdetails`addhw`addw`addh`retry`retrydiscovery`autodiscovery`retryrows`removerows`register`querydiscovery`registerfromdiscovery`addprocs`procupdate`refreshattributes`getserverbytype`gethandlebytype`gethpbytype`domainsocketsenabled`formathp`formatprocs`startup`pc!(opencon;cleanup;addnthawc;getdetails;addhw;addw;addh;retry;retrydiscovery;autodiscovery;retryrows;removerows;register;querydiscovery;registerfromdiscovery;addprocs;procupdate;refreshattributes;getserverbytype;getserverbytype[;`w;];gethpbytype;domainsocketsenabled;formathp;formatprocs;startup;pc);
+  / root .servers.gethandlebytype is legacy's getserverbytype[;`w;] (reopens dead handles), not the export
   set'[` sv/:`.servers,/:key pub;value pub];
   if[not .z.m.registered;
     / .z.pc
@@ -133,6 +134,13 @@ addhw:{[hpuP;W]
   addnthawc[name;info`proctype;hpuP;info`attributes;W;0b]}
 
 addw:addhw[`]
+
+/ open a connection to a server and store its details, as trackservers.q:130-134
+addh:{[hpuP]
+  W:opencon hpuP;
+  $[null W;
+    '"failed to open handle to ",string hpuP;
+    addhw[hpuP;W]]}
 
 / after getting new servers run retry to open connections
 retry:{retryrows exec i from `.servers.SERVERS where not .dotz.liveh0 w,not proctype=`discovery}
@@ -196,10 +204,17 @@ addprocs:{[connectiontab;procs;connect]
     if[`attributes in cols connectiontab;
       .servers.SERVERS:.servers.SERVERS lj 3!select procname,proctype,hpup,attributes from connectiontab where not ([]procname;proctype;hpup) in select procname,proctype,hpup from .servers.SERVERS]];
   removerows exec i from `.servers.SERVERS where hpup in exec hpup from res;
-  register[res;;connect] each $[procs~`ALL;exec distinct proctype from res;procs,()];}
+  register[res;;connect] each $[procs~`ALL;exec distinct proctype from res;procs,()];
+  .servers.addprocscustom[res;procs]}
 
 / used to handle updates from the discovery service
 procupdate:{[procs] addprocs[procs;exec distinct proctype from procs;0b];}
+
+/ re-register this process's attributes with each discovery service, as trackservers.q:255-258
+refreshattributes:{
+  retrydiscovery[];
+  (neg exec w from .servers.getservers[`proctype;`discovery;()!();0b;0b])@\:(`..register;`);
+  }
 
 / return true if unix domain sockets can be used
 domainsocketsenabled:{[]
@@ -297,6 +312,16 @@ gethandlebytype:{[pt;selection]
   wh
   };
 
+/ one server value for a proctype from SERVERS, reopening dead handles first, as trackservers.q:97-107
+getserverbytype:{[ptype;serverval;selection]
+  r:.servers.getservers[`proctype;ptype;()!();1b;1b];
+  if[count r;
+    r:selector[r;selection];
+    updatestats[r`w]];
+  r[serverval]}
+
+gethpbytype:getserverbytype[;`hpup;]
+
 signalfound:{[pt]
   / internal - log and return 1b once a connection to pt exists.
   .z.m.loginfo[`servers;"connected to ",string pt];
@@ -353,6 +378,8 @@ attributematch:{[req;avail]
 
 / root, for .sub: run on (re)connected SERVERS rows
 .servers.connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}];
+/ addprocs' hook for bespoke extensions when adding processes, as trackservers.q:246-247
+.servers.addprocscustom:@[value;`.servers.addprocscustom;{{[connectiontab;procs]}}];
 
 / are any required processes not connected
 reqprocsnotconn:{[requiredprocs;typeorname]

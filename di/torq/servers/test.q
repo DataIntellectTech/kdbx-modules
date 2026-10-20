@@ -77,7 +77,7 @@ setupdisc:{[]
   TPPORT::pickport DISCPORT+1;
   (`$":",FIXDIR,"/process.csv") 0: (read0 `$":",FIXDIR,"/process.csv"),enlist "localhost,",string[DISCPORT],",discovery,discinst";
   (`$":",FIXDIR,"/disc.q") 0: (
-    "register:{}";
+    "REGN:0;register:{[x] `REGN set REGN+1}";
     "getservices:{[p;s] ([]procname:enlist`tpinst;proctype:enlist`tpproc;hpup:enlist`$\":localhost:",string[TPPORT],"\";attributes:enlist()!())}");
   };
 
@@ -90,6 +90,31 @@ spawnq:{[args;port]
 
 spawndisc:{[] spawnq["";TPPORT]; spawnq[FIXDIR,"/disc.q";DISCPORT];};
 killdisc:{[] {@[system;"kill ",string x;{}]} each DISCPIDS; DISCPIDS::`long$();};
+
+/ addh to the live peer: the handle it returns works and is stored in SERVERS; the row is removed after
+addhpeer:{[]
+  W:.servers.addh `$":localhost:",string PEERPORT;
+  r:(2=W"1+1";1=count select from .servers.SERVERS where w=W);
+  delete from `.servers.SERVERS where w=W; hclose W;
+  all r};
+
+/ addprocs calls .servers.addprocscustom with the new rows and the procs; the hook and row are reset after
+addprocshook:{[]
+  / bind the .z.pc that addprocs' removerows calls, as setupdisc does; a fresh dead port so no fixture row is replaced
+  .z.pc:{};
+  `APC set ();
+  .servers.addprocscustom:{[t;p] `APC set (exec procname from t;p)};
+  .servers.addprocs[([]procname:enlist`newinst;proctype:enlist`newproc;hpup:enlist`$":localhost:",string pickport DEADPORT+1);enlist`newproc;0b];
+  .servers.addprocscustom:{[connectiontab;procs]};
+  delete from `.servers.SERVERS where procname=`newinst;
+  (enlist`newinst;enlist`newproc)~APC};
+
+/ refreshattributes sends one register to each live discovery service
+refreshregisters:{[]
+  h:first exec w from .servers.getservers[`proctype;`discovery;()!();0b;0b];
+  b:h"REGN";
+  .servers.refreshattributes[];
+  (b+1)=h"REGN"};
 
 / build the deps dict di.torq would assemble: injectables + this process's config slice.
 / discovery off, so startup dials process.csv directly (trackservers.q's own defaults are 1b).

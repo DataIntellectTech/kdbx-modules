@@ -158,6 +158,18 @@ postreplay:{[]
   (last POST)~today[]
   };
 
+/ a failing postreplay propagates out of end of day after the move, as TorQ's wdb: no reload, the partition does not advance
+failedpostreplay:{[]
+  freshwdb cfg[],(enlist`postreplay)!enlist {[d;p] '"boom"};
+  feed[];
+  e:@[{.u.end x;""};today[];{x}];
+  chk `signalled`moved`noreload`notadvanced!(
+    e~"boom";
+    0<count key hdbpart`trade;
+    not loggedlike[`info;"sending reload call*"];
+    today[]~.m.di.0torq.0proc.0wdb.currentpartition)
+  };
+
 compression:{[]
   freshwdb cfg[],(enlist`compression)!enlist 17 2 6;
   feed[];

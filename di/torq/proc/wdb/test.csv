@@ -50,8 +50,9 @@ true,0,0,q,segments[],1,,an intraday flush writes one segment per parted value a
 true,0,0,q,failedmerge[],1,,a failed merge signals out of end of day and leaves the segments on disk
 true,0,0,q,missingtables[],1,,startup writes empty table schemas into the working partition
 true,0,0,q,tabsizes[],1,,tablelist orders tables by bytes written
-true,0,0,q,manipulation[],1,,savedownmanipulation is applied before a table is written
+true,0,0,q,manipulation[],1,,savedownmanipulation is applied once before a table is written (5 doubled to 10)
 true,0,0,q,postreplay[],1,,postreplay is called after the move
+true,0,0,q,failedpostreplay[],1,,a failing postreplay stops end of day after the move: no reload and the partition does not advance (as TorQ's wdb)
 true,0,0,q,compression[],1,,compression is applied to the hdb and reset afterwards
 true,0,0,q,fixpartition[],1,,data replayed into the wrong partition is moved to the tp log date
 true,0,0,q,tpretry[],1,,init fails when no tickerplant connects within tpwaittimeout

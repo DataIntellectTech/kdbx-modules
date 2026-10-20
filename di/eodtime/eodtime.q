@@ -68,6 +68,10 @@ getroll:{[p]
 getd:{d};
 getnextroll:{nextroll};
 getdailyadj:{dailyadj};
+/ the settings, as legacy's .eodtime.rolltimezone/datatimezone/rolltimeoffset (read by dataaccessutils.q:11)
+getrolltimezone:{rolltimezone};
+getdatatimezone:{datatimezone};
+getrolltimeoffset:{rolltimeoffset};
 
 / state setters
 setnextroll:{.z.m.nextroll:x};

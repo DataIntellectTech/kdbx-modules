@@ -29,7 +29,6 @@ init:{[config;deps]
   .z.m.schema:config`schema;
   .z.m.clearlogonsubscription:config`clearlogonsubscription;
   .z.m.tpcheckcycles:config`tpcheckcycles;
-  if[0<>(`long$pubinterval) mod 1000000000;'"di.torq.proc.chainedtp: pubinterval must be a whole number of seconds"];
   (deps[`handlers]`register)[`.z.pc;`;`chainedtp;0j;{[y] if[tph=y;.z.m.log[`error][`.z.pc;"lost connection to tickerplant : ",string tickerplantname];exit 0]}];
   .z.m.upd:$[createlogfile;
     $[pubinterval;{[t;x] writetolog[t;x];batchpub[t;x];};{[t;x] writetolog[t;x];tickpub[t;x];}];

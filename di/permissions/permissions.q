@@ -3,10 +3,11 @@
 / function execution); virtual tables enforce a where clause on a real table. The module owns the
 / `exec` phase of the message handlers, so it decides whether a request is evaluated at all.
 / ---
-/ The public surface is published at root `.pm.*` rather than exported, because the rule files that
-/ populate the schema are plain q loaded at root and call `.pm.addrole[...]` by name - TorQ's own
-/ permissions files therefore load here unchanged - and because di.torq.proc.gateway reads
-/ `.pm.allowed`/`.pm.valp`/`.pm.val`/`.pm.execas` by symbol. `export` carries only init/version.
+/ The admin api and the query entry points are EXPORTED, so the rule files that populate the schema
+/ reach them through `use` rather than through a root namespace. Only the four names
+/ di.torq.proc.gateway reads by symbol are published at root: `.pm.allowed`, `.pm.execas`,
+/ `.pm.val` and `.pm.valp`. TorQ's own permissions files therefore need their `.pm.x[...]` calls
+/ rewritten as `pm[`x][...]`; see permissions.md.
 / ---
 / Behaviour matches TorQ, including one known weakness documented in permissions.md: the lambda
 / path (lamq) only rejects variable names its own introspection returns, so a name it cannot see
@@ -238,8 +239,12 @@ parsequery:{[q] q:$[10=type q;q;10h=abs type f:first q;destringf[f],1_ q;q]};
 
 destringf:{$[(s:`$x)in key`.q;.q s;s~`insert;insert;any (100h; 104h)=type first f: @[parse; x; 0];f;s]};
 
+/ check only, never evaluates. A stable name delegating to the projection init builds, so that
+/ export (which resolves names at load) and the published root name both stay valid.
+allowed:{[u;q] .z.m.allowedfn[u;q]};
+
 / would this query be permitted - the check without the evaluation
-cando:{[u;q] q:parsequery[q]; $[.z.m.enabled;.z.m.allowed[u;q];1b]};
+cando:{[u;q] q:parsequery[q]; $[.z.m.enabled;allowed[u;q];1b]};
 
 / check and run a query as a named user
 requ:{[u;q] q:parsequery[q]; $[.z.m.enabled; .z.m.expr[u;q]; .z.m.valp q]};
@@ -295,36 +300,29 @@ droppublic:{[w]
 consoleinput:{[x] $[x in (1#"\n";"");.Q.s value x;.Q.s $[.z.w=0;value;req]@x]};
 
 getapimeta:{[]
-  / the admin api, as TorQ's apidetails.q registers it. names are the published root names
+  / the admin api, as TorQ's apidetails.q registers it. names are bare, as di.torq.servers'
+  / getapimeta does - di.torq qualifies them when it registers them with di.api
   :flip `name`public`descrip`params`return!flip(
-    (`.pm.adduser;           1b; "add a user, their authentication type, hash type and hashed password"; "[symbol: username; symbol: authtype; symbol: hashtype; string: hashed password]"; "null");
-    (`.pm.addgroup;          1b; "add a group, which controls access to tables and variables";           "[symbol: group name; string: description]";                                      "null");
-    (`.pm.addrole;           1b; "add a role, which controls function execution";                        "[symbol: role name; string: description]";                                       "null");
-    (`.pm.addtogroup;        1b; "add a user to a group, granting its variable access";                  "[symbol: username; symbol: group name]";                                         "null");
-    (`.pm.assignrole;        1b; "assign a role to a user, granting its function access";                "[symbol: username; symbol: role name]";                                          "null");
-    (`.pm.grantaccess;       1b; "give a group read or write access to a variable";                      "[symbol: object; symbol: group; symbol: level (read|write)]";                     "null");
-    (`.pm.grantfunction;     1b; "give a role access to a function, with a parameter check";             "[symbol: object; symbol: role; function: paramcheck returning a boolean]";       "null");
-    (`.pm.createvirtualtable;1b; "create a virtual table enforcing a where clause on a real table";      "[symbol: virtual name; symbol: real table; parse tree: where clause]";           "null");
-    (`.pm.cloneuser;         1b; "add a user with the groups and roles of an existing user";              "[symbol: existing username; symbol: new username; symbol: new password]";        "null"));
+    (`adduser;           1b; "add a user, their authentication type, hash type and hashed password"; "[symbol: username; symbol: authtype; symbol: hashtype; string: hashed password]"; "null");
+    (`addgroup;          1b; "add a group, which controls access to tables and variables";           "[symbol: group name; string: description]";                                      "null");
+    (`addrole;           1b; "add a role, which controls function execution";                        "[symbol: role name; string: description]";                                       "null");
+    (`addtogroup;        1b; "add a user to a group, granting its variable access";                  "[symbol: username; symbol: group name]";                                         "null");
+    (`assignrole;        1b; "assign a role to a user, granting its function access";                "[symbol: username; symbol: role name]";                                          "null");
+    (`grantaccess;       1b; "give a group read or write access to a variable";                      "[symbol: object; symbol: group; symbol: level (read|write)]";                     "null");
+    (`grantfunction;     1b; "give a role access to a function, with a parameter check";             "[symbol: object; symbol: role; function: paramcheck returning a boolean]";       "null");
+    (`createvirtualtable;1b; "create a virtual table enforcing a where clause on a real table";      "[symbol: virtual name; symbol: real table; parse tree: where clause]";           "null");
+    (`cloneuser;         1b; "add a user with the groups and roles of an existing user";              "[symbol: existing username; symbol: new username; symbol: new password]";        "null"));
   };
 
-/ the root `.pm.*` surface: the admin api the rule files call by name, and the entry points
-/ di.torq.proc.gateway reads by symbol. Published whether or not permissions are enabled, because
-/ the gateway tests for these names and TorQ's \d .pm defines them unconditionally.
+/ the only root names this module needs: the four di.torq.proc.gateway reads by symbol. The admin
+/ api and the other entry points are reached through the module's export, not through a root
+/ namespace. Published whether or not permissions are enabled, because the gateway tests for
+/ these names and TorQ's \d .pm defines them unconditionally.
+/ `execas` is the one a peer invokes remotely - the gateway rewrites a query to
+/ (`.pm.execas;query;user) and sends it to a backend, which re-checks it as the original user.
 publishroot:{[]
-  adminapi:`adduser`removeuser`addgroup`removegroup`addrole`removerole`addtogroup`removefromgroup,
-    `assignrole`unassignrole`addfunction`removefunction`grantaccess`revokeaccess`grantfunction,
-    `revokefunction`createvirtualtable`removevirtualtable`addpublic`removepublic`cloneuser;
-  / .z.m is the module namespace, so index it for this module's own function objects - a bare
-  / `get` on the symbol would resolve at root, where these names do not exist yet
-  set'[` sv/:`.pm,/:adminapi;.z.m adminapi];
-  set[`.pm.ALL;ALL];
-  set[`.pm.allowed;.z.m.allowed];
-  set[`.pm.cando;cando];
-  set[`.pm.requ;requ];
-  set[`.pm.req;req];
+  set[`.pm.allowed;allowed];
   set[`.pm.execas;execas];
-  set[`.pm.login;login];
   set[`.pm.val;.z.m.val];
   set[`.pm.valp;.z.m.valp];
   };
@@ -349,7 +347,7 @@ init:{[config;deps]
   .z.m.valp:$[ro;{reval parse x};value];
   / runmode baked in: 1b checks and evaluates, 0b returns the boolean only
   .z.m.expr:mainexpr[;;.z.m.runmode;.z.m.permissivemode];
-  .z.m.allowed:mainexpr[;;0b;0b];
+  .z.m.allowedfn:mainexpr[;;0b;0b];
   publishroot[];
   if[not .z.m.enabled;
     .z.m.log[`info][`permissions;"permissions are disabled - no handlers registered"];

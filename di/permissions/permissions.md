@@ -11,18 +11,32 @@ Ported line for line. The one deliberate difference from TorQ is noted under
 
 ---
 
-## The root `.pm.*` surface
+## The `.pm` namespace
 
-Unlike other `di.*` modules, the public API is **published at root `.pm.*`**, not exported.
-`export` carries only `init`, `getapimeta` and `version`. Two reasons:
+The admin API and query entry points are **exported**, so callers reach them through `use`:
 
-- the **rule files** that populate the schema are plain q loaded at root and call
-  `.pm.addrole[...]` by name, so **TorQ's own permissions files load here unchanged**;
-- **`di.torq.proc.gateway`** reads `.pm.allowed` / `.pm.valp` / `.pm.val` / `.pm.execas` /
-  `.pm.requ` by symbol.
+```q
+pm:use`di.permissions;
+pm[`addrole][`reader;"read only"];
+```
 
-The root names are published on every `init`, **whether or not permissions are enabled** — the
-gateway tests for them, and TorQ's `\d .pm` defines them unconditionally.
+Only the **four** names `di.torq.proc.gateway` reads by symbol are published at root:
+
+| Root name | Read by |
+|---|---|
+| `.pm.allowed` | the gateway, before dispatching a query |
+| `.pm.val` / `.pm.valp` | the gateway, to pick `eval`/`value` or their `reval` forms |
+| `.pm.execas` | a **backend**, which the gateway sends `(`.pm.execas;query;user)` so the query is re-checked as the original user |
+
+Those four are published on every `init`, **whether or not permissions are enabled** — the
+gateway tests for them, and TorQ's `\d .pm` defines them unconditionally. Nothing else goes
+into a root namespace; `test.csv` asserts `.pm` holds exactly those four.
+
+> **Migrating TorQ permissions files.** TorQ's rule files call `.pm.addrole[...]` at root. Here
+> the admin API is exported, so each call becomes `pm[`addrole][...]` after a
+> `pm:use`di.permissions`. Mechanical, but it is a required rewrite — the files do not port
+> verbatim. This is a deliberate trade for keeping the module out of a root namespace, in line
+> with the KX module guidance.
 
 ---
 
@@ -110,7 +124,8 @@ All published at root. `ALL` (`` `$"*" ``) is the wildcard: a role granted `ALL`
 `addpublic` `removepublic` `cloneuser`
 
 Signatures and descriptions for the nine that TorQ documents are in `getapimeta[]`, which
-`di.torq` registers with `di.api`.
+`di.torq` registers with `di.api`. Names there are bare, as `di.torq.servers`' `getapimeta`
+does it — `di.torq` qualifies them.
 
 Guards, as TorQ's: a user may not take an existing group's name (and vice versa), and
 `addtogroup` / `assignrole` require the group / role to exist.
@@ -121,12 +136,12 @@ Guards, as TorQ's: a user may not take an existing group's name (and vice versa)
 
 | Name | Signature | Behaviour |
 |---|---|---|
-| `.pm.req` | `[query]` | the handler entry point. Local calls bypass the check |
-| `.pm.requ` | `[user;query]` | check and run as a named user |
-| `.pm.cando` | `[user;query]` | would this be permitted — `1b` when disabled |
-| `.pm.allowed` | `[user;parsetree]` | check only, never evaluates |
-| `.pm.execas` | `[query;user]` | run as another user, for a gateway passing the original user to a backend |
-| `.pm.val` / `.pm.valp` | | `eval`/`value`, or their `reval` forms under `readonly` |
+| `req` | `[query]` | the handler entry point. Local calls bypass the check |
+| `requ` | `[user;query]` | check and run as a named user |
+| `cando` | `[user;query]` | would this be permitted — `1b` when disabled |
+| `allowed` | `[user;parsetree]` | check only, never evaluates. Also at root |
+| `execas` | `[query;user]` | run as another user. Also at root |
+| `val` / `valp` | | `eval`/`value`, or their `reval` forms under `readonly`. Root only |
 
 **`allowed` deliberately ignores `runmode` and `permissivemode`** — it is
 `mainexpr[;;0b;0b]`, as in TorQ. Only `requ`/`req` honour them.
@@ -147,14 +162,17 @@ Every file that exists is loaded, in that order, and each simply calls the admin
 
 ```q
 / $TORQXAPPCONFIG/permissions/default.q
-.pm.addrole[`reader;"read only"];
-.pm.addgroup[`readers;"can read trade"];
-.pm.adduser[`bob;`local;`md5;md5"pass"];
-.pm.assignrole[`bob;`reader];
-.pm.addtogroup[`bob;`readers];
-.pm.grantaccess[`trade;`readers;`read];
-.pm.grantfunction[`select;`reader;{1b}];
+pm:use`di.permissions;
+pm[`addrole][`reader;"read only"];
+pm[`addgroup][`readers;"can read trade"];
+pm[`adduser][`bob;`local;`md5;md5"pass"];
+pm[`assignrole][`bob;`reader];
+pm[`addtogroup][`bob;`readers];
+pm[`grantaccess][`trade;`readers;`read];
+pm[`grantfunction][`select;`reader;{1b}];
 ```
+
+`use` returns the same module instance `di.torq` initialised, so a rule file is just a caller.
 
 The framework tier ships the `systemuser` grants that let TorqX processes call each other, so an
 app only declares its own users. Because the files are loaded **after** `init` and **before** the
@@ -198,6 +216,7 @@ belongs in its own change, with the migration impact assessed.
 | | TorQ | here |
 |---|---|---|
 | Handler binding | wraps the previous `.z.*` value by hand via `.dotz.set` | registers as the `exec` owner through `di.torq.handlers` |
+| Admin API location | root `.pm.*`, called directly by rule files | exported; rule files call `pm[`x][...]` through `use` |
 | `readonly` | read from `.readonly.enabled` (`writeaccess.q`) | a `readonly` config key |
 | `public` users | `-public` command-line flag via `.Q.opt .z.x` | a `public` config key |
 | Rule file roots | `$KDBCONFIG` + `$KDBAPPCONFIG` | `$TORQXHOME/di/torq` + `$TORQXAPPCONFIG` |
@@ -216,8 +235,9 @@ returns `0b`, as TorQ's does.
 
 ## Testing
 
-`test.csv` / `test.q` (k4unit), 53 checks with mock `log` and `handlers`: dependency validation,
-handler registration in the right phases, root publication (including when disabled), the admin
+`test.csv` / `test.q` (k4unit), 54 checks with mock `log` and `handlers`: dependency validation,
+handler registration in the right phases, root publication of exactly the four gateway names
+(including when disabled, and that the admin API is **not** in a root namespace), the admin
 API's name-clash and unknown-entity guards, read/write access discrimination, group nesting, a
 virtual table's enforced where clause, authentication, `maxsize`, `permissivemode` (and that
 `allowed` ignores it), and the disabled path.

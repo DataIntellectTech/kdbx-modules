@@ -2,8 +2,8 @@
 
 TorQ's `.servers` (`code/handlers/trackservers.q`) as a kdb-x module. The parts the discovery
 protocol uses are ported line for line and published at root names (`.servers.*`,
-`.dotz.liveh*`); the registry and settings are root `.servers.*` globals. No
-password/access-list files, no FinSpace. `log`, `timer` and `handlers` are injected (all required).
+`.dotz.liveh*`); the registry and settings are root `.servers.*` globals. No access-list files,
+no FinSpace. `log`, `timer` and `handlers` are injected (all required).
 
 ## init and config
 
@@ -44,6 +44,8 @@ supplies the discovery process's values.
 | `debug` | `.servers.DEBUG` | `1b` |
 | `startup` | `.servers.STARTUP` | `0b` — when set, di.torq runs `.servers.startup` after the process module loads (legacy torq.q l.673); `di/torq/settings/hdb.q` sets it, as legacy's hdb.q does |
 | `discovery` | `.servers.DISCOVERY` | `` enlist` `` |
+| `userpass` | `.servers.USERPASS` | `` ` `` — `user:pass` attached to every **outbound** connection. `di.torq` resolves it from a password file if the setting is absent (see below) |
+| `passwords` | `.servers.PASSWORDS` | empty dict — per-target override keyed on hpup, e.g. `` `:host:1234!`user:pass ``. Wins over `userpass` |
 
 ```q
 svc:use`di.torq.servers
@@ -83,7 +85,7 @@ Published at root by `init`, same bodies as legacy:
 | Name | trackservers.q |
 |---|---|
 | `.dotz.liveh` / `.dotz.livehn` / `.dotz.liveh0` | dotz.q l.8 |
-| `.servers.opencon` | l.50–59 (DEBUG logging; no passwords) |
+| `.servers.opencon` | l.50–59, plus `withcreds` for the password append |
 | `.servers.cleanup` | l.116–118 |
 | `.servers.addnthawc` | l.121–128 |
 | `.servers.getdetails` | l.137 |
@@ -131,7 +133,8 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
   live discovery rows.
 
 **Not ported** (discovery does not reach them):
-- passwords (`loadpassword`, `USERPASS`, `PASSWORDS`, `LOADPASSWORD`);
+- `loadpassword`/`LOADPASSWORD` — the credential **file read** lives in `di.torq` instead, so the
+  module reads no files (`USERPASS`/`PASSWORDS` themselves are ported — see "Outbound credentials");
 - `SOCKETTYPE`/FinSpace (so `formathp`'s ipctype is always `` `tcp `` from `formatprocs`/`addhw`,
   and `retryrows` dials `hpup`);
 - `getserverbytype`/`gethpbytype`;
@@ -166,3 +169,39 @@ q session with `QHOME` set to a q install whose `bin/q` can be launched:
 k4unit:use`di.k4unit
 k4unit.moduletest`di.torq.servers
 ```
+
+---
+
+## Outbound credentials
+
+`opencon` attaches `user:pass` to the connection string before dialling, as TorQ's does:
+
+```q
+withcreds:{[hpup]
+  s:string hpup;
+  tcps:s like ":tcps:*";
+  up:.servers.USERPASS^.servers.PASSWORDS hpup;
+  $[null up;hpup;(2+tcps)>=sum ":"=s;`$s,":",string up;hpup]
+  };
+```
+
+- a per-target `PASSWORDS` entry wins over `USERPASS`;
+- a hpup that **already** carries credentials is left alone — that is what the colon count tests
+  (`:host:port` has two, `:tcps://host:port` three);
+- with neither set, the string is unchanged and the connection is anonymous, which is the
+  behaviour every release before this one had.
+
+**Why it matters.** A process that permissions its own message handlers (`di.permissions`) refuses
+an unauthenticated peer, so without credentials an otherwise healthy stack cannot connect to
+itself — the rdb cannot reach the tickerplant, the gateway cannot reach its backends, and
+discovery collapses. Connection management and access control have to agree on this, which is why
+the setting lives here rather than in `di.permissions`.
+
+**Where the credentials come from.** The module reads no files. `di.torq` resolves `userpass` from
+`$TORQXAPPCONFIG/passwords/{default|<proctype>|<procname>}.txt` — one line, `user:pass`, most
+specific file wins — and passes it in config, unless the settings cascade already named it. That
+mirrors TorQ's hierarchic `loadpassword`.
+
+The file is **plaintext on disk**, as TorQ's is, and TorQ's own comment says what to do about it:
+*"If required, change this method to something more secure!"* The credentialed connection string is
+never logged.

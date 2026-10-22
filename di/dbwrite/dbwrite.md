@@ -2,7 +2,7 @@
 
 Write, sort, and attribute utilities for kdb+ processes that persist data to disk (rdb, wdb, tickerlogreplay).
 
-A **config table** (`tabname`,`att`,`column`,`sort`) drives which columns are sorted and which attributes are applied per table. Load it once with `readcsv` (from a CSV) or `setconfig` (from an in-memory table); `sort` and `savedown` read from module state automatically. A table with no explicit entry falls back to a `default` row; if no config has been loaded, the built-in default (sort every table by `time` ascending) applies.
+A **config table** (`tabname`,`att`,`column`,`sort`) drives which columns are sorted and which attributes are applied per table. Load it once with `readcsv` (from a CSV) or `setconfig` (from an in-memory table); `sort` and `savedown` read from module state automatically. A table with no explicit entry falls back to a `default` row; if no config has been loaded, the built-in default (`p#` on `sym`, sorted by `sym` then `time`) applies.
 
 ---
 

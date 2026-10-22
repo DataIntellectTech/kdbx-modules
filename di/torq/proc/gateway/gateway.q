@@ -49,13 +49,34 @@ registerbackends:{[]
     .z.m.log[`info][`gateway;"registered ",(string count ct)," backend server(s): ",", " sv string exec distinct proctype from ct]];
   }
 
+/ --- permission hooks (di.permissions) ---------------------------------------------------
+/ di.permissions publishes .pm.allowed and .pm.execas at root when it is loaded and enabled.
+/ Both are tested for presence, as TorQ's gateway does, so a gateway running without the module
+/ behaves exactly as it did before.
+
+/ may this user run this query through the gateway at all
+permitted:{[u;query] $[`allowed in key `.pm;.pm.allowed[u;query];1b]}
+
+/ rewrite a query so the BACKEND re-checks it as the original user, rather than trusting the
+/ gateway as the enforcement point. The guard runs at the backend, not here: the gateway cannot
+/ know whether a given backend has permissions loaded, so the test travels with the query.
+execas:{[query;u] ({[u;q] $[`execas in key `.pm;.pm.execas[q;u];$[`valp in key `.pm;.pm.valp q;value q]]};u;query)}
+
 / client entry point (published at root as .gw.asyncexecjpt): full control over join/postback/timeout.
 / protected so a routing/dispatch error becomes a formatted reply to the client rather than an
 / uncaught error on the async handler.
 asyncexecjpt:{[query;servertype;join;postback;timeout]
   if[.z.m.eod;@[neg .z.w;.z.m.errorprefix,"gateway in eod reload - retry shortly";()];:()];
+  u:.z.u;
+  if[.z.m.permissioned;
+    if[not permitted[u;query];
+      @[neg .z.w;.z.m.errorprefix,"user is not permissioned to run this query from the gateway";()];
+      :();
+    ]];
+  / unpermissioned, execas is the identity on the query, so the dispatch is unchanged
+  q:$[.z.m.permissioned;execas[query;u];query];
   .[{[q;s;j;p;t] (.z.m.ad`execquery)[q;resolvetypes s;j;p;t;0b]};
-    (query;servertype;join;postback;timeout);
+    (q;servertype;join;postback;timeout);
     {[e] @[neg .z.w;.z.m.errorprefix,e;()]}];
   }
 
@@ -80,6 +101,10 @@ init:{[config;deps]
   .z.m.timer:deps`timer;
   .z.m.backendtypes:$[`backendtypes in key config;astoklist config`backendtypes;`rdb`hdb];
   .z.m.errorprefix:$[`errorprefix in key config;config`errorprefix;"error: "];
+  / check queries against di.permissions before dispatching, and run them on the backends as the
+  / calling user. Independent of di.permissions' own `enabled`, as TorQ's .gw.permissioned is
+  / independent of .pm.enabled - a gateway may be permissioned while a backend is not.
+  .z.m.permissioned:$[`permissioned in key config;`boolean$config`permissioned;0b];
   .z.m.eod:0b;
 
   / di.serverselect - registry + routing. log dep is binary {[c;m]}, matching di.torq's inject.

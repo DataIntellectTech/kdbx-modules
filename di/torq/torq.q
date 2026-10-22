@@ -229,7 +229,10 @@ loadpermissionrules:{[lg;config;proctype;procname]
   sect:$[`permissions in key config;config`permissions;()!()];
   if[not $[`enabled in key sect;`boolean$sect`enabled;0b];:()];
   tiers:distinct `default,proctype,procname;
-  files:raze permissionroots[] cross {[t] "/",(string t),".q"} each tiers;
+  sfxs:{[t] "/",(string t),".q"} each tiers;
+  / root-major: every framework tier, then every app tier (`cross` here would concatenate the
+  / whole lot into one string, not pair them)
+  files:raze {[r;s] r,/:s}[;sfxs] each permissionroots[];
   {[lg;f] if[not ()~key hsym `$f; system "l ",f; lg[`info][`torq;"loaded permission rules ",f]]}[lg] each files;
   }
 

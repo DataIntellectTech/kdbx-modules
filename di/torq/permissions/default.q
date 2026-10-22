@@ -1,12 +1,12 @@
 / framework permission rules, loaded into every process when [permissions] enabled=true.
 / Defines the `systemuser` role and group that let TorqX processes call each other, so an app
 / only has to declare its own users and assign them this role and group:
-/
+/ -
 /   pm:use`di.permissions;
 /   pm[`adduser][`rdb1;`local;`md5;md5"pass"];
 /   pm[`assignrole][`rdb1;`systemuser];
 /   pm[`addtogroup][`rdb1;`systemuser];
-/
+/ -
 / This is the equivalent of TorQ's $KDBCONFIG/permissions/default.q. The app tier
 / ($TORQXAPPCONFIG/permissions/) is loaded after this one and adds to it.
 

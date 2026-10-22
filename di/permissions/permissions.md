@@ -211,6 +211,56 @@ belongs in its own change, with the migration impact assessed.
 
 ---
 
+---
+
+## List-form IPC messages and `eval`
+
+A **received IPC list** carries literal arguments; a **parse tree** from `parse` carries symbols
+as variable *references*. The two need different evaluation, and `qexe` uses `eval` for both:
+
+```q
+eval  (value;`.wdb.savedir)   / 'No such file or directory - resolves the symbol first
+value (value;`.wdb.savedir)   / `:/some/path - correct for a received message
+parse "value `.wdb.savedir"   / (.:;,`.wdb.savedir)  <- a parse tree ENLISTS the literal
+```
+
+`exe` discriminates by the head's type and so picks `value` for a symbol-headed call such as
+`` (`.gw.reload;`reloadstart) ``. `qexe` — the path a `.q`-keyword expression takes — does not,
+so a **function-headed** message whose arguments are symbols is mis-evaluated.
+
+The case that bites is the idb reading the wdb. Both TorQ's `code/processes/idb.q` l.70 and
+`di.torq.proc.idb` send:
+
+```q
+(each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition`.wdb.writedownmode)
+```
+
+Under permissions this returns the wdb's partition dictionary for `savedir`, `'type` for the
+partition date and `'default` for the writedown mode. Worse, no narrow grant can authorise it
+either: the check falls back to `` `$string(first e) ``, and `.q.each` is a lambda, so that
+yields `` `k){x'y} `` rather than `` `each ``.
+
+**This is TorQ's behaviour and is deliberately preserved.** TorQ hits it too — its own `idb` user
+holds only `systemuser`, so a permissioned wdb would refuse it; TorQ never meets the failure
+because nobody enables permissions on a wdb that has an idb.
+
+The supported workaround is the one TorQ itself uses for its gateway, with the candid comment
+*"The gateway is made an administrator as it cannot properly permission without total access"*
+(`config/permissions/default.q` l.111): **give the inter-process identity a superuser role.**
+TorqX-POC does this for its `torqx` user and demonstrates least privilege with a separate
+`trader` user instead.
+
+Fixing it means making `qexe` discriminate as `exe` does, which is a behaviour change and
+belongs in its own change with the migration impact assessed.
+
+## Async refusals are silent
+
+A refusal on `.z.ps` throws on the async handler, and an async caller has nobody to reply to — so
+the client blocks on its deferred-sync read instead of seeing an error, and the process logs the
+throw. Anything dispatched asynchronously therefore needs its entry point granted *before* the
+request reaches the callee's own checks. TorQ's gateway sends a formatted reply on refusal for
+exactly this reason.
+
 ## Differences from TorQ
 
 | | TorQ | here |

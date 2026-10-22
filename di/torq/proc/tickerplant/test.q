@@ -60,6 +60,14 @@ logcount:{[dir] c:-11!(-2;hsym`$dir,"/tp",string "d"$.z.p); $[0>type c;c;first c
 loghas:{[sub;n] n=logcount[BASE,"/",sub]}
 flushperiodok:{[] 0D00:00:02=first exec period from timercalls where id=`tpflush}
 rolledfile:{[sub;date] not ()~key hsym`$BASE,"/",sub,"/tp",string date}
+/ an upd arriving after the roll time: put the roll 1s in the past, send one trade (stamped by the feed or not),
+/ return (date before;date after;messages in the next day's log)
+pastroll:{[sub;stamped]
+  (use`di.eodtime)[`setnextroll] .z.p-0D00:00:01;
+  d0:.u.d;
+  upd[`trade;$[stamped;(.z.p;`R;1f;1i);(`R;1f;1i)]];
+  f:hsym`$BASE,"/",sub,"/tp",string d0+1;
+  (d0;.u.d;$[()~key f;0;first -11!(-2;f)])}
 
 / init helpers that store handles / state for assertions
 doinit:{[cfg] resetcalls[]; resettimer[]; resethandlers[]; (tk`init)[cfg;deps[]]; }

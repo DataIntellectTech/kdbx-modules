@@ -37,7 +37,10 @@ stamp:{[x]
 / stamps, logs (unless replaying - logh is 0 during the replay inside tplog.open), then
 / publishes immediately or buffers into the root table for the flush job.
 upd:{[t;x]
-  x:stamp tocols x;
+  x:tocols x;
+  / roll the day first if past the roll: always when immediate, for unstamped data when batched
+  if[$[.z.m.batchms>0;not -12=type first first x;1b];eodcheck[]];
+  x:stamp x;
   if[.z.m.logh>0;(.z.m.tp`write)[.z.m.logh;(`upd;t;x)];.u.i+:1];
   if[count .z.m.tplogdir;.u.icounts[t]+:count first x];
   $[.z.m.batchms>0;

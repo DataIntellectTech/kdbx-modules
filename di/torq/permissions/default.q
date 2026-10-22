@@ -68,3 +68,12 @@ pm[`grantaccess][`heartbeat;`systemuser;`read];
 pm[`grantaccess][`heartbeat;`systemuser;`write];
 pm[`grantaccess][`logmsg;`systemuser;`read];
 pm[`grantaccess][`logmsg;`systemuser;`write];
+
+/ kdb reports .z.u as the NULL symbol for a message arriving on a handle THIS process opened, so a
+/ peer's reply (a gateway callback, say) is attributed to no user. TorQ covers this with a
+/ null-named user holding systemuser (config/permissions/default.q l.104). Same here, except the
+/ authtype is `none, which is absent from the auth dictionary, so login always refuses it - the
+/ roles apply to replies on already-open handles without making it a credential anyone can use.
+pm[`adduser][`;`none;`none;""];
+pm[`assignrole][`;`systemuser];
+pm[`addtogroup][`;`systemuser];

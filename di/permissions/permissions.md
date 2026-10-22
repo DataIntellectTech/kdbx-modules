@@ -209,6 +209,26 @@ scannable root namespaces), so the module carries its own private equivalents.
 Tightening this — failing closed on anything introspection cannot see — is a behaviour change and
 belongs in its own change, with the migration impact assessed.
 
+### The tokenizer is trapped
+
+`lamq` finds candidate names by stringifying the flattened expression and tokenizing it with
+`-4!`. That string is q's **display form**, and q elides a long function body with `..`, which can
+cut a closing bracket:
+
+```
+source of the bare lambda  : open 4 / close 4     balanced
+string of the projection   : open 4 / close 3     unbalanced -> -4! signals '[
+```
+
+The string is therefore not reliably parseable even in principle, so the `-4!` call is trapped and
+a failure yields no candidate names — the same outcome `lamq` already produces for a name its scan
+does not recognise. Untrapped, any dispatched message carrying a long enough function is refused
+with an opaque `'[` and, on an async handler, with no reply at all.
+
+**This is the one place the module diverges from TorQ**, and it is a crash fix rather than a policy
+change: TorQ's own gateway lambda is short enough to stringify intact, so TorQ never signals here
+with its own payloads (verified — see below). `di.asyncdispatch`'s payload is longer and does.
+
 ---
 
 ---
@@ -282,6 +302,56 @@ legacy `.ldap` code loaded in the process; there is no `di.ldap`, so without it 
 returns `0b`, as TorQ's does.
 
 ---
+
+---
+
+## Verifying the inherited behaviour against TorQ
+
+The claims above about TorQ were checked by **running TorQ's own code**, not by reading it. Load
+`TorQ/code/handlers/permissions.q` with stubs for the few externals it touches at load time
+(`.lg.o/.w/.e`, `.dotz.set`, `.dotz.getcommand`, and `.api.allns`/`.api.varnames` copied from
+TorQ's `code/common/api.q`), then load TorQ's real `config/permissions/default.q` and set
+`.pm.enabled:1b`. `.pm.enabled` defaults to `0b`, so `permissions.q` loads without running `init[]`
+or its config cascade.
+
+**TorQ's own role assignments**
+
+| user | roles |
+|---|---|
+| `idb` | `systemuser` |
+| `gateway` | `systemuser`, `administrator` (i.e. `ALL`) |
+
+The gateway's superuser role is deliberate, with TorQ's own comment at
+`config/permissions/default.q` l.111: *"The gateway is made an administrator as it cannot properly
+permission without total access"*.
+
+**The wdb read, as TorQ's idb sends it**
+
+```q
+idbmsg:(each;value;`.wdb.savedir`.wdb.hdbdir`.wdb.currentpartition`.wdb.writedownmode);
+
+.pm.requ[`idb;idbmsg]    / "pm: unsupported expression, superuser only"
+.pm.requ[`admin;idbmsg]  / "/some/wdb. OS reports: No such file or directory"
+```
+
+So TorQ refuses it for its own `idb` user, and mis-evaluates it even for a superuser — the two
+behaviours this module preserves, and the reason the inter-process identity needs a superuser role.
+
+**The tokenizer, where TorQ differs**
+
+TorQ's gateway dispatch lambda (`code/processes/gateway.q` l.447) passes:
+
+```q
+.pm.requ[`admin;(torqdispatch;"select cnt:count i from trade")]   / () - no throw
+```
+
+while `di.asyncdispatch`'s payload signals `'[` untrapped. Holding the lambda constant shows the
+trigger is the elision, not the projection:
+
+```
+same lambda, unprojected : open 4 / close 4  -> ok
+same lambda, projected   : open 4 / close 3  -> signals
+```
 
 ## Testing
 

@@ -80,4 +80,9 @@ comment,0,0,q,,1,,--- api metadata ---
 true,0,0,q,`name`public`descrip`params`return~cols pm[`getapimeta][],1,,getapimeta returns the registry shape
 true,0,0,q,all pm[`getapimeta][][`name] in key pm,1,,every documented name is an exported function
 
+comment,0,0,q,,1,,--- a dispatched payload q elides when stringified (di.asyncdispatch's shape) ---
+run,0,0,q,pm[`init][cfg[1b];mockdeps[]],1,,re-init with the defaults
+true,0,0,q,"runsok[`alice;elidedpayload[]]",1,,lamq's tokenizer must not signal on an elided function source
+true,0,0,q,"`.gw.addserverresult~first pm[`requ][`alice;elidedpayload[]]",1,,and the payload runs - it reports the result callback
+
 after,0,0,q,teardownfixture[],1,,drop the root fixture tables

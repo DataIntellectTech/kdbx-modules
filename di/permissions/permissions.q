@@ -193,8 +193,10 @@ lamq:{[u;e;b;pr]
   rt:rootvars[];
   / public tables are always readable
   rt:rt except distinct exec object from access where entity=`public;
-  / tokenize the flattened expression to find possible variable references
-  pq:`$distinct -4!raze(str flatten e),'" ";
+  / tokenize the flattened expression to find possible variable references. Trapped: the string is
+  / q's display form of the expression, which elides a long function body and can leave the
+  / brackets unbalanced, so -4! signals on it - see permissions.md
+  pq:`$distinct @[-4!;raze(str flatten e),'" ";()];
   rqt:rt inter pq;
   prohibited:rqt where not achk[u;;`read;pr] each rqt;
   if[count prohibited;'" | " sv err[`selt] each prohibited];

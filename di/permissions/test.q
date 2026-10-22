@@ -77,3 +77,14 @@ buildvirtual:{[]
   pm[`createvirtualtable][`vtrade;`trade;enlist (=;`sym;enlist `a)];
   pm[`grantaccess][`vtrade;`readers;`read];
   }
+
+/ a dispatched payload whose function source is long enough for q to elide when stringified -
+/ the shape di.asyncdispatch sends. Untrapped, lamq's -4! signals '[ on it. No reply leg, so it is
+/ safe to evaluate with no peer handle.
+elidedpayload:{[]
+  f:{[rescb;errcb;qid;query] res:@[{(0b;value x)};query;{(1b;"server: ",x)}]; $[res 0;(errcb;qid;res 1);(rescb;qid;res 1)]};
+  (f[`.gw.addserverresult;`.gw.addservererror];1;"select cnt:count i from trade")
+  }
+
+/ did requ complete without signalling
+runsok:{[u;e] not `THREW~.[pm`requ;(u;e);{[err] `THREW}]}

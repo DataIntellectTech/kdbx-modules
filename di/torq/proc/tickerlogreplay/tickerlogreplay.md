@@ -7,8 +7,8 @@ at the end, or partition to a temporary directory and merge on disk.
 
 ## Files
 
-`init.q` loads `tickerlogreplay.q`: the module `init` and the `.replay.upd` hook. `init` reads the
-`.replay.savedownmanipulation` / `.replay.postreplay` hooks and hands them to di.dbwrite, which applies them.
+`init.q` loads `tickerlogreplay.q`. `init` reads the `upd`, `savedownmanipulation` and `postreplay` hooks from
+config (so a launched process sets them in its settings file) and hands the save down hooks to di.dbwrite.
 `sort.csv` is the default sort config.
 
 ## Surface
@@ -16,12 +16,15 @@ at the end, or partition to a temporary directory and merge on disk.
 | Name | What |
 |---|---|
 | `init[config;deps]` | applies the settings, checks them, loads the schema, and replays if `autoreplay` |
-| `.replay.upd[t;x]` | inserts a replayed message; set it before `use` to change how messages are applied |
-| `.replay.savedownmanipulation` / `.replay.postreplay[d;p]` | table!function applied before saving / called after each log is saved, through di.dbwrite; set them before `init` |
 
 ## Settings
 
-Every setting is required in `config` and kept module-private; `di/torq/settings/tickerlogreplay.q` declares
+Optional hooks, in config (a `.q` settings file, since TOML can't hold functions): `upd` `{[t;x]}` applies each
+replayed message (default insert); `savedownmanipulation` is table!function applied before saving;
+`postreplay` `{[d;p]}` is called after each log is saved. Before this they were root `.replay.upd`,
+`.replay.savedownmanipulation` and `.replay.postreplay`, set before `use`; those are no longer read.
+
+Every other setting is required in `config` and kept module-private; `di/torq/settings/tickerlogreplay.q` declares
 them all with these defaults:
 
 | Key | Default |

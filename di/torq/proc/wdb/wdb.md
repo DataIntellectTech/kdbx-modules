@@ -67,7 +67,7 @@ permitreload = true               # false: sort and move, but leave downstream a
 # subscribeto / subscribesyms omitted -> all tables, all syms
 # ignorelist omitted -> `heartbeat`logmsg (not written)
 # numtab (optional) -> per-table row thresholds; overrides numrows for those tables
-# sortcsv (optional) -> di.dbwrite sort/attribute config; else $TORQXAPPCONFIG/sort.csv if present, else time asc
+# sortcsv (optional) -> di.dbwrite sort/attribute config; else $TORQXAPPCONFIG/sort.csv if present, else the di.dbwrite default (sort by sym then time, p# on sym)
 ```
 
 The schema comes from the **tickerplant**, not a local `database.q`: `.sub.subscribe` finds the

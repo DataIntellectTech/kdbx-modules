@@ -71,4 +71,15 @@ fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;mocktimer;mo
 true,0,0,q,(asc (key svc) except `init`getapimeta)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the callable exports (plumbing omitted)
 true,0,0,q,not any `init`getapimeta in exec name from svc.getapimeta[],1,1,getapimeta omits plumbing (init/getapimeta not registered)
 true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapimeta rows carry the registry columns
+comment,,,,,,,outbound credentials - withcreds attaches user:pass so a permissioned peer accepts us
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`enabled`userpass!(mocklog;mocktimer;mockhandlers;`rdb;`p;0b;`admin:secret)]",1,1,init with a userpass
+true,0,0,q,`:localhost:5304:admin:secret~wc`:localhost:5304,1,1,credentials are appended to a plain host:port target
+true,0,0,q,`:tcps://localhost:5304:admin:secret~wc`:tcps://localhost:5304,1,1,a tcps target allows the extra colon before appending
+true,0,0,q,`:localhost:5304:bob:pw~wc`:localhost:5304:bob:pw,1,1,a target that already carries credentials is left alone
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`enabled`userpass`passwords!(mocklog;mocktimer;mockhandlers;`rdb;`p;0b;`admin:secret;(enlist `:localhost:5304)!enlist `svc:other)]",1,1,init with a per-target override
+true,0,0,q,`:localhost:5304:svc:other~wc`:localhost:5304,1,1,a per-target PASSWORDS entry wins over userpass
+true,0,0,q,`:localhost:5300:admin:secret~wc`:localhost:5300,1,1,other targets still fall back to userpass
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`enabled!(mocklog;mocktimer;mockhandlers;`rdb;`p;0b)]",1,1,re-init with no credentials configured
+true,0,0,q,`:localhost:5304~wc`:localhost:5304,1,1,with no credentials the target is unchanged - the pre-auth default
+
 after,0,0,q,teardownfixture[],1,1,kill the peer and remove the fixture dir

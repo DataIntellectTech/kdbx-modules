@@ -110,11 +110,12 @@ eodcheck:{[] if[(.z.m.eod`getnextroll)[]<.z.p;endofday[]];}
 / timezone values to symbols. rolltimeoffset only passed if already a timespan (TOML has
 / no timespan type, so a .toml settings file leaves it at eodtime's default).
 eoddeps:{[config;logdep]
-  d:enlist[`log]!enlist logdep;
-  if[`rolltimezone in key config;d[`rolltimezone]:astz config`rolltimezone];
-  if[`datatimezone in key config;d[`datatimezone]:astz config`datatimezone];
-  if[(`rolltimeoffset in key config) and -16h=type config`rolltimeoffset;d[`rolltimeoffset]:config`rolltimeoffset];
-  d
+  d:()!();
+  if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist astz config`rolltimezone];
+  if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist astz config`datatimezone];
+  if[(`rolltimeoffset in key config) and -16h=type config`rolltimeoffset;d:d,enlist[`rolltimeoffset]!enlist config`rolltimeoffset];
+  / joins not amends, log last: amending a typed or log-valued dict mangles mixed values
+  (enlist[`log]!enlist logdep),d
   }
 
 init:{[config;deps]

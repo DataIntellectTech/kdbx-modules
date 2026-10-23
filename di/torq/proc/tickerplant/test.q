@@ -47,6 +47,7 @@ badcfg:{[] enlist[`schemafile]!enlist BASE,"/badschema.q"}
 replaycfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/replog";BASE,"/database.q")}
 subdcfg:{[] `tplogdir`schemafile!(BASE,"/subdlog";BASE,"/database.q")}
 subdbcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/subdblog";BASE,"/database.q")}
+tzcfg:{[] `schemafile`rolltimezone`datatimezone`rolltimeoffset!(BASE,"/database.q";`$"America/New_York";`$"Asia/Tokyo";0D01)}
 / -t decides the mode, as TorQ's tickerplant.q: timerms (q's -t, stamped by di.torq) 200, null or 0
 tcfg:{[ms] `timerms`schemafile!(ms;BASE,"/database.q")}
 

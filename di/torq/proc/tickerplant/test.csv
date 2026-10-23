@@ -75,5 +75,9 @@ true,0,0,q,(1+R2 0)=R2 1,1,,batched unstamped: the upd rolled the day before log
 true,0,0,q,1=R2 2,1,,batched unstamped: the row went to the next day's log
 run,0,0,q,R3:pastroll["batchlog";1b],1,,a feed-stamped upd 1s after the next roll
 true,0,0,q,(R3 0)=R3 1,1,,batched feed-stamped: no roll in upd (as TorQ: the check is inside its unstamped branch); tpeodcheck rolls it
+run,0,0,q,doinit[tzcfg[]],1,,init with rolltimezone datatimezone and rolltimeoffset set
+true,0,0,q,(tzcfg[]`rolltimezone)~(use`di.eodtime)[`getrolltimezone][],1,,rolltimezone reaches di.eodtime as a symbol
+true,0,0,q,(tzcfg[]`datatimezone)~(use`di.eodtime)[`getdatatimezone][],1,,datatimezone reaches di.eodtime as a symbol
+true,0,0,q,0D01~(use`di.eodtime)[`getrolltimeoffset][],1,,rolltimeoffset reaches di.eodtime as a timespan
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

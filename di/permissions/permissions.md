@@ -233,6 +233,31 @@ with its own payloads (verified — see below). `di.asyncdispatch`'s payload is 
 
 ---
 
+## A cycle in the group graph hangs
+
+`achk` chases nested groups with a converge:
+
+```q
+g:raze over (exec groupname by user from usergroup)\[u];
+```
+
+Group nesting is a documented feature — a group may be listed as a *user* in `usergroup`, and
+inherits that group's access. But q's converge stops only when a result repeats the **previous**
+value or the **initial** one, so a cycle that excludes the starting point satisfies neither and
+spins forever. Measured: with `alice → ga`, `ga → gb`, `gb → ga`, the process does not return and
+does not even service `SIGTERM` — it needs `SIGKILL`.
+
+The consequence is that one misconfigured rule file makes **every access check hang at 100% CPU**.
+It is an availability problem rather than an authorisation one: a client cannot create groups, as
+the admin API is only reachable from root-loaded rule files.
+
+**This is TorQ's behaviour and is preserved.** `permissions.q:101` there is character-identical,
+with the same comment. DECIDED: keep for parity. A fix would bound the scan with a visited set or
+cap the iterations at `count usergroup`, and belongs in its own change.
+
+Until then: **do not create cyclic group membership.** A group hierarchy must be a tree.
+
+
 ## List-form IPC messages and `eval`
 
 A **received IPC list** carries literal arguments; a **parse tree** from `parse` carries symbols

@@ -62,6 +62,14 @@ permitted:{[u;query] $[`allowed in key `.pm;.pm.allowed[u;query];1b]}
 / know whether a given backend has permissions loaded, so the test travels with the query.
 execas:{[query;u] ({[u;q] $[`execas in key `.pm;.pm.execas[q;u];$[`valp in key `.pm;.pm.valp q;value q]]};u;query)}
 
+/ `permissioned` and di.permissions' own `enabled` are independent, as TorQ's .gw.permissioned is
+/ independent of .pm.enabled - a gateway may be permissioned while a backend is not. Setting the
+/ one without the other leaves a gateway that believes it is enforcing and is not, so say so.
+checkpermissioned:{[]
+  if[.z.m.permissioned and not `allowed in key `.pm;
+    .z.m.log[`warn][`gateway;"permissioned=1b but di.permissions is not loaded here - queries are NOT checked at this gateway"]];
+  }
+
 / client entry point (published at root as .gw.asyncexecjpt): full control over join/postback/timeout.
 / protected so a routing/dispatch error becomes a formatted reply to the client rather than an
 / uncaught error on the async handler.
@@ -166,5 +174,9 @@ init:{[config;deps]
   (.z.m.timer`addjob)[`gwrminactive;{(.z.m.ad`removeinactive)[0D01:00]};();300;1h;()!()];
   (.z.m.timer`addjob)[`gwrmclients;{(.z.m.ad`removeclients)[0D01:00]};();300;1h;()!()];
 
+  / di.torq calls .gateway.run[] after every module, the rule cascade and app code have loaded,
+  / which is the earliest point at which di.permissions' root names are observable - init itself
+  / runs before initpermissions, so the check cannot live there.
+  set[`.gateway.run;checkpermissioned];
   .z.m.log[`info][`gateway;"initialised, backendtypes=",(", " sv string .z.m.backendtypes)];
   }

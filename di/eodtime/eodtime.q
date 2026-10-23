@@ -48,7 +48,9 @@ getday:{[p]"d"$(p+adjtime[p])-rolltimeoffset};
 getdailyadjustment:{
   / utc-equivalent timezones have zero offset
   if[datatimezone in utczones;:0D];
-  `timespan$tz.gmttolocal[datatimezone;.z.p]-.z.p
+  / one clock read, so the offset is exact
+  p:.z.p;
+  `timespan$tz.gmttolocal[datatimezone;p]-p
   };
 
 / returns normalised roll time-of-day (utc) for the zone offset at timestamp p, wrapped to [0D,1D)
@@ -66,6 +68,10 @@ getroll:{[p]
 getd:{d};
 getnextroll:{nextroll};
 getdailyadj:{dailyadj};
+/ the settings, as legacy's .eodtime.rolltimezone/datatimezone/rolltimeoffset (read by dataaccessutils.q:11)
+getrolltimezone:{rolltimezone};
+getdatatimezone:{datatimezone};
+getrolltimeoffset:{rolltimeoffset};
 
 / state setters
 setnextroll:{.z.m.nextroll:x};

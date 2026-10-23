@@ -29,11 +29,25 @@ true,0,0,q,subdetailsbatchedok[],1,,batched: subdetails flushes the buffer to ex
 
 run,0,0,q,doinit[batchcfg[]],1,,re-init in batched mode
 true,0,0,q,scheduled[`tpflush],1,,batched mode schedules a flush job
-true,0,0,q,flushperiodok[],1,,flush job uses the configured pubperiod
+true,0,0,q,flushperiodok[],1,,flush job runs every timerms (2000ms here)
 run,0,0,q,feedtrades[3],1,,feed three trades in batched mode
 true,0,0,q,3=count trade,1,,batched mode buffers rows locally
 run,0,0,q,(tk`flush)[],1,,flush publishes and clears the buffer
 true,0,0,q,0=count trade,1,,flush emptied the buffered table
+
+comment,,,,,,,-t decides the publish mode, as TorQ's tickerplant.q: batched every -t ms when -t is set, immediate otherwise
+run,0,0,q,doinit[tcfg[200]],1,,init with timerms 200 (q started with -t 200)
+true,0,0,q,0D00:00:00.2=first exec period from timercalls where id=`tpflush,1,,the flush job runs every 200ms
+run,0,0,q,feedtrades[2],1,,feed two trades
+true,0,0,q,2=count trade,1,,the rows are buffered for the flush
+run,0,0,q,doinit[tcfg[0N]],1,,init with a null timerms (no -t)
+true,0,0,q,not scheduled[`tpflush],1,,no flush job without -t
+run,0,0,q,feedtrades[2],1,,feed two trades
+true,0,0,q,0=count trade,1,,published immediately without -t
+run,0,0,q,doinit[tcfg[0]],1,,init with timerms 0 (-t 0)
+true,0,0,q,not scheduled[`tpflush],1,,no flush job with -t 0
+run,0,0,q,feedtrades[2],1,,feed two trades
+true,0,0,q,0=count trade,1,,published immediately with -t 0
 
 run,0,0,q,doinit[replaycfg[]],1,,fresh batched init pointing at an empty replay log dir
 run,0,0,q,feedtrades[4],1,,write four trades to the replay log
@@ -49,5 +63,21 @@ run,0,0,q,ROLLDATE:"d"$.z.p,1,,capture today's date before rolling
 run,0,0,q,endofday[],1,,force an end-of-day roll
 true,0,0,q,rolledfile["replog";ROLLDATE+1],1,,the roll opened the next day's log file
 true,0,0,q,"(ROLLDATE+1;0)~(.u.d;count .u.icounts)",1,,the roll advances .u.d and resets .u.icounts
+
+comment,,,,,,,an upd after the roll time rolls the day first (TorQ tickerplant.q:50-51 and :70)
+run,0,0,q,doinit[immcfg[]],1,,immediate mode with a log
+run,0,0,q,R1:pastroll["log";0b],1,,an unstamped upd 1s after the roll
+true,0,0,q,(1+R1 0)=R1 1,1,,immediate: the upd rolled the day before logging
+true,0,0,q,1=R1 2,1,,immediate: the row went to the next day's log
+run,0,0,q,doinit[batchcfg[]],1,,batched mode with a log
+run,0,0,q,R2:pastroll["batchlog";0b],1,,an unstamped upd 1s after the roll
+true,0,0,q,(1+R2 0)=R2 1,1,,batched unstamped: the upd rolled the day before logging
+true,0,0,q,1=R2 2,1,,batched unstamped: the row went to the next day's log
+run,0,0,q,R3:pastroll["batchlog";1b],1,,a feed-stamped upd 1s after the next roll
+true,0,0,q,(R3 0)=R3 1,1,,batched feed-stamped: no roll in upd (as TorQ: the check is inside its unstamped branch); tpeodcheck rolls it
+run,0,0,q,doinit[tzcfg[]],1,,init with rolltimezone datatimezone and rolltimeoffset set
+true,0,0,q,(tzcfg[]`rolltimezone)~(use`di.eodtime)[`getrolltimezone][],1,,rolltimezone reaches di.eodtime as a symbol
+true,0,0,q,(tzcfg[]`datatimezone)~(use`di.eodtime)[`getdatatimezone][],1,,datatimezone reaches di.eodtime as a symbol
+true,0,0,q,0D01~(use`di.eodtime)[`getrolltimeoffset][],1,,rolltimeoffset reaches di.eodtime as a timespan
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

@@ -20,7 +20,7 @@ run,0,0,q,hk[`init][basecfg[];mockdeps[]],1,,init with a jobcsv - bracket-indexe
 true,0,0,q,`runjobs in key `.housekeeping,1,,init published runjobs at the real root namespace .housekeeping - NOT run, which di.torq would auto-fire at startup
 true,0,0,q,not `run in key `.housekeeping,1,,nothing is published at .housekeeping.run - di.torq's runhook fires that name after init, which would make every process start do a destructive cleanup pass
 true,0,0,q,1=count scheduled,1,,one runtime configured means one scheduled job
-true,0,0,q,86400=first exec period from scheduled,1,,the scheduled job repeats daily
+true,0,0,q,1D=first exec period from scheduled,1,,the scheduled job repeats daily
 true,0,0,q,1h=first exec mode from scheduled,1,,mode 1h pins reruns to the scheduled time not the finish time
 true,0,0,q,not null first exec opts[;`startattime] from scheduled,1,,the first fire is pinned to a start time rather than firing immediately
 true,0,0,q,expectedfire[02:00:00]~first exec opts[;`startattime] from scheduled,1,,the first fire is computed on di.timer's UTC clock not local time - a local-time startattime fires late by the UTC offset
@@ -50,15 +50,15 @@ true,0,0,q,`recent.log in survivors[],1,,a matching file newer than the age thre
 true,0,0,q,`excluded.log in survivors[],1,,a matching old file named in exclude was left alone
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,writegzipcsv[],1,,switch the csv to a gzip job
-run,0,0,q,.housekeeping.runjobs[],1,,run the gzip action
+run,0,0,q,writegzipcsv[],1,,switch the csv to a zip job
+run,0,0,q,.housekeeping.runjobs[],1,,run the zip action
 true,0,0,q,`old1.log.gz in gzfiles[],1,,gzip produced a .gz for the first matching old file
 true,0,0,q,`old2.log.gz in gzfiles[],1,,gzip produced a .gz for the second one too
 true,0,0,q,not `old1.log in gzfiles[],1,,gzip consumed the original rather than leaving both copies
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,writetarcsv[],1,,switch the csv to a tar job matching directories not files
-run,0,0,q,.housekeeping.runjobs[],1,,run the tar action
+run,0,0,q,writetarcsv[],1,,switch the csv to a tardir job matching directories not files
+run,0,0,q,.housekeeping.runjobs[],1,,run the tardir action
 true,0,0,q,`olddir.tar.gz in archfiles[],1,,tar archived the matched directory
 true,0,0,q,not `olddir in archfiles[],1,,tar --remove-files deleted the original directory - the most destructive thing this module does
 
@@ -68,11 +68,26 @@ run,0,0,q,.housekeeping.runjobs[],1,,run the minutes-based job - exercises find'
 true,0,0,q,not `stale.log in minfiles[],1,,a file older than the 2 minute threshold was removed
 true,0,0,q,`justnow.log in minfiles[],1,,a file newer than the 2 minute threshold was left alone
 
-true,0,0,q,`rm`gzip`tar~(hk`actionnames)[],1,,the built-in action set before any app registers anything
+comment,,,,,,,legacy csv layouts (housekeeping.q:44-51) and rm on a directory
+run,0,0,q,writefivecsv[],1,,switch to TorQ's own 5-column csv
+run,0,0,q,.housekeeping.runjobs[],1,,run it
+true,0,0,q,"not `old.log in dirfiles""five""",1,,a 5-column csv runs: agemin and checkfordirectory default to false
+run,0,0,q,resetcalls[],1,,clear the log capture
+run,0,0,q,writenullcsv[],1,,a csv whose first row has a null age
+run,0,0,q,.housekeeping.runjobs[],1,,run it
+true,0,0,q,"0<count select from calls where lvl=`info,msg like ""Null values found*""",1,,the null row was logged as skipped
+true,0,0,q,"not `old.log in dirfiles""nulls""",1,,the row after the null one still ran
+run,0,0,q,resetcalls[],1,,clear the log capture
+run,0,0,q,writermdircsv[],1,,rm with checkfordirectory matching a directory
+run,0,0,q,.housekeeping.runjobs[],1,,run it
+true,0,0,q,"`olddir in dirfiles""rmdir""",1,,rm leaves a matched directory in place (legacy rm -f fails on one)
+true,0,0,q,"0<count select from calls where lvl=`error,msg like ""action rm failed on*olddir: Is a directory""",1,,and logs it as an error
+
+true,0,0,q,`rm`zip`tardir~(hk`actionnames)[],1,,the built-in action set (legacy's names) before any app registers anything
 fail,0,0,q,(hk`addaction)["notasymbol";{[f]}],1,,addaction must reject a non-symbol name
 fail,0,0,q,(hk`addaction)[`x;42],1,,addaction must reject a handler that is not a function
 fail,0,0,q,(hk`addaction)[`rm;{[f]}],1,,addaction must refuse to shadow a built-in - silently swapping rm out from under a job csv is a footgun
-true,0,0,q,`rm`gzip`tar~(hk`actionnames)[],1,,actionnames is deliberately unguarded - it only reads the action dict so it answers correctly with or without init
+true,0,0,q,`rm`zip`tardir~(hk`actionnames)[],1,,actionnames is deliberately unguarded - it only reads the action dict so it answers correctly with or without init
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,resetnoted[],1,,reset the custom handler's record

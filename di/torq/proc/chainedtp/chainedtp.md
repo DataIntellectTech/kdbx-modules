@@ -46,7 +46,7 @@ missing), then:
 4. `.servers.startupdepnamecycles[tickerplantname;tpconnsleep;tpcheckcycles]`;
 5. `subscribe[]`;
 6. builds `tableschemas`;
-7. when `pubinterval` is above 0, adds the `publishalltables` job (seconds, timer mode 2).
+7. when `pubinterval` is above 0, adds the `publishalltables` job (every `pubinterval`, timer mode 2).
 
 di.torq runs `.ps.initialise[]` again after the module loads, which publishes the subscribed tables.
 
@@ -57,7 +57,6 @@ di.torq runs `.ps.initialise[]` again after the module loads, which publishes th
 - An upstream that sends `endofday` rather than `.u.end` (a segmented tickerplant) does not end the day here.
 - `.u.icounts` values are one-item lists after an all-syms subscribe.
 - A corrupt own log is reported and opened anyway.
-- `pubinterval` must be a whole number of seconds (the timer runs in seconds); anything else fails `init`.
 
 ## Downstream subscribers
 

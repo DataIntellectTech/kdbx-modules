@@ -86,12 +86,12 @@ showcomp:{[hdbpath;csvpath;maxage]
 
 compressfromtable:{[table]
   statstab::([] file:`$(); algo:`int$(); compressedLength:`long$();uncompressedLength:`long$());
-  / Check if process is single threaded - if multi then compress in parallel then clean up after
+  / Check if process is single threaded - if multi then compress in parallel then clean up after; worker processes (s<0) take a table each, as TorQ #732
   / Add metrics on any files due to be compressed to be used afterwards for comparison 
   table:update compressionvaluepre:{(-21!x)`compressedLength}'[fullpath] from table;
   $[0= system"s";
     singlethreadcompress[table];
-    multithreadcompress[table]];
+    $[0<system "s";multithreadcompress[table];{[x;y] compressfromtable select from x where table=y}[table;] peach distinct table`table]];
   / Update the stats tab table after the compression 
   {statstabupdate[x`fullpath;x`calgo;x`currentsize;x`compressionvaluepre]} each table
   };

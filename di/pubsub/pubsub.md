@@ -70,7 +70,7 @@ q)pubsub.subscribe[`;`AAPL`GOOG]
 q)pubsub.subscribe[`trade;`AAPL]
 q)pubsub.subscribe[`trade;`]
 
-q)conditions:([tabname:`trade`quote] filts:("";"bid>100,bid<200"); columns:("time,sym,price";""))
+q)conditions:([tabname:`trade`quote] filters:("";"bid>100,bid<200"); columns:("time,sym,price";""))
 q)pubsub.subscribe[`;conditions]
 
 q)pubsub.subscribestr["trade";"GOOG,AAPL"]

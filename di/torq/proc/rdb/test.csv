@@ -7,3 +7,12 @@ fail,0,0,q,rdb.init[()!();(enlist`log)!enlist mlog],1,,init with log but no time
 
 true,0,0,q,`init`endofday`reload`version~key rdb,1,,module exports init/endofday/reload/version
 true,0,0,q,0<count rdb`version,1,,version string is present (e.g. 0.1.0)
+
+comment,,,,,,,end of day: save down hooks and attributes (init runs to the tickerplant wait against mocked servers)
+run,0,0,q,"system ""l di/torq/proc/rdb/test.q""",1,,load fixture helpers
+true,0,0,q,gattr[],1,,standalone end of day keeps g# on sym after the clear (as legacy rdb.q:104/115)
+true,0,0,q,manipulation[],1,,a config savedownmanipulation is applied once before the save (1 2 3 doubled to 2 4 6)
+true,0,0,q,postreplay[],1,,a config postreplay is called with (hdbdir;date) after the clear and reapply and before the hdb reload
+true,0,0,q,failedpostreplay[],1,,a failing postreplay propagates out of end of day: saved and cleared but no hdb reload (as legacy rdb.q:118)
+true,0,0,q,reloadenabled[],1,,with reloadenabled end of day escapes before postreplay (as legacy rdb.q:95-101)
+run,0,0,q,"system ""rm -rf "",BASE",1,,remove the fixture hdb

@@ -87,6 +87,7 @@ Published at root by `init`, same bodies as legacy:
 | `.servers.cleanup` | l.116–118 |
 | `.servers.addnthawc` | l.121–128 |
 | `.servers.getdetails` | l.137 |
+| `.servers.addh` | l.130–134 |
 | `.servers.addhw` / `.servers.addw` | l.139–150 |
 | `.servers.retry` | l.157 |
 | `.servers.retrydiscovery` | l.158–168 |
@@ -96,8 +97,10 @@ Published at root by `init`, same bodies as legacy:
 | `.servers.register` | l.207–211 |
 | `.servers.querydiscovery` | l.215–221 |
 | `.servers.registerfromdiscovery` | l.225–231 |
-| `.servers.addprocs` | l.233–244 |
+| `.servers.addprocs` | l.233–244 (calls `.servers.addprocscustom`) |
 | `.servers.procupdate` | l.251 |
+| `.servers.refreshattributes` | l.255–258 |
+| `.servers.getserverbytype` / `.servers.gethandlebytype` / `.servers.gethpbytype` | l.97–107, over `SERVERS` |
 | `.servers.domainsocketsenabled` | l.261–267 |
 | `.servers.formathp` | l.271–307 |
 | `.servers.formatprocs` | l.310–314 |
@@ -107,11 +110,19 @@ Published at root by `init`, same bodies as legacy:
 
 Also defined at root, for di.subscriptions' `.sub` and the tickerplants' startup waits:
 - `.servers.getservers` (5-arg; the exported 1-arg `getservers` is separate);
-- `.servers.connectcustom` (called by `retryrows`);
-- `.servers.startupdepnamecycles`.
+- `.servers.connectcustom` (called by `retryrows`) and `.servers.addprocscustom` (called by `addprocs`), each kept if
+  already defined, as legacy;
+- `.servers.startupdepnamecycles`, `.servers.startupdepcycles` and `.servers.startupdependent`.
 
-They are built on the module-private `attributematch`, `reqprocsnotconn`, `reqprocnamesnotconn` and
-`startupdepcyclestypename`.
+The root `.servers.gethandlebytype` is legacy's `getserverbytype[;`w;]`: it reopens dead handles first
+(`getservers[…;1b;1b]`). The exported `gethandlebytype` does not; it picks only from live rows.
+
+`.servers.getserverbytype`/`.servers.gethpbytype` share their names with di.serverselect's
+`getserverbytype`/`gethpbytype`, but read a different registry: these pick from `.servers.SERVERS` (this
+process's connections, by proctype), di.serverselect's from its own server pool (filled by `addserver*`).
+
+They are built on the module-private `attributematch`, `reqprocsnotconn`, `reqproctypesnotconn`,
+`reqprocnamesnotconn` and `startupdepcyclestypename`.
 
 The discovery process (`di.torq.proc.discovery`) calls `addw`, `removerows`, `cleanup`,
 `startup`, reads `SERVERS`/`nontorqprocesstab`, and pushes `procupdate`/`autodiscovery` to
@@ -120,7 +131,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 **Conversions** (legacy calls with no di equivalent):
 - `.lg.*` becomes the injected `log`.
 - `.dotz.set` on `.z.pc` becomes `handlers[`register]`.
-- `.timer.repeat` becomes `timer[`addjob]`, mode 3 (next run from finish), period in seconds.
+- `.timer.repeat` becomes `timer[`addjob]`, mode 3 (next run from finish), period as a timespan.
 - `.proc.cp[]` becomes `.z.p`.
 - `.proc.procname`/`proctype` in `getdetails` become init's identity.
 - `.proc.readprocs` becomes `readprocesscsv`.
@@ -134,11 +145,10 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 - passwords (`loadpassword`, `USERPASS`, `PASSWORDS`, `LOADPASSWORD`);
 - `SOCKETTYPE`/FinSpace (so `formathp`'s ipctype is always `` `tcp `` from `formatprocs`/`addhw`,
   and `retryrows` dials `hpup`);
-- `getserverbytype`/`gethpbytype`;
-- `names`/`types`/`unregistered`/`checkw`/`reset`;
-- the `addprocscustom` hook;
-- `refreshattributes`;
-- `reqproctypesnotconn`/`startupdepcycles`/`startupdependent`.
+- `names`/`types`/`unregistered`/`checkw`/`reset`.
+
+**Residual:** `.servers.startup` is config-driven (`startup[config]`), so legacy's `.servers.startup[]` throws
+`'type`. Accepting an empty call would silently connect to nothing; no port code calls it that way.
 
 **Legacy behaviour that differs from di.torq.servers 0.3.0:**
 - `startup` no longer excludes this process's own row.
@@ -151,12 +161,15 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 
 ## Tests
 
-`test.q` + `test.csv` (56 checks) spawn real q peers. They cover:
+`test.q` + `test.csv` (71 checks) spawn real q peers. They cover:
 - init validation, wiring and idempotency;
 - `startup` against a live and a dead peer (discovery off);
 - `gethandlebytype`, and retry recovering an ungraceful kill;
+- `.servers.gethpbytype` (live, dead and unknown-selection) and the root `.servers.gethandlebytype`, `.servers.addh`, the `.servers.addprocscustom` hook called by `addprocs`, and `.servers.refreshattributes`
+  re-registering with a live discovery stub;
 - `waitfortype`, including a discovery stub that comes up after `startup`;
-- `attributematch`, the root 5-arg `.servers.getservers` and `.servers.startupdepnamecycles`;
+- `attributematch`, the root 5-arg `.servers.getservers`, `.servers.startupdepnamecycles`,
+  `.servers.startupdepcycles` and `.servers.startupdependent`;
 - input validation and `getapimeta`.
 
 The rest of the discovery protocol is covered by `di.torq.proc.discovery`'s suite. Run in a fresh

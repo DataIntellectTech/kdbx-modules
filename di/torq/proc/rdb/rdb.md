@@ -32,7 +32,9 @@ reloadenabled = false             # false (default): save+clear own tables at EO
                                   # true: a wdb owns the writedown - defer to its reload[] call.
 # subscribeto / subscribesyms omitted -> all tables, all syms
 # ignorelist omitted -> `heartbeat`logmsg (not saved at EOD)
-# sortcsv (optional) -> di.dbwrite sort/attribute config; else dbwrite's default (time asc)
+# sortcsv (optional) -> di.dbwrite sort/attribute config; else dbwrite's default (sym then time, p# on sym)
+# savedownmanipulation (optional, .q settings) -> table!function applied before each table is saved
+# postreplay (optional, .q settings) -> {[hdbdir;date]} called after the save, clear and attribute reapply, before the hdb reload; an error stops end of day, as TorQ
 ```
 
 Set `reloadenabled = true` **only** when a wdb is present in the stack — otherwise the EOD
@@ -52,7 +54,8 @@ di.subscriptions defines the tables at root from what the TP returns.
 - **End of day**: `.u.end[date]` (from a tickerplant or chainedtp) or root `endofday[date;data]` (from a
   segmented tickerplant, which also calls the logging `endofperiod` stub). Behaviour depends on `reloadenabled`:
   - **standalone** (`0b`, default): saves every non-ignored root table to `hdbdir` for `date`
-    (`di.dbwrite.savedown` — enumerate, splay, sort, attr, gc), clears each (`@[`.;t;0#]`),
+    (`di.dbwrite.savedown` — manipulate, enumerate, splay, sort, attr, gc), clears each (`@[`.;t;0#]`),
+    reapplies the in-memory attributes the clear drops (`` `g# `` on sym), calls `postreplay[hdbdir;date]`,
     then tells every connected HDB to `.hdb.reload[]`.
   - **wdb-fronted** (`1b`): a wdb owns the writedown, so di.torq.proc.rdb only **snapshots** the
     per-table row counts (`.z.m.eodtabcount`) and escapes — the data stays live and
@@ -104,8 +107,9 @@ and **clears** target root explicitly via `@[`.;…]`, and its `upd` is root-saf
 
 ## Testing
 
-`test.csv` (k4unit) covers the dependency contract (init errors without `log`/`timer`) and
-the export surface. The full subscribe → replay → live-capture → EOD-save → HDB-reload
+`test.csv` (k4unit) covers the dependency contract (init errors without `log`/`timer`), the
+export surface, and standalone end of day (`test.q`: `init` runs to the tickerplant wait against
+mocked servers): attributes kept, the save down hooks, and the `reloadenabled` escape. The full subscribe → replay → live-capture → EOD-save → HDB-reload
 flow is proven in the **TorqX-POC end-to-end** (`torqx.sh start tickerplant1 hdb feed1
 rdb1`): the RDB replays the tp log on startup, accumulates live trade/quote, and on a
 forced tickerplant `endofday` writes the partition to the HDB (verified on disk), clears,

@@ -2,8 +2,8 @@
 
 logrows:([]lvl:`symbol$();ctx:`symbol$();msg:())
 mocklog:`info`warn`error!({[c;m]`logrows upsert(`info;c;m)};{[c;m]`logrows upsert(`warn;c;m)};{[c;m]`logrows upsert(`error;c;m)})
-timercalls:([]id:`symbol$();period:`long$();mode:`long$())
-mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] `timercalls upsert (id;`long$period;`long$mode);}
+timercalls:([]id:`symbol$();period:`timespan$();mode:`long$())
+mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] `timercalls upsert (id;period;`long$mode);}
 handlercalls:([]event:`symbol$();name:`symbol$())
 mockhandlers:`register`remove`list!({[ev;ph;nm;pri;fn]`handlercalls upsert(ev;nm)};{[ev;ph;nm]};{[ev]})
 errlogged:{[s] any (exec msg from logrows where lvl=`error) like "*",s,"*"}

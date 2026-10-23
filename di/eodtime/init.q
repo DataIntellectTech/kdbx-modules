@@ -9,4 +9,4 @@ tz:use`di.tz
 / (pre-load manifest walk) and this export (post-load session audit of a loaded, declared peer).
 version:first read0`:::VERSION
 
-export:([init;getd;getnextroll;getdailyadj;getroll;getdailyadjustment;setnextroll;setdailyadj;setd;version])
+export:([init;getd;getnextroll;getdailyadj;getrolltimezone;getdatatimezone;getrolltimeoffset;getroll;getdailyadjustment;setnextroll;setdailyadj;setd;version])

@@ -17,7 +17,10 @@ init:{[config;deps]
   .z.m.log:deps`log;
   .z.m.tplog:use`di.tplog;
   .z.m.dbw:use`di.dbwrite;
-  .z.m.dbw.init enlist[`log]!enlist deps`log;
+  / the save down hooks from config go to di.dbwrite
+  sdm:$[`savedownmanipulation in key config;config`savedownmanipulation;()!()];
+  pr:$[`postreplay in key config;config`postreplay;{[d;p]}];
+  .z.m.dbw.init `log`savedownmanipulation`postreplay!(deps`log;sdm;pr);
   .z.m.os:use`di.os;
   / all settings required
   req:`firstmessage`lastmessage`messagechunks`segmentedmode`autoreplay`schemafile`tablelist`hdbdir`tplogfile`tplogdir;
@@ -73,6 +76,8 @@ init:{[config;deps]
   @[system;"l ",string schemafile;{ex[`replayinit;"failed to load replay file ",(string x)," - ",y;2]}[schemafile]];
   .z.m.log[`info][`replayinit;"hdb directory is set to ",string .z.m.hdbdir:hsym hdbdir];
   .z.m.log[`info][`replayinit;"tempdir directory is set to ",string .z.m.tempdir:hsym tempdir];
+  / the replay upd from config, default insert
+  .z.m.realupd:applyupd $[`upd in key config;config`upd;{[t;x] insert[t;x]}];
   / filter on the table list
   if[(not tablelist~enlist `all) and not segmentedmode; .z.m.realupd:{[f;t;x] if[t in tablestoreplay; f[t;x]]}[realupd]];
   / chunked saves
@@ -81,19 +86,6 @@ init:{[config;deps]
   $[null sortcsv;.z.m.dbw.setconfig sortdefault;.z.m.dbw.readcsv sortcsv];
   if[autoreplay;initandrun[]];
   };
-
-/ manipulate a table at save down time, defined if absent
-if[not `manipulate in key `.save;.save.manipulate:{[t;x]
- $[t in key .save.savedownmanipulation;
-  @[.save.savedownmanipulation[t];x;{.z.m.log[`error][`manipulate;"save down manipulation failed : ",y];x}[x]];
-  x]}];
-
-/ default upd; set .replay.upd before use to override
-.replay.upd:@[value;`.replay.upd;{{[t;x] insert[t;x]}}]
-
-/ save down settings
-.save.savedownmanipulation:@[value;`.replay.savedownmanipulation;()!()]         // table!function applied to a table at save
-.save.postreplay:@[value;`.replay.postreplay;{{[d;p] }}]                        // invoked after a log's tables are saved
 
 // the path to the table to save
 pathtotable:{[h;p;t] `$(string .Q.par[h;partitiontype$p;t]),"/"}
@@ -111,7 +103,7 @@ savetabdata:{[h;p;t;data;UPSERT;td]
  $[partandmerge;path:pathtotable[td;p;t];path:pathtotable[h;p;t]];
  if[not partandmerge;.z.m.log[`info][`replay;"saving table ",(string t)," to ",string path]];
  .z.m.pathlist[t],:path;
- $[partandmerge;savetablesbypart[td;p;t;h];$[UPSERT;upsert;set] . (path;.Q.en[h;0!.save.manipulate[t;data]])]
+ $[partandmerge;savetablesbypart[td;p;t;h];$[UPSERT;upsert;set] . (path;.Q.en[h;0!.z.m.dbw.manipulate[t;data]])]
   }
 
 savetabdatatrapped:{[h;p;t;data;UPSERT;td] .[savetabdata;(h;p;t;data;UPSERT;td);{.z.m.log[`error][`replay;"failed to save table : ",x]}]}
@@ -152,7 +144,7 @@ finishreplay:{[h;p;td]
  // save down any tables which haven't been saved
  savetab[td;h;p] each tabsincountorder[tablestoreplay];
  // invoke any user defined post replay function
- .save.postreplay[h;p];
+ .z.m.dbw.postreplay[h;p];
  }
 
 // takes in log file directories made with segmented tickerplant
@@ -229,12 +221,12 @@ readintofifo:{[filename]
  };
 
 // upd functions down here
-realupd:{[f;t;x]
+applyupd:{[f;t;x]
 	// increment the tablecounts
         .z.m.tablecounts[t]+:count first x;
 	// run the supplied function in the error trap
 	.[f;(t;x);{[t;x;e] .z.m.errorcounts[t]+:count first x}[t;x]];
-	}[.replay.upd]
+	}
 
 initialupd:{[t;x]
 	 // spin through the first X messages

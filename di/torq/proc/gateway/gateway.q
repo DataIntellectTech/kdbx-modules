@@ -49,11 +49,21 @@ registerbackends:{[]
     .z.m.log[`info][`gateway;"registered ",(string count ct)," backend server(s): ",", " sv string exec distinct proctype from ct]];
   }
 
+/ the reload rule for every client entry point, as TorQ's checkeod (gateway.q:93): during an eod reload a query
+/ spanning more than one server type is rejected with an error reply (returns 1b; the caller returns); one type runs
+ineod:{[types] r:.z.m.eod and 1<count distinct types; if[r;@[neg .z.w;.z.m.errorprefix,"gateway in eod reload - retry shortly";()]]; r}
+
+/ client entry point (published at root as .gw.getdata): di.dataaccess's getdata, behind the reload rule; its server
+/ types are those of the partitions the range covers, from the same table di.dataaccess routes with
+getdata:{[tablename;starttime;endtime;by;aggs]
+  if[ineod exec servertype from .z.m.partitions where coverfrom<=endtime,coverto>=starttime;:()];
+  (.z.m.da`getdata)[tablename;starttime;endtime;by;aggs]}
+
 / client entry point (published at root as .gw.asyncexecjpt): full control over join/postback/timeout.
 / protected so a routing/dispatch error becomes a formatted reply to the client rather than an
 / uncaught error on the async handler.
 asyncexecjpt:{[query;servertype;join;postback;timeout]
-  if[.z.m.eod;@[neg .z.w;.z.m.errorprefix,"gateway in eod reload - retry shortly";()];:()];
+  if[ineod @[resolvetypes;servertype;()];:()];
   .[{[q;s;j;p;t] (.z.m.ad`execquery)[q;resolvetypes s;j;p;t;0b]};
     (query;servertype;join;postback;timeout);
     {[e] @[neg .z.w;.z.m.errorprefix,e;()]}];
@@ -68,9 +78,9 @@ asyncexec:{[query;servertype] asyncexecjpt[query;servertype;raze;();0Wn]}
 / window. v1 rejects rather than queues-and-resumes; on reloadend it refreshes the backend registry.
 reload:{[msg]
   $[msg~`reloadstart;
-    [.z.m.eod:1b; .z.m.log[`info][`gateway;"eod reload start - holding new queries"]];
+    [.z.m.eod:1b; .z.m.log[`info][`gateway;"eod reload start - rejecting multi-type queries until reloadend"]];
    msg~`reloadend;
-    [.z.m.eod:0b; registerbackends[]; (.z.m.da`setpartitions)[buildpartitions[]]; .z.m.log[`info][`gateway;"eod reload end - resuming queries"]];
+    [.z.m.eod:0b; registerbackends[]; (.z.m.da`setpartitions)[.z.m.partitions:buildpartitions[]]; .z.m.log[`info][`gateway;"eod reload end - resuming queries"]];
    .z.m.log[`warn][`gateway;"unknown .gw.reload message: ",string msg]];
   }
 
@@ -91,9 +101,10 @@ init:{[config;deps]
   / callbacks at root .gw.* and tell it to reply to those names (baked into the shipped executor by
   / the vendor patch, so backends need no cooperating code).
   .z.m.ad:use`di.asyncdispatch;
-  adcfg:enlist[`log]!enlist deps`log;
-  if[`synccallsallowed in key config;adcfg[`synccallsallowed]:`boolean$config`synccallsallowed];
-  (.z.m.ad`init)[adcfg];
+  adcfg:()!();
+  if[`synccallsallowed in key config;adcfg:adcfg,enlist[`synccallsallowed]!enlist`boolean$config`synccallsallowed];
+  / joins not amends, log last: amending a log-valued dict makes each new value a row of the log dict
+  (.z.m.ad`init)[(enlist[`log]!enlist deps`log),adcfg];
   / NB: param is `sel`, NOT `ss` - `ss` is the built-in string-search function and q would
   / resolve ss[...] to the builtin instead of the projected serverselect dict (throws 'match).
   (.z.m.ad`setavailableservers)[{[sel;excludeinuse] select handle,servertype from sel[`getserverstable][] where active}[.z.m.srvsel]];
@@ -118,7 +129,7 @@ init:{[config;deps]
   / coverage for routing is built from .z.d (buildpartitions) and refreshed at EOD reloadend via
   / (.z.m.da`setpartitions), so post-roll queries for the just-saved day route to the hdb not the rdb.
   .z.m.da:use`di.dataaccess;
-  (.z.m.da`init)[`log`timer`partitions!(deps`log;deps`timer;buildpartitions[])];
+  (.z.m.da`init)[`log`timer`partitions!(deps`log;deps`timer;.z.m.partitions:buildpartitions[])];
 
   / handler callbacks via the injected handlers dep (di.torq.handlers): track client connect, and on any
   / handle close clean up whichever role it was - backend (asyncdispatch in-flight cleanup +
@@ -132,14 +143,15 @@ init:{[config;deps]
   / normalised query layer (di.dataaccess); the raw asyncexec/asyncexecjpt route query strings.
   set[`.gw.asyncexec;asyncexec];
   set[`.gw.asyncexecjpt;asyncexecjpt];
-  set[`.gw.getdata;.z.m.da`getdata];
+  set[`.gw.getdata;getdata];
   set[`.gw.reload;reload];
 
-  / housekeeping timers (asyncdispatch leaves scheduling to the caller). mode 1h period = seconds.
-  (.z.m.timer`addjob)[`gwtimeout;{(.z.m.ad`checktimeout)[]};();5;1h;()!()];
-  (.z.m.timer`addjob)[`gwrmqueries;{(.z.m.ad`removequeries)[0D00:30]};();60;1h;()!()];
-  (.z.m.timer`addjob)[`gwrminactive;{(.z.m.ad`removeinactive)[0D01:00]};();300;1h;()!()];
-  (.z.m.timer`addjob)[`gwrmclients;{(.z.m.ad`removeclients)[0D01:00]};();300;1h;()!()];
+  / housekeeping timers (asyncdispatch leaves scheduling to the caller), period as a timespan.
+  / mode 3h reschedules from the end of the previous run, as TorQ's .timer.repeat does
+  (.z.m.timer`addjob)[`gwtimeout;{(.z.m.ad`checktimeout)[]};();0D00:00:05;3h;()!()];
+  (.z.m.timer`addjob)[`gwrmqueries;{(.z.m.ad`removequeries)[0D00:30]};();0D00:01;3h;()!()];
+  (.z.m.timer`addjob)[`gwrminactive;{(.z.m.ad`removeinactive)[0D01:00]};();0D00:05;3h;()!()];
+  (.z.m.timer`addjob)[`gwrmclients;{(.z.m.ad`removeclients)[0D01:00]};();0D00:05;1h;()!()];
 
   .z.m.log[`info][`gateway;"initialised, backendtypes=",(", " sv string .z.m.backendtypes)];
   }

@@ -28,7 +28,7 @@ init:{[config;deps]
   .z.m.checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b])*config`checksubscriptionperiod;
   if[not .z.m.registered;
     (deps[`handlers]`register)[`.z.pc;`;`sub;0j;pc[::;]];
-    if[checksubscriptionperiod>0;(deps[`timer]`addjob)[`checksubscriptions;checksubscriptions;();`long$checksubscriptionperiod%0D00:00:01;1;()!()]];
+    if[checksubscriptionperiod>0;(deps[`timer]`addjob)[`checksubscriptions;checksubscriptions;();checksubscriptionperiod;1;()!()]];
     .z.m.registered:1b];
   }
 

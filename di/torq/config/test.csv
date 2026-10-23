@@ -1,45 +1,51 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,cfg:use`di.torq.config,1,1,load the module
+before,0,0,q,"TD:""/tmp/diconfig_"",(string .z.i),""/""",1,1,per-run fixture root so concurrent or other-user runs never collide
 before,0,0,q,"logtab:([]lvl:`symbol$();ctx:`symbol$();msg:())",1,1,capturing log table
 before,0,0,q,"mocklog:`info`warn`error!({[c;m]`logtab upsert(`info;c;m)};{[c;m]`logtab upsert(`warn;c;m)};{[c;m]`logtab upsert(`error;c;m)})",1,1,define a capturing binary logger
 before,0,0,q,cfg.init[enlist[`log]!enlist mocklog],1,1,init with the required log dependency
-before,0,0,q,"system""mkdir -p /tmp/diconfigbuiltin""",1,1,builtin root for the cascade
-before,0,0,q,"system""mkdir -p /tmp/diconfigapp""",1,1,app root for the cascade
-before,0,0,q,"(`:/tmp/diconfigbuiltin/default.q) 0: (""diconfiga:1"";""diconfigb:1"")",1,1,builtin/default flat name:value (two settings)
-before,0,0,q,"(`:/tmp/diconfigbuiltin/rdb.q) 0: enlist ""diconfigb:10""",1,1,builtin/rdb proctype tier sets diconfigb
-before,0,0,q,"(`:/tmp/diconfigapp/default.q) 0: (""diconfiga:100"";""diconfigb:5"")",1,1,app/default flat name:value (two settings)
-before,0,0,q,"(`:/tmp/diconfigapp/rdb1.q) 0: enlist ""diconfiga:999""",1,1,app/rdb1 procname tier sets diconfiga
+before,0,0,q,"system ""mkdir -p "",TD,""builtin""",1,1,builtin root for the cascade
+before,0,0,q,"system ""mkdir -p "",TD,""app""",1,1,app root for the cascade
+before,0,0,q,"(hsym`$TD,""builtin/default.q"") 0: (""diconfiga:1"";""diconfigb:1"")",1,1,builtin/default flat name:value (two settings)
+before,0,0,q,"(hsym`$TD,""builtin/rdb.q"") 0: enlist ""diconfigb:10""",1,1,builtin/rdb proctype tier sets diconfigb
+before,0,0,q,"(hsym`$TD,""app/default.q"") 0: (""diconfiga:100"";""diconfigb:5"")",1,1,app/default flat name:value (two settings)
+before,0,0,q,"(hsym`$TD,""app/pptp.q"") 0: (""diconfigb:3"";""diconfigc:7"")",1,1,app/pptp parentproctype tier sets diconfigb and diconfigc
+before,0,0,q,"(hsym`$TD,""app/rdb1.q"") 0: enlist ""diconfiga:999""",1,1,app/rdb1 procname tier sets diconfiga
 before,0,0,q,"basecfg:`enabled`rows`syms`tab`byte`str!(0b;100;`a`b;([]a:`long$());0x01;"":olddb"")",1,1,base config dict for the overrideconfig tests (str is a char-string setting, as a .toml value would be)
-before,0,0,q,"system""mkdir -p /tmp/diconfigskip""",1,1,dir for the malformed-line skip test
-before,0,0,q,"(`:/tmp/diconfigskip/default.q) 0: (""a:1"";"""";""/ a comment"";""straynocolon"";""b:2"")",1,1,a .q file mixing valid pairs with blank/comment/no-colon lines
-before,0,0,q,"system""mkdir -p /tmp/diconfigtoml""",1,1,dir for the toml-guard test
-before,0,0,q,"(`:/tmp/diconfigtoml/present.toml) 0: enlist ""a = 1""",1,1,a .toml file that config parses by delegating to the reconciled di.util.toml (present on QPATH)
+before,0,0,q,"system ""mkdir -p "",TD,""skip""",1,1,dir for the malformed-line skip test
+before,0,0,q,"(hsym`$TD,""skip/default.q"") 0: (""a:1"";"""";""/ a comment"";""straynocolon"";""b:2"")",1,1,a .q file mixing valid pairs with blank/comment/no-colon lines
+before,0,0,q,"system ""mkdir -p "",TD,""toml""",1,1,dir for the toml-guard test
+before,0,0,q,"(hsym`$TD,""toml/present.toml"") 0: enlist ""a = 1""",1,1,a .toml file that config parses by delegating to the reconciled di.util.toml (present on QPATH)
 comment,,,,,,,init - dependency validation
 fail,0,0,q,cfg.init[(::)],1,1,init rejects a non-dictionary deps
 fail,0,0,q,cfg.init[enlist[`foo]!enlist 1],1,1,init rejects deps without a log key
 fail,0,0,q,cfg.init[enlist[`log]!enlist 42],1,1,init rejects a non-dict log value
 fail,0,0,q,cfg.init[enlist[`log]!enlist ((enlist`info)!enlist {[c;m]})],1,1,init rejects a log dict missing warn/error
 comment,,,,,,,parsefile - parse one flat .q settings file into a dict (.toml delegated to di.util.toml)
-true,0,0,q,"1~cfg.parsefile[""/tmp/diconfigbuiltin/default.q""]`diconfiga",1,1,parsefile reads a flat name:value .q file into a dict
-true,0,0,q,"2=count cfg.parsefile[""/tmp/diconfigbuiltin/default.q""]",1,1,parsefile returns every setting in the file
-true,0,0,q,"0=count cfg.parsefile[""/tmp/diconfignope/default.q""]",1,1,parsefile returns an empty dict for a missing .q file
-true,0,0,q,"(`a`b!1 2)~cfg.parsefile[""/tmp/diconfigskip/default.q""]",1,1,parsefile skips blank/comment/no-colon lines and returns only valid pairs (no-colon line must not crash the split)
+true,0,0,q,"1~cfg.parsefile[(TD,""builtin/default.q"")]`diconfiga",1,1,parsefile reads a flat name:value .q file into a dict
+true,0,0,q,"2=count cfg.parsefile[(TD,""builtin/default.q"")]",1,1,parsefile returns every setting in the file
+true,0,0,q,"0=count cfg.parsefile[(TD,""nope/default.q"")]",1,1,parsefile returns an empty dict for a missing .q file
+true,0,0,q,"(`a`b!1 2)~cfg.parsefile[(TD,""skip/default.q"")]",1,1,parsefile skips blank/comment/no-colon lines and returns only valid pairs (no-colon line must not crash the split)
 comment,,,,,,,parsefile - .toml integration with the reconciled di.util.toml (existence guarded first; existing .toml delegated)
-true,0,0,q,"0=count cfg.parsefile[""/tmp/diconfignope/absent.toml""]",1,1,a MISSING .toml contributes nothing and does NOT require di.util.toml (existence checked before delegation)
-true,0,0,q,"1j~(cfg.parsefile[""/tmp/diconfigtoml/present.toml""])`a",1,1,an EXISTING .toml now parses by delegating to di.util.toml (present on QPATH)
-true,0,0,q,"-7h=type (cfg.parsefile[""/tmp/diconfigtoml/present.toml""])`a",1,1,the .toml integer came back a long - di.util.toml's typed parse flows through config.parsefile
+true,0,0,q,"0=count cfg.parsefile[(TD,""nope/absent.toml"")]",1,1,a MISSING .toml contributes nothing and does NOT require di.util.toml (existence checked before delegation)
+true,0,0,q,"1j~(cfg.parsefile[(TD,""toml/present.toml"")])`a",1,1,an EXISTING .toml now parses by delegating to di.util.toml (present on QPATH)
+true,0,0,q,"-7h=type (cfg.parsefile[(TD,""toml/present.toml"")])`a",1,1,the .toml integer came back a long - di.util.toml's typed parse flows through config.parsefile
 comment,,,,,,,cascade - merged flat dict over two roots x default/proctype/procname (name-major; .toml>.q within a tier)
-true,0,0,q,"100~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdbnofile])`diconfiga",1,1,within a name the later (app) root overrides the builtin root
-true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdbnofile])`diconfigb",1,1,name-major: builtin proctype beats app default (would be 5 under root-major)
-true,0,0,q,"999~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1])`diconfiga",1,1,name-major: the procname tier (app/rdb1) wins over every less-specific name
-true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1])`diconfigb",1,1,a key absent from the procname tier keeps its most-specific set value (builtin proctype)
-true,0,0,q,"not (`) in key cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb1]",1,1,the sentinel merge key is dropped from the returned dict
-true,0,0,q,"0=count cfg.cascade[""/tmp/diconfignope1"";""/tmp/diconfignope2"";`rdb;`rdb1]",1,1,an all-missing cascade resolves to an empty dict
-true,0,0,q,"10~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`default])`diconfigb",1,1,dedup: procname=`default must NOT re-apply the default tier last and override proctype (would be 5 without distinct)
-true,0,0,q,"100~(cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;`rdb])`diconfiga",1,1,dedup: proctype~procname resolves correctly (each tier once)
-fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";`rdb;(`)]",1,1,cascade rejects a null procname (else it resolves a bogus root/.q tier)
-fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";(`);`rdb1]",1,1,cascade rejects a null proctype
-fail,0,0,q,"cfg.cascade[""/tmp/diconfigbuiltin"";""/tmp/diconfigapp"";""rdb"";`rdb1]",1,1,cascade rejects a non-symbol (string) proctype
+true,0,0,q,"100~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdbnofile])`diconfiga",1,1,within a name the later (app) root overrides the builtin root
+true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdbnofile])`diconfigb",1,1,name-major: builtin proctype beats app default (would be 5 under root-major)
+true,0,0,q,"999~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb1])`diconfiga",1,1,name-major: the procname tier (app/rdb1) wins over every less-specific name
+true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb1])`diconfigb",1,1,a key absent from the procname tier keeps its most-specific set value (builtin proctype)
+true,0,0,q,"7~(cfg.cascade[(TD,""builtin"");(TD,""app"");`pptp;`rdb;`rdb1])`diconfigc",1,1,parentproctype: its tier is read (app/pptp)
+true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");`pptp;`rdb;`rdb1])`diconfigb",1,1,parentproctype: the proctype tier beats it (builtin/rdb 10 over app/pptp 3) as TorQ default->parentproctype->proctype->procname
+true,0,0,q,"100~(cfg.cascade[(TD,""builtin"");(TD,""app"");`pptp;`rdb;`rdbnofile])`diconfiga",1,1,parentproctype: it beats default (app/default 100 stays; pptp sets no diconfiga)
+fail,0,0,q,"cfg.cascade[(TD,""builtin"");(TD,""app"");""pptp"";`rdb;`rdb1]",1,1,cascade rejects a non-symbol parentproctype
+true,0,0,q,"not (`) in key cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb1]",1,1,the sentinel merge key is dropped from the returned dict
+true,0,0,q,"0=count cfg.cascade[(TD,""nope1"");(TD,""nope2"");(`);`rdb;`rdb1]",1,1,an all-missing cascade resolves to an empty dict
+true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`default])`diconfigb",1,1,dedup: procname=`default must NOT re-apply the default tier last and override proctype (would be 5 without distinct)
+true,0,0,q,"100~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb])`diconfiga",1,1,dedup: proctype~procname resolves correctly (each tier once)
+fail,0,0,q,"cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;(`)]",1,1,cascade rejects a null procname (else it resolves a bogus root/.q tier)
+fail,0,0,q,"cfg.cascade[(TD,""builtin"");(TD,""app"");(`);(`);`rdb1]",1,1,cascade rejects a null proctype
+fail,0,0,q,"cfg.cascade[(TD,""builtin"");(TD,""app"");(`);""rdb"";`rdb1]",1,1,cascade rejects a non-symbol (string) proctype
 comment,,,,,,,overrideconfig - command-line override layer applied onto a resolved config dict
 true,0,0,q,"1b~(cfg.overrideconfig[basecfg;`enabled`rows!(enlist""1"";enlist""500"")])`enabled",1,1,bool parsed and set from string
 true,0,0,q,"500~(cfg.overrideconfig[basecfg;`enabled`rows!(enlist""1"";enlist""500"")])`rows",1,1,long parsed and set from string
@@ -67,6 +73,16 @@ true,0,0,q,"""new""~(cfg.overrideconfig[seccfg;enlist[`.replay.dir]!enlist ""new
 true,0,0,q,"7~(cfg.overrideconfig[seccfg;enlist[`replay.first]!enlist enlist""7""])[`replay;`first]",1,1,section.key (no leading dot) works and parses into the key's type
 true,0,0,q,"`xx`yy~(cfg.overrideconfig[seccfg;enlist[`.replay.tabs]!enlist (""xx"";""yy"")])[`replay;`tabs]",1,1,a vector key of a section takes several values
 true,0,0,q,"seccfg~cfg.overrideconfig[seccfg;`.replay.nope`.rows.x`.replay.a.b!3#enlist enlist""1""]",1,1,an unknown section key or a non-dict section or a deeper name is skipped
+comment,,,,,,,getconfig / getconfigfile - TorQ's .proc.getconfig levels over the two roots (app before builtin)
+run,0,0,q,"(hsym each `$TD,/:(""app/proc.csv"";""builtin/proc.csv"";""builtin/only.csv"")) 0:\: enlist ""a,b""",1,1,proc.csv in both roots; only.csv in builtin only
+true,0,0,q,"(enlist`$TD,""app/proc.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";0]",1,1,level 0: the app file when it exists
+true,0,0,q,"(enlist`$TD,""builtin/only.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";0]",1,1,level 0: the builtin file when the app one is missing
+true,0,0,q,"(enlist`$TD,""builtin/none.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""none.csv"";0]",1,1,level 0: the builtin path even when neither exists (as legacy)
+true,0,0,q,"(enlist`$TD,""builtin/proc.csv"")~cfg.getconfig[TD,""builtin"";"""";""proc.csv"";0]",1,1,level 0: an empty approot is an unset app root
+true,0,0,q,"(`$TD,/:(""app/proc.csv"";""builtin/proc.csv""))~cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";1]",1,1,level 1: the existing app file then the builtin file
+true,0,0,q,"(enlist`$TD,""builtin/only.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";1]",1,1,level 1: a missing app file is left out
+true,0,0,q,"(`$TD,/:(""app/only.csv"";""builtin/only.csv""))~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";2]",1,1,level 2: both paths whether or not they exist
+true,0,0,q,"cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";0]~cfg.getconfigfile[TD,""builtin"";TD,""app"";""proc.csv""]",1,1,getconfigfile is getconfig at level 0
 comment,,,,,,,getapimeta - module api metadata
 true,0,0,q,(asc key cfg)~asc exec name from cfg.getapimeta[],1,1,getapimeta documents exactly the module's exports
 true,0,0,q,`name`public`descrip`params`return~cols cfg.getapimeta[],1,1,getapimeta rows carry the registry columns
@@ -75,12 +91,13 @@ true,0,0,q,0b~(1!cfg.getapimeta[])[`init]`public,1,1,framework plumbing (init) i
 comment,,,,,,,logger emission - real logger via a caller-side binary wrapper (must run last; re-inits cfg)
 run,0,0,q,kxlogger:use`kx.log,1,1,load the kx.log module
 run,0,0,q,kxinst:kxlogger.createLog[],1,1,create a real kx.log instance
-run,0,0,q,kxh:hopen `:/tmp/diconfigkxsink.txt,1,1,open a file sink to capture output
+run,0,0,q,"kxh:hopen hsym`$TD,""kxsink.txt""",1,1,open a file sink to capture output
 run,0,0,q,kxinst.add[kxh;`info],1,1,route info-level output to the file sink
 run,0,0,q,"kxbinary:`info`warn`error!({[c;m]kxinst[`info][string[c],"": "",m]};{[c;m]kxinst[`warn][string[c],"": "",m]};{[c;m]kxinst[`error][string[c],"": "",m]})",1,1,wrap the monadic logger into the binary {[c;m]} contract
 run,0,0,q,cfg.init[enlist[`log]!enlist kxbinary],1,1,re-init di.torq.config with the conforming binary logger
 run,0,0,q,"kxres:cfg.overrideconfig[enlist[`kxrows]!enlist 5;enlist[`kxrows]!enlist enlist""7""]",1,1,drive a real info-level log through the wrapped logger
 run,0,0,q,hclose kxh,1,1,flush and close the file sink
 true,0,0,q,7~kxres`kxrows,1,1,the override was applied (returned dict carries the new value)
-true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*overrideconfig: setting*""",1,1,the override emitted an info line through the real logger
-true,0,0,q,"any (read0 `:/tmp/diconfigkxsink.txt) like ""*kxrows*""",1,1,emitted message names the overridden setting
+true,0,0,q,"any (read0 hsym`$TD,""kxsink.txt"") like ""*overrideconfig: setting*""",1,1,the override emitted an info line through the real logger
+true,0,0,q,"any (read0 hsym`$TD,""kxsink.txt"") like ""*kxrows*""",1,1,emitted message names the overridden setting
+after,0,0,q,"system ""rm -rf "",TD",1,1,remove this run's fixture root

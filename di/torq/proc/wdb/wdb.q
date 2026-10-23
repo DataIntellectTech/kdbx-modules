@@ -53,13 +53,6 @@ tablelist:{[] ((exec tablename from `bytes xdesc .z.m.tabsizes) union tables[`.]
 / function that ensures a list of syms is returned no matter what is passed to it
 ensuresymlist:{[s] -1 _ `${@[x; where not ((type each x) in (10 -10h));string]} s,(::)}
 
-/ applies the table's savedownmanipulation function, if any, before a save
-manipulate:{[t;x]
-  $[t in key .z.m.savedownmanipulation;
-    @[.z.m.savedownmanipulation t;x;{[x;e] .z.m.log[`error][`manipulate;"save down manipulation failed : ",e];x}[x]];
-    x]
-  }
-
 / saves a table to the partition once over its row limit; cleared with @[`.;...] as bare writes land in the module
 savetables:{[dir;pt;forcesave;tabname]
   / check row count
@@ -69,7 +62,7 @@ savetables:{[dir;pt;forcesave;tabname]
     .z.m.log[`info][`save;"saving ",(string tabname)," data to partition ",string pt];
     / upsert data to partition
     .[upsert;
-      (` sv .Q.par[dir;pt;tabname],`;.Q.en[.z.m.hdbdir;r:0!manipulate[tabname;`. tabname]]);
+      (` sv .Q.par[dir;pt;tabname],`;.Q.en[.z.m.hdbdir;r:0!(.z.m.dbw`manipulate)[tabname;`. tabname]]);
       {[e] .z.m.log[`error][`savetables;"Failed to save table to disk : ",e];'e}];
     / make addition to tabsizes
     .z.m.log[`info][`track;"appending table details to tabsizes"];
@@ -135,7 +128,7 @@ savetablesbypart:{[dir;pt;forcesave;tablename;writedownmode]
     / get list of distinct combinations for partition directories
     extrapartitions:$[writedownmode~`partbyfirstchar;.z.m.mrg`getfirstcharpartitions;.z.m.mrg`getextrapartitions][tablename;extrapartitiontype];
     / enumerate data to be upserted
-    enumdata:.Q.en[.z.m.hdbdir;0!manipulate[tablename;`. tablename]];
+    enumdata:.Q.en[.z.m.hdbdir;0!(.z.m.dbw`manipulate)[tablename;`. tablename]];
     .z.m.log[`info][`save;"enumerated ",(string tablename)," table"];
     / upsert data to specific partition directory
     upserttopartition[dir;tablename;enumdata;pt;extrapartitiontype;;writedownmode] each extrapartitions;
@@ -262,7 +255,7 @@ doreload:{[pt]
   getprocs[;pt] each ro;
   $[.z.m.eodwaittime>0;
     [@[.z.m.timer`deletejobs;`sortflushend;{}];
-     (.z.m.timer`addjob)[`sortflushend;flushend;();1;1h;`startattime`maxruns!(.z.m.timeouttime;1)]];
+     (.z.m.timer`addjob)[`sortflushend;flushend;();0D00:00:01;1h;`startattime`maxruns!(.z.m.timeouttime;1)]];
     flushend[]];
   }
 
@@ -342,14 +335,9 @@ endofdaysortdate:{[dir;pt;tablist;hdbsettings]
     " directory to the hdb directory ",hw:(.z.m.os`topath) -1_string .Q.par[hdbsettings`hdbdir;pt;`]];
   .z.m.log[`info][`mvtohdb;"Attempting to move ",(", " sv string key hsym `$dw)," from ",dw," to ",hw];
   .[movetohdb;(dw;hw;pt);{[e] .z.m.log[`error][`mvtohdb;"Function movetohdb failed with error: ",e]}];
-  / call the posteod function
-  postreplay[hdbsettings`hdbdir;pt];
+  / call the postreplay hook, unprotected as TorQ's wdb
+  (.z.m.dbw`postreplay)[hdbsettings`hdbdir;pt];
   if[.z.m.permitreload;doreload pt];
-  }
-
-/ post eod function, invoked after all the tables have been written down
-postreplay:{[hdbdir;pt]
-  @[.z.m.posteod .;(hdbdir;pt);{[e] .z.m.log[`error][`postreplay;"postreplay failed: ",e]}];
   }
 
 / the loaded sort config, or an empty one as legacy's .sort.params
@@ -439,8 +427,8 @@ endofdaymerge:{[dir;pt;tablist;mergelimits;hdbsettings;mergemethod;writedownmode
   if[count key p:.Q.par[dir;pt;`];
     .z.m.log[`info][`merge;"attempting to delete temp storage directory"];
     @[.z.m.os`deldir;p;{[p;e] .z.m.log[`info][`eod;"could not delete directory: ",(1_string p)," - maybe something(IDB?) gets hold of it."]}[p]]];
-  / call the posteod function
-  postreplay[hdbsettings`hdbdir;pt];
+  / call the postreplay hook, unprotected as TorQ's wdb
+  (.z.m.dbw`postreplay)[hdbsettings`hdbdir;pt];
   $[.z.m.permitreload;doreload pt;if[.z.m.gc;.Q.gc[]]];
   }
 
@@ -607,7 +595,10 @@ checksortparams:{[]
 / reads the sort.csv, as legacy the app's sort.csv when no sortcsv is set
 initdbwrite:{[config;deps]
   .z.m.dbw:use`di.dbwrite;
-  (.z.m.dbw`init)[enlist[`log]!enlist deps`log];
+  / the save down hooks from config, defaulting as TorQ's wdb.q:78-79, go to di.dbwrite
+  sdm:$[`savedownmanipulation in key config;config`savedownmanipulation;()!()];
+  pr:$[`postreplay in key config;config`postreplay;{[d;p]}];
+  (.z.m.dbw`init)[`log`savedownmanipulation`postreplay!(deps`log;sdm;pr)];
   f:$[`sortcsv in key config;resolvedir[apphome[];config`sortcsv];getenv[`TORQXAPPCONFIG],"/sort.csv"];
   if[(`sortcsv in key config) or count key hsym `$f;(.z.m.dbw`readcsv) f];
   }
@@ -646,10 +637,8 @@ setconfig:{[config]
   .z.m.immediate:$[`immediate in key config;tobool config`immediate;0b];
   .z.m.gc:$[`gc in key config;tobool config`gc;1b];
   .z.m.partitiontype:$[`partitiontype in key config;assym config`partitiontype;`date];
-  .z.m.savedownmanipulation:$[`savedownmanipulation in key config;config`savedownmanipulation;()!()];
   .z.m.getpartition:$[`getpartition in key config;config`getpartition;defaultgetpartition];
   .z.m.upd:$[`upd in key config;config`upd;insert];
-  .z.m.posteod:$[`postreplay in key config;config`postreplay;{[d;p]}];
   .z.m.reloadorder:$[`reloadorder in key config;astoklist config`reloadorder;`hdb`rdb`idb];
   .z.m.permitreload:$[`permitreload in key config;tobool config`permitreload;1b];
   .z.m.eodwaittime:$[`eodwaittime in key config;astimespan config`eodwaittime;0D00:00:10];
@@ -748,7 +737,8 @@ init:{[config;deps]
   setroot[];
   / addjob raises on an id that already exists, so clear any job a previous init left
   @[.z.m.timer`deletejobs;`wdbsave;{}];
-  (.z.m.timer`addjob)[`wdbsave;savetodisk;();.z.m.settimer;1h;()!()];
+  / mode 3h reschedules from the end of the previous flush, as TorQ's .timer.repeat does
+  (.z.m.timer`addjob)[`wdbsave;savetodisk;();0D00:00:01*.z.m.settimer;3h;()!()];
   msg:"initialised, mode=",(string .z.m.mode),", writedownmode=",(string .z.m.writedownmode),", savedir=",.z.m.savedirs;
   msg,:", hdbdir=",(1_string .z.m.hdbdir),", flush every ",(string .z.m.settimer),"s";
   .z.m.log[`info][`wdb;msg,$[.z.m.sortenabled;"";", sort handed to ",", " sv string .z.m.sorttypes]];

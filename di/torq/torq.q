@@ -70,16 +70,16 @@ buildlogdep:{[overrides]
   }
 
 / builds the timer dependency dict, using di.timer (kdbx-modules) unless overridden.
-/ di.timer needs no injected deps of its own (Tier-1 standalone). It exports `setcp`
+/ di.timer is initialised with the injected logger, through which it logs failed jobs. It exports `setcp`
 / rather than a bare `cp`, so the plan's timer contract's `cp` key is omitted here - not
 / currently used by anything that consumes this dep.
 / di.timer's exported `addjob` is itself a dict of variants (custom/default/simple),
 / not a directly-callable function - `custom` is the one matching the plan's timer
 / contract signature {[id;func;params;period;mode;opts] ...}
-buildtimerdep:{[overrides]
+buildtimerdep:{[overrides;logdep]
   modname:$[`timer in key overrides;overrides`timer;`di.timer];
   tm:use modname;
-  (tm`init)[()!()];
+  (tm`init)[enlist[`log]!enlist logdep];
   `addjob`deletejobs`enablejobs`disablejobs`getactivejobs!((tm`addjob)`custom;tm`deletejobs;tm`enablejobs;tm`disablejobs;tm`getactivejobs)
   }
 
@@ -147,8 +147,7 @@ startcustom:{[proctype;config;deps]
 / plain `system "l"` lets each file's definitions land at the namespace ITS OWN \d directives
 / choose - a bare app query file like code/rdb/examplequeries.q (no \d) lands at ROOT, callable as
 / countbysym[...]. This is the same load mechanism startcustom already uses for code/processes/.
-/ (parentproctype - torq.q's 4th tier, which existed so a sort process could load the wdb's code -
-/ is omitted: proctypes sort and sortworker map to di.torq.proc.wdb itself. See wdb.md.)
+/ parentproctype (torq.q's 4th tier) loads code/<parentproctype>/ between common and proctype, gated by loadprocesscode, as torq.q:643.
 optflag:{[config;k;dflt] $[k in key config;`boolean$config k;dflt]}
 
 / load every q/k file in one dir at root: an optional order.txt lists files to load first, then
@@ -165,6 +164,7 @@ loadappcodedir:{[lg;dir]
 loadappcode:{[lg;config;proctype;procname]
   base:reqenv[`TORQXAPPHOME],"/code/";
   if[optflag[config;`loadcommoncode;1b]; loadappcodedir[lg;base,"common"]];
+  if[optflag[config;`loadprocesscode;1b] and not null ppt:$[`parentproctype in key config;config`parentproctype;`]; loadappcodedir[lg;base,string ppt]];
   if[optflag[config;`loadprocesscode;1b]; loadappcodedir[lg;base,string proctype]];
   if[optflag[config;`loadnamecode;0b];    loadappcodedir[lg;base,string procname]];
   }
@@ -231,7 +231,7 @@ initquerylog:{[config;deps]
   ft:"j"$opt[`flushtime;86400];
   if[ft>0;
     .z.m.qlflushtime:ft*0D00:00:01;
-    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();"j"$opt[`flushinterval;1800];1h;()!()]];
+    (deps[`timer][`addjob])[`querylogflush;flushquerylog;();0D00:00:01*"j"$opt[`flushinterval;1800];3h;()!()]];
   msg:"query logging on (level ",(string cfg`level),", memory=",(string cfg`logtomemory),", disk=",(string cfg`logtodisk),")";
   deps[`log][`info][`torq;msg," - di.querylog wraps .z.* directly; see torq.md Query logging"];
   }
@@ -249,12 +249,15 @@ initzpsignore:{[config]
 / reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
 / di.torq itself (identity, stack id, port, norun), NOT config settings. Everything else on the
 / command line is a candidate config override.
-reservedflags:`proctype`procname`torqxstackid`p`norun;
+reservedflags:`proctype`procname`parentproctype`torqxstackid`p`norun;
 
 / the config-override params from a parsed command-line opt dict (.Q.opt .z.x): drop the reserved
 / flags, keep the rest. di.torq.config.overrideconfig then applies each to the matching setting
 / (parsed into its type) and skips any that don't name a real setting. Pure - unit-testable without .z.x.
 clioverrideparams:{[cmdlineopts] (key[cmdlineopts] except reservedflags)#cmdlineopts}
+
+/ q's own -t in ms, null if not given; q consumes -t, so it is read from the full command line .z.X
+cmdlinet:{[] $[`t in key o:.Q.opt .z.X;"J"$first o`t;0N]}
 
 init:{[proctype;procname;overrides]
   / dependency check runs first, before anything else - a version mismatch should
@@ -276,23 +279,28 @@ init:{[proctype;procname;overrides]
     (dc`checkversiongraph)[enlist builtin proctype];
     (dc`checkversiongraphfile)[proctype;reqenv[`TORQXAPPHOME],"/code/processes/",(string proctype),".deps.toml"]];
   r:roots[];
+  / -parentproctype, as torq.q:376-380: a symbol atom, null if not given
+  parentproctype:$[`parentproctype in key o:.Q.opt .z.x;first `$o`parentproctype;`];
   / the logger is built before config so di.torq.config's command-line override layer (below) can log through it
   logdep:buildlogdep[overrides];
   cc:use`di.torq.config;
   (cc`init)[enlist[`log]!enlist logdep];
   / segmentedchainedtp uses segmentedtp's settings
   settingsproctype:$[proctype=`segmentedchainedtp;`segmentedtp;proctype];
-  config:(cc`cascade)[r 0;r 1;settingsproctype;procname];
+  if[not null parentproctype;logdep[`info][`init;"read in process parameter of parentproctype=",string parentproctype]];
+  config:(cc`cascade)[r 0;r 1;parentproctype;settingsproctype;procname];
   / command-line override layer - the TOP cascade tier. A launch flag matching a settings name
   / overrides it (parsed into that setting's type); reserved launcher/identity flags are excluded,
   / and a flag that doesn't name a real setting is skipped (see di.torq.config.overrideconfig).
   config:(cc`overrideconfig)[config; clioverrideparams .Q.opt .z.x];
   / self-identity is resolved by di.torq and authoritative - stamped AFTER overrides so it always wins
-  config:config,`proctype`procname!(proctype;procname);
+  config:config,`proctype`procname`parentproctype!(proctype;procname;parentproctype);
   / the process.csv phone-book path, so di.torq.servers (and any consumer building its own startup config
   / slice from this config) can dial peers without reading env itself - keeps di.servers' env-free boundary.
   config:config,enlist[`processcsv]!enlist reqenv[`TORQXAPPCONFIG],"/process.csv";
-  timerdep:buildtimerdep[overrides];
+  / the process -t interval in ms, null if not given
+  config:config,enlist[`timerms]!enlist cmdlinet[];
+  timerdep:buildtimerdep[overrides;logdep];
   handlersdep:buildhandlersdep[overrides;logdep];
   / servers is built LAST (it consumes log/timer/handlers at init) and injected alongside
   / them, so consumers read deps`servers instead of `use`+init-ing di.torq.servers themselves.

@@ -101,9 +101,10 @@ init:{[config;deps]
   / callbacks at root .gw.* and tell it to reply to those names (baked into the shipped executor by
   / the vendor patch, so backends need no cooperating code).
   .z.m.ad:use`di.asyncdispatch;
-  adcfg:enlist[`log]!enlist deps`log;
-  if[`synccallsallowed in key config;adcfg[`synccallsallowed]:`boolean$config`synccallsallowed];
-  (.z.m.ad`init)[adcfg];
+  adcfg:()!();
+  if[`synccallsallowed in key config;adcfg:adcfg,enlist[`synccallsallowed]!enlist`boolean$config`synccallsallowed];
+  / joins not amends, log last: amending a log-valued dict makes each new value a row of the log dict
+  (.z.m.ad`init)[(enlist[`log]!enlist deps`log),adcfg];
   / NB: param is `sel`, NOT `ss` - `ss` is the built-in string-search function and q would
   / resolve ss[...] to the builtin instead of the projected serverselect dict (throws 'match).
   (.z.m.ad`setavailableservers)[{[sel;excludeinuse] select handle,servertype from sel[`getserverstable][] where active}[.z.m.srvsel]];

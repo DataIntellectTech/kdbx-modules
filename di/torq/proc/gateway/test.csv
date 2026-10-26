@@ -11,7 +11,7 @@ true,0,0,q,0<count gw`version,1,,version string is present (e.g. 0.1.0)
 run,0,0,q,gjobs:(`symbol$())!`short$(),1,,record of timer job modes
 run,0,0,q,"gdeps:`log`timer`handlers`servers!(mlog;`addjob`deletejobs!({[id;f;p;per;md;o] gjobs[id]:`short$md;};{[x]});`register`remove`list!({[ev;ph;nm;pri;fn]};{[ev;ph;nm]};{[ev]});`startup`getservers!({[c]};{[t] ([]w:`int$();proctype:`$();procname:`$();hpup:`$())}))",1,,mock deps with a recording timer and no backends
 run,0,0,q,gw.init[()!();gdeps],1,,init the gateway
-true,0,0,q,all 3h=gjobs`gwtimeout`gwrmqueries`gwrminactive,1,,query housekeeping jobs reschedule from the end of the previous run (mode 3) as TorQ's .timer.repeat does
+true,0,0,q,all 3h=gjobs`gwtimeout`gwrmqueries`gwrminactive,1,,query housekeeping jobs reschedule from the end of the previous run (mode 3)
 run,0,0,q,gw.init[(enlist`synccallsallowed)!enlist 1b;gdeps],1,,init with synccallsallowed set
 true,0,0,q,1b~.m.di.0asyncdispatch.synccallsallowed,1,,synccallsallowed reaches di.asyncdispatch as a boolean
 run,0,0,q,gw.init[(enlist`synccallsallowed)!enlist 0b;gdeps],1,,init with synccallsallowed off
@@ -43,7 +43,7 @@ run,0,0,q,G1:gwgetdata[],1,,getdata over yesterday..now during the reload
 true,0,0,q,"(enlist""error: gateway in eod reload - retry shortly"")~G1`replies",1,,getdata is rejected during the reload with the same reply as asyncexec
 true,0,0,q,0 0~G1`sent,1,,and nothing is sent to the rdb or the hdb
 run,0,0,q,G3:gwasync[`hdb],1,,asyncexec to the hdb alone during the reload
-true,0,0,q,(enlist enlist 2)~G3`replies,1,,a single-type query runs during the reload and is answered as outside it (as TorQ's checkeod)
+true,0,0,q,(enlist enlist 2)~G3`replies,1,,a single-type query runs during the reload and is answered
 true,0,0,q,0 1~G3`sent,1,,and is sent to the hdb only
 run,0,0,q,G4:gwasync[`rdb`hdb],1,,asyncexec to the rdb and the hdb during the reload
 true,0,0,q,"(enlist""error: gateway in eod reload - retry shortly"")~G4`replies",1,,a multi-type query is rejected during the reload

@@ -1,46 +1,23 @@
-/ di.torq.proc.gateway - query gateway. Orchestration glue wiring three pieces into a queryable front end:
-/   di.torq.servers        - discover + connect to backend processes (rdb/hdb)
-/   di.serverselect   - registry of backends + servertype/attribute routing (VENDORED)
-/   di.asyncdispatch  - async scatter-gather: queue -> dispatch -> collect -> join -> reply (VENDORED)
-/ Publishes .gw.* entry points; a client sends a query + a list of servertypes, the gateway routes it
-/ to one backend of each type, joins the per-server results, and replies (deferred-sync/async).
-/ Ported from the .gw orchestration in TorQ/code/processes/gateway.q; the engine + routing are the
-/ two vendored modules, so di.torq.proc.gateway is thin glue.
-/ ---
-/ Scope (v1): async / deferred-sync only. Routing by servertype list (the happy path) and by
-/ attribute dict (via di.serverselect) - but attribute routing needs backends to REPORT attributes
-/ (tables/date-ranges), which di.torq.servers/di.torq.proc.rdb/di.torq.proc.hdb don't do yet, so v1 registers backends with
-/ EMPTY attributes and attribute-dict queries degrade/err until that plumbing lands. Deferred:
-/ di.dataaccess (typed getdata + map-reduce), pure-sync syncexec, permissions, kxdash. Removed:
-/ finspace. Known v1 limitation: with the server source pointed at di.serverselect (which has no
-/ inuse state), there is no per-backend one-query-at-a-time serialisation - fine for POC volumes.
-/ ---
-/ Module-namespace note: the .gw.* functions and the asyncdispatch callbacks are published at REAL
-/ root names (set[`.gw...;...]) - use mangles module code into a private namespace, so a remote
-/ client call or a backend's async result reply must resolve at root. Same pattern as .hdb.reload.
+/ di.torq.proc.gateway - query gateway over di.torq.servers (connections), di.serverselect (registry and routing),
+/ di.asyncdispatch (scatter-gather) and di.dataaccess (getdata); entry points are published at root as .gw.*
+/ backends register with empty attributes
 
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
-/ a token-list config (e.g. backendtypes/reloadorder): space-separated string, single symbol,
-/ symbol list, or list of strings -> always a symbol list
+/ a token-list config (space-separated string, symbol, symbol list or list of strings) as a symbol list
 astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
 
-/ di.dataaccess routing coverage from the current date: rdb holds today (>= midnight), hdb holds
-/ history (< midnight). Built at init and re-evaluated at EOD reloadend (after the wdb moves today's
-/ partition into the hdb, ".z.d" has advanced so "today" now correctly falls to the hdb).
+/ di.dataaccess partition coverage from .z.d: rdb holds today, hdb holds earlier dates
 buildpartitions:{[] mid:`timestamp$.z.d; ([]servertype:`rdb`hdb;coverfrom:(mid;-0Wp);coverto:(0Wp;mid-1))}
 
-/ resolve a client's servertype argument to a plain servertype symbol list.
-/ symbol / symbol list -> itself. attribute dict (99h) -> the distinct servertypes of the servers
-/ di.serverselect matches (asyncdispatch dispatches by servertype, one handle per type).
+/ resolve a client's servertype argument (symbol, symbol list or attribute dict) to a servertype symbol list
 resolvetypes:{[st]
   $[99h=type st;
     distinct exec servertype from (.z.m.srvsel`getserverstable)[] where serverid in raze (.z.m.srvsel`getserverids)[st];
     aslist assym st]
   }
 
-/ (re)register the connected backends from di.torq.servers into di.serverselect (idempotent - it skips
-/ already-active handles). v1 registers with empty attributes (no backend attribute reporting yet).
+/ register the connected backends from di.torq.servers into di.serverselect, skipping active handles
 registerbackends:{[]
   ct:raze {[t] select w,proctype,procname,hpup from (.z.m.svc`getservers)[t] where not null w} each .z.m.backendtypes;
   if[count ct;
@@ -49,12 +26,10 @@ registerbackends:{[]
     .z.m.log[`info][`gateway;"registered ",(string count ct)," backend server(s): ",", " sv string exec distinct proctype from ct]];
   }
 
-/ the reload rule for every client entry point, as TorQ's checkeod (gateway.q:93): during an eod reload a query
-/ spanning more than one server type is rejected with an error reply (returns 1b; the caller returns); one type runs
+/ during an eod reload, reject a query spanning more than one server type with an error reply and return 1b
 ineod:{[types] r:.z.m.eod and 1<count distinct types; if[r;@[neg .z.w;.z.m.errorprefix,"gateway in eod reload - retry shortly";()]]; r}
 
-/ client entry point (published at root as .gw.getdata): di.dataaccess's getdata, behind the reload rule; its server
-/ types are those of the partitions the range covers, from the same table di.dataaccess routes with
+/ client entry point .gw.getdata: di.dataaccess's getdata behind the reload rule, typed by the partitions the range covers
 getdata:{[tablename;starttime;endtime;by;aggs]
   if[ineod exec servertype from .z.m.partitions where coverfrom<=endtime,coverto>=starttime;:()];
   (.z.m.da`getdata)[tablename;starttime;endtime;by;aggs]}
@@ -80,9 +55,7 @@ checkpermissioned:{[]
     .z.m.log[`warn][`gateway;"permissioned=1b but di.permissions is not loaded here - queries are NOT checked at this gateway"]];
   }
 
-/ client entry point (published at root as .gw.asyncexecjpt): full control over join/postback/timeout.
-/ protected so a routing/dispatch error becomes a formatted reply to the client rather than an
-/ uncaught error on the async handler.
+/ client entry point .gw.asyncexecjpt: join, postback and timeout; errors become a reply to the client
 asyncexecjpt:{[query;servertype;join;postback;timeout]
   if[ineod @[resolvetypes;servertype;()];:()];
   u:.z.u;
@@ -98,13 +71,11 @@ asyncexecjpt:{[query;servertype;join;postback;timeout]
     {[e] @[neg .z.w;.z.m.errorprefix,e;()]}];
   }
 
-/ client entry point (published at root as .gw.asyncexec): raze results, no postback, no timeout.
+/ client entry point .gw.asyncexec: raze results, no postback, no timeout
 asyncexec:{[query;servertype] asyncexecjpt[query;servertype;raze;();0Wn]}
 
-/ EOD reload gate (published at root as .gw.reload) - the wdb calls (`.gw.reload;`reloadstart) before
-/ moving its partition into the hdb and (`.gw.reload;`reloadend) after the hdb/rdb have reloaded.
-/ While gated, new queries are rejected (client retries) so none straddle the rdb-drop/hdb-reload
-/ window. v1 rejects rather than queues-and-resumes; on reloadend it refreshes the backend registry.
+/ eod reload gate .gw.reload: reloadstart rejects multi-type queries; reloadend lifts it and refreshes the
+/ backend registry and partitions
 reload:{[msg]
   $[msg~`reloadstart;
     [.z.m.eod:1b; .z.m.log[`info][`gateway;"eod reload start - rejecting multi-type queries until reloadend"]];
@@ -125,62 +96,46 @@ init:{[config;deps]
   .z.m.permissioned:$[`permissioned in key config;`boolean$config`permissioned;0b];
   .z.m.eod:0b;
 
-  / di.serverselect - registry + routing. log dep is binary {[c;m]}, matching di.torq's inject.
+  / di.serverselect - registry and routing
   .z.m.srvsel:use`di.serverselect;
   (.z.m.srvsel`init)[enlist[`log]!enlist deps`log];
 
-  / di.asyncdispatch - scatter-gather engine. Point its server SOURCE at di.serverselect (no inuse
-  / column there, so excludeinuse is ignored - see the scope note). Publish its result/error
-  / callbacks at root .gw.* and tell it to reply to those names (baked into the shipped executor by
-  / the vendor patch, so backends need no cooperating code).
+  / di.asyncdispatch - servers from di.serverselect, result and error callbacks published at root .gw.*
   .z.m.ad:use`di.asyncdispatch;
   adcfg:()!();
   if[`synccallsallowed in key config;adcfg:adcfg,enlist[`synccallsallowed]!enlist`boolean$config`synccallsallowed];
-  / joins not amends, log last: amending a log-valued dict makes each new value a row of the log dict
+  / log dep first, then config
   (.z.m.ad`init)[(enlist[`log]!enlist deps`log),adcfg];
-  / NB: param is `sel`, NOT `ss` - `ss` is the built-in string-search function and q would
-  / resolve ss[...] to the builtin instead of the projected serverselect dict (throws 'match).
+  / param is sel, not ss, which is the built-in string search
   (.z.m.ad`setavailableservers)[{[sel;excludeinuse] select handle,servertype from sel[`getserverstable][] where active}[.z.m.srvsel]];
   set[`.gw.addserverresult;.z.m.ad`addserverresult];
   set[`.gw.addservererror;.z.m.ad`addservererror];
   (.z.m.ad`setcallbacks)[`.gw.addserverresult;`.gw.addservererror];
 
-  / di.torq.servers - connect out to the backend process types, then register them into serverselect.
-  / Uses the INJECTED di.torq.servers (di.torq already ran init); we call only startup with our own
-  / backend connection list, and getservers off the same injected instance (registerbackends).
+  / di.torq.servers - connect to the backend types and register them
   .z.m.svc:deps`servers;
   sconfig:config,(enlist`connections)!enlist .z.m.backendtypes;
   (.z.m.svc`startup)[sconfig];
   registerbackends[];
-  / a backend that was down at startup connects later through di.torq.servers' retry/discovery,
-  / which fires .servers.connectcustom - hook it so serverselect learns about the late arrival.
-  / Without this the gateway holds a live handle it can never route to until a restart or EOD.
+  / register backends that connect later through di.torq.servers' retry or discovery
   set[`.servers.connectcustom;{[rows] registerbackends[]}];
 
-  / di.dataaccess - the getdata query-normalisation layer, on top of the SAME asyncdispatch
-  / instance (idempotent use) so it dispatches via the callbacks/registry set up above. Partition
-  / coverage for routing is built from .z.d (buildpartitions) and refreshed at EOD reloadend via
-  / (.z.m.da`setpartitions), so post-roll queries for the just-saved day route to the hdb not the rdb.
+  / di.dataaccess on the same asyncdispatch, with partitions refreshed at reloadend
   .z.m.da:use`di.dataaccess;
   (.z.m.da`init)[`log`timer`partitions!(deps`log;deps`timer;.z.m.partitions:buildpartitions[])];
 
-  / handler callbacks via the injected handlers dep (di.torq.handlers): track client connect, and on any
-  / handle close clean up whichever role it was - backend (asyncdispatch in-flight cleanup +
-  / serverselect deactivate) or client (asyncdispatch orphan-query cleanup). Each is a no-op for
-  / the other role, so calling all three on every close is safe.
+  / track client connects; on close clean up the handle as a backend and as a client
   hl:deps`handlers;
   (hl`register)[`.z.po;`;`gateway;10;{[wh] (.z.m.ad`addclientdetails)[wh]}];
   (hl`register)[`.z.pc;`;`gateway;10;{[wh] (.z.m.ad`removeserverhandle)[wh]; (.z.m.ad`removeclienthandle)[wh]; (.z.m.srvsel`setserveractive)[wh;0b]}];
 
-  / publish the client entry points + the eod reload gate at root. .gw.getdata is the
-  / normalised query layer (di.dataaccess); the raw asyncexec/asyncexecjpt route query strings.
+  / publish the client entry points and the eod reload gate at root
   set[`.gw.asyncexec;asyncexec];
   set[`.gw.asyncexecjpt;asyncexecjpt];
   set[`.gw.getdata;getdata];
   set[`.gw.reload;reload];
 
-  / housekeeping timers (asyncdispatch leaves scheduling to the caller), period as a timespan.
-  / mode 3h reschedules from the end of the previous run, as TorQ's .timer.repeat does
+  / housekeeping timers; mode 3h reschedules from the end of the previous run
   (.z.m.timer`addjob)[`gwtimeout;{(.z.m.ad`checktimeout)[]};();0D00:00:05;3h;()!()];
   (.z.m.timer`addjob)[`gwrmqueries;{(.z.m.ad`removequeries)[0D00:30]};();0D00:01;3h;()!()];
   (.z.m.timer`addjob)[`gwrminactive;{(.z.m.ad`removeinactive)[0D01:00]};();0D00:05;3h;()!()];

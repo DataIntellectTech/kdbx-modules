@@ -1,21 +1,17 @@
-/ dbwrite - write, sort, and attribute utilities for on-disk data
-/ used by processes that persist data to disk (rdb, wdb, tickerlogreplay)
+/ write, sort and attribute utilities for on-disk data
 
 / attributes that may legitimately appear in a config (empty leaves a column unattributed)
 validatts:``p`s`g`u;
 
-/ built-in fallback config, TorQ's config/sort.csv: p# on sym, sorted by sym then time
+/ fallback sort config: p# on sym, sorted by sym then time
 defaultparams:([] tabname:`default`default; att:`p`; column:`sym`time; sort:11b);
 
-/ save down hooks, as TorQ's .save.savedownmanipulation and .save.postreplay; init sets them only when passed
+/ save down hooks, set by init only when passed
 savedownmanipulation:()!();
 posthook:{[d;p]};
 
 init:{[deps]
-  / wire the injected logger - required, no silent fallback. deps: a dict with a `log key
-  / holding a binary `info`warn`error dict of {[c;m]} loggers (context symbol, message string),
-  / from di.util.log or hand-rolled. no adaptation here, so a monadic kx.log instance must be wrapped
-  / first. e.g. di.dbwrite.init[enlist[`log]!enlist logdep]
+  / wire the required `log dep (`info`warn`error dict of {[c;m]}) and optional save down hooks
   if[99h<>type deps;
     '"di.dbwrite: deps must be a dict with a `log key"];
   if[not `log in key deps;
@@ -32,20 +28,18 @@ init:{[deps]
   if[`postreplay in key deps;.z.m.posthook:deps`postreplay];
   };
 
-/ apply the table's savedownmanipulation, if any, keeping the data on failure, as TorQ's .save.manipulate
+/ apply the table's savedownmanipulation, if any, keeping the data on failure
 manipulate:{[t;x]
   $[t in key .z.m.savedownmanipulation;
     @[.z.m.savedownmanipulation t;x;{[x;e] .z.m.logerr[`manipulate;"save down manipulation failed : ",e];x}[x]];
     x]
   };
 
-/ call the postreplay hook after a partition is written, as TorQ's .save.postreplay
+/ call the postreplay hook after a partition is written
 postreplay:{[d;p] .z.m.posthook[d;p]};
 
 readcsv:{[file]
-  / read a sort-config csv and store it in .z.m.sortconfig; used by sort and savedown
-  / the csv must have the columns tabname,att,column,sort (in any order)
-  / file: hsym, bare symbol, or string path
+  / store a tabname,att,column,sort csv as the sort config; file: hsym, symbol or string path
   if[10h=type file; file:hsym `$file];
   if[-11h=type file; if[not ":" = first string file; file:hsym file]];
   if[not -11h=type file;
@@ -59,27 +53,24 @@ readcsv:{[file]
   };
 
 setconfig:{[t]
-  / set .z.m.sortconfig from an in-memory table; alternative to readcsv when config is built in-session
-  / t must be a table with columns tabname,att,column,sort
+  / store a tabname,att,column,sort table as the sort config
   checkconfig t;
   .z.m.sortconfig:t;
   };
 
 getconfig:{[]
-  / return the current sort config stored in .z.m.sortconfig; (::) if not yet set
+  / current sort config; (::) if not set
   :.z.m.sortconfig;
   };
 
-/ internal - protected file read; only the i/o so a genuine read failure gets the readerr message
+/ internal - read the raw csv lines
 readfile:{[file]
-  / returns the raw csv lines; header validation and parsing happen in parsecsv
   .z.m.loginfo[`readfile;"reading sort config from ",string file];
   :read0 file;
   };
 
 / internal - log and rethrow a csv read failure
 readerr:{[file;e]
-  / build the message once, log it under the read context, then rethrow it to the caller
   m:"di.dbwrite: failed to read ",string[file],": ",e;
   .z.m.logerr[`readerr;m];
   'm;
@@ -87,15 +78,13 @@ readerr:{[file;e]
 
 / internal - parse csv lines into a config table
 parsecsv:{[lines]
-  / load via 0: - the header row (enlist delim) names the columns, so column order does not
-  / matter; cast sort to boolean if present. structural validation is left to checkconfig.
+  / columns named by the header row; sort cast to boolean
   t:((count "," vs first lines)#"S";enlist",") 0: lines;
   :$[`sort in cols t; update sort:"B"$string sort from t; t];
   };
 
-/ internal - validate a sort-config table, signalling a clear error if it is malformed
+/ internal - signal if a sort-config table is malformed
 checkconfig:{[t]
-  / guards every sort call so a hand-built or csv-derived table is rejected early if wrong
   if[98h<>type t;
     .z.m.logerr[`checkconfig;err:"di.dbwrite: config must be a table with columns `tabname`att`column`sort"];
     'err;
@@ -131,10 +120,8 @@ checkconfig:{[t]
   };
 
 sort:{[tabname;dirs]
-  / sort and apply attributes to the on-disk partition dirs for one table using .z.m.sortconfig
-  / both the sort column order and the att assignments (p/s/g/u) are driven by the config
-  / falls back to defaultparams if config has not been set via readcsv or setconfig
-  / tabname: symbol; dirs: hsym or list of hsyms (partition directories e.g. from .Q.par)
+  / sort and apply attributes to a table's partition dirs per the sort config, or defaultparams if unset
+  / tabname: symbol; dirs: hsym or list of hsyms
   config:$[(::)~.z.m.sortconfig; defaultparams; .z.m.sortconfig];
   checkconfig config;
   if[not -11h=type tabname;
@@ -151,8 +138,7 @@ sort:{[tabname;dirs]
 
 / internal - resolve which config rows apply to a table
 getsortparams:{[config;tab]
-  / tab is the table-name symbol (NOT a table); named to avoid clashing with the tabname column
-  / a table uses its own rows; unlisted tables fall back to the default row, else are skipped
+  / tab: table name; its own rows, else the default rows, else none
   if[count tabsp:select from config where tabname=tab;
     .z.m.loginfo[`getsortparams;"sort params found for: ",string[tab]];
     :tabsp;
@@ -165,16 +151,14 @@ getsortparams:{[config;tab]
   :0#config;
   };
 
-/ internal - log a sort failure without rethrowing so remaining partitions still run
+/ internal - log a sort failure without rethrowing
 sorterr:{[sc;dl;e]
-  / a single partition failure should not halt the whole run
   .z.m.logerr[`sorterr;"failed to sort ",string[dl]," by ",(", " sv string sc),": ",e];
   :();
   };
 
 / internal - sort one partition directory by the given columns
 sortcolumns:{[dloc;sortcols]
-  / split out of sortdir so the conditional body there stays a single statement
   .z.m.loginfo[`sortcolumns;"sorting ",string[dloc]," by: ",", " sv string sortcols];
   .[xasc;(sortcols;dloc);
     sorterr[sortcols;dloc]];
@@ -182,7 +166,7 @@ sortcolumns:{[dloc;sortcols]
 
 / internal - sort columns and apply attributes for a single on-disk partition directory
 sortdir:{[sp;dloc]
-  / sort by the columns flagged sort=1b, then hand every row to applyattr (it skips non-attributes)
+  / sort by the columns flagged sort, then apply each row's attribute
   sortcols:exec column from sp where sort, not null column;
   if[count sortcols; sortcolumns[dloc;sortcols]];
   applyattr[dloc;;]'[sp`column;sp`att];
@@ -190,15 +174,12 @@ sortdir:{[sp;dloc]
 
 / internal - log an attribute application failure without rethrowing
 attrerr:{[dl;cn;at;e]
-  / logs failure and continues so other columns and partitions still get processed
   .z.m.logerr[`attrerr;"unable to apply ",string[at]," attr to ",string[cn]," in ",string[dl],": ",e];
   :();
   };
 
 applyattr:{[dloc;colname;att]
-  / apply a single kdb+ attribute to an on-disk column; logs and swallows errors so a run continues
-  / dloc: hsym (partition directory e.g. `:hdb/2024.01.01/trade); colname: symbol; att: symbol (p|s|g|u or empty)
-  / skip anything that is not a real attribute - covers the empty none-sentinel and any bad value
+  / apply an attribute to an on-disk column, logging any error; dloc: partition dir hsym; att: p|s|g|u or empty
   if[not att in `p`s`g`u; :()];
   .z.m.loginfo[`applyattr;"applying ",string[att]," attr to ",string[colname]," in ",string dloc];
   .[{@[x;y;z#]};
@@ -207,9 +188,7 @@ applyattr:{[dloc;colname;att]
   };
 
 savedown:{[dir;part;tabname;data]
-  / write an in-memory table to a date-partitioned hdb partition, then sort it per .z.m.sortconfig
-  / dir: hdb root (hsym); part: partition value (date/month/int); tabname: symbol; data: in-memory table
-  / enumerates syms against the hdb sym file; sorting and attributes are driven by .z.m.sortconfig
+  / enumerate and write a table to an hdb partition, then sort it; dir: hdb root hsym; part: partition value
   .z.m.loginfo[`savedown;"saving ",string[tabname]," partition ",string[part]," to ",string dir];
   path:` sv (.Q.par[dir;part;tabname];`);
   path set .Q.en[dir;manipulate[tabname;data]];
@@ -219,9 +198,7 @@ savedown:{[dir;part;tabname;data]
   };
 
 appenddown:{[dir;part;tabname;data]
-  / append rows to an existing on-disk partition (enumerates syms); does not sort
-  / call sort separately once the partition is complete, to avoid re-sorting on every append
-  / dir: hdb root (hsym); part: partition value; tabname: symbol; data: in-memory table
+  / enumerate and append rows to an existing partition, without sorting
   .z.m.loginfo[`appenddown;"appending ",string[tabname]," partition ",string[part]," in ",string dir];
   path:` sv (.Q.par[dir;part;tabname];`);
   if[not count @[key;path;{`$()}];

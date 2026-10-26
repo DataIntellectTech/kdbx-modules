@@ -176,7 +176,7 @@ true,0,0,q,1=count select from ip where sym=`AAPL,1,1,p# lookup is correct - one
 run,0,0,q,dbwrite.init[enlist[`log]!enlist mylog],1,1,reset sortconfig to (::) for default-config savedown
 run,0,0,q,dbwrite.savedown[`:dbw_ihdb;2024.01.02;`trade;rd],1,1,savedown repeated-sym data with the default (time) config must not crash
 true,0,0,q,(asc x)~x:exec time from get ` sv (.Q.par[`:dbw_ihdb;2024.01.02;`trade];`),1,1,default-config partition sorted by time
-true,0,0,q,`p=attr (get ` sv (.Q.par[`:dbw_ihdb;2024.01.02;`trade];`))`sym,1,1,default config parts sym (TorQ's config/sort.csv)
+true,0,0,q,`p=attr (get ` sv (.Q.par[`:dbw_ihdb;2024.01.02;`trade];`))`sym,1,1,default config parts sym
 
 comment,,,,,,,log call verification - switch to capturing logger
 run,0,0,q,dbwrite.init[enlist[`log]!enlist logcap],1,1,re-init with capturing logger
@@ -245,24 +245,24 @@ after,0,0,q,rmrf`:dbw_sort_tp,1,1,cleanup sort partition
 after,0,0,q,rmrf`:dbw_def_tp,1,1,cleanup default partition
 after,0,0,q,rmrf`:dbw_md1,1,1,cleanup md1 partition
 after,0,0,q,rmrf`:dbw_md2,1,1,cleanup md2 partition
-comment,,,,,,,round 2 - savedown hooks, as TorQ's dbwriteutils.q .save.manipulate and .save.postreplay
+comment,,,,,,,savedown hooks
 run,0,0,q,"dpath:{[d;p;t] ` sv (.Q.par[d;p;t];`)};htbl:([]time:2024.01.01D09:00 2024.01.01D08:00;sym:`IBM`AAPL;price:100 200f)",1,1,partition path helper and a test table
 run,0,0,q,"dbwrite.init[`log`savedownmanipulation!(mylog;enlist[`trade]!enlist {update price:2*price from x})]",1,1,init with a trade manipulation
 run,0,0,q,"dbwrite.savedown[`:dbw_hook;2024.01.01;`trade;htbl]",1,1,savedown applies the manipulation before writing
 true,0,0,q,"200 400f~asc exec price from get dpath[`:dbw_hook;2024.01.01;`trade]",1,1,the prices on disk are doubled
-run,0,0,q,dbwrite.init[enlist[`log]!enlist mylog],1,1,a later init without the hook (as #762: a default must not overwrite a supplied hook)
+run,0,0,q,dbwrite.init[enlist[`log]!enlist mylog],1,1,a later init without the hook
 run,0,0,q,"dbwrite.savedown[`:dbw_hook;2024.01.02;`trade;htbl]",1,1,savedown again
 true,0,0,q,"200 400f~asc exec price from get dpath[`:dbw_hook;2024.01.02;`trade]",1,1,the supplied hook still applies
 run,0,0,q,"caplog:0#caplog;dbwrite.init[`log`savedownmanipulation!(logcap;enlist[`trade]!enlist {'`boom})]",1,1,init with a failing manipulation
 run,0,0,q,"dbwrite.savedown[`:dbw_hook;2024.01.03;`trade;htbl]",1,1,savedown with the failing hook
-true,0,0,q,"(update sym:`#sym from `sym`time xasc htbl)~update sym:`#value sym from select from get dpath[`:dbw_hook;2024.01.03;`trade]",1,1,the original rows are written unchanged (as legacy .save.manipulate returns x on failure)
+true,0,0,q,"(update sym:`#sym from `sym`time xasc htbl)~update sym:`#value sym from select from get dpath[`:dbw_hook;2024.01.03;`trade]",1,1,the original rows are written unchanged
 true,0,0,q,"any (exec msg from caplog where fn=`error,ctx=`manipulate) like ""*boom*""",1,1,the failure is logged at error level
 run,0,0,q,"dbwrite.postreplay[`:dbw_hook;2024.01.01]",1,1,the default postreplay {[d;p]} runs without 'rank
 run,0,0,q,"dbwrite.init[`log`postreplay!(mylog;{[d;p] `prcalled set (d;p)})];dbwrite.postreplay[`:dbw_hook;2024.01.01]",1,1,a configured postreplay is called
 true,0,0,q,"(`:dbw_hook;2024.01.01)~prcalled",1,1,with the hdb dir and partition
 run,0,0,q,"dbwrite.init[`log`savedownmanipulation`postreplay!(mylog;()!();{[d;p]})]",1,1,reset the hooks for later rows
 
-comment,,,,,,,round 2 - default sort is TorQ's config/sort.csv: p# on sym, sorted by sym then time
+comment,,,,,,,default sort: p# on sym, sorted by sym then time
 run,0,0,q,dbwrite.init[enlist[`log]!enlist mylog],1,1,no sort config set
 run,0,0,q,"dbwrite.savedown[`:dbw_dsort;2024.01.01;`trade;htbl]",1,1,savedown with the default config
 true,0,0,q,"`p~attr (get dpath[`:dbw_dsort;2024.01.01;`trade])`sym",1,1,sym has p# on disk
@@ -270,7 +270,7 @@ true,0,0,q,"`AAPL`IBM~value exec sym from get dpath[`:dbw_dsort;2024.01.01;`trad
 run,0,0,q,"dbwrite.setconfig ([]tabname:enlist`trade;att:enlist`;column:enlist`time;sort:enlist 1b)",1,1,a user config with a trade row and no default row
 run,0,0,q,"dbwrite.savedown[`:dbw_dsort;2024.01.02;`trade;htbl];dbwrite.savedown[`:dbw_dsort;2024.01.02;`quote;htbl]",1,1,savedown trade and a table missing from the config
 true,0,0,q,"`~attr (get dpath[`:dbw_dsort;2024.01.02;`trade])`sym",1,1,the user's trade row overrides the default (no p#)
-true,0,0,q,"`~attr (get dpath[`:dbw_dsort;2024.01.02;`quote])`sym",1,1,a table missing from a config with no default row is not sorted (as legacy sorttab)
+true,0,0,q,"`~attr (get dpath[`:dbw_dsort;2024.01.02;`quote])`sym",1,1,a table missing from a config with no default row is not sorted
 run,0,0,q,"dbwrite.setconfig ([]tabname:`trade`default`default;att:``p`;column:`time`sym`time;sort:111b)",1,1,a user config with a default row
 run,0,0,q,"dbwrite.savedown[`:dbw_dsort;2024.01.03;`quote;htbl]",1,1,savedown a table missing from the config
 true,0,0,q,"`p~attr (get dpath[`:dbw_dsort;2024.01.03;`quote])`sym",1,1,it gets the config's default row (p# on sym)

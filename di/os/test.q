@@ -37,7 +37,7 @@
     [.testos.warnings,:enlist warn;1b]]
   };
 
-.testos.nowin:.testos.runif[not .m.di.0os.iswindows;;""]; / No warning here because we always simply skip this in nyi situations
+.testos.nowin:.testos.runif[not .m.di.0os.iswindows;;""]; / skipped silently on windows
 .testos.symlinkable:.testos.runif[.testos.cansymlink;;"Skipped symlink tests because we did not have required admin rights"];
 .testos.chownable:.testos.runif[.testos.canchown;;"Skipped chown tests because we did not have required root access"];
 

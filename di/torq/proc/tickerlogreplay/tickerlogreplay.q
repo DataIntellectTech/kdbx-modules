@@ -90,7 +90,7 @@ init:{[config;deps]
 // the path to the table to save
 pathtotable:{[h;p;t] `$(string .Q.par[h;partitiontype$p;t]),"/"}
 
-// create empty tables - we need to make sure we only create them once
+// create empty tables, once
 emptytabs:`symbol$()
 createemptytable:{[h;p;t;td]
  $[partandmerge;dest:td;dest:h];
@@ -173,7 +173,7 @@ replaylog:{[logfile]
 
  if[lastmessage<firstmessage; .z.m.log[`info][`replay;"lastmessage (",(string lastmessage),") is less than firstmessage (",(string firstmessage),"). Not replaying log file"]; :()];
  .z.m.log[`info][`replay;"replaying data from logfile ",(string logfile)," from message ",(string firstmessage)," to ",(string lastmessage),". Message indices are from 0 and inclusive - so both the first and last message will be replayed"];
- // when we do the replay, need to move the indexing, otherwise we won't replay the last message correctly
+ // add one to a finite lastmessage so the last message is replayed
   replayinner[lastmessage+lastmessage<0W;logfile];
 
  .z.m.log[`info][`replay;"replayed data into tables with the following counts: ","; " sv {" = " sv string x}@'flip(key tablecounts;value tablecounts)];
@@ -262,7 +262,7 @@ upserttopartition:{[h;dir;tablename;tabdata;pt;expttype;expt]
   upsert;
   (directory;r:update `sym!sym from ?[tabdata;{(x;y;(),z)}[in;;]'[expttype;expt];0b;()]);
   {[e] .z.m.log[`error][`savetablesbypart;"Failed to save table to disk : ",e];'e}];
-  /-key in partsizes are directory to partition, need to drop training slash in directory key
+  /-key in partsizes are directory to partition, drop the trailing slash in the directory key
   .z.m.merge.trackpartition[first ` vs directory;count r;-22!r];
   };
 
@@ -276,7 +276,7 @@ savetablesbypart:{[dir;pt;tablename;h]
  .z.m.merge.checkpartitiontype[tablename;extrapartitiontype];
  // enumerate data to be upserted
  enumdata:update (`. `sym)?sym from .Q.en[h;value tablename];
- // get list of distinct combiniations for partition directories
+ // get list of distinct combinations for partition directories
  extrapartitions:(`. `sym)?.z.m.merge.getextrapartitions[tablename;extrapartitiontype];
 
  .z.m.log[`info][`save;"enumerated ",(string tablename)," table"];

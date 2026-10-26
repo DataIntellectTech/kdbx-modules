@@ -1,23 +1,11 @@
-/ merge module for kdb-x
-/ on-disk data-merging utilities for the write-down (wdb) flow: intraday data is
-/ written to disk in temporary partition segments, then merged into the final hdb
-/ partition - either whole-partition, column-by-column, or a hybrid of the two chosen
-/ per partition by a row-count / byte-size limit
-/ merging keeps memory flat - segments are read and upserted a batch at a time rather
-/ than held in memory and written once at end-of-day
-/ p# columns come from the caller, or from a sort config it passes in; never read here
-/ config and the injected log dependency are passed to init in a single dictionary: config
-/ keys (see merge.md) are optional with defaults; log is required and init errors
-/ immediately if it is missing or does not provide info/error - see merge.md
-/ module-local state convention: mutable state and injected deps are held under .z.m and
-/ accessed via .z.m at every call site; nothing is read bare
+/ merge temporary on-disk partition segments into the final hdb partition, whole-partition,
+/ column-by-column, or a hybrid chosen per partition by a row-count or byte-size limit
 
 / ============================================================
 / module state and defaults
 / ============================================================
 
-/ schema template for the partition-size tracking table - the live copy is held in
-/ .z.m.partsizes, seeded fresh by init and reset by clearpartsizes
+/ partition-size tracking schema; the live copy is .z.m.partsizes
 partsizesschema:([ptdir:`symbol$()] rowcount:`long$(); bytes:`long$());
 
 / configuration defaults - overridden by the config keys in the dict passed to init
@@ -29,16 +17,12 @@ partlimitdefault:1000;        / maximum number of partitions merged together in 
 / ============================================================
 
 initialised:{[]
-  / has init run? .z.m.loginfo has no load-time default - only init ever sets it - so this
-  / probe can't be fooled by a same-named constant, unlike partsizes/mergebybytelimit/partlimit
-  / which all start with real, valid-looking defaults whether init has run or not
+  / has init run
   :@[{.z.m.loginfo;1b};::;{[e] :0b}];
   };
 
 requireinit:{[ctx]
-  / every exported function except init/getapimeta refuses to run before init has wired the
-  / deps - without this a pre-init call would fail on an unset .z.m.loginfo with a confusing
-  / raw error instead of a clear one
+  / signal unless init has run
   if[not initialised[];
     '"di.merge: ",string[ctx],": init must be called before any other function"];
   };
@@ -52,10 +36,7 @@ mergeonecol:{[dest;segment;col]
   / filepaths to the destination column and the matching column in the segment
   destcol:` sv dest,col;
   segcol:` sv segment,col;
-  / the read is deliberately NOT swallowed - a partial column failure must abort the whole
-  / mergebycol/mergehybrid call rather than leave dest half-updated across columns (see merge.md,
-  / "Two deliberate design decisions from adversarial testing") - but wrap it so the propagated
-  / error names the failing column and is logged, instead of a bare context-free read error
+  / a read failure is logged with the column name and aborts the whole merge
   destdata:.[get;enlist segcol;
     {[segcol;e] .z.m.logerr[`merge;"failed to read segment column ",(string segcol),
       ", aborting this merge - error is - ",e];
@@ -71,7 +52,6 @@ mergeonecol:{[dest;segment;col]
 
 / accumulate the row count and byte-size estimate for a freshly-written segment
 trackpartition:{[ptdir;rowcount;bytes]
-  / call each time data is written to a segment; keyed by partition directory
   requireinit[`trackpartition];
   .z.m.partsizes[ptdir]+:(rowcount;bytes);
   };
@@ -101,9 +81,7 @@ getpartlimit:{[]
 
 / upsert a partsizes-shaped table received from a peer process into local tracked state
 syncpartsizes:{[t]
-  / t: a table shaped like getpartsizes[] (ptdir/rowcount/bytes), typically received over IPC
-  / from a peer process's own getpartsizes[] call - upserts wholesale into local state, giving
-  / the receive side of the legacy raw-IPC partsizes fan-out a real function to go through
+  / t: a table shaped like getpartsizes[], e.g. from a peer process
   requireinit[`syncpartsizes];
   .z.m.partsizes:.z.m.partsizes upsert t;
   };
@@ -119,9 +97,7 @@ getpartchunks:{[partdirs;mergelimit]
   requireinit[`getpartchunks];
   / tracked sizes for just the partitions we are merging
   t:select from .z.m.partsizes where ptdir in partdirs;
-  / a requested partdir with no tracked size is silently absent from t above - log it so the gap
-  / is visible rather than something a caller has to notice missing from the merge batch. distinct
-  / on both sides so a duplicate partdir in the request doesn't skew the count
+  / log requested partitions with no tracked size
   if[0<n:count distinct[partdirs] except exec ptdir from t;
     .z.m.loginfo[`merge;"getpartchunks: ",string[n]," of ",string[count distinct partdirs],
       " requested partition(s) have no tracked size, dropped"]];
@@ -174,8 +150,6 @@ mergehybrid:{[extrapartitiontype;tableinfo;dest;partdirs;mergelimit]
     exec ptdir from .z.m.partsizes where ptdir in partdirs,bytes>mergelimit;
     exec ptdir from .z.m.partsizes where ptdir in partdirs,rowcount>mergelimit];
   if[(count overlimit)<>count partdirs;
-    / a distinct name, not a reassignment of partdirs - partdirs keeps meaning "everything
-    / requested" for the rest of the function, in case a later addition needs the full list
     underlimit:partdirs except overlimit;
     .z.m.loginfo[`merge;"merging ",(", " sv string underlimit)," by whole partition"];
     mergebypart[extrapartitiontype;` sv dest,`]'[getpartchunks[underlimit;mergelimit]];
@@ -248,10 +222,7 @@ getextrapartitiontype:{[sortconfig;tablename]
 / ============================================================
 
 init:{[deps]
-  / deps: dict - required `log (info, error only - merge.q never calls warn, confirmed
-  /              function-by-function against the legacy source);
-  /              optional `mergebybytelimit (default 0b), `partlimit (default 1000)
-  / example: merge.init[enlist[`log]!enlist logdep]
+  / deps: required `log (info and error used); optional `mergebybytelimit (default 0b), `partlimit (default 1000)
   if[99h<>type deps;
     '"di.merge: deps must be a dict with `log key"];
   if[not `log in key deps;
@@ -264,9 +235,7 @@ init:{[deps]
   .z.m.logerr:(deps`log)`error;
   .z.m.mergebybytelimit:$[`mergebybytelimit in key deps;deps`mergebybytelimit;mergebybytelimitdefault];
   .z.m.partlimit:$[`partlimit in key deps;deps`partlimit;partlimitdefault];
-  / preserve any partitions already tracked across a re-init (e.g. a live config reload) - partsizes
-  / is independent of the log/mergebybytelimit/partlimit deps a re-init is typically changing, and
-  / silently wiping tracked-but-unmerged segment sizes is a worse failure mode than leaving them be
+  / keep partitions already tracked across a re-init
   priorpartsizes:@[{.z.m.partsizes};::;{[e] 0#partsizesschema}];
   .z.m.partsizes:priorpartsizes;
   .z.m.loginfo[`merge;$[0<count priorpartsizes;
@@ -279,9 +248,7 @@ init:{[deps]
 / ============================================================
 
 getapimeta:{[]
-  / this module's api metadata, one row per callable api function, for di.torq to register with
-  / di.api. init/getapimeta are plumbing di.torq calls by convention and are not registered.
-  / names are bare - di.torq applies the process-wide qualification
+  / this module's api metadata, one row per callable function
   :flip `name`public`descrip`params`return!flip(
     (`checkpartitiontype;
       1b;"log any parted column supplied that is not a column on the table";

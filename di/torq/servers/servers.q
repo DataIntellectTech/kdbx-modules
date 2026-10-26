@@ -1,4 +1,4 @@
-/ di.torq.servers - connection management; registry, config and protocol functions at root .servers.*. See servers.md
+/ connection management; registry, config and protocol functions at root .servers.*
 
 / --- module-local state (initial values at load; read/written via .z.m at runtime) ---
 
@@ -32,9 +32,7 @@ settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscri
   (`.servers.PASSWORDS;enlist[`]!enlist `));
 
 raiseerror:{[ctx;msg]
-  / internal - log an error under ctx via the injected logger, then signal it, so a failure is
-  / observable in the log as well as thrown. used for all post-init domain errors (init's own
-  / dependency validation signals with a plain ' - the logger is not wired yet).
+  / internal - log an error under ctx then signal it
   .z.m.logerr[ctx;msg];
   '"di.torq.servers: ",string[ctx],": ",msg;
   };
@@ -81,7 +79,7 @@ init:{[deps]
   set[`.dotz.livehn;{x in 0Ni,key .z.W}];
   set[`.dotz.liveh0;{x in 0i,key .z.W}];
   pub:`opencon`cleanup`addnthawc`getdetails`addhw`addw`addh`retry`retrydiscovery`autodiscovery`retryrows`removerows`register`querydiscovery`registerfromdiscovery`addprocs`procupdate`refreshattributes`getserverbytype`gethandlebytype`gethpbytype`domainsocketsenabled`formathp`formatprocs`startup`pc!(opencon;cleanup;addnthawc;getdetails;addhw;addw;addh;retry;retrydiscovery;autodiscovery;retryrows;removerows;register;querydiscovery;registerfromdiscovery;addprocs;procupdate;refreshattributes;getserverbytype;getserverbytype[;`w;];gethpbytype;domainsocketsenabled;formathp;formatprocs;startup;pc);
-  / root .servers.gethandlebytype is legacy's getserverbytype[;`w;] (reopens dead handles), not the export
+  / root .servers.gethandlebytype is getserverbytype[;`w;], reopening dead handles
   set'[` sv/:`.servers,/:key pub;value pub];
   if[not .z.m.registered;
     / .z.pc
@@ -116,9 +114,7 @@ opencon:{[hpup]
   };
 
 readprocesscsv:{[path]
-  / internal - read the static process.csv phone book (host,port,proctype,procname). the PATH is
-  / supplied by the caller (from config`processcsv); di.torq.servers reads no env itself, holding
-  / di.torq.config's env-free boundary - di.torq resolves the path and puts it in config.
+  / internal - read the process.csv (host,port,proctype,procname) at the given path
   fsym:`$":",path;
   if[0=count key fsym;raiseerror[`readprocesscsv;"process.csv not found at ",path]];
   ("SISS";enlist",") 0: fsym
@@ -319,8 +315,7 @@ updatestats:{[wh]
   };
 
 gethandlebytype:{[pt;selection]
-  / get a single live handle for a proctype via a selection algorithm (`any`roundrobin`last), or
-  / 0Ni if none is connected. bumps usage stats on the chosen row.
+  / a live handle for a proctype by selection (`any`roundrobin`last), or 0Ni; bumps usage stats
   if[not -11h=type pt;raiseerror[`gethandlebytype;"proctype must be a symbol"]];
   if[not -11h=type selection;raiseerror[`gethandlebytype;"selection must be a symbol (`any`roundrobin`last)"]];
   r:getservers[pt];
@@ -330,7 +325,7 @@ gethandlebytype:{[pt;selection]
   wh
   };
 
-/ one server value for a proctype from SERVERS, reopening dead handles first, as trackservers.q:97-107
+/ one server value for a proctype from SERVERS, reopening dead handles first
 getserverbytype:{[ptype;serverval;selection]
   r:.servers.getservers[`proctype;ptype;()!();1b;1b];
   if[count r;
@@ -364,9 +359,7 @@ waitfortype:{[pt;timeoutms;pollms]
   };
 
 getapimeta:{[]
-  / this module's api metadata, one row per CALLABLE API function, for di.torq to register with
-  / di.api. init/getapimeta are plumbing (di.torq calls them by convention) and are deliberately NOT
-  / listed - the registry describes the callable api, not plumbing. names are bare (di.torq qualifies).
+  / this module's api metadata, one row per callable function
   :flip `name`public`descrip`params`return!flip(
     (`startup;         1b; "open connections to the config's proctypes from process.csv (config carries connections + processcsv)"; "[dict: config with `connections + `processcsv]"; "null");
     (`getservers;      1b; "live SERVERS rows for a proctype";                                      "[symbol: proctype]";                              "table: live server rows");
@@ -427,6 +420,6 @@ startupdepcyclestypename:{[requiredprocs;typeornamefunc;timeintv;cycles]
 / root, for chainedtp and segmentedtp
 .servers.startupdepnamecycles:startupdepcyclestypename[;reqprocnamesnotconn;;];
 
-/ root, as TorQ's: block until all required proctypes are connected, for a number of cycles or forever
+/ root: block until all required proctypes are connected, for a number of cycles or forever
 .servers.startupdepcycles:startupdepcyclestypename[;reqproctypesnotconn;;];
 .servers.startupdependent:startupdepcyclestypename[;reqproctypesnotconn;;0W];

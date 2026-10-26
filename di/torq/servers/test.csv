@@ -32,9 +32,9 @@ run,0,0,q,h:svc.gethandlebytype[`otherproc;`any],1,1,get a handle to the peer
 true,0,0,q,"2=h ""1+1""",1,1,the handle is a live remote connection to a separate process
 comment,,,,,,,root .servers.gethpbytype over SERVERS (trackservers.q:97-107)
 true,0,0,q,".servers.gethpbytype[`otherproc;`any]~first exec hpup from .servers.SERVERS where proctype=`otherproc",1,1,gethpbytype returns the live otherproc row's hpup
-true,0,0,q,"(`symbol$())~.servers.gethpbytype[`deadproc;`any]",1,1,a proctype with no live server gives an empty list after the reopen attempt (as legacy r[serverval])
+true,0,0,q,"(`symbol$())~.servers.gethpbytype[`deadproc;`any]",1,1,a proctype with no live server gives an empty list after the reopen attempt
 fail,0,0,q,".servers.gethpbytype[`otherproc;`nosuch]",1,1,an unknown selection signals
-true,0,0,q,".servers.gethandlebytype[`otherproc;`any]~first exec w from .servers.SERVERS where proctype=`otherproc",1,1,root gethandlebytype (legacy getserverbytype[;`w;]) returns the live otherproc handle
+true,0,0,q,".servers.gethandlebytype[`otherproc;`any]~first exec w from .servers.SERVERS where proctype=`otherproc",1,1,root gethandlebytype returns the live otherproc handle
 comment,,,,,,,cleanup + retry recover an ungraceful kill
 run,0,0,q,killpeer[],1,1,kill the peer ungracefully (handlers are mocked so no auto .z.pc fires)
 run,0,0,q,"@[{h ""1+1""};();{[e]e}]",1,1,touch the dead handle so kdb+ drops it from .z.W (protected - expected to error)

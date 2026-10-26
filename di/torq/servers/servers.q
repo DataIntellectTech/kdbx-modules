@@ -149,7 +149,7 @@ addhw:{[hpuP;W]
 
 addw:addhw[`]
 
-/ open a connection to a server and store its details, as trackservers.q:130-134
+/ open a connection to a server and store its details
 addh:{[hpuP]
   W:opencon hpuP;
   $[null W;
@@ -224,7 +224,7 @@ addprocs:{[connectiontab;procs;connect]
 / used to handle updates from the discovery service
 procupdate:{[procs] addprocs[procs;exec distinct proctype from procs;0b];}
 
-/ re-register this process's attributes with each discovery service, as trackservers.q:255-258
+/ re-register this process's attributes with each discovery service
 refreshattributes:{
   retrydiscovery[];
   (neg exec w from .servers.getservers[`proctype;`discovery;()!();0b;0b])@\:(`..register;`);
@@ -389,7 +389,7 @@ attributematch:{[req;avail]
 
 / root, for .sub: run on (re)connected SERVERS rows
 .servers.connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}];
-/ addprocs' hook for bespoke extensions when adding processes, as trackservers.q:246-247
+/ addprocs' hook for bespoke extensions when adding processes
 .servers.addprocscustom:@[value;`.servers.addprocscustom;{{[connectiontab;procs]}}];
 
 / are any required processes not connected

@@ -1,10 +1,5 @@
-/ central registry for KDB-X .z.* connection-lifecycle callbacks
-/ the single sanctioned place to hook .z.* events - replaces per-file hand-rolled closure wrapping
-/ simple events fan out to any number of registrants; phased events thread pre -> exec -> transform -> post around one owner
-
-/ version is read from the VERSION file (init.q); di.torq.depcheck reads that file for the manifest graph
-/ NOTE: `transform` phase (chained result rewrite between exec and post) is a TorqX addition on top
-/ of the upstream feature-handlers design. Fed back to that PR.
+/ registry for .z.* callbacks: simple events fan out to any number of registrants; phased events
+/ thread pre -> exec -> transform -> post around one owner
 
 / ============================================================
 / constants (load-time)
@@ -14,7 +9,7 @@
 observerevents:`.z.pc`.z.po`.z.exit`.z.wo`.z.wc;
 
 / phased events - pre (transform request) -> exec (single owner) -> transform (rewrite result) -> post (observe)
-/ .z.pw is included but binary and pre-less (see register); .z.ph replaces the built-in HTTP GET handler wholesale (see notes)
+/ .z.pw is binary with no pre phase; .z.ph replaces the built-in HTTP GET handler
 phasedevents:`.z.pg`.z.ps`.z.pi`.z.pp`.z.ph`.z.ws`.z.pw;
 
 / per-phase handler table - name, priority (lower runs first), func; ties break by registration order
@@ -234,9 +229,7 @@ list:{[event]
   };
 
 init:{[deps]
-  / initialise di.torq.handlers - validate the required log dependency and set up empty registries (idempotent)
-  / deps: a dict with a `log key; log must be a dict of binary {[c;m]} functions with `info`warn`error keys
-  / example: handlers.init[enlist[`log]!enlist logdep]
+  / validate the required `log dep (`info`warn`error dict of {[c;m]}) and set up empty registries (idempotent)
   if[99h<>type deps;
     '"di.torq.handlers: deps must be a dict with `log key"];
   if[not `log in key deps;

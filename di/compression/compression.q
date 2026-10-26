@@ -16,7 +16,7 @@ checkcsv:{[csvtab;path]
     .z.m.logerr[`compression;err:path,": Compression config has empty cells in column(s): ", (" " sv string `column`table`minage`clevel where nulls)];'err];
   };
 
-/ Empty compressioncsv table defined for edge case where a bad config is loaded first attempt
+/ empty config, kept if the first config loaded is bad
 compressioncsv:([] table:`$();minage:`int$();column:`$();calgo:`int$();cblocksize:`int$();clevel:`int$());
 
 loadcsv:{[inputcsv]
@@ -47,8 +47,7 @@ hdbstructure:{
   / work out the age of each partition
   $[14h=type t`partition; t:update age:.z.D - partition from t;
     13h=type t`partition; t:update age:(`month$.z.D) - partition from t;
-    / otherwise it is ints.  If all the values are within 1000 and 3000
-    / then assume it is years
+    / int partitions all within 1000-3000 are years
     t:update age:{$[all x within 1000 3000; x - `year$.z.D;(count x)#0Ni]}[partition] from t];
   delete splitcount,split from t
   };
@@ -86,8 +85,8 @@ showcomp:{[hdbpath;csvpath;maxage]
 
 compressfromtable:{[table]
   statstab::([] file:`$(); algo:`int$(); compressedLength:`long$();uncompressedLength:`long$());
-  / Check if process is single threaded - if multi then compress in parallel then clean up after; worker processes (s<0) take a table each, as TorQ #732
-  / Add metrics on any files due to be compressed to be used afterwards for comparison 
+  / compress serially, or in parallel with a table per worker when s<0
+  / record pre-compression sizes for the summary
   table:update compressionvaluepre:{(-21!x)`compressedLength}'[fullpath] from table;
   $[0= system"s";
     singlethreadcompress[table];
@@ -192,9 +191,7 @@ hashfilecheck:{[compressedFile;filetoCompress;sf]
   };
 
 init:{[deps]
-  / deps - `log!(logdict) where logdict is `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required
-  / examples:
-  /   cmp.init[enlist[`log]!enlist logdep]
+  / deps: required `log dict of `info`warn`error {[c;m]} functions
   logdict:$[99h=type deps;$[(`log in key deps) and not (::)~deps`log;deps`log;()!()];()!()];
   if[not count logdict;
     '"di.compression: log dependency is required; pass `info`warn`error functions - see di.util.log or refer to confluence documentation";

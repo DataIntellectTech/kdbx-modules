@@ -38,7 +38,7 @@ run,0,0,q,"r:.sub.subscribe[`trade;`;1b;1b;peerproc[]]",1,,subscribe through the
 true,0,0,q,4=count trade,1,,schema set and the peer's 4 logged messages replayed
 true,0,0,q,"(enlist`trade;D;4)~r`subtables`tplogdate`i",1,,returns subtables/tplogdate/i as a chained subscription
 true,0,0,q,"1=count select from .sub.SUBSCRIPTIONS where table=`trade,w=tph,active",1,,subscription recorded active
-true,0,0,q,"99h=type .sub.subscribe[`trade;`;0b;0b;peerproc[]]",1,,a repeat all-syms subscription is not deduplicated (stored enlist` vs bare `) - it subscribes again
+true,0,0,q,"99h=type .sub.subscribe[`trade;`;0b;0b;peerproc[]]",1,,a repeat all-syms subscription subscribes again
 true,0,0,q,"1=count select from .sub.SUBSCRIPTIONS where table=`trade",1,,and the keyed upsert keeps one row
 run,0,0,q,hclose tph,1,,drop the peer handle
 run,0,0,q,.m.di.0subscriptions.checksubscriptions[],1,,run the check job
@@ -53,7 +53,7 @@ true,0,0,q,"(enlist`ctp1)~exec procname from .sub.getsubscriptionhandles[`;`ctp1
 run,0,0,q,".servers.enabled:1b;.servers.connectcustom:{[r]};.m.di.0subscriptions.autoreconnect:1b;.m.di.0subscriptions.reconnectinit:0b",1,,autoreconnect on with server tracking enabled
 run,0,0,q,".sub.subscribe[`trade;`;0b;0b;peerproc[]]",1,,subscribe
 true,0,0,q,.m.di.0subscriptions.reconnectinit,1,,subscribe wrapped .servers.connectcustom for autoreconnect once
-true,0,0,q,10b~pcclosecheck[],1,,closing a subscribed handle marks it inactive through .z.pc at once (no checksubscriptions run)
+true,0,0,q,10b~pcclosecheck[],1,,closing a subscribed handle marks it inactive through .z.pc
 comment,,,,,,,checksubscriptionperiod from TOML values
 true,0,0,q,"(enlist(`checksubscriptions;0D00:00:10;1))~periodinit ""0D00:00:10""",1,,a string period registers a timespan job
 true,0,0,q,(enlist(`checksubscriptions;0D00:00:10;1))~periodinit 10,1,,a number of seconds registers a timespan job

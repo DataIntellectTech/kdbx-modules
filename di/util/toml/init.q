@@ -1,4 +1,3 @@
-/ a small scoped-down TOML parser for the modular torq world - reads settings .toml files into
-/ q dicts. pure module (no init, no injected deps); di.torq.config lazily loads it to parse .toml tiers.
+/ TOML subset parser for settings files
 \l ::toml.q
 export:([parsetoml;parsefile;getapimeta])

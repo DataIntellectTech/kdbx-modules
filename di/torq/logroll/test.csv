@@ -18,7 +18,7 @@ true,0,0,q,0=count addjobcalls,1,,disabled scheduled no timer job
 fail,0,0,q,logroll.init[enabledabsdircfg[];()!()],1,,enabled with no deps at all must error on the missing log dependency
 fail,0,0,q,logroll.init[enabledabsdircfg[];enlist[`log]!enlist mocklog[]],1,,enabled with log but no timer dependency must error
 
-run,0,0,q,spawnchildinit["enabledabsdircfg"],1,,enabled with an absolute dir - spawned in a separate process (see test.q's comment on why)
+run,0,0,q,spawnchildinit["enabledabsdircfg"],1,,enabled with an absolute dir - run in a separate process
 true,0,0,q,1=outfilecount[],1,,exactly one out_ file created
 true,0,0,q,1=errfilecount[],1,,exactly one err_ file created
 true,0,0,q,outaliasexists[],1,,out_ alias symlink created by default

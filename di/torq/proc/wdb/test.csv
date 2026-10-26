@@ -23,9 +23,9 @@ true,0,0,q,0D00:00:10~.m.di.0torq.0proc.0wdb.astimespan "10",1,,astimespan reads
 true,0,0,q,0D00:00:10~.m.di.0torq.0proc.0wdb.astimespan "0D00:00:10",1,,astimespan parses timespan text
 true,0,0,q,0D00:00:10~.m.di.0torq.0proc.0wdb.astimespan 10,1,,astimespan reads a number as seconds
 
-fail,0,0,q,.m.di.0torq.0proc.0wdb.tolong "not-a-number",1,,tolong rejects unparseable text rather than returning null (a null period silently busy-loops di.timer)
+fail,0,0,q,.m.di.0torq.0proc.0wdb.tolong "not-a-number",1,,tolong rejects unparseable text rather than returning null
 fail,0,0,q,.m.di.0torq.0proc.0wdb.tolong "",1,,tolong rejects an empty string
-true,0,0,q,0<count (@[.m.di.0torq.0proc.0wdb.tolong;"3.5";{[e] e}]) ss "3.5",1,,tolong error text names the OFFENDING STRING itself - not a stype signal (string is atomic over a char vector; naive (string x) on an already-string x fans out per character)
+true,0,0,q,0<count (@[.m.di.0torq.0proc.0wdb.tolong;"3.5";{[e] e}]) ss "3.5",1,,tolong error text names the offending string
 
 comment,,,,,,,mode - validated before anything is opened or written
 true,0,0,q,"0<count (initerr (enlist`mode)!enlist`bogus) ss ""mode must be saveandsort, save or sort""",1,,an unrecognised mode fails init naming the setting
@@ -52,7 +52,7 @@ true,0,0,q,missingtables[],1,,startup writes empty table schemas into the workin
 true,0,0,q,tabsizes[],1,,tablelist orders tables by bytes written
 true,0,0,q,manipulation[],1,,savedownmanipulation is applied once before a table is written (5 doubled to 10)
 true,0,0,q,postreplay[],1,,postreplay is called after the move
-true,0,0,q,failedpostreplay[],1,,a failing postreplay stops end of day after the move: no reload and the partition does not advance (as TorQ's wdb)
+true,0,0,q,failedpostreplay[],1,,a failing postreplay stops end of day after the move: no reload and the partition does not advance
 true,0,0,q,compression[],1,,compression is applied to the hdb and reset afterwards
 true,0,0,q,fixpartition[],1,,data replayed into the wrong partition is moved to the tp log date
 true,0,0,q,tpretry[],1,,init fails when no tickerplant connects within tpwaittimeout
@@ -60,9 +60,9 @@ true,0,0,q,pattrcheck[],1,,a partitioned writedown mode without a default p attr
 true,0,0,q,replaythreshold[],1,,replay uses replaynumrows while live flushing uses numrows
 true,0,0,q,initidempotent[],1,,init can be called twice without colliding on its timer job
 true,0,0,q,savejobmode[],1,,the flush job is scheduled from the end of the previous run (mode 3)
-true,0,0,q,numtabdefault[],1,,numtab defaults to legacy quote/trade thresholds and replaynumtab follows it
+true,0,0,q,numtabdefault[],1,,numtab defaults to quote/trade thresholds and replaynumtab follows it
 true,0,0,q,endofperiodstub[],1,,a root endofperiod stub is published so an stp period roll does not raise
-true,0,0,q,customreload[],1,,a custom proctype in reloadorder is reloaded with legacy root reload
+true,0,0,q,customreload[],1,,a custom proctype in reloadorder gets root reload
 true,0,0,q,partlimitpassed[],1,,partlimit from wdb config reaches di.merge and falls back to its default
 true,0,0,q,workermerge[],1,,a saveandsort wdb merges on its sortworkers
 true,0,0,q,savemode`default,1,,a save-mode wdb hands a default-mode day to the sort process
@@ -75,7 +75,7 @@ true,0,0,q,tabsizestracked[],1,,a partitioned writedown tracks tabsizes so table
 true,0,0,q,tabsizescleared[],1,,end of day clears tabsizes in a partitioned mode too
 true,0,0,q,nogatewayquiet[],1,,no gateway is a normal state and must not log an error
 
-comment,,,,,,,parity with legacy wdb - overridable getpartition
+comment,,,,,,,a config getpartition replaces the default
 true,0,0,q,getpartitionoverride[],1,,a getpartition supplied in config replaces the built-in
 
 run,0,0,q,stoptp[],1,,stop the fake tickerplant

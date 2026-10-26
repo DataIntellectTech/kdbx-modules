@@ -1,4 +1,4 @@
-/ di.torq.proc.wdb - ported from TorQ's wdb.q
+/ di.torq.proc.wdb - write database
 / subscribes to the tickerplant and appends data to disk after the in-memory table exceeds a specified number of rows
 / at eod the on-disk data is sorted and attributes applied as specified in the sort.csv file
 / modes: saveandsort, save (the sort is handed to a sort process) and sort (proctypes sort and sortworker)
@@ -43,7 +43,7 @@ replaymaxrows:{[t] $[t in key .z.m.replaynumtab;.z.m.replaynumtab t;.z.m.replayn
 mergemaxrows:{[t] $[t in key .z.m.mergenumtab;.z.m.mergenumtab t;.z.m.mergenumrows]}
 
 / function to determine the partition value
-/ the partition value; legacy exposed this as an overridable setting, so config may replace it
+/ the partition value; config may replace it
 defaultgetpartition:{[] $[null .z.m.currentpartition;(`date^.z.m.partitiontype)$.z.D;.z.m.currentpartition]}
 getpartition:{[] .z.m.getpartition[]}
 
@@ -53,7 +53,7 @@ tablelist:{[] ((exec tablename from `bytes xdesc .z.m.tabsizes) union tables[`.]
 / function that ensures a list of syms is returned no matter what is passed to it
 ensuresymlist:{[s] -1 _ `${@[x; where not ((type each x) in (10 -10h));string]} s,(::)}
 
-/ saves a table to the partition once over its row limit; cleared with @[`.;...] as bare writes land in the module
+/ saves a table to the partition once over its row limit, then clears the root table
 savetables:{[dir;pt;forcesave;tabname]
   / check row count
   / forcesave will flush the data to disk irrespective of counts
@@ -293,7 +293,7 @@ movetohdb:{[dw;hw;pt]
       " is present in both location. Operation will be aborted to avoid corrupting the hdb"]]
   }
 
-/ root sym is set with @[`.;...]: a bare load from a use-loaded module lands in its private namespace
+/ loads the sym file into root sym
 reloadsymfile:{[symfilepath]
   if[not count key symfilepath;
     .z.m.log[`warn][`reloadsymfile;"no sym file at ",(1_string symfilepath)," - nothing to load"];
@@ -302,10 +302,10 @@ reloadsymfile:{[symfilepath]
   @[{@[`.;`sym;:;get x]};symfilepath;{[e] .z.m.log[`error][`sort;"failed to reload sym file: ",e]}]
   }
 
-/ legacy's .sort.sorttab: x is (table;dir)
+/ sorts a table; x is (table;dir)
 sorttab:{[x] (.z.m.dbw`sort)[x 0;x 1]}
 
-/ as legacy, workers are only used when this process was started with a negative -s
+/ workers are used only with a negative -s
 useworkers:{[] (0<count .z.pd[]) and 0>system"s"}
 
 / sends each worker the sym file to reload, async then flushed
@@ -335,12 +335,12 @@ endofdaysortdate:{[dir;pt;tablist;hdbsettings]
     " directory to the hdb directory ",hw:(.z.m.os`topath) -1_string .Q.par[hdbsettings`hdbdir;pt;`]];
   .z.m.log[`info][`mvtohdb;"Attempting to move ",(", " sv string key hsym `$dw)," from ",dw," to ",hw];
   .[movetohdb;(dw;hw;pt);{[e] .z.m.log[`error][`mvtohdb;"Function movetohdb failed with error: ",e]}];
-  / call the postreplay hook, unprotected as TorQ's wdb
+  / call the postreplay hook unprotected
   (.z.m.dbw`postreplay)[hdbsettings`hdbdir;pt];
   if[.z.m.permitreload;doreload pt];
   }
 
-/ the loaded sort config, or an empty one as legacy's .sort.params
+/ the loaded sort config, or an empty one
 sortparams:{[] $[(::)~c:(.z.m.dbw`getconfig)[];([] tabname:`symbol$(); att:`symbol$(); column:`symbol$(); sort:`boolean$());c]}
 
 / the parted column(s) for a table from the sort config, falling back to the default row
@@ -427,7 +427,7 @@ endofdaymerge:{[dir;pt;tablist;mergelimits;hdbsettings;mergemethod;writedownmode
   if[count key p:.Q.par[dir;pt;`];
     .z.m.log[`info][`merge;"attempting to delete temp storage directory"];
     @[.z.m.os`deldir;p;{[p;e] .z.m.log[`info][`eod;"could not delete directory: ",(1_string p)," - maybe something(IDB?) gets hold of it."]}[p]]];
-  / call the postreplay hook, unprotected as TorQ's wdb
+  / call the postreplay hook unprotected
   (.z.m.dbw`postreplay)[hdbsettings`hdbdir;pt];
   $[.z.m.permitreload;doreload pt;if[.z.m.gc;.Q.gc[]]];
   }
@@ -470,7 +470,7 @@ endofdaysort:{[dir;pt;tablist;writedownmode;mergelimits;hdbsettings;mergemethod]
   }
 
 / the call each reloadorder type makes on the far side
-/ anything other than an hdb or idb gets legacy's root `reload`, which is what the rdb exposes
+/ anything other than an hdb or idb gets root reload, as the rdb exposes
 reloadexpr:{[ptype]
   $[ptype in .z.m.hdbtypes;{[d] .hdb.reload[]};
     ptype in .z.m.idbtypes;{[d] .idb.intradayreload[]};
@@ -592,10 +592,10 @@ checksortparams:{[]
     .z.m.log[`info][`init;"parted attribute p set at least once for each table in sort.csv"]];
   }
 
-/ reads the sort.csv, as legacy the app's sort.csv when no sortcsv is set
+/ reads the sort.csv: sortcsv, else the app's sort.csv
 initdbwrite:{[config;deps]
   .z.m.dbw:use`di.dbwrite;
-  / the save down hooks from config, defaulting as TorQ's wdb.q:78-79, go to di.dbwrite
+  / the save down hooks from config go to di.dbwrite
   sdm:$[`savedownmanipulation in key config;config`savedownmanipulation;()!()];
   pr:$[`postreplay in key config;config`postreplay;{[d;p]}];
   (.z.m.dbw`init)[`log`savedownmanipulation`postreplay!(deps`log;sdm;pr)];
@@ -652,12 +652,12 @@ setconfig:{[config]
   .z.m.currentpartition:0N;
   }
 
-/ logging stub for the period roll, as legacy's writedown.q shipped: a segmented tickerplant sends (`endofperiod;currp;nextp;data)
+/ logs the period roll a segmented tickerplant sends as (`endofperiod;currp;nextp;data)
 endofperiod:{[currp;nextp;data]
   .z.m.log[`info][`endofperiod;"Received endofperiod. currentperiod, nextperiod and data are ",(string currp),", ", (string nextp),", ", .Q.s1 data];
   }
 
-/ publishes the root names other processes and legacy's peach lambdas call
+/ publishes the root names other processes and peach lambdas call
 setroot:{[]
   set[`.wdb.endofdaysort;endofdaysort];
   set[`.wdb.handler;handler];
@@ -693,7 +693,7 @@ init:{[config;deps]
   .z.m.timer:deps`timer;
   .z.m.svc:deps`servers;
   setconfig config;
-  / legacy passes -s -N on the command line; torqx.sh has no per-process flags, so it is a setting
+  / workers setting N runs system "s -N"
   if[0<w:$[`workers in key config;tolong config`workers;0];system "s -",string w];
 
   .z.m.os:use`di.os;
@@ -737,7 +737,7 @@ init:{[config;deps]
   setroot[];
   / addjob raises on an id that already exists, so clear any job a previous init left
   @[.z.m.timer`deletejobs;`wdbsave;{}];
-  / mode 3h reschedules from the end of the previous flush, as TorQ's .timer.repeat does
+  / mode 3h reschedules from the end of the previous flush
   (.z.m.timer`addjob)[`wdbsave;savetodisk;();0D00:00:01*.z.m.settimer;3h;()!()];
   msg:"initialised, mode=",(string .z.m.mode),", writedownmode=",(string .z.m.writedownmode),", savedir=",.z.m.savedirs;
   msg,:", hdbdir=",(1_string .z.m.hdbdir),", flush every ",(string .z.m.settimer),"s";

@@ -64,7 +64,7 @@ run,0,0,q,endofday[],1,,force an end-of-day roll
 true,0,0,q,rolledfile["replog";ROLLDATE+1],1,,the roll opened the next day's log file
 true,0,0,q,"(ROLLDATE+1;0)~(.u.d;count .u.icounts)",1,,the roll advances .u.d and resets .u.icounts
 
-comment,,,,,,,an upd after the roll time rolls the day first (TorQ tickerplant.q:50-51 and :70)
+comment,,,,,,,an upd after the roll time rolls the day first
 run,0,0,q,doinit[immcfg[]],1,,immediate mode with a log
 run,0,0,q,R1:pastroll["log";0b],1,,an unstamped upd 1s after the roll
 true,0,0,q,(1+R1 0)=R1 1,1,,immediate: the upd rolled the day before logging
@@ -74,7 +74,7 @@ run,0,0,q,R2:pastroll["batchlog";0b],1,,an unstamped upd 1s after the roll
 true,0,0,q,(1+R2 0)=R2 1,1,,batched unstamped: the upd rolled the day before logging
 true,0,0,q,1=R2 2,1,,batched unstamped: the row went to the next day's log
 run,0,0,q,R3:pastroll["batchlog";1b],1,,a feed-stamped upd 1s after the next roll
-true,0,0,q,(R3 0)=R3 1,1,,batched feed-stamped: no roll in upd (as TorQ: the check is inside its unstamped branch); tpeodcheck rolls it
+true,0,0,q,(R3 0)=R3 1,1,,batched feed-stamped: no roll in upd; tpeodcheck rolls it
 run,0,0,q,doinit[tzcfg[]],1,,init with rolltimezone datatimezone and rolltimeoffset set
 true,0,0,q,(tzcfg[]`rolltimezone)~(use`di.eodtime)[`getrolltimezone][],1,,rolltimezone reaches di.eodtime as a symbol
 true,0,0,q,(tzcfg[]`datatimezone)~(use`di.eodtime)[`getdatatimezone][],1,,datatimezone reaches di.eodtime as a symbol

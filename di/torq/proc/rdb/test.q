@@ -1,6 +1,5 @@
-/ fixture helpers for di.torq.proc.rdb's end-of-day tests. Assumes cwd is the kdbx-modules repo root.
-/ init runs for real against mocked servers with no tickerplant, so it stops at the tickerplant wait with every
-/ end-of-day setting in place; the hdb reload goes to handle 0, this process.
+/ fixture helpers for di.torq.proc.rdb's end-of-day tests, loaded from the repo root
+/ init runs against mocked servers with no tickerplant, so it stops at the tickerplant wait; the hdb reload goes to handle 0
 
 BASE:"/tmp/di_rdb_k4unit_",string .z.i;
 D:2026.01.01;
@@ -40,7 +39,7 @@ freshrdb:{[c]
 / a saved column from the hdb partition
 disk:{[t;c] (get ` sv (hsym`$BASE),`hdb,(`$string D),t,`) c};
 
-/ standalone end of day keeps g# on sym after the clear, as legacy rdb.q:104,115
+/ standalone end of day keeps g# on sym after the clear
 gattr:{[]
   freshrdb ()!();
   rdb.endofday D;
@@ -61,14 +60,14 @@ postreplay:{[]
   chk `args`cleared`gattr`beforereload`reloaded!((hsym`$BASE,"/hdb";D)~2#POST;0=POST 2;`g=POST 3;not POST 4;RELOADED)
   };
 
-/ a failing postreplay propagates out of end of day, as legacy rdb.q:118: saved and cleared, no hdb reload
+/ a failing postreplay propagates out of end of day: saved and cleared, no hdb reload
 failedpostreplay:{[]
   freshrdb (enlist`postreplay)!enlist {[d;p] '"boom"};
   e:@[rdb.endofday;D;{x}];
   chk `signalled`saved`cleared`noreload!(e~"boom";3=count disk[`trade;`price];0=count trade;not RELOADED)
   };
 
-/ with reloadenabled the end of day escapes before postreplay, as legacy rdb.q:95-101
+/ with reloadenabled the end of day escapes before postreplay
 reloadenabled:{[]
   freshrdb `reloadenabled`postreplay!(1b;recpost);
   rdb.endofday D;

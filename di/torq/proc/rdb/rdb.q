@@ -1,42 +1,23 @@
-/ di.torq.proc.rdb - real-time database. Subscribes to a tickerplant (via di.subscriptions),
-/ replays the day's tp log to recover intraday state, accumulates live updates in memory,
-/ and at end of day writes each table down to the HDB (via di.dbwrite), clears it, and
-/ tells the HDB(s) to reload. Ported from the CRITICAL path of TorQ/code/processes/rdb.q.
-/ ---
-/ Scope (v1, critical only - see the rdb.q Chesterton's-Fence audit): subscribe -> replay
-/ -> accumulate -> savedown -> hdb reload. Two EOD modes, selected by config reloadenabled:
-/   - standalone   (0b, default): save every table to the hdb, clear it, reload the hdb(s).
-/   - wdb-fronted  (1b): a wdb owns the writedown; at EOD we only SNAPSHOT the per-table row
-/     counts and escape (data stays live+queryable), then the wdb calls reload[date] over
-/     IPC and we drop exactly the prior day, keeping the new day's ticks (dropfirstnrows).
-/ NOT included (future/other-process): gateway attribute push, query-partition tracking
-/ (rdbpartition/parvaluesrc - that exists only for a gateway), subscription filters, and
-/ (deprecated) all finspace/aws paths.
-/ ---
-/ Module-namespace notes (see di.subscriptions for the full story): reads of root tables
-/ use bare `value t` (bare reads fall through to root); writes/clears target root
-/ explicitly via @[`.;..] because a bare write from a use-loaded module (or under -11!)
-/ lands in the module's private namespace.
+/ di.torq.proc.rdb - real-time database: subscribes to a tickerplant, replays its log, holds the day's
+/ data in root tables and at end of day saves them to the hdb (reloadenabled 0b) or snapshots row counts for
+/ a wdb's later reload[date] (reloadenabled 1b). Root tables are written via @[`.;..]
 
 / config coercion (values are symbols from .q settings or strings from .toml)
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
 
-/ base dirs: CODE/CONFIG under TORQXAPPHOME, runtime DATA under TORQXDATAHOME (falls back to
-/ TORQXAPPHOME when unset - fine for a sample app where they coincide).
+/ base dirs: code and config under TORQXAPPHOME, data under TORQXDATAHOME (default TORQXAPPHOME)
 apphome:{getenv[`TORQXAPPHOME]}
 datahome:{$[count h:getenv[`TORQXDATAHOME];h;getenv[`TORQXAPPHOME]]}
 
-/ resolve a possibly-relative dir setting to an absolute path STRING under `base`
+/ resolve a possibly-relative dir setting to an absolute path string under base
 resolvedir:{[base;dir]
   dir:$[10h=abs type dir;dir;string dir];
   dir:$[(0<count dir) and ":"=first dir;1_dir;dir];
   $[dir like "/*";dir;base,"/",dir]
   }
 
-/ root-namespace-safe upd: append to the ROOT table t. Handles a table payload (live, from
-/ di.pubsub) and a list-of-columns payload (replay, from di.tplogmgr's -11!). @[`.;..] targets
-/ root explicitly so it works from the module / -11! context.
+/ upd: append to the root table t, from a table (live) or a list of columns (replay)
 updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]}
 
 / save one root table down to the HDB partition (protected so one failure doesn't stop EOD)
@@ -53,11 +34,8 @@ notifyhdbs:{[]
     .z.m.log[`warn][`rdb;"no hdb connected to notify for reload"]];
   }
 
-/ end of day for a date: .u.end[date] (tickerplant, chainedtp) or endofday[date;data] (segmented).
-/ standalone mode: save every non-ignored root table to the HDB, clear it, reload the HDB(s).
-/ wdb-fronted mode (reloadenabled=1b): the wdb owns the writedown - snapshot the per-table
-/ row counts (so a later reload[] drops exactly the prior day) and escape, leaving the data
-/ live and queryable until the wdb calls reload[date].
+/ end of day for a date: save, clear and reapply attributes to every non-ignored root table, run postreplay
+/ and reload the hdbs; with reloadenabled only snapshot the row counts for reload[date]
 endofday:{[date]
   .z.m.log[`info][`rdb;"end of day for partition ",string date];
   st:tables[`.] except .z.m.ignorelist;
@@ -65,11 +43,11 @@ endofday:{[date]
     .z.m.eodtabcount:st!count each value each st;
     .z.m.log[`info][`rdb;"reload enabled - wdb owns writedown; snapshotted EOD row counts: ",.Q.s1 .z.m.eodtabcount];
     :()];
-  attrs:st!grabattrs each st;                  / capture before the clear wipes them, as legacy rdb.q:104
+  attrs:st!grabattrs each st;                  / capture before the clear wipes them
   savefn[.z.m.hdbdir;date] each st;
   @[`.;;0#] each st;                          / clear the saved tables (root)
   reapplyattrs'[st;attrs st];
-  / call the postreplay hook, unprotected as TorQ's rdb.q:118
+  / call the postreplay hook unprotected
   (.z.m.dbw`postreplay)[hsym`$.z.m.hdbdir;date];
   notifyhdbs[];
   .z.m.log[`info][`rdb;"end of day complete, saved+cleared: ",(", " sv string st)];
@@ -78,8 +56,7 @@ endofday:{[date]
 / grab a col!attribute dict for the attributed columns of a root table (`_` drop loses attrs)
 grabattrs:{[t] exec c!a from (0!meta value t) where not null a}
 
-/ reapply captured attributes to root table t. Operates on the VALUE then writes it back to
-/ root via @[`.;..], so it is safe from the module namespace (a bare in-place ! would not be).
+/ reapply captured attributes to root table t
 reapplyattrs:{[t;attrs]
   if[count attrs;
     upd:(key attrs)!{[c;at] ((#);enlist at;c)}'[key attrs;value attrs];   / col!(`att#col) parse trees
@@ -89,9 +66,7 @@ reapplyattrs:{[t;attrs]
 / drop the first n rows (the prior day, per the EOD snapshot) from root table t
 dropfirstnrows:{[t;n] @[`.;t;n _]}
 
-/ reload[date] - called BY THE WDB over IPC once it has persisted the prior day. Drop exactly
-/ the rows present at EOD (keeping the new day's rows that arrived since), reapply attributes,
-/ gc, and clear the snapshot. Root-safe throughout (see the module-namespace notes above).
+/ reload[date] - called by the wdb: drop the rows counted at end of day, reapply attributes, gc and clear the snapshot
 reload:{[date]
   .z.m.log[`info][`rdb;"reload called by wdb for partition ",string date];
   st:tables[`.] except .z.m.ignorelist;
@@ -120,21 +95,18 @@ init:{[config;deps]
   replaylog:$[`replaylog in key config;`boolean$config`replaylog;1b];
   timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
 
-  / di.dbwrite for savedown (optional sort.csv sort/attr config), set before the tickerplant wait as legacy reads its hooks at load
+  / di.dbwrite for savedown (optional sort.csv sort/attr config)
   .z.m.dbw:use`di.dbwrite;
-  / the save down hooks from config, defaulting as TorQ's rdb.q:42-43, go to di.dbwrite
+  / the save down hooks from config go to di.dbwrite
   sdm:$[`savedownmanipulation in key config;config`savedownmanipulation;()!()];
   pr:$[`postreplay in key config;config`postreplay;{[d;p]}];
   (.z.m.dbw`init)[`log`savedownmanipulation`postreplay!(deps`log;sdm;pr)];
   if[`sortcsv in key config;(.z.m.dbw`readcsv)[resolvedir[apphome[];config`sortcsv]]];
 
-  / publish the root-safe upd BEFORE subscribing (replay drives it too)
+  / publish the root upd before subscribing (replay drives it too)
   @[`.;`upd;:;updfn];
 
-  / connect to the tickerplant + hdb(s) via the INJECTED di.torq.servers (di.torq already ran its
-  / init - a shared, once-init'd connection registry). We only call startup, handing it our
-  / own connection list; the lookup fns (waitfortype/gethandlebytype/getservers) come off the
-  / same injected instance.
+  / connect to the tickerplant and hdbs via the injected di.torq.servers
   .z.m.svc:deps`servers;
   sconfig:config,(enlist`connections)!enlist distinct .z.m.tptypes,.z.m.hdbtypes;
   (.z.m.svc`startup)[sconfig];
@@ -148,8 +120,7 @@ init:{[config;deps]
   sd:.sub.subscribe[subscribeto;subscribesyms;1b;replaylog;first .sub.getsubscriptionhandles[tpt;`;()!()]];
   if[count sd;.z.m.log[`info][`rdb;"subscribed, partition date ",string sd`d]];
 
-  / publish the EOD entry points at root.
-  / reload[date] is the wdb's IPC entry point when reloadenabled (harmless if never called).
+  / publish the end-of-day entry points and reload[date] at root
   set[`.u.end;endofday];
   / segmented tickerplant entry points
   @[`.;`endofday;:;{[d;x] endofday d}];

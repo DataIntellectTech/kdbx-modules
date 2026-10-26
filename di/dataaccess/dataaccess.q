@@ -1,32 +1,6 @@
-/ di.dataaccess - data access / query normalisation layer over the gateway. Accepts a
-/ structured, time-ranged request, ROUTES it across time-partitioned backends (one shard per
-/ reachable servertype, clipped to its coverage), BUILDS a per-backend FUNCTIONAL-qSQL query
-/ (normalising the date column - native `date` on the hdb, derived `date$time` on the rdb),
-/ SCATTERS the shards via di.asyncdispatch, then GATHERS and MAP-REDUCES the results back to
-/ the client. This is the "generic getdata that handles the rdb-has-no-date-column problem".
-/ ---
-/ MERGE of two implementations. The structure - routing,
-/ scatter/gather/reduce, requests/shardresults bookkeeping, the postback/timeout/deferred-sync
-/ request lifecycle - is kdbx-modules feature-dataaccess's, kept. On top of it:
-/   (1) queries are also built FUNCTIONALLY (?[t;wc;b;a]) rather than only by string rewriting -
-/       robust, and the seam for per-backend date normalisation;
-/   (2) dispatch goes through di.asyncdispatch.execqueryto LOCAL mode (replyto 0Ni + a
-/       root-published .dataaccess.shardresult postback) - the branch used execquery and hit the
-/       ".z.w replies to the client, not to dataaccess" bug its own .md flagged as unfixable from
-/       its side; execqueryto (added to asyncdispatch since) is that fix;
-/   (3) real map-reduce (a shard-fn then a reduce-fn recombined on the by-keys, with a component
-/       split for avg/wavg/vwap) rather than a bare user raze that double-counts grouped aggs.
-/ Both entry points are kept and share the whole core:
-/   getdata / getdatafull - typed, date-normalising, map-reducing
-/   execquery             - arbitrary query STRING, time-sharded, caller-supplied joinfn
-/ ---
-/ Hard deps (use): di.asyncdispatch (dispatch), di.serverselect (which servertypes are live) -
-/ SHARED (idempotent use) with di.torq.proc.gateway, so it reuses the gateway's registered servers +
-/ callbacks. Injected via init: log, timer (required) + optional config.
-/ Scope: count/sum/min/max/avg + wavg/vwap aggs (avg & the weighted pair map-reduce correctly via a
-/ component split - see aggspecs); `date` + plain by-columns; a single time-range filter. Coverage is
-/ refreshed at EOD via setpartitions (the gateway calls it at reloadend). Deferred: arbitrary where
-/ filters, ordering/sublist, typed input validation (TorQ checkinputs), attribute routing.
+/ query layer over the gateway: route a time-ranged request across time-partitioned backends,
+/ build a per-backend query, scatter via di.asyncdispatch, then gather and reduce the results
+/ getdata/getdatafull: typed, date-normalising, map-reducing; execquery: query string, caller joinfn
 
 asyncdispatch:use`di.asyncdispatch;
 serverselect:use`di.serverselect;
@@ -36,18 +10,8 @@ errorprefix:"error: ";
 / default coverage: one hdb over all time; override via init `partitions
 defaultpartitions:([]servertype:enlist`hdb;coverfrom:enlist -0Wp;coverto:enlist 0Wp);
 
-/ agg fn -> (COMPONENTS; REDUCEFN). The map-reduce split: an aggregate that can't be recombined
-/ from its own shard-level value (avg, wavg/vwap) is decomposed into COMPONENTS that CAN - each a
-/ hidden per-shard aggregate column - and a REDUCEFN that recombines those components (regrouped
-/ on the by-keys) into the final value. count/sum/min/max are single-component (the output col
-/ itself); avg = sum + non-null-count, recombined as (sum sums)%(sum counts); wavg/vwap = sum(w*c)
-/ + sum(w), recombined as (sum nums)%(sum dens). All exprs are functional-qSQL parse trees, so a
-/ bare column symbol is a column reference.
-/   COMPONENTS : list of (suffix; shardbuilder[incol]->parsetree). suffix ` = the output col
-/                itself (single-component, back-compatible); else the hidden col is <out>__<suffix>.
-/   REDUCEFN   : compnames -> parsetree combining the (already-grouped) component columns.
-/ NB avg's denominator is sum(not null c) to match q's null-ignoring avg; count (the standalone
-/ agg) still counts rows. wavg/vwap follow the sum(w*c)%sum(w) definition (nulls drop consistently).
+/ agg fn -> (components; reducefn): per-shard component columns (suffix ` is the output column,
+/ else <out>__<suffix>) and the parse tree recombining them on the by-keys
 compname:{[o;suffix] $[suffix~`;o;`$string[o],"__",string suffix]};
 aggspecs:()!();
 aggspecs[`count]:(enlist(`;{[c] (count;c)});                            {[cn] (sum;cn 0)});
@@ -58,11 +22,7 @@ aggspecs[`avg]:  (((`s;{[c] (sum;c)});(`n;{[c] (sum;(not;(null;c)))})); {[cn] ((
 aggspecs[`wavg]: (((`n;{[c] (sum;(*;c 0;c 1))});(`d;{[c] (sum;c 0)}));  {[cn] ((%);(sum;cn 0);(sum;cn 1))});
 aggspecs[`vwap]: aggspecs`wavg;
 
-/ one row per in-flight request. `mode selects how checkresults recombines the shard results:
-/   `getdata   - structured map-reduce over `by/`aggs (this module's typed entry point)
-/   `execquery - apply the caller's `joinfn across the raw shard results (the string entry point)
-/ so `by`aggs are meaningful only for `getdata and `joinfn only for `execquery; the rest of the
-/ lifecycle (postback wrapping, timeout, deferred-sync reply, purge) is common to both.
+/ one row per in-flight request; `mode is `getdata (map-reduce by/aggs) or `execquery (joinfn)
 requestschema:([requestid:`u#`long$()]
   time:`timestamp$(); clienth:`int$(); remaining:`long$();
   mode:`symbol$(); by:(); aggs:(); joinfn:();
@@ -72,8 +32,7 @@ requestschema:([requestid:`u#`long$()]
 / --- internal helpers ---
 
 normlog:{[logdict]
-  / normalise an injected logger to a binary `info`warn`error!{[c;m]} dict (kx.log is monadic -
-  / wrap and fold the context in); an already-binary dict passes through unchanged
+  / normalise an injected logger to a binary `info`warn`error {[c;m]} dict
   $[any `getlvl`sinks`fmts in key logdict;
     `info`warn`error!{[fn;c;m] fn[string[c],": ",m]}[;;]'[logdict`info`warn`error];
     logdict]
@@ -93,16 +52,11 @@ getrouting:{[starttime;endtime]
 
 / --- per-backend functional query building (the date-normalisation seam) ---
 
-/ a by-column's per-servertype expression: the partition column (`date) is a native column on the
-/ hdb but must be DERIVED (`date$time) on the rdb, which has no date column; other cols group by
-/ themselves. Returns a functional-qSQL by-value (a column symbol or a parse tree).
-/ `enlist`date` (not bare `date`) - in a parse tree a bare symbol is a COLUMN reference; the
-/ literal cast-target symbol must be enlisted. So ($;enlist`date;tc) is `date$<timecol>`.
+/ a by-column's per-servertype expression: `date is derived as `date$time on the rdb
 byexpr:{[servertype;tc;pc;c] $[c=pc; $[servertype=`hdb; pc; ($;enlist`date;tc)]; c]};
 
 buildshardquery:{[servertype;tab;by;aggd;rs;re;tc;pc]
-  / where: time within the shard range; on the hdb also constrain the partition column so kdb
-  / prunes partitions instead of scanning every date's time column
+  / where: time within the shard range, plus the date partition on the hdb
   wc:enlist (within;tc;(rs;re));
   if[(servertype=`hdb) and not tc~pc; wc:wc,enlist (within;pc;(`date$rs;`date$re))];
   / no aggs -> plain row select (all cols), grouping ignored
@@ -115,12 +69,7 @@ buildshardquery:{[servertype;tab;by;aggd;rs;re;tc;pc]
 
 / --- string query building (the execquery entry point) ---
 
-/ inject the shard's time range into a qSQL query STRING as a within filter on the time column,
-/ appended as the last clause so it works whether or not the query already has a where.
-/ String-based by design (from kdbx-modules feature-dataaccess, kept verbatim in behaviour): it
-/ assumes a flat select string and is NOT robust to subqueries, fby, or the literal text "where"
-/ inside a string constant. getdata's functional builder above has none of those limits - prefer
-/ it where the query is structured; this exists for callers holding an arbitrary query string.
+/ append the shard's time range to a flat qSQL query string as a within filter
 buildstringshardquery:{[query;rangestart;rangeend]
   clause:(string .z.m.timecolumn)," within (",(string rangestart),";",(string rangeend),")";
   $[query like "*where*";query," , ",clause;query," where ",clause]
@@ -129,8 +78,7 @@ buildstringshardquery:{[query;rangestart;rangeend]
 / --- shard accumulation + reduce ---
 
 shardresult:{[reqid;query;result]
-  / asyncdispatch local postback: (reqid;query;result). Backend errors arrive as an
-  / errorprefix-prefixed STRING through this same postback - detect and short-circuit.
+  / local postback (reqid;query;result); an errorprefix string is a backend error
   if[(10h=type result) and errorprefix~(count errorprefix) sublist result;
     :sharderror[reqid;(count errorprefix) _ result]];
   if[not reqid in key .z.m.requests;:()];
@@ -150,10 +98,7 @@ sharderror:{[reqid;err]
   };
 
 checkresults:{[reqid]
-  / all shards in - recombine according to the request's mode, then reply.
-  /   `getdata   - plain (no agg): raze the shard tables. Aggregated: re-group the razed shards on
-  /                the by-keys applying each agg's REDUCE fn (count/sum->sum, min->min, max->max).
-  /   `execquery - apply the caller's joinfn across the raw shard results (kdbx branch behaviour).
+  / all shards in: map-reduce (`getdata) or apply joinfn (`execquery), then reply
   req:.z.m.requests reqid;
   res:$[req[`mode]~`execquery;
     .[{(0b;x y)};(req`joinfn;.z.m.shardresults reqid);{(1b;errorprefix,"join failed: ",x)}];
@@ -181,12 +126,7 @@ finishrequest:{[reqid;err]
   };
 
 submitshards:{[reqid;shards;timeout]
-  / one asyncdispatch call per shard, LOCAL mode (replyto 0Ni) so the reply comes back to
-  / .dataaccess.shardresult (root-published) not the end client. join=first: a shard is a single
-  / servertype, so asyncdispatch returns that one backend's result as-is for us to reduce.
-  / NB execqueryto (not execquery): execquery captures clienth:.z.w at call time, which in-process
-  / is the END CLIENT's handle, so the reply would bypass dataaccess entirely - the integration bug
-  / the kdbx branch documented but could not fix from its side. replyto 0Ni is the local-mode fix.
+  / one local-mode (replyto 0Ni) asyncdispatch call per shard, replying to .dataaccess.shardresult
   {[reqid;timeout;stype;q]
     (.z.m.asyncdispatch`execqueryto)[0Ni; q; enlist stype; first; (.z.m.resultcallback;reqid); timeout; 0b]
     }[reqid;timeout]'[shards`servertype; shards`shardquery];
@@ -201,9 +141,7 @@ checksync:{[ctx;sync]
   if[not @[{-30!x;1b};(::);0b];raiseerror[ctx;"deferred response not supported on this connection"]];
   };
 
-/ nothing covers the requested range: reply empty, honouring postback wrapping and deferred sync,
-/ and still burn a request id so ids stay monotonic. (kdbx branch behaviour - TorqX's getdata sent
-/ a bare async empty and ignored postback/sync.)
+/ reply empty when nothing covers the range, honouring postback and sync
 replyempty:{[postback;sync;empty]
   tosend:$[()~postback;empty;postback,enlist empty];
   $[sync;@[-30!;(.z.w;0b;empty);{}];@[neg .z.w;tosend;()]];
@@ -212,11 +150,7 @@ replyempty:{[postback;sync;empty]
 
 normpostback:{[postback] $[11h=abs type postback;(),postback;postback]};
 
-/ build the one-row request table for an upsert. Deliberately an ENLISTED DICT rather than a bare
-/ tuple: a row carrying more than one empty-list cell (e.g. an unused joinfn AND no postback) is
-/ ambiguous to q - it cannot tell one row from a set of column vectors - and upsert throws 'type.
-/ recombine: the mode-specific triple (by;aggs;joinfn) - passed as one argument because a q lambda
-/ takes at most 8 parameters and the full row needs nine values ('params at load otherwise).
+/ the one-row request table as an enlisted dict; recombine is (by;aggs;joinfn)
 newrequest:{[reqid;nshards;mode;recombine;postback;timeout;sync]
   enlist `requestid`time`clienth`remaining`mode`by`aggs`joinfn`postback`timeout`returntime`error`sync!
     (reqid;.z.m.cp[];.z.w;nshards;mode;recombine 0;recombine 1;recombine 2;postback;timeout;0Np;0b;sync)
@@ -234,9 +168,7 @@ getdatafull:{[tablename;starttime;endtime;by;aggs;postback;timeout;sync]
   if[not `log in key .z.m;'"di.dataaccess: init must be called before getdata"];
   checksync[`getdata;sync];
   by:(),$[(::)~by;`;by]; by:by where not null by;
-  / -> list of (out;fn;incol) triples. A single triple is either a plain symbol triple (type 11h)
-  / or, when incol is a (weight;value) pair (wavg/vwap), a generic list whose first item is a symbol
-  / atom - distinguish from a list-of-triples (whose first item is itself a triple, not an atom).
+  / -> list of (out;fn;incol) triples
   aggs:$[(::)~aggs;();
          11h=type aggs;enlist aggs;
          (0h=type aggs)and -11h=type first aggs;enlist aggs;
@@ -256,30 +188,21 @@ getdatafull:{[tablename;starttime;endtime;by;aggs;postback;timeout;sync]
   qs:buildshardquery[;tablename;by;aggd;;;.z.m.timecolumn;.z.m.partitioncolumn]'[shards`servertype;shards`rangestart;shards`rangeend];
   shards:shards,'flip(enlist`shardquery)!enlist qs;
   reqid:.z.m.requestid;
-  / upsert an ENLISTED DICT, not a bare tuple: with more than one empty-list cell (here joinfn and
-  / an absent postback) q cannot tell a single row from a set of column vectors and throws 'type.
+  / upsert as an enlisted dict
   .z.m.requests:.z.m.requests upsert newrequest[reqid;count shards;`getdata;(by;aggd;());postback;timeout;sync];
   .z.m.shardresults[reqid]:();
   submitshards[reqid;shards;timeout];
   .z.m.requestid:1+.z.m.requestid;
   };
 
-/ simple form: no postback, no timeout, async. Delegates to getdatafull - same pairing convention
-/ as di.torq.proc.gateway's asyncexec/asyncexecjpt, so existing 5-arg .gw.getdata callers are unaffected.
-/ NB must be defined AFTER getdatafull: a module-local name is rewritten to the module namespace at
-/ COMPILE time, so a forward reference here silently falls through to root and throws 'type on call.
+/ getdatafull with no postback, no timeout, async; defined after getdatafull
 getdata:{[tablename;starttime;endtime;by;aggs]
   getdatafull[tablename;starttime;endtime;by;aggs;();0Wn;0b]
   };
 
 execquery:{[query;starttime;endtime;joinfn;postback;timeout;sync]
-  / STRING entry point (from kdbx-modules feature-dataaccess): route an arbitrary qSQL query string
-  / across the partition coverage, rewrite each shard's time filter into the string, scatter, then
-  / recombine with the caller's joinfn. Complements getdata: getdata is typed, date-normalising and
-  / map-reducing but only builds the query shapes it knows; execquery takes any query string but
-  / cannot normalise `date (the rdb has no date column) and leaves recombination to the caller.
-  / Distinct from di.torq.proc.gateway's .gw.asyncexecjpt, which sends one query to chosen servertypes
-  / with no time-range routing at all - this shards a raw string across the time partitions.
+  / route a qSQL query string across the time partitions, filter each shard by time, scatter,
+  / then recombine with the caller's joinfn
   if[not `log in key .z.m;'"di.dataaccess: init must be called before execquery"];
   checksync[`execquery;sync];
   postback:normpostback postback;
@@ -288,9 +211,7 @@ execquery:{[query;starttime;endtime;joinfn;postback;timeout;sync]
   qs:buildstringshardquery[query;;]'[shards`rangestart;shards`rangeend];
   shards:shards,'flip(enlist`shardquery)!enlist qs;
   reqid:.z.m.requestid;
-  / by is `$() (an empty symbol VECTOR), not the ` atom: the by column is declared general, and the
-  / FIRST row inserted fixes its type - an atom would collapse it to a simple symbol column and the
-  / next getdata request (whose by IS a vector) would then fail the upsert with 'type.
+  / by is an empty symbol vector so the general by column is not typed by the first row
   .z.m.requests:.z.m.requests upsert newrequest[reqid;count shards;`execquery;(`$();()!();joinfn);postback;timeout;sync];
   .z.m.shardresults[reqid]:();
   submitshards[reqid;shards;timeout];
@@ -306,10 +227,7 @@ checkpartitions:{[t]
     '"di.dataaccess: partitions table needs columns servertype, coverfrom, coverto"];
   };
 
-/ swap the routing coverage table at runtime. The gateway calls this at EOD reloadend, after the
-/ wdb has moved the just-ended day's partition into the hdb: "today" now belongs to the hdb and the
-/ new day to the rdb, so the static-at-init coverage must be refreshed or post-EOD queries for the
-/ rolled day would still route to the rdb (which has dropped it). Keep the ranges non-overlapping.
+/ replace the routing coverage table, e.g. at eod reload; ranges must not overlap
 setpartitions:{[parts]
   checkpartitions parts;
   .z.m.partitions:parts;

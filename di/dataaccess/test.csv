@@ -15,7 +15,7 @@ before,0,0,q,"(da`init)[`log`timer`partitions!(mocklog;mocktimer;([]servertype:e
 before,0,0,q,".m.di.0dataaccess.submitshards:{[reqid;shards;timeout](da`shardresult)[reqid;first shards`shardquery;2]}",1,,stub submitshards - feed a fixed result back via shardresult per shard
 
 comment,,,,,,,exports - both entry points plus the shared lifecycle
-true,0,0,q,`init`getdata`getdatafull`execquery`setpartitions`shardresult`sharderror`removerequests`version~key da,1,,module exports the merged api
+true,0,0,q,`init`getdata`getdatafull`execquery`setpartitions`shardresult`sharderror`removerequests`version~key da,1,,module exports its api
 true,0,0,q,0<count da`version,1,,version string present
 true,0,0,q,all `shardresult`sharderror in key `.dataaccess,1,,init published the local-postback entry points at root
 
@@ -87,26 +87,26 @@ comment,,,,,,,duplicate shardresult after completion is a no-op
 run,0,0,q,"(da`shardresult)[pendreqid;""q"";enlist 0]",1,,late shard result on an already-finished request
 true,0,0,q,1b~first exec error from reqs[] where requestid=pendreqid,1,,error flag unchanged after the duplicate result
 
-comment,,,,,,,GRAFT - request lifecycle is recorded for the typed getdata path too
+comment,,,,,,,request lifecycle is recorded for the typed getdata path too
 run,0,0,q,.m.di.0dataaccess.submitshards:{[reqid;shards;timeout]pendreqid::reqid;captimeout::timeout},1,,capture reqid and the timeout threaded into dispatch
 run,0,0,q,"(da`getdatafull)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;();`mypostback;0D00:00:05;0b]",1,,typed request with a postback and a timeout
 true,0,0,q,`getdata~first exec mode from reqs[] where requestid=pendreqid,1,,request recorded as getdata mode
 true,0,0,q,0D00:00:05~first exec timeout from reqs[] where requestid=pendreqid,1,,timeout stored on the request row
-true,0,0,q,0D00:00:05~captimeout,1,,timeout is threaded through submitshards into dispatch (was hardcoded 0Wn before the merge)
+true,0,0,q,0D00:00:05~captimeout,1,,timeout is threaded through submitshards into dispatch
 true,0,0,q,(enlist`mypostback)~first exec postback from reqs[] where requestid=pendreqid,1,,a symbol postback is normalised to a one-item list
 
-comment,,,,,,,GRAFT - the 5-arg getdata still works and delegates with lifecycle defaults
+comment,,,,,,,the 5-arg getdata still works and delegates with lifecycle defaults
 run,0,0,q,"(da`getdata)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;()]",1,,plain 5-arg getdata (unchanged caller contract)
 true,0,0,q,0Wn~first exec timeout from reqs[] where requestid=pendreqid,1,,delegated call defaults to no timeout
 true,0,0,q,()~first exec postback from reqs[] where requestid=pendreqid,1,,delegated call defaults to no postback
 true,0,0,q,0b~first exec sync from reqs[] where requestid=pendreqid,1,,delegated call defaults to async
 
-comment,,,,,,,GRAFT - deferred-sync is refused unless explicitly enabled
+comment,,,,,,,deferred-sync is refused unless explicitly enabled
 fail,0,0,q,"(da`getdatafull)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;();();0Wn;1b]",1,,sync getdata rejected while synccallsallowed is 0b
 fail,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;1b);{'x}]",1,,sync execquery rejected while synccallsallowed is 0b
 true,0,0,q,"""di.dataaccess: getdata: synchronous calls are not allowed""~@[{(da`getdatafull)[`trade;""p""$2000.01.01;""p""$2000.01.02;`;();();0Wn;1b]};(::);{x}]",1,,refusal carries the documented message
 
-comment,,,,,,,GRAFT - an uncovered time range replies empty without creating a request
+comment,,,,,,,an uncovered time range replies empty without creating a request
 run,0,0,q,"(da`setpartitions)[([]servertype:enlist`hdb;coverfrom:enlist ""p""$2020.01.01;coverto:enlist ""p""$2020.01.02)]",1,,coverage that does not span the requested range
 run,0,0,q,beforecount:count reqs[],1,,row count before the uncovered request
 run,0,0,q,"nextid:.m.di.0dataaccess.requestid",1,,request id before the uncovered request
@@ -132,7 +132,7 @@ run,0,0,q,.m.di.0dataaccess.cp:{.z.p+2D},1,,fast-forward the module clock past r
 run,0,0,q,(da`removerequests)[0D00:30],1,,purge completed rows older than 30 minutes
 true,0,0,q,0~count select from reqs[] where not null returntime,1,,all completed rows purged
 
-comment,,,,,,,regression - removerequests must not unkey the table (the 0! bug)
+comment,,,,,,,removerequests keeps the table keyed
 true,0,0,q,1=count keys reqs[],1,,requests table is still keyed after a purge
 run,0,0,q,.m.di.0dataaccess.cp:{.z.p},1,,restore the real clock
 run,0,0,q,".[da.execquery;(""select from t"";""p""$2000.01.01;""p""$2000.01.02;first;();0Wn;0b);{}]",1,,submit another query after the purge

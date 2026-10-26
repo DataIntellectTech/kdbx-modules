@@ -1,7 +1,5 @@
-/ di.torq - process orchestrator. Resolves config via the settings cascade, builds
-/ the injected-dependency dict, and starts either a built-in (di.*) process module or
-/ a custom one supplied by the app's code/processes/ directory - both through the
-/ same init[config;deps] calling convention.
+/ di.torq - process orchestrator: resolves config via the settings cascade, builds the injected-dependency dict,
+/ and starts a built-in (di.*) or custom (code/processes/) process type through init[config;deps]
 
 / built-in process type registry: proctype -> di.* module name
 builtin:`hdb`tickerplant`rdb`wdb`sort`gateway`idb`segmentedtp`chainedtp`housekeeping`sortworker`discovery`tickerlogreplay`segmentedchainedtp!`di.torq.proc.hdb`di.torq.proc.tickerplant`di.torq.proc.rdb`di.torq.proc.wdb`di.torq.proc.wdb`di.torq.proc.gateway`di.torq.proc.idb`di.torq.proc.segmentedtp`di.torq.proc.chainedtp`di.torq.proc.housekeeping`di.torq.proc.wdb`di.torq.proc.discovery`di.torq.proc.tickerlogreplay`di.torq.proc.segmentedtp
@@ -31,23 +29,15 @@ roots:{
   (builtinroot;approot)
   }
 
-/ resolves this process's identity: explicit args if both given, otherwise auto-detected
-/ from process.csv by matching this session's listening port (and, as a tiebreaker, its
-/ host) - ported from TorQ/torq.q's readprocfile, scoped down (no envvar substitution in
-/ the csv, no -procfile override, no finspace host handling). Both-or-neither only - no
-/ partial mode where one of proctype/procname is given and the other auto-detected.
+/ resolves this process's identity: explicit args if both given, otherwise auto-detected from process.csv
+/ by this session's listening port, with host as a tiebreaker
 resolveidentity:{[proctype;procname]
-  / NOTE: q evaluates right-to-left with flat precedence - `not a or b` parses as
-  / `not[a or b]`, not `(not a) or b`. Written as `(null x) or (null y)` directly instead
-  / of negating a fenced-off "both given" test, to avoid that trap.
   $[(null proctype) or (null procname);
     autodetect[];
     `proctype`procname!(proctype;procname)]
   }
 
-/ NOTE: deliberately does not reuse di.torq.servers.readprocesscsv - di.torq shouldn't have
-/ to load di.torq.servers just to boot. Small duplication; extract to a shared helper if a
-/ third consumer of process.csv ever shows up.
+/ reads process.csv and picks the row matching this host and port
 autodetect:{[]
   path:reqenv[`TORQXAPPCONFIG],"/process.csv";
   fsym:`$":",path;
@@ -69,26 +59,14 @@ autodetect:{[]
   `proctype`procname!(best`proctype;best`procname)
   }
 
-/ builds the logging dependency dict, using di.util.log unless overridden.
-/ NOTE: deliberately indexes the freshly-`use`d handle with brackets (lg`info) rather
-/ than dot-syntax (lg.info) - calling a just-loaded module via dot-syntax from within
-/ the same function frame that called `use` fails in this kdb-x build (module
-/ registration is evidently not visible to dot-resolution until the frame returns to
-/ top level); bracket indexing on the returned dict works immediately. Flagged as a
-/ tooling rough edge to revisit, not a design choice.
+/ builds the logging dependency dict, using di.util.log unless overridden
 buildlogdep:{[overrides]
   modname:$[`log in key overrides;overrides`log;`di.util.log];
   lg:use modname;
   `info`warn`error!(lg`info;lg`warn;lg`error)
   }
 
-/ builds the timer dependency dict, using di.timer (kdbx-modules) unless overridden.
-/ di.timer is initialised with the injected logger, through which it logs failed jobs. It exports `setcp`
-/ rather than a bare `cp`, so the plan's timer contract's `cp` key is omitted here - not
-/ currently used by anything that consumes this dep.
-/ di.timer's exported `addjob` is itself a dict of variants (custom/default/simple),
-/ not a directly-callable function - `custom` is the one matching the plan's timer
-/ contract signature {[id;func;params;period;mode;opts] ...}
+/ builds the timer dependency dict, using di.timer unless overridden; addjob is di.timer's addjob.custom
 buildtimerdep:{[overrides;logdep]
   modname:$[`timer in key overrides;overrides`timer;`di.timer];
   tm:use modname;
@@ -96,9 +74,7 @@ buildtimerdep:{[overrides;logdep]
   `addjob`deletejobs`enablejobs`disablejobs`getactivejobs!((tm`addjob)`custom;tm`deletejobs;tm`enablejobs;tm`disablejobs;tm`getactivejobs)
   }
 
-/ builds the handlers dependency dict, using di.torq.handlers unless overridden. The reconciled
-/ di.torq.handlers (kdbx feature-handlers, canonical) exports the contract names directly, so the
-/ dict maps through 1:1 - no deregister->remove aliasing as the earlier TorqX module needed.
+/ builds the handlers dependency dict, using di.torq.handlers unless overridden
 buildhandlersdep:{[overrides;logdep]
   modname:$[`handlers in key overrides;overrides`handlers;`di.torq.handlers];
   hz:use modname;
@@ -106,23 +82,6 @@ buildhandlersdep:{[overrides;logdep]
   `register`remove`list!(hz`register;hz`remove;hz`list)
   }
 
-/ builds the servers (connection-management) dependency dict, using di.torq.servers unless
-/ overridden. Unlike log/timer/handlers, di.torq.servers is itself a CONSUMER of those three -
-/ its init registers a .z.pc cleanup handler (via handlers) and a reconnection retry timer
-/ job (via timer), and stamps self-identity from config`proctype`/`procname - so it is built
-/ LAST, after all three exist. Exposes only the lookup/lifecycle surface consumers call;
-/ `init` is deliberately NOT re-exported - di.torq has already run it, and a second init would
-/ double-register the pc handler and the retry job (the exact fragility that motivated
-/ promoting servers from a per-module `use`+init to an injected singleton). `startup` IS
-/ exposed: it opens the actual connections and is called by each consumer with its own
-/ `connections` list, so connection-opening timing stays with the consumer.
-/ NB every process gets an init'd servers instance, even ones that never dial out
-/ (hdb/tickerplant): harmless - the registry starts empty, the pc handler and the retry job
-/ are no-ops on an empty SERVERS table, and startup (the part that opens sockets) is never
-/ called. Prune per-proctype if/when a capabilities declaration lands (see servers.md).
-/ NB local is `srv` not `sv` - `sv` is the built-in scalar-from-vector/join operator and
-/ won't reliably shadow as a local (same reserved-name trap as `log`/`ss` noted in project
-/ memory); assigning it here threw '`sv` at module load.
 / outbound-connection credentials, read from $TORQXAPPCONFIG/passwords/{default|proctype|procname}.txt -
 / the most specific file that exists wins, mirroring TorQ's hierarchic password load. One line,
 / `user:pass`. A process that permissions its own handlers refuses an unauthenticated peer, so
@@ -135,13 +94,14 @@ passwordfile:{[proctype;procname]
   $[0=count found;`;`$first read0 hsym `$last found]
   };
 
+/ builds the servers dependency dict, using di.torq.servers unless overridden; it is initialised with the
+/ log, timer and handlers deps, and exposes startup and the lookup functions but not init
 buildserversdep:{[overrides;config;logdep;timerdep;handlersdep]
   modname:$[`servers in key overrides;overrides`servers;`di.torq.servers];
   srv:use modname;
   / credentials come from the password file unless the settings cascade already named them
   config:$[`userpass in key config;config;config,enlist[`userpass]!enlist passwordfile[config`proctype;config`procname]];
-  / one-arg init[deps] (kdbx convention, matching handlers/config/depcheck): merge the injectables into
-  / this process's config slice - init reads log/timer/handlers + proctype/procname self-identity from it.
+  / init reads log/timer/handlers and proctype/procname from the config
   (srv`init)[config,`log`timer`handlers!(logdep;timerdep;handlersdep)];
   `startup`getservers`gethandlebytype`waitfortype!((srv`startup);(srv`getservers);(srv`gethandlebytype);(srv`waitfortype))
   }
@@ -152,9 +112,7 @@ startbuiltin:{[proctype;config;deps]
   (m`init)[config;deps]
   }
 
-/ starts a custom process type, defined by the app under code/processes/{proctype}.q
-/ (code/ lives alongside appconfig/ under TORQXAPPHOME, the app's own project root -
-/ independent of TORQXHOME, which is the di.torq/framework checkout)
+/ starts a custom process type, defined by the app under $TORQXAPPHOME/code/processes/{proctype}.q
 startcustom:{[proctype;config;deps]
   appbase:reqenv[`TORQXAPPHOME];
   procfile:appbase,"/code/processes/",(string proctype),".q";
@@ -163,23 +121,13 @@ startcustom:{[proctype;config;deps]
   initfunc[config;deps]
   }
 
-/ --- application code cascade (TorQ-style) ------------------------------------------------
-/ Loads add-on q scripts the APP drops under $TORQXAPPHOME/code/<dir>/ for a process, mirroring
-/ torq.q's .proc.reloadallcode but scaled to the SINGLE app code root: the TorqX framework ships
-/ behaviour as di.* MODULES (loaded via `use`), not code/<proctype> dirs, so there is no framework
-/ code root to cascade over - only the app's. Cascade order mirrors the config cascade and torq.q:
-/ common -> proctype -> procname, procname OFF by default (matching torq.q's loadnamecode). Flags
-/ (from the merged config, per-process overridable in settings): loadcommoncode / loadprocesscode /
-/ loadnamecode. Deliberately NOT via `use` (which mangles a module into a private namespace): a
-/ plain `system "l"` lets each file's definitions land at the namespace ITS OWN \d directives
-/ choose - a bare app query file like code/rdb/examplequeries.q (no \d) lands at ROOT, callable as
-/ countbysym[...]. This is the same load mechanism startcustom already uses for code/processes/.
-/ parentproctype (torq.q's 4th tier) loads code/<parentproctype>/ between common and proctype, gated by loadprocesscode, as torq.q:643.
+/ --- application code cascade ------------------------------------------------------------
+/ loads q scripts under $TORQXAPPHOME/code/<dir>/ at root with system "l": common, parentproctype, proctype,
+/ then procname, gated by loadcommoncode / loadprocesscode / loadnamecode (procname off by default)
 optflag:{[config;k;dflt] $[k in key config;`boolean$config k;dflt]}
 
-/ load every q/k file in one dir at root: an optional order.txt lists files to load first, then
-/ the rest alphabetically. Absent/empty dir -> no-op (key on a missing path returns empty).
-/ (param is `lg` not `log` - `log` is the built-in natural-log and won't reliably shadow.)
+/ load every q/k file in one dir at root: files listed in an optional order.txt first, then the rest
+/ alphabetically; a missing or empty dir is a no-op
 loadappcodedir:{[lg;dir]
   files:key hsym `$dir;
   if[0=count files;:()];
@@ -196,14 +144,7 @@ loadappcode:{[lg;config;proctype;procname]
   if[optflag[config;`loadnamecode;0b];    loadappcodedir[lg;base,string procname]];
   }
 
-/ calls an optional post-init one-shot hook, .{proctype}.run[], if the process type
-/ published one - same "publish at a real root name" convention already used for
-/ .hdb.reload (custom proctypes under code/processes/ land there for free via their
-/ own \d .proctype block; a built-in di.* module must explicitly set[`.X.run;...] since
-/ use mangles its own namespace). Lets a process type (e.g. the sample loader) run its
-/ own startup action without the generic launcher needing any proctype-specific logic.
-/ Skipped entirely if the overrides dict's `norun key is set - the launcher's -norun
-/ escape hatch threads through here.
+/ calls the optional post-init hook .{proctype}.run[] if the process type published one, unless overrides`norun is set
 runhook:{[proctype;overrides]
   if[`norun in key overrides;if[overrides`norun;:()]];
   ns:`$".",string proctype;
@@ -250,18 +191,13 @@ loadpermissionrules:{[lg;config;proctype;procname]
   }
 
 / --- optional query logging ---------------------------------------------------------------
-/ Wires di.querylog (kdbx-modules main, consumed unmodified) behind a [querylog] settings section - a silent
-/ no-op unless enabled=true, same convention as di.torq.logroll. di.querylog wraps the .z.* handlers by DIRECT
-/ assignment, not through di.torq.handlers, so init calls this after the process module and app code
-/ have bound theirs, and before zpsignore. KNOWN LIMITATION (torq.md "Query logging"): an exec owner claimed on .z.pg/.z.ps/etc.
-/ AFTER this silently replaces the wrapper and that event's logging drops to zero with no error.
-/ di.permissions is the one module that claims those owners, and initpermissions therefore runs
-/ before this - so query logging sits outside permissions and records refused queries too.
+/ wires di.querylog from a [querylog] settings section, a no-op unless enabled=true; di.querylog wraps
+/ the .z.* handlers by direct assignment, so it runs after everything else that binds them; initpermissions runs
+/ before it, so refused queries are logged too
 querylogwired:0b
 qlflushtime:0D
 
-/ di.querylog matches an async message's head against its ignorelist: di.pubsub sends a symbol head
-/ (`upd;t;x), a feed may send a string head (".u.upd";t;x) - so expand each name into both shapes
+/ ignorelist names as both symbol and string message heads
 qlignore:{[names]
   s:{$[-11h=type x;x;`$x]} each names,();
   s,string s
@@ -275,7 +211,7 @@ flushquerylog:{[] ((use`di.querylog)`flushusage)[.z.m.qlflushtime];}
 initquerylog:{[config;deps]
   sect:$[`querylog in key config;config`querylog;()!()];
   if[not $[`enabled in key sect;`boolean$sect`enabled;0b];:()];
-  / di.querylog's own init is not idempotent - a second call wraps its own wrappers and every query logs twice
+  / wire once per process
   if[.z.m.querylogwired;deps[`log][`info][`torq;"query logging already wired in this process - not re-wrapping"];:()];
   opt:{[s;k;d] $[k in key s;s k;d]}[sect];
   cfg:`logtomemory`logtodisk`level`localtime`ignore`ignorelist!(
@@ -309,42 +245,30 @@ initzpsignore:{[config]
   .z.m.zpsignorewired:1b;
   }
 
-/ reserved launcher/identity flags parsed from the command line - consumed by the launcher and by
-/ di.torq itself (identity, stack id, port, norun), NOT config settings. Everything else on the
-/ command line is a candidate config override.
+/ launcher and identity flags parsed from the command line, not config settings
 reservedflags:`proctype`procname`parentproctype`torqxstackid`p`norun;
 
-/ the config-override params from a parsed command-line opt dict (.Q.opt .z.x): drop the reserved
-/ flags, keep the rest. di.torq.config.overrideconfig then applies each to the matching setting
-/ (parsed into its type) and skips any that don't name a real setting. Pure - unit-testable without .z.x.
+/ the config-override params from a parsed command-line opt dict (.Q.opt .z.x), without the reserved flags
 clioverrideparams:{[cmdlineopts] (key[cmdlineopts] except reservedflags)#cmdlineopts}
 
 / q's own -t in ms, null if not given; q consumes -t, so it is read from the full command line .z.X
 cmdlinet:{[] $[`t in key o:.Q.opt .z.X;"J"$first o`t;0N]}
 
 init:{[proctype;procname;overrides]
-  / dependency check runs first, before anything else - a version mismatch should
-  / be caught before identity resolution, config, or any module load even starts.
-  / checkversiongraphfile[] is a no-op if TORQXAPPHOME has no deps.toml (opt-in, see di.torq.depcheck's docs).
+  / dependency check first; a no-op if TORQXAPPHOME has no deps.toml
   dc:use`di.torq.depcheck;
   (dc`checkversiongraphfile)[`;reqenv[`TORQXAPPHOME],"/deps.toml"];
   ident:resolveidentity[proctype;procname];
   proctype:ident`proctype;
   procname:ident`procname;
-  / pre-load VERSION graph (reconciled di.torq.depcheck: kdbx's semver + manifest reading, TorqX's on-disk
-  / VERSION-file walk): now that identity is known, walk THIS process's
-  / dependency subtree - each module's own deps.q/deps.toml declares the minimum versions of the modules it
-  / `use`s, validated transitively against the VERSION files installed on QPATH. Turns "customer upgraded
-  / di.torq.proc.gateway but not the di.serverselect it now needs" from a cryptic mid-startup runtime error into a
-  / clear startup failure naming the culprit. Built-in proctypes have a di.* entry module; a custom proctype's
-  / optional manifest lives at code/processes/<proctype>.deps.toml. Pure on-disk reads, still before any module loads.
+  / check the VERSION graph for this process's module, or a custom proctype's code/processes/<proctype>.deps.toml
   $[proctype in key builtin;
     (dc`checkversiongraph)[enlist builtin proctype];
     (dc`checkversiongraphfile)[proctype;reqenv[`TORQXAPPHOME],"/code/processes/",(string proctype),".deps.toml"]];
   r:roots[];
-  / -parentproctype, as torq.q:376-380: a symbol atom, null if not given
+  / -parentproctype as a symbol atom, null if not given
   parentproctype:$[`parentproctype in key o:.Q.opt .z.x;first `$o`parentproctype;`];
-  / the logger is built before config so di.torq.config's command-line override layer (below) can log through it
+  / the logger is built before config so the command-line override layer can log through it
   logdep:buildlogdep[overrides];
   cc:use`di.torq.config;
   (cc`init)[enlist[`log]!enlist logdep];
@@ -352,26 +276,19 @@ init:{[proctype;procname;overrides]
   settingsproctype:$[proctype=`segmentedchainedtp;`segmentedtp;proctype];
   if[not null parentproctype;logdep[`info][`init;"read in process parameter of parentproctype=",string parentproctype]];
   config:(cc`cascade)[r 0;r 1;parentproctype;settingsproctype;procname];
-  / command-line override layer - the TOP cascade tier. A launch flag matching a settings name
-  / overrides it (parsed into that setting's type); reserved launcher/identity flags are excluded,
-  / and a flag that doesn't name a real setting is skipped (see di.torq.config.overrideconfig).
+  / command-line overrides, the top cascade tier; flags that are reserved or not a setting are skipped
   config:(cc`overrideconfig)[config; clioverrideparams .Q.opt .z.x];
-  / self-identity is resolved by di.torq and authoritative - stamped AFTER overrides so it always wins
+  / self-identity is stamped after the overrides
   config:config,`proctype`procname`parentproctype!(proctype;procname;parentproctype);
-  / the process.csv phone-book path, so di.torq.servers (and any consumer building its own startup config
-  / slice from this config) can dial peers without reading env itself - keeps di.servers' env-free boundary.
+  / the process.csv path for di.torq.servers and other consumers
   config:config,enlist[`processcsv]!enlist reqenv[`TORQXAPPCONFIG],"/process.csv";
   / the process -t interval in ms, null if not given
   config:config,enlist[`timerms]!enlist cmdlinet[];
   timerdep:buildtimerdep[overrides;logdep];
   handlersdep:buildhandlersdep[overrides;logdep];
-  / servers is built LAST (it consumes log/timer/handlers at init) and injected alongside
-  / them, so consumers read deps`servers instead of `use`+init-ing di.torq.servers themselves.
+  / servers is built last as it consumes log, timer and handlers
   deps:`log`timer`handlers`servers!(logdep;timerdep;handlersdep;buildserversdep[overrides;config;logdep;timerdep;handlersdep]);
-  / optional, config-driven (see di.torq.logroll's docs) - a silent no-op unless the
-  / process's settings have a [logroll] section with enabled=true. Called before
-  / startbuiltin/startcustom so the process type's own init-time log lines land in
-  / the rolled files too, matching torq.q's own ordering.
+  / log rolling, a no-op unless the settings have [logroll] enabled=true; before the process type's init
   lr:use`di.torq.logroll;
   (lr`init)[config;deps];
   / init functions a process defers until pubsub and connections are initialised
@@ -386,9 +303,7 @@ init:{[proctype;procname;overrides]
   / rule cascade, which needs di.permissions' admin api to exist
   initpermissions[config;deps];
   loadpermissionrules[logdep;config;proctype;procname];
-  / app-level add-on code (code/<common|proctype|procname>/*.q) - loaded AFTER the process
-  / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
-  / app file may define/override .<proctype>.run for the hook to pick up).
+  / app code, after the process module's init and before runhook
   loadappcode[logdep;config;proctype;procname];
   / initialise pubsub
   if[@[value;`.ps.loaded;0b];.ps.initialise[]];
@@ -398,14 +313,10 @@ init:{[proctype;procname;overrides]
   if[count .proc.initlist;value each .proc.initlist;.proc.initlist:()];
   / .z.* wrappers: clients, querylog, zpsignore last
   initclients[config;deps];
-  / optional query logging - a no-op unless [querylog] enabled=true. LAST of everything that binds .z.*, because
-  / di.querylog wraps whatever is bound at this moment by direct assignment (see initquerylog / torq.md)
+  / optional query logging, after everything else that binds .z.*
   initquerylog[config;deps];
   initzpsignore config;
-  / post-load session audit (di.torq.depcheck.init): now that every module is loaded, introspect the live
-  / session - core-dependency contract shapes (log/timer/handlers), .z.ts ownership, and an optional minimum
-  / kdb-x engine version (config`minkdbxversion). Complements the pre-load VERSION graph above, which validated
-  / installed versions before loading; this validates what actually loaded. Raises on a real contract/dependency gap.
+  / post-load session audit: dependency contract shapes, .z.ts ownership and an optional minimum kdb-x version
   (dc`init)[`log`minkdbxversion!(logdep;$[`minkdbxversion in key config;"f"$config`minkdbxversion;0Nf])];
   runhook[proctype;overrides];
   `proctype`procname`config`deps!(proctype;procname;config;deps)

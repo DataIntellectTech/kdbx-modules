@@ -1,14 +1,5 @@
-/ fixture helpers for di.torq's tests.
-/ Assumes q is started with the kdbx-modules repo root as the working directory and on QPATH
-/ (di.torq's own built-in settings and `builtin` registry genuinely live there - there is no
-/ faking that part).
-/ TORQXAPPCONFIG and TORQXAPPHOME are both repointed at a temp fixture below to
-/ isolate everything else (process.csv, app-level settings, a scratch hdb dir, the
-/ custom proctype's code file) from any real app - nothing this test does touches a
-/ real app directory. Uses real di.util.log/di.timer/di.torq.handlers/di.torq.proc.hdb throughout rather than
-/ mocking them - they are each already covered by their own module's tests, and
-/ di.torq's job is to wire them together correctly, which mocking them away would not
-/ actually test.
+/ fixture helpers for di.torq's tests, loaded from the repo root, which is on QPATH
+/ TORQXAPPCONFIG and TORQXAPPHOME point at a temp fixture; di.util.log, di.timer, di.torq.handlers and di.torq.proc.hdb are real
 
 APPBASE:"/tmp/di_torq_k4unit_app"
 HDBDIR:APPBASE,"/hdb"
@@ -30,8 +21,7 @@ setupfixture:{[]
   setenv[`TORQXAPPCONFIG;APPBASE];
   setenv[`TORQXAPPHOME;APPBASE];
 
-  / app-code cascade markers: a bare file (no \d) in each tier dir sets a root flag when loaded,
-  / so tests can assert which tiers di.torq's loadappcode picked up (common -> proctype -> procname).
+  / app-code cascade markers: a file in each tier dir sets a root flag when loaded
   writelines[APPBASE,"/code/common/appcommon.q";enlist "APPCOMMON_LOADED:1b"];
   writelines[APPBASE,"/code/",string[TESTPROCNAME],"/appproc.q";enlist "APPPROC_LOADED:1b"];
   writelines[APPBASE,"/code/testinst/appname.q";enlist "APPNAME_LOADED:1b"];
@@ -53,10 +43,7 @@ setupfixture:{[]
      "localhost,28580,hdb,hdb";
      "localhost,0,",(string TESTPROCNAME),",testinst")];
 
-  / a trivial custom process type - mirrors code/processes/loader.q's shape, but just
-  / captures what it was called with so the test can assert on it. Also publishes a
-  / `run` hook (di.torq's optional post-init convention, see torq.q's runhook) that
-  / just counts how many times it fired, so tests can assert it ran/didn't run.
+  / a custom process type that records its init args and counts calls to its run hook
   writelines[TESTPROCFILE;
     ("\\d .",string TESTPROCNAME;
      "runcalled:0;";
@@ -97,19 +84,13 @@ launchtimerms:{[flags]
   system QBIN," ",APPBASE,"/launch.q -proctype ",(string TESTPROCNAME)," -procname testinst",flags," -q </dev/null >",APPBASE,"/launch.log 2>&1";
   value first read0 hsym`$f}
 
-/ helper so the test.csv cell stays comma-free (k4unit's CSV splits unquoted commas): writes
-/ loadnamecode into the procname settings tier to turn on the procname-tier app-code cascade.
+/ writes loadnamecode into the procname settings tier
 enablenamecode:{[] writelines[APPBASE,"/settings/testinst.q";enlist "loadnamecode:1b"]; }
 
-/ a synthetic parsed-command-line opt dict in .Q.opt shape (values are string lists; a bare flag
-/ like -norun is ()) for the command-line override-layer tests. Mixes the reserved launcher/identity
-/ flags di.torq consumes (proctype/procname/torqxstackid/p/norun) with two real setting flags
-/ (myrows/myname), so a test can assert clioverrideparams keeps only the latter.
+/ a .Q.opt-shape command line with reserved flags (proctype/procname/torqxstackid/p/norun) and two settings (myrows/myname)
 sampleopts:{[] `proctype`procname`torqxstackid`p`norun`myrows`myname!((enlist"hdb");(enlist"hdb");(enlist"s1");(enlist"5560");();(enlist"7");(enlist"widget"))}
 
-/ query-logging helpers (the initquerylog tests), kept here so test.csv cells stay comma-free: count the
-/ completed rows for one .z.* event, the total row count, and drive one sync and one async message
-/ through the wrapped handlers.
+/ query-logging helpers: completed rows for one .z.* event, total rows, and one sync and one async message
 qlcompleted:{[zc] count select from ((use`di.querylog)`getusage)[] where zcmd=zc,status="c"}
 qlrowcount:{[] count ((use`di.querylog)`getusage)[]}
 qlsync:{[] .z.pg "1+1"}

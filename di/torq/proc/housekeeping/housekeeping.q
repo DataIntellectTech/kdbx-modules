@@ -1,83 +1,44 @@
-/ di.torq.proc.housekeeping - scheduled file-maintenance process type. Applies a list of
-/ cleanup jobs (remove / zip / tardir files or directories older than some age) read from a csv,
-/ on a daily schedule. Ported from TorQ/code/processes/housekeeping.q.
-/ ---
-/ Scope (v1): unix only. Legacy shipped parallel .unix.*/.win.* implementations and dispatched
-/ on .z.o; the .win branch is NOT ported (its own zip/tar were never implemented there, and the
-/ framework tier has dropped Windows elsewhere - see di.torq.logroll's same note). init errors
-/ on Windows rather than starting half-working. Also NOT ported: legacy's kdbzip action, which
-/ leaves the original uncompressed plus a _kdbtempzip copy on every run (see housekeeping.md);
-/ and legacy's "runnow then exit" one-shot mode (see runnow below).
-/ ---
-/ Why a csv for the jobs and settings for the rest: the job list is tabular and
-/ variable-length (one row per path/match/action), which a .q/.toml settings file models
-/ badly - same split di.torq.proc.wdb uses for its sortcsv and di.compression for its own csv.
-/ Settings hold only WHEN to run and WHERE the csv is.
+/ di.torq.proc.housekeeping - runs file-maintenance jobs (rm, zip or tardir files or directories older than an age)
+/ from a job csv on a daily schedule; unix only
 
-/ has init run? probes .z.m.log, which has no load-time default - only init ever sets it - via a
-/ trap rather than a `in key .z.m` test, so it cannot be confused by how module state is shaped.
-/ Same shape as di.merge's own init guard.
+/ has init run? traps a read of .z.m.log, which only init sets
 initialised:{[] @[{.z.m.log;1b};::;{[e] 0b}]}
 
-/ an exported function that touches injected deps or config refuses to run before init wired them.
-/ Without this a pre-init call dies on an unset .z.m.log (or .z.m.jobcsv) with a raw error that
-/ says nothing about the real mistake. actionnames is deliberately NOT guarded - it only reads the
-/ action dictionary, which exists from load, so it answers correctly whether or not init has run.
+/ signal if an exported function is called before init
 requireinit:{[ctx]
   if[not initialised[];
     '"di.torq.proc.housekeeping: ",string[ctx],": init must be called before any other function"];
   }
 
-/ a time-of-day list config (runtimes): accept a minute/second/time/timespan atom or list (from
-/ a .q settings file), or a space-separated string ("02:00 14:30") from .toml - always returns a
-/ timespan list, which adds to a date to give the next fire timestamp.
-/ NB the two branches use different casts on purpose: "N"$ PARSES text and cannot cast a real
-/ temporal value, while `timespan$ CASTS any temporal type (including timespan) but cannot parse
-/ text. Using either alone throws 'type on the other branch's input - caught by direct testing.
+/ runtimes config as a timespan list: a temporal atom or list (.q settings) or a space-separated string (.toml)
 astimespans:{[x]
   $[10h=type x;"N"$" " vs x;
     0>type x;enlist `timespan$x;
     `timespan$x]
   }
 
-/ base dir: the job csv is CODE/CONFIG, not runtime data, so it resolves under TORQXAPPHOME -
-/ matching how di.torq.proc.wdb resolves its own sortcsv (and unlike its savedir/hdbdir, which
-/ are data and resolve under TORQXDATAHOME).
+/ base dir for the job csv
 apphome:{getenv[`TORQXAPPHOME]}
 
-/ resolve a possibly-relative path setting to an absolute path STRING (no leading `:`) under
-/ `base`. Same body as di.torq.proc.wdb's resolvedir - accepts a `.q` settings symbol (`:x) or
-/ a colon-less `.toml` string ("x") and normalises both.
+/ resolve a possibly-relative path setting (symbol or string, optional leading colon) to an absolute path string under base
 resolvepath:{[base;path]
   path:$[10h=abs type path;path;string path];
   path:$[(0<count path) and ":"=first path;1_path;path];
   $[path like "/*";path;base,"/",path]
   }
 
-/ the next timestamp at which time-of-day `t` occurs: today if it hasn't passed yet, otherwise
-/ tomorrow - so a process started after its configured time waits for the next one rather than
-/ firing immediately on startup (use runnow for that). Mirrors legacy TorQ's own scheduling.
-/ ---
-/ UTC (.z.p/.z.d), NOT local (.z.P/.z.D), because di.timer's own clock is `cp:{.z.p}` and it
-/ fires a job when cp[] reaches the nextstart we hand it. Computing this in local time makes
-/ every run late by the UTC offset - on a UTC+1 box a "02:00" job silently fires at 03:00 local.
-/ Caught by running a real process and reading the live job table, not by the tests: the mocked
-/ timer records what it was handed but never fires it, and on a UTC box the two agree anyway.
-/ So `runtimes` are UTC times of day - see housekeeping.md.
+/ the next UTC timestamp at time of day t: today if not yet passed, otherwise tomorrow
 nextfire:{[t]
   $[.z.p<ts:.z.d+t;ts;(.z.d+1)+t]
   }
 
-/ expand {ENVVAR} placeholders in a job's path, so a csv can follow a deployment's environment
-/ instead of hardcoding absolute paths (e.g. "{TORQXLOGDIR}/"). Legacy TorQ did the same via
-/ .rmvr.removeenvvar. An unset variable expands to empty, matching shell behaviour; an unmatched
-/ "{" is left alone rather than treated as an error.
+/ expand {ENVVAR} placeholders in a job's path; an unset variable expands to empty, an unmatched { is kept
 expandenv:{[s]
   c:"{" vs s;
   first[c],raze {i:x?"}";$[i=count x;"{",x;getenv[`$i#x],(i+1)_x]} each 1_c
   }
 
-/ read the job list, as legacy housekeeping.q:44-51; re-read on every run so the csv can be edited without a restart
+/ read the job list; re-read on every run
 readjobs:{[path]
   f:hsym `$path;
   if[not count key f;'"job csv not found at ",path];
@@ -90,11 +51,7 @@ readjobs:{[path]
   t where not n
   }
 
-/ locate the paths one job matches. Shells out to find because kdb has no native stat, so file
-/ age can only come from the OS - legacy TorQ shelled out for the same reason. -maxdepth 1 keeps
-/ a job to the directory it names rather than recursing into a whole tree by accident.
-/ NB the csv is operator-supplied config, at the same trust level as a settings file, so its
-/ values reach the shell - they are quoted, but a csv is not a place to accept untrusted input.
+/ paths one job matches, from find -maxdepth 1 by age in days (-mtime) or minutes (-mmin); csv values are quoted into the shell command
 findmatches:{[j]
   p:expandenv j`path;
   flag:$[j`checkfordirectory;"d";"f"];
@@ -104,15 +61,11 @@ findmatches:{[j]
   @[system;cmd;{[e] .z.m.log[`error][`findmatches;"find failed: ",e];()}]
   }
 
-/ one handler per action, dispatched by the csv's `function` column, named as legacy's rm/zip/tardir. rm goes through
-/ di.os (and honours its dry-run mode); zip/tardir have no di.os equivalent and shell out directly - part of why this
-/ module is unix-only.
-/ None of these traps its own work: applyjob traps every action per match, so a handler here reads
-/ the same as one an app registers.
+/ one handler per action, dispatched by the csv's function column; rm goes through di.os, zip and tardir shell out
 actions:()!()
 
 actions[`rm]:{[f]
-  / a directory is skipped and logged, as legacy's rm -f fails on one
+  / a directory is not removed
   if[(.z.m.os`isdir)f;'"cannot remove ",f,": Is a directory"];
   .z.m.log[`info][`rm;"removing ",f];
   (.z.m.os`del) f;
@@ -131,28 +84,14 @@ actions[`tardir]:{[f]
 / the actions a job csv may name, for error messages and for an app to introspect
 actionnames:{[] key actions}
 
-/ register an extra action an app's own job csv rows can dispatch to, e.g.
+/ register an extra action an app's job csv rows can dispatch to, e.g.
 /   hk:use`di.torq.proc.housekeeping;
 /   (hk`addaction)[`s3upload;{[f] ... }];
-/ from a file under $TORQXAPPHOME/code/, which di.torq loads after this module's init.
-/ ---
-/ This is the front door for what legacy TorQ got by having `wrapper` `value` ANY root-level
-/ function the csv named ("designed to be extended through user defined functions"). That was
-/ extensible but unbounded - a csv naming `exit`, or any root function, got it called with file
-/ paths. Dispatch here stays closed over this dictionary; an app adds to it deliberately.
-/ ---
-/ Needed because a bare `actions[`x]:...` from app code does NOT reach this dictionary: app code
-/ is loaded with system "l" and lands at ROOT, while this module's `actions` lives in the private
-/ namespace `use` mangles it into. The app ends up amending an unrelated root dictionary of the
-/ same name, the csv row is still rejected as an unknown action, and nothing says why until a
-/ scheduled run logs it. Reaching the real one means spelling the mangled path
-/ (.m.di.0torq.0proc.0housekeeping.actions), which is an implementation detail, not an interface.
 addaction:{[name;handler]
   requireinit[`addaction];
   if[not -11h=type name;'"di.torq.proc.housekeeping: addaction name must be a symbol"];
   if[not 100h=type handler;'"di.torq.proc.housekeeping: addaction handler must be a function taking one matched path"];
-  / refuse to shadow a built-in: silently swapping rm/zip/tardir out from under a job csv that
-  / already names them is a footgun no caller wants, and a typo'd name should say so loudly
+  / built-in actions cannot be replaced
   if[name in `rm`zip`tardir;
     '"di.torq.proc.housekeeping: cannot redefine the built-in action ",string name];
   if[name in key actions;
@@ -161,14 +100,8 @@ addaction:{[name;handler]
   .z.m.log[`info][`addaction;"registered action ",(string name),"; csv actions now: ",", " sv string key actions];
   }
 
-/ apply one job: find what it matches, then run its action over each match. An unknown action, a
-/ failing find and a throwing action are all logged and skipped rather than aborting the whole run -
-/ one bad csv row should not stop the rest of the night's housekeeping.
-/ ---
-/ The action is trapped HERE, per match, rather than left to each handler: an untrapped throw
-/ propagates through runjobs into di.timer, whose disableonfail defaults on, which disables this
-/ process's housekeeping job for good - and silently, as di.timer only logs that when its debug is
-/ set. A custom handler registered via addaction must not be able to cost every later run.
+/ apply one job: find its matches and run its action on each; an unknown action, a failing find or a throwing
+/ action is logged and skipped
 applyjob:{[j]
   if[not (j`function) in key actions;
     .z.m.log[`error][`applyjob;"unknown action ",(string j`function),"; expected one of ",", " sv string key actions];
@@ -178,10 +111,8 @@ applyjob:{[j]
   {[a;f] @[actions a;f;{[a;f;e] .z.m.log[`error][`applyjob;"action ",(string a)," failed on ",f,": ",e]}[a;f]]}[j`function;] each m;
   }
 
-/ run every job in the csv once. Called by the timer, by runnow at startup, and by an operator
-/ or peer over IPC as .housekeeping.runjobs[]. A csv that is missing or malformed is logged and the
-/ run abandoned; a job that throws is logged and the remaining jobs still run. Between them this
-/ function does not throw, which is what keeps di.timer from disabling the schedule (see applyjob).
+/ run every job in the csv once, published at root as .housekeeping.runjobs; a missing or malformed csv is
+/ logged and the run abandoned; a failing job is logged and the rest still run
 runjobs:{[]
   requireinit[`runjobs];
   .z.m.log[`info][`runjobs;"housekeeping starting, reading ",.z.m.jobcsv];
@@ -191,10 +122,7 @@ runjobs:{[]
   .z.m.log[`info][`runjobs;"housekeeping complete, ran ",(string count jobs)," job(s)"];
   }
 
-/ register one daily timer job per configured runtime. di.timer mode 1h reschedules at
-/ (previous SCHEDULED start + period), so a fixed 1-day period stays pinned to the configured
-/ time of day even if a run overruns; `startattime` sets the first fire (see di.timer's
-/ addjob.custom opts).
+/ register one daily di.timer job per runtime, mode 1h, first fire at nextfire
 schedule:{[]
   {[i;t]
     id:`$"housekeeping",string i;
@@ -211,31 +139,14 @@ init:{[config;deps]
   if[.z.o in `w32`w64;'"di.torq.proc.housekeeping: windows is not supported - the job actions need unix find/gzip/tar (see housekeeping.md)"];
   if[not `jobcsv in key config;'"di.torq.proc.housekeeping: jobcsv is required - the path to the housekeeping job list (see housekeeping.md)"];
   .z.m.jobcsv:resolvepath[apphome[];config`jobcsv];
-  / presence-check-with-default, per consistency.md's stated convention for a process module's
-  / tunables. `config` is ALREADY the merged cascade (framework settings -> app settings -> command
-  / line), so there is no separate settings lookup to do here - the default below only applies to a
-  / caller that bypasses the cascade entirely and calls init directly, e.g. the tests.
-  / These defaults must agree with di/torq/settings/housekeeping.q, which is what makes them
-  / discoverable and command-line-overridable (an undeclared setting is skipped by the override
-  / tier). Tests assert both halves, because a silently disagreeing pair is how legacy TorQ shipped
-  / runtimes:02:00:00 in settings and a dead 12:00 in code - with its -hkusage text quoting 12:00.
+  / defaults match di/torq/settings/housekeeping.q
   .z.m.runtimes:$[`runtimes in key config;astimespans config`runtimes;enlist 0D02:00:00];
-  / di.os for the rm action - its dry-run mode is what lets the tests assert on a destructive action without destroying anything
+  / di.os for the rm action
   .z.m.os:use`di.os;
-  / publish the IPC-callable surface at a real root-level name - use-loading this file compiles
-  / it into a private namespace (see di.torq.proc.hdb.init's identical note), so a remote or
-  / operator call would otherwise hit an undefined-function error.
-  / NB the name is `runjobs` everywhere - here, in the export, and as the function itself - and
-  / deliberately never `run`: di.torq's runhook fires `.{proctype}.run[]` once after init for any
-  / process type that publishes one, so publishing `run` would silently perform a destructive
-  / cleanup pass on EVERY process start, reversing legacy TorQ's runnow:0b default and making the
-  / runnow setting below dead. Caught by running the process for real; the mocked unit tests
-  / can't see it, since the hook lives in di.torq, not in this module.
+  / publish runjobs at root for IPC callers
   set[`.housekeeping.runjobs;runjobs];
   schedule[];
-  / runnow means "also run once now", NOT legacy's "run once and exit" - exiting from inside
-  / init would fight torqx.sh, which owns this process's lifecycle. A one-shot cleanup is a cron
-  / job calling .housekeeping.runjobs[] over IPC, not a process that kills itself.
+  / runnow runs the jobs once at init
   if[$[`runnow in key config;`boolean$config`runnow;0b];runjobs[]];
   .z.m.log[`info][`init;"initialised, jobcsv=",.z.m.jobcsv,", runtimes=",", " sv string .z.m.runtimes];
   }

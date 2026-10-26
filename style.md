@@ -17,8 +17,8 @@ Avoid any trailing whitespace.
 
 ## Comments
 
-Focus on why, not what the code is doing - describe business logic and purpose
-of code.
+Comments state what the code does, concisely. A reader should need nothing
+outside this repository to follow them.
 
 In-line comments are permissible for short lines defining only variables; in
 other cases, comments should be on line preceding the code they describe.
@@ -129,6 +129,19 @@ dos2unix.
 
 Unless it is unavoidable lines of code should not exceed 150 characters.
 
+## kdb-x gotchas
+
+- A `use`-loaded module's names live in a private namespace, so a bare or `::` write does not
+  reach root. Write root state with ``@[`.;`name;:;value]`` or ``set[`.ns.name;value]``.
+- Locals and parameters cannot shadow built-ins such as `sv`, `ss`, `log`, `string`, `cut` and
+  `tables`; the module fails at load (e.g. `'sv`, `'assign`). Use a distinct name (`srv`, `lg`).
+- Calling a module by dot-syntax in the same function frame as its `use` fails; index the handle
+  with brackets instead: ``m:use`di.x; (m`init)[cfg]``.
+- `like` throws `'nyi` on a pattern with three or more `*`.
+- `enlist` of a dict is a one-row table, so ``enlist[`log]!enlist d`` holds a table. Indexed amend
+  into it spreads the new value across the table, and amending a dict value into a typed dict throws
+  `'type`. Start mixed dicts from `()!()` and add keys by join.
+
 ## Notes (framework tier)
 
 > Additive clarifications from the framework work; consistent with the rules above.
@@ -139,8 +152,4 @@ Unless it is unavoidable lines of code should not exceed 150 characters.
   namespace-write boundary in `consistency.md`), not a style violation.
 - **`do` / `while` / `for`:** the iterator-first rule stands. A bounded queue/accumulator loop
   with no natural iterator (e.g. a cycle-guarded dependency-graph walk) is the rare justified
-  exception — comment *why*.
-- **Reserved names bite at load time, not just runtime.** Beyond "don't use q reserved names":
-  the ones that have actually broken things are `log`, `ss`, `sv`, `string`, `cut`, `tables`. A
-  local or parameter named after a builtin may fail to shadow it and can throw when the file is
-  *loaded* (e.g. `sv:...` → `'sv`). Pick a distinct name (`srv` not `sv`, `lg` not `log`).
+  exception — comment what the loop bounds.

@@ -1,6 +1,6 @@
 / generic dataloader library
 
-/ loads data in from delimited file, applies processing function, enumerates and writes to db. NOTE: it is not trivial to check user has inputted headers correctly, assume they have
+/ load delimited data, apply the processing function, enumerate and write to db
 loaddata:{[loadparams;rawdata]
   / check if first row matches headers provided
   data:$[(`$"," vs rawdata 0)~loadparams`headers;

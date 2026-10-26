@@ -209,6 +209,61 @@ scannable root namespaces), so the module carries its own private equivalents.
 Tightening this — failing closed on anything introspection cannot see — is a behaviour change and
 belongs in its own change, with the migration impact assessed.
 
+### Module-private state is invisible to the scan, where TorQ's was not
+
+The fail-open scan above has a consequence that **is not inherited from TorQ**, and it is caused
+by where module state lives rather than by any policy choice here.
+
+TorQ keeps its own permission state in `.pm` — a **root** namespace, so `.api.allns[]` walks it,
+`.pm.user` is a recognised name, it is absent from the `access` table, and `permissivemode=0b`
+refuses it. The hole never reaches TorQ's credential store.
+
+This module's state is at `.m.di.0permissions.user`, below the one level the scan walks, so the
+same lambda is permitted and **any authenticated user can read the password hash table**.
+
+Verified on both sides. TorQ 5.2.x, loaded as described under "Verifying the inherited behaviour against TorQ",
+with `bob` granted `select` and `trade:read` and nothing else:
+
+```
+count trade (direct)                    : "REFUSED: pm: unsupported expression, superuser only"
+{count trade}[] (lambda)                : 3
+{1+1}[] (lambda, arbitrary)             : 2
+{count packets}[] (ungranted table)     : "REFUSED: pm: no read permission on [packets]"
+{.pm.user}[] (the hash table)           : "REFUSED: pm: no read permission on [.pm.user]"
+{count value `$"pack","ets"}[]          : 2
+```
+
+The same checks against a permissioned `di.torq` rdb, as `trader`, agree on every line except the
+last two — `{.m.di.0permissions.user}[]` returns the table, and the runtime-constructed name is
+permitted in both.
+
+So the **function-grant bypass is faithful parity**: in TorQ and here alike, a read-only user may
+wrap any expression in braces and the role grants stop applying, because `lamq` only ever checks
+variable *reads*. Constructing a name at runtime defeats both, since the token never appears in
+the stringified expression. Only the visibility of the module's own state differs.
+
+**Not fixed here, deliberately.** The narrow fix is to extend the scan to the module root, without
+`get` and without touching `.q`/`.Q`/`.z`:
+
+```q
+modulevars:{[]
+  mods:`$".m.di.",/:string @[system;"v .m.di";()];
+  raze {[m] `$(string m),".",/:string @[system;"v ",string m;()]} each mods};
+
+rootvars:{[] (raze varnames each allns[]),modulevars[]};
+```
+
+Two things make this its own change rather than a line in this one. `rootvars[]` runs on **every
+lambda-containing query**, inside the check and before any result returns, so the added cost is on
+the hot path and needs measuring — a general recursive walk that calls `get` to test for a
+namespace is not viable at all, and will hang an rdb, because `get` materialises every table it
+reaches. And `di.asyncdispatch`'s dispatch payload is itself a lambda: if it references any `.m.*`
+name, every gateway query would begin to be refused. Both need an end-to-end run to settle.
+
+Until then, treat permissions as a **query-restriction layer for semi-trusted users, not a
+sandbox**. Authentication is solid; post-auth containment holds for direct expressions and is
+porous for anyone who can send a lambda.
+
 ### The tokenizer is trapped
 
 `lamq` finds candidate names by stringifying the flattened expression and tokenizing it with
@@ -316,6 +371,7 @@ exactly this reason.
 | `public` users | `-public` command-line flag via `.Q.opt .z.x` | a `public` config key |
 | Rule file roots | `$KDBCONFIG` + `$KDBAPPCONFIG` | `$TORQXHOME/di/torq` + `$TORQXAPPCONFIG` |
 | `.api` introspection | `.api.varnames` / `.api.allns` | private equivalents (see above) |
+| Own state, seen by `lamq` | `.pm.*` is a root namespace, so it is refused | `.m.di.0permissions.*` is below the scan, so a lambda reads it |
 | `xqu` | defined, never called, identical to `isq` | dropped |
 
 Not ported: `controlaccess.q` (a separate, mutually exclusive csv-based model — TorQ's

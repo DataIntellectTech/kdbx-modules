@@ -106,8 +106,17 @@ pdict:{[f;a]
   d:d,$[not ca:count a; ();
         f~`select; ();
         (1=count a) and (99h=type first a); first a;
-        / a projection carries the function and its fixed parameters
-        104h=type value f; [fnfp:value value f; (value[fnfp 0][1])!fnfp[1],a];
+        / a projection carries the function and its fixed parameters. Build the full argument
+        / list with :: in the positions still to fill, then drop the supplied args into those -
+        / taking fnfp[1] alone loses every fixed parameter after the first (TorQ b03e4753)
+        104h=type value f;
+          [fnfp:value value f;
+           params:value[fnfp 0][1];
+           pargs:1_ fnfp;
+           allargs:(count params)#enlist[::];
+           allargs[til count pargs]:pargs;
+           allargs[where 101h=type each allargs]:a;
+           params!allargs];
         101h<>type fp:value[value[f]][1]; fp!a;
         ((),(`$string til ca))!a
        ];
@@ -223,7 +232,8 @@ mainexpr:{[u;e;b;pr]
   ];
   / named function call
   if[-11h=type f;
-    if[not fchk[u;f;1_ e]; $[b;'err[`func][f]; :0b]];
+    / (),e so a bare name (an atom, not a call) drops to an empty argument list rather than signalling
+    if[not fchk[u;f;1_ (),e]; $[b;'err[`func][f]; :0b]];
     $[b; :exe ie; :1b];
   ];
   / select / update / delete

@@ -82,4 +82,7 @@ pcclosecheck:{[]
   (a;b)
   }
 
+/ a fresh init with checksubscriptionperiod p; returns the timer jobs it registered
+periodinit:{[p] .m.di.0subscriptions.registered:0b; delete from `timercalls; sub.init[subcfg enlist[`checksubscriptionperiod]!enlist p;deps[]]; flip value flip timercalls}
+
 teardownfixture:{[] @[{(neg x)"exit 0";(neg x)[]};tph;()]; system "sleep 0.3"; system "rm -rf ",BASE; }

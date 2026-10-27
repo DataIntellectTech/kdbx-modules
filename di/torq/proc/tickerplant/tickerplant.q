@@ -20,6 +20,8 @@ resolvedir:{[base;dir]
 
 / consumers coerce at point of use: config values may be symbols (.q) or strings (.toml)
 astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones)
+/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
 / feed payloads may arrive as a table or as a list of columns; normalise to columns
 tocols:{[x] $[98h=type x;value flip x;x]}
@@ -106,15 +108,15 @@ endofday:{[]
 / EOD check (timer job, ~1s): roll when the next-roll time has passed.
 eodcheck:{[] if[(.z.m.eod`getnextroll)[]<.z.p;endofday[]];}
 
-/ builds eodtime's merged init dict from the log dep + any tz config present, coercing
-/ timezone values to symbols. rolltimeoffset only passed if already a timespan (TOML has
-/ no timespan type, so a .toml settings file leaves it at eodtime's default).
+/ di.eodtime init dict: timezones as symbols, rolltimeoffset as a timespan
 eoddeps:{[config;logdep]
   d:()!();
   if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist astz config`rolltimezone];
   if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist astz config`datatimezone];
-  if[(`rolltimeoffset in key config) and -16h=type config`rolltimeoffset;d:d,enlist[`rolltimeoffset]!enlist config`rolltimeoffset];
-  / joins not amends, log last: amending a typed or log-valued dict mangles mixed values
+  if[`rolltimeoffset in key config;
+    if[null o:totimespan config`rolltimeoffset;'"di.torq.proc.tickerplant: rolltimeoffset must be a timespan"];
+    d:d,enlist[`rolltimeoffset]!enlist o];
+  / log first, then the eodtime keys
   (enlist[`log]!enlist logdep),d
   }
 

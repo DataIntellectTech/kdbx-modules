@@ -48,6 +48,8 @@ replaycfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/replog";BASE,"/database.
 subdcfg:{[] `tplogdir`schemafile!(BASE,"/subdlog";BASE,"/database.q")}
 subdbcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/subdblog";BASE,"/database.q")}
 tzcfg:{[] `schemafile`rolltimezone`datatimezone`rolltimeoffset!(BASE,"/database.q";`$"America/New_York";`$"Asia/Tokyo";0D01)}
+/ the same settings as TOML delivers them: strings
+tzstrcfg:{[] `schemafile`rolltimezone`datatimezone`rolltimeoffset!(BASE,"/database.q";"America/New_York";"Asia/Tokyo";"0D17:00:00.000")}
 / -t decides the mode, as TorQ's tickerplant.q: timerms (q's -t, stamped by di.torq) 200, null or 0
 tcfg:{[ms] `timerms`schemafile!(ms;BASE,"/database.q")}
 

@@ -79,5 +79,10 @@ run,0,0,q,doinit[tzcfg[]],1,,init with rolltimezone datatimezone and rolltimeoff
 true,0,0,q,(tzcfg[]`rolltimezone)~(use`di.eodtime)[`getrolltimezone][],1,,rolltimezone reaches di.eodtime as a symbol
 true,0,0,q,(tzcfg[]`datatimezone)~(use`di.eodtime)[`getdatatimezone][],1,,datatimezone reaches di.eodtime as a symbol
 true,0,0,q,0D01~(use`di.eodtime)[`getrolltimeoffset][],1,,rolltimeoffset reaches di.eodtime as a timespan
+run,0,0,q,doinit[tzstrcfg[]],1,,init with the eodtime settings as TOML strings
+true,0,0,q,(`$"America/New_York")~(use`di.eodtime)[`getrolltimezone][],1,,a string rolltimezone reaches di.eodtime as a symbol
+true,0,0,q,(`$"Asia/Tokyo")~(use`di.eodtime)[`getdatatimezone][],1,,a string datatimezone reaches di.eodtime as a symbol
+true,0,0,q,0D17:00:00~(use`di.eodtime)[`getrolltimeoffset][],1,,a string rolltimeoffset reaches di.eodtime as a timespan
+fail,0,0,q,"doinit tzstrcfg[],enlist[`rolltimeoffset]!enlist ""junk""",1,,an unparseable rolltimeoffset errors
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

@@ -30,6 +30,7 @@ ms; without `-t`, or with `-t 0`, it publishes each update immediately.
 tplogdir = "tplog"          # relative to TORQXDATAHOME, or absolute; empty/absent = no logging
 schemafile = "database.q"   # defaults to <TORQXAPPHOME>/database.q (schema is code, not data)
 # rolltimezone / datatimezone / rolltimeoffset -> passed to di.eodtime (default GMT/GMT/0)
+# rolltimeoffset = "0D17:00:00"  -> a timespan string or a number of seconds
 ```
 
 ## Behaviour
@@ -73,9 +74,8 @@ because `di.tplogmgr.open` replays via `-11!`, which executes the root-level `up
 - A single malformed schema table (missing `time`/`sym`) is silently skipped rather
   than erroring (shape-filtering trade-off vs TorQ's strict assertion, chosen for
   robustness against ambient root tables).
-- `di.eodtime` is vendored from an unmerged PR and `rolltimeoffset` can't be expressed
-  in TOML (no timespan type) — GMT-midnight rolls need no offset; a non-default offset
-  needs a `.q` settings file for now.
+- `di.eodtime` is vendored from an unmerged PR. Timezone strings become symbols and
+  `rolltimeoffset` strings or seconds become a timespan; an unconvertible offset errors at init.
 
 ## Testing
 

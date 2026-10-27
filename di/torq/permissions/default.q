@@ -60,10 +60,10 @@ pm[`grantfunction][`.housekeeping.runjobs;`systemuser;{1b}];
 pm[`grantfunction][`.logroll.rollnow;`systemuser;{1b}];
 pm[`grantfunction][`exit;`systemuser;{1b}];
 
-/ the idb reads the wdb's published paths as (each;value;`.wdb.savedir`.wdb.hdbdir`...), so a
-/ permissioned wdb needs `each` granted - the expression is a .q keyword call, not a named
-/ function call. `value` is deliberately NOT granted: it would make the holder a superuser.
-pm[`grantfunction][`each;`systemuser;{1b}];
+/ NOT granted here: `each`, for the idb's read of the wdb's published paths. The check names a
+/ function with `$string(first e), and a .q keyword is a lambda, so that yields `k){x'y} and no
+/ grant on `each can ever match it. A permissioned wdb cannot serve an idb for this reason -
+/ see di/permissions/permissions.md, "List-form IPC messages and eval".
 
 / --- data access: the group, not the role, controls table access ---
 / Apps grant their own tables. These are the framework's own.

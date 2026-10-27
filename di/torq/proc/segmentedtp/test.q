@@ -19,7 +19,14 @@ CFGS:`a`b`c`s`p!(
   "`procname`schemafile`stplgkdbtplog`stplgbatchmode`stplgmultilog!(`stp2;FIXDIR,\"/schema.q\";`$FIXDIR,\"/b\";`immediate;`singular)";
   "`procname`schemafile`stplgkdbtplog`stplgbatchmode`stplgmultilog!(`stp3;FIXDIR,\"/schema.q\";`$FIXDIR,\"/c\";`memorybatch;`tabular)";
   "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode!(`sctp1;0b;0b;`$FIXDIR,\"/s\";1b;`create)";
-  "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode`sctptickerplantname`sctpsubscribeto!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\")")
+  "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode`sctptickerplantname`sctpsubscribeto`eodtime!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\";`rolltimezone`rolltimeoffset!(\"GMT\";\"0D00:00:00\"))")
+
+/ di.eodtime rolltimezone, datatimezone and rolltimeoffset after init with an [eodtime] section s, as init passes it
+eodinit:{[s]
+  e:use`di.eodtime;
+  e[`init](enlist[`log]!enlist`info`warn`error!3#enlist{[c;m]}),.m.di.0torq.0proc.0segmentedtp.eodconfig s;
+  (e[`getrolltimezone][];e[`getdatatimezone][];e[`getrolltimeoffset][])
+  }
 
 setupfixture:{[]
   system "rm -rf ",FIXDIR; system "mkdir -p ",FIXDIR;

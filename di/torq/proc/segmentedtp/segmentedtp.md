@@ -51,7 +51,9 @@ its own, and `di/torq/settings/segmentedtp.q` declares them all. `stplg<key>` se
 Any of them can be given on the command line as `-stplg<key>`, `-sctp<key>` or `-createlogs`; an app sets only the
 keys it overrides.
 
-An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`.
+An `eodtime` section, passed to di.eodtime's `init`: `rolltimezone`, `datatimezone`, `rolltimeoffset`. Timezone
+strings become symbols and a `rolltimeoffset` string or number of seconds becomes a timespan; an unconvertible offset
+errors at init.
 
 Flat: `schemafile` (required unless chained), `createlogs` (`1b`, required).
 

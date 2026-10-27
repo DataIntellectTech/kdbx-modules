@@ -2,6 +2,19 @@
 
 / a symbol, a string or a list of strings (TOML has no symbol type)
 tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
+/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
+
+/ di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
+eodconfig:{[s]
+  d:()!();
+  if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist tosym s`rolltimezone];
+  if[`datatimezone in key s;d:d,enlist[`datatimezone]!enlist tosym s`datatimezone];
+  if[`rolltimeoffset in key s;
+    if[null o:totimespan s`rolltimeoffset;'"di.torq.proc.segmentedtp: rolltimeoffset must be a timespan"];
+    d:d,enlist[`rolltimeoffset]!enlist o];
+  d
+  };
 
 / a relative path is under the app home (TorQ's app config dir)
 apppath:{[x] s:$[":"=first s:string x;1_s;s]; hsym`$$[("/"=first s) or 0=count h:getenv`TORQXAPPHOME;s;h,"/",s]};
@@ -26,7 +39,7 @@ init:{[config;deps]
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];
   .z.m.os:use`di.os;
   .z.m.eod:use`di.eodtime;
-  .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];
+  .z.m.eod.init[(enlist[`log]!enlist deps`log),eodconfig $[`eodtime in key config;config`eodtime;()!()]];
   if[`stplgkdbtplog in key config;.stplg.kdbtplog:tosym config`stplgkdbtplog];
   .stplg.multilog:tosym config`stplgmultilog;
   .stplg.multilogperiod:config`stplgmultilogperiod;

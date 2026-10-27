@@ -31,6 +31,10 @@ pm[`grantfunction][`.u.end;`systemuser;{1b}];
 pm[`grantfunction][`.u.upd;`systemuser;{1b}];
 pm[`grantfunction][`upd;`systemuser;{1b}];
 pm[`grantfunction][`.ps.subscribe;`systemuser;{1b}];
+/ di.pubsub pushes (`endofperiod;currp;nextp;data) to every subscriber handle. It arrives with a
+/ null .z.u, so it is checked against systemuser - without this the subscriber neither flushes
+/ nor advances its period, silently (di/pubsub/pubsub.q callendofperiod)
+pm[`grantfunction][`endofperiod;`systemuser;{1b}];
 pm[`grantfunction][`.stpps.allsubhandles;`systemuser;{1b}];
 
 / --- gateway scatter-gather (di.asyncdispatch callbacks, di.dataaccess) ---

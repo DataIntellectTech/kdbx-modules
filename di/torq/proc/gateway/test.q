@@ -61,7 +61,7 @@ gwspawn:{[script;name]
 gwportline:{[name] "(hsym`$\"",GWDIR,"/",name,".port\") 0: enlist string system\"p\"; GWNAME:`",name,";"};
 startgwfixture:{[]
   system "rm -rf ",GWDIR; system "mkdir -p ",GWDIR;
-  {(hsym`$GWDIR,"/",x,".q") 0: ("trade:([]date:2#.z.d-1 0;time:(.z.d-1;.z.d)+0D10;sym:`a`b;price:1 2f);";"SENT:0; .z.ps:{`SENT set SENT+1; value x};";gwportline x)} each ("rdb1";"hdb1");
+  {(hsym`$GWDIR,"/",x,".q") 0: ("trade:([]date:2#.z.d-1 0;time:`timestamp$.z.d-1 0;sym:`a`b;price:1 2f);";"SENT:0; .z.ps:{`SENT set SENT+1; value x};";gwportline x)} each ("rdb1";"hdb1");
   bp:gwspawn'[("rdb1.q";"hdb1.q");("rdb1";"hdb1")];
   (hsym`$GWDIR,"/process.csv") 0: ("host,port,proctype,procname";"localhost,",(string bp 0),",rdb,rdb1";"localhost,",(string bp 1),",hdb,hdb1");
   (hsym`$GWDIR,"/gw.q") 0: (

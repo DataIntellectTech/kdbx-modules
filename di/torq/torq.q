@@ -12,12 +12,15 @@ reqenv:{[e]
   v
   }
 
-/ the kdbx-modules checkout holding di.torq: TORQXHOME if set, else the QPATH entry that holds di/torq
+/ the kdbx-modules checkout holding di.torq: TORQXHOME if set, else the module search path entry that holds di/torq
 frameworkhome:{[]
   if[count h:getenv`TORQXHOME;:h];
-  d:{$["/"=first x;x;(system "cd"),"/",x]} each ":" vs getenv`QPATH;
+  / the module search path, as use searches it: QPATH's non-empty entries, or $QHOME/mod when it has none
+  p:":" vs getenv`QPATH;
+  p:$[count p:p where 0<count each p;p;enlist getenv[`QHOME],"/mod"];
+  d:{$["/"=first x;x;(system "cd"),"/",x]} each p;
   d:d where {not ()~key hsym `$x,"/di/torq/init.q"} each d;
-  if[not count d;'"di.torq: TORQXHOME is not set and no QPATH entry holds di/torq"];
+  if[not count d;'"di.torq: TORQXHOME is not set and no module search path entry holds di/torq"];
   first d
   }
 

@@ -9,6 +9,9 @@ comment,,,,,,,framework home: TORQXHOME if set, else the QPATH entry holding di/
 true,0,0,q,"REPO~withenv[`TORQXHOME;"""";{.m.di.0torq.frameworkhome[]}]",1,,without TORQXHOME the framework home is the QPATH checkout
 true,0,0,q,"""/opt/torqx""~withenv[`TORQXHOME;""/opt/torqx"";{.m.di.0torq.frameworkhome[]}]",1,,TORQXHOME is used as given when set
 fail,0,0,q,"withenv[`TORQXHOME;"""";{withenv[`QPATH;""/nonexistent"";{.m.di.0torq.frameworkhome[]}]}]",1,,without TORQXHOME and no QPATH entry holding di/torq it errors
+fail,0,0,q,"withenv[`TORQXHOME;"""";{withenv[`QPATH;""/nonexistent:"";{.m.di.0torq.frameworkhome[]}]}]",1,,an empty QPATH entry is not the working directory
+run,0,0,q,"system ""mkdir -p "",APPBASE,""/qhome/mod/di/torq""; (hsym`$APPBASE,""/qhome/mod/di/torq/init.q"") 0: ()",1,,a QHOME holding di/torq under mod
+true,0,0,q,"(APPBASE,""/qhome/mod"")~withenv[`TORQXHOME;"""";{withenv[`QHOME;APPBASE,""/qhome"";{withenv[`QPATH;"""";{.m.di.0torq.frameworkhome[]}]}]}]",1,,without QPATH the framework home is $QHOME/mod, where use searches
 true,0,0,q,"(REPO,""/di/torq/settings"")~first withenv[`TORQXHOME;"""";{.m.di.0torq.roots[]}]",1,,the builtin settings root needs no TORQXHOME
 true,0,0,q,"(REPO,""/di/torq/permissions"")~first withenv[`TORQXHOME;"""";{.m.di.0torq.permissionroots[]}]",1,,the framework permissions root needs no TORQXHOME
 

@@ -1,0 +1,23 @@
+context:
+  version: 0.2.0 # Duplicated from VERSION for now
+
+package:
+  name: q-di-pubsub
+  version: ${{ version }}
+
+source:
+  path: .
+
+build:
+  number: 1
+  noarch: generic
+  script:
+    - mkdir -p $PREFIX/lib/q/mod/di/pubsub
+    - cp pubsub.q init.q test.csv VERSION $PREFIX/lib/q/mod/di/pubsub/
+
+tests:
+  - script:
+    - test -f $PREFIX/lib/q/mod/di/pubsub/pubsub.q
+    - test -f $PREFIX/lib/q/mod/di/pubsub/init.q
+    - test -f $PREFIX/lib/q/mod/di/pubsub/test.csv
+    - test -f $PREFIX/lib/q/mod/di/pubsub/VERSION

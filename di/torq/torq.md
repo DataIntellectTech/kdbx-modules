@@ -51,18 +51,18 @@ nothing at all).
 
 ### Environment variables
 
-Three independent, explicitly-set env vars - not derived from each other:
+`TORQXHOME` is optional; the app sets the other two:
 
 | var | what it points at | used for |
 |---|---|---|
-| `TORQXHOME` | the `di.torq`/framework checkout | builtin settings root (`$TORQXHOME/di/torq/settings`) |
+| `TORQXHOME` | the `di.torq`/framework checkout; when unset, the `QPATH` entry that holds `di/torq` | builtin settings root (`<home>/di/torq/settings`) and framework permissions root (`<home>/di/torq/permissions`) |
 | `TORQXAPPCONFIG` | the app's `appconfig/` directory | app settings root (`$TORQXAPPCONFIG/settings`) and `process.csv` |
 | `TORQXAPPHOME` | the app's own project root | `code/processes/{proctype}.q` (custom proctypes), and where `di.torq.proc.hdb`'s relative `dir:` settings resolve against |
 
 ### Config cascade
 
 `roots[]` builds the two roots `di.torq.config.cascade` needs
-(`` `$TORQXHOME/di/torq/settings ``, `` `$TORQXAPPCONFIG/settings ``); `init` calls
+(`` `<home>/di/torq/settings ``, `` `$TORQXAPPCONFIG/settings ``); `init` calls
 `` (cc`cascade)[r 0;r 1;proctype;procname] `` and then adds the resolved
 `proctype`/`procname` into the result itself, so any module (or anything it calls)
 can find out who it is just by looking at its own `config` dict - no global to reach
@@ -351,9 +351,10 @@ freshly-started process. tmux mode is for local development; production stays on
 module's tests, and `di.torq`'s actual job is wiring them together correctly, which
 mocking them away wouldn't exercise. Only `TORQXAPPCONFIG`/`TORQXAPPHOME` are
 repointed at a temp fixture (a scratch settings tree, `process.csv`, and a throwaway
-custom proctype file that publishes its own `run` hook to assert on) - `TORQXHOME`
-stays real, since `di.torq`'s own built-in settings and registry genuinely live
-there. Covers: `reqenv` erroring on a missing var, both auto-detect failure modes
+custom proctype file that publishes its own `run` hook to assert on); the built-in
+settings and registry are the checkout's own, found through `QPATH`, so the suite needs
+no env vars set. Covers: `reqenv` erroring on a missing var, the framework home with and
+without `TORQXHOME`, both auto-detect failure modes
 (no match, ambiguous), explicit-identity init for both a built-in and a custom
 proctype, config-cascade/deps reaching the started process type correctly, the
 `.run` hook firing by default and being skipped when `norun` is set, and successful

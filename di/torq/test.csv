@@ -5,6 +5,13 @@ before,0,0,q,setupfixture[],1,,create a temp app fixture: settings, process.csv,
 
 fail,0,0,q,tq.reqenv[`DI_TORQ_TEST_NO_SUCH_VAR],1,,reqenv on a missing env var must error
 
+comment,,,,,,,framework home: TORQXHOME if set, else the QPATH entry holding di/torq
+true,0,0,q,"REPO~withenv[`TORQXHOME;"""";{.m.di.0torq.frameworkhome[]}]",1,,without TORQXHOME the framework home is the QPATH checkout
+true,0,0,q,"""/opt/torqx""~withenv[`TORQXHOME;""/opt/torqx"";{.m.di.0torq.frameworkhome[]}]",1,,TORQXHOME is used as given when set
+fail,0,0,q,"withenv[`TORQXHOME;"""";{withenv[`QPATH;""/nonexistent"";{.m.di.0torq.frameworkhome[]}]}]",1,,without TORQXHOME and no QPATH entry holding di/torq it errors
+true,0,0,q,"(REPO,""/di/torq/settings"")~first withenv[`TORQXHOME;"""";{.m.di.0torq.roots[]}]",1,,the builtin settings root needs no TORQXHOME
+true,0,0,q,"(REPO,""/di/torq/permissions"")~first withenv[`TORQXHOME;"""";{.m.di.0torq.permissionroots[]}]",1,,the framework permissions root needs no TORQXHOME
+
 fail,0,0,q,tq.init[`;`;()!()],1,,"auto-detect with no port set (system""p""=0) and two localhost rows in process.csv must fail as ambiguous"
 
 run,0,0,q,system "p 19999",1,,bind a port that appears nowhere in the fixture process.csv

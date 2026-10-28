@@ -1,7 +1,7 @@
 / fixture helpers for di.torq's tests.
-/ Assumes q is started with the kdbx-modules repo root as the working directory AND with
-/ TORQXHOME already pointing at the real kdbx-modules checkout (di.torq's own built-in
-/ settings and `builtin` registry genuinely live there - there is no faking that part).
+/ Assumes q is started with the kdbx-modules repo root as the working directory and on QPATH
+/ (di.torq's own built-in settings and `builtin` registry genuinely live there - there is no
+/ faking that part).
 / TORQXAPPCONFIG and TORQXAPPHOME are both repointed at a temp fixture below to
 / isolate everything else (process.csv, app-level settings, a scratch hdb dir, the
 / custom proctype's code file) from any real app - nothing this test does touches a
@@ -17,6 +17,12 @@ TESTPROCFILE:APPBASE,"/code/processes/",string[TESTPROCNAME],".q"
 QBIN:first system "readlink -f /proc/",(string .z.i),"/exe"
 
 writelines:{[path;lines] (hsym `$path) 0: lines; }
+
+/ the kdbx-modules checkout: the working directory
+REPO:system "cd"
+
+/ f[] with env var e set to v, then e restored; f's error is re-signalled after the restore
+withenv:{[e;v;f] o:getenv e; setenv[e;v]; r:@[{(1b;x[])};f;{(0b;x)}]; setenv[e;o]; $[r 0;r 1;'r 1]}
 
 setupfixture:{[]
   system "rm -rf ",APPBASE;
@@ -67,14 +73,14 @@ setupfixture:{[]
 
   / a launcher that starts a real process through torqx_init.q and writes the timerms its config carried
   writelines[APPBASE,"/launch.q";
-    ("system \"l \",getenv[`TORQXHOME],\"/di/torq/bin/torqx_init.q\";";
+    ("system \"l ",REPO,"/di/torq/bin/torqx_init.q\";";
      "(hsym`$getenv[`TORQXAPPHOME],\"/timerms.txt\") 0: enlist .Q.s1 .k4unittestproc.capturedconfig`timerms;";
      "exit 0")];
   }
 
 / a launcher that starts a real process through torqx_init.q and writes what -parentproctype changed
 pptlauncher:{[] writelines[APPBASE,"/launchppt.q";
-  ("system \"l \",getenv[`TORQXHOME],\"/di/torq/bin/torqx_init.q\";";
+  ("system \"l ",REPO,"/di/torq/bin/torqx_init.q\";";
    "c:.k4unittestproc.capturedconfig;";
    "(hsym`$getenv[`TORQXAPPHOME],\"/ppt.txt\") 0: enlist .Q.s1 (c`parentproctype;$[`pptonly in key c;c`pptonly;0N];c`widget;@[value;`PPTCODE;0b];@[value;`PPTBEFOREPROC;0N]);";
    "exit 0")]}

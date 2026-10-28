@@ -12,8 +12,17 @@ reqenv:{[e]
   v
   }
 
+/ the kdbx-modules checkout holding di.torq: TORQXHOME if set, else the QPATH entry that holds di/torq
+frameworkhome:{[]
+  if[count h:getenv`TORQXHOME;:h];
+  d:{$["/"=first x;x;(system "cd"),"/",x]} each ":" vs getenv`QPATH;
+  d:d where {not ()~key hsym `$x,"/di/torq/init.q"} each d;
+  if[not count d;'"di.torq: TORQXHOME is not set and no QPATH entry holds di/torq"];
+  first d
+  }
+
 roots:{
-  builtinroot:reqenv[`TORQXHOME],"/di/torq/settings";
+  builtinroot:frameworkhome[],"/di/torq/settings";
   approot:reqenv[`TORQXAPPCONFIG],"/settings";
   (builtinroot;approot)
   }
@@ -222,7 +231,7 @@ initpermissions:{[config;deps]
 / permissions cascade. The rules are code (a paramcheck is a lambda), so they cannot be settings.
 / Loaded with `system "l"` at root, like loadappcodedir, so a rule file is an ordinary caller.
 permissionroots:{[]
-  (reqenv[`TORQXHOME],"/di/torq/permissions";reqenv[`TORQXAPPCONFIG],"/permissions")
+  (frameworkhome[],"/di/torq/permissions";reqenv[`TORQXAPPCONFIG],"/permissions")
   }
 
 loadpermissionrules:{[lg;config;proctype;procname]

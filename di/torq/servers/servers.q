@@ -8,7 +8,7 @@ self:`proctype`procname!``;
 registered:0b;
 
 / flat config key -> (.servers global;default)
-settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery!(
+settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery`userpass`passwords!(
   (`.servers.enabled;1b);
   (`.servers.CONNECTIONS;`);
   (`.servers.DISCOVERYREGISTER;1b);
@@ -22,7 +22,14 @@ settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscri
   (`.servers.AUTOCLEAN;0b);
   (`.servers.DEBUG;1b);
   (`.servers.STARTUP;0b);
-  (`.servers.DISCOVERY;enlist`));
+  (`.servers.DISCOVERY;enlist`);
+  / credentials for OUTBOUND connections, appended by opencon. A process that permissions its
+  / own handlers (see di.permissions) refuses an unauthenticated peer, so without these the
+  / stack cannot talk to itself. `userpass` is `user:pass` for every target; `passwords` is a
+  / per-target override keyed on hpup. di.torq resolves userpass from a credentials file -
+  / see its passwordfile cascade.
+  (`.servers.USERPASS;`);
+  (`.servers.PASSWORDS;enlist[`]!enlist `));
 
 raiseerror:{[ctx;msg]
   / internal - log an error under ctx via the injected logger, then signal it, so a failure is
@@ -89,9 +96,20 @@ init:{[deps]
   };
 
 / open a connection
+/ attach outbound credentials, as TorQ's opencon does. A per-target PASSWORDS entry wins over
+/ USERPASS; a hpup that already carries credentials is left alone, which is how the colon count
+/ is used - ":host:port" has two, ":tcps://host:port" three.
+withcreds:{[hpup]
+  s:string hpup;
+  tcps:s like ":tcps:*";
+  up:.servers.USERPASS^.servers.PASSWORDS hpup;
+  $[null up;hpup;(2+tcps)>=sum ":"=s;`$s,":",string up;hpup]
+  };
+
 opencon:{[hpup]
   if[.servers.DEBUG;.z.m.loginfo[`conn;"attempting to open handle to ",string hpup]];
-  r:@[{(hopen (x;.servers.HOPENTIMEOUT);"")};hpup;{(0Ni;x)}];
+  / the credentialed string is never logged - it carries a plaintext password
+  r:@[{(hopen (x;.servers.HOPENTIMEOUT);"")};withcreds hpup;{(0Ni;x)}];
   if[.servers.DEBUG;.z.m.loginfo[`conn;"connection to ",(string hpup),$[null first r;" failed: ",last r;" successful"]]];
   if[null first r;.z.m.logwarn[`servers;"failed to open connection to ",(string hpup),": ",last r]];
   first r

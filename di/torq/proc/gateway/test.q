@@ -97,3 +97,10 @@ stopgwfixture:{[]
   system "sleep 0.3"; system "rm -rf ",GWDIR;
   };
 
+
+/ the gateway's post-init hook, which di.torq calls as .gateway.run[] once everything has loaded
+runhook:{[] (value `.gateway.run)[]}
+warned:{[] 0<count select from calls where lvl=`warn,msg like "*NOT checked at this gateway*"}
+
+/ config with permissioned set, for the warning test
+cfgwith2:{[] `backendtypes`permissioned!(`rdb`hdb;1b)}

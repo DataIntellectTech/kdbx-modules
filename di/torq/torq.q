@@ -110,9 +110,23 @@ buildhandlersdep:{[overrides;logdep]
 / NB local is `srv` not `sv` - `sv` is the built-in scalar-from-vector/join operator and
 / won't reliably shadow as a local (same reserved-name trap as `log`/`ss` noted in project
 / memory); assigning it here threw '`sv` at module load.
+/ outbound-connection credentials, read from $TORQXAPPCONFIG/passwords/{default|proctype|procname}.txt -
+/ the most specific file that exists wins, mirroring TorQ's hierarchic password load. One line,
+/ `user:pass`. A process that permissions its own handlers refuses an unauthenticated peer, so
+/ without this file an otherwise healthy stack cannot connect to itself. Plaintext on disk, as
+/ TorQ's is; the file's contents are never logged.
+passwordfile:{[proctype;procname]
+  base:reqenv[`TORQXAPPCONFIG],"/passwords/";
+  files:base,/:(string each distinct `default,proctype,procname),\:".txt";
+  found:files where {not ()~key hsym `$x} each files;
+  $[0=count found;`;`$first read0 hsym `$last found]
+  };
+
 buildserversdep:{[overrides;config;logdep;timerdep;handlersdep]
   modname:$[`servers in key overrides;overrides`servers;`di.torq.servers];
   srv:use modname;
+  / credentials come from the password file unless the settings cascade already named them
+  config:$[`userpass in key config;config;config,enlist[`userpass]!enlist passwordfile[config`proctype;config`procname]];
   / one-arg init[deps] (kdbx convention, matching handlers/config/depcheck): merge the injectables into
   / this process's config slice - init reads log/timer/handlers + proctype/procname self-identity from it.
   (srv`init)[config,`log`timer`handlers!(logdep;timerdep;handlersdep)];
@@ -187,13 +201,49 @@ runhook:{[proctype;overrides]
 clientswired:0b
 initclients:{[config;deps] if[.z.m.clientswired;:()]; ((use`di.clienttracking)`init)[config;deps]; .z.m.clientswired:1b;}
 
+/ --- optional permissions -----------------------------------------------------------------
+/ Wires di.permissions behind a [permissions] settings section - a no-op unless enabled=true,
+/ same convention as logroll and querylog. It claims the exec owner of .z.pg/.z.ps/etc through
+/ di.torq.handlers, so it MUST run before initclients and initquerylog: both of those wrap those
+/ events by direct assignment, and claiming an exec owner afterwards reinstalls the dispatcher
+/ and silently discards their wrappers.
+permissionswired:0b
+initpermissions:{[config;deps]
+  sect:$[`permissions in key config;config`permissions;()!()];
+  if[not $[`enabled in key sect;`boolean$sect`enabled;0b];:()];
+  if[.z.m.permissionswired;:()];
+  ((use`di.permissions)`init)[sect;deps];
+  .z.m.permissionswired:1b;
+  }
+
+/ the permissions rule cascade: plain q that calls di.permissions' admin api, loaded additively
+/ from the framework root then the app root, `default` then proctype then procname - the same two
+/ roots and three tiers as the settings cascade, and as TorQ's own $KDBCONFIG/$KDBAPPCONFIG
+/ permissions cascade. The rules are code (a paramcheck is a lambda), so they cannot be settings.
+/ Loaded with `system "l"` at root, like loadappcodedir, so a rule file is an ordinary caller.
+permissionroots:{[]
+  (reqenv[`TORQXHOME],"/di/torq/permissions";reqenv[`TORQXAPPCONFIG],"/permissions")
+  }
+
+loadpermissionrules:{[lg;config;proctype;procname]
+  sect:$[`permissions in key config;config`permissions;()!()];
+  if[not $[`enabled in key sect;`boolean$sect`enabled;0b];:()];
+  tiers:distinct `default,proctype,procname;
+  sfxs:{[t] "/",(string t),".q"} each tiers;
+  / root-major: every framework tier, then every app tier (`cross` here would concatenate the
+  / whole lot into one string, not pair them)
+  files:raze {[r;s] r,/:s}[;sfxs] each permissionroots[];
+  {[lg;f] if[not ()~key hsym `$f; system "l ",f; lg[`info][`torq;"loaded permission rules ",f]]}[lg] each files;
+  }
+
 / --- optional query logging ---------------------------------------------------------------
 / Wires di.querylog (kdbx-modules main, consumed unmodified) behind a [querylog] settings section - a silent
 / no-op unless enabled=true, same convention as di.torq.logroll. di.querylog wraps the .z.* handlers by DIRECT
 / assignment, not through di.torq.handlers, so init calls this after the process module and app code
 / have bound theirs, and before zpsignore. KNOWN LIMITATION (torq.md "Query logging"): an exec owner claimed on .z.pg/.z.ps/etc.
-/ AFTER this - e.g. a later permissions/auth layer - silently replaces the wrapper; that event's logging
-/ drops to zero with no error.
+/ AFTER this silently replaces the wrapper and that event's logging drops to zero with no error.
+/ di.permissions is the one module that claims those owners, and initpermissions therefore runs
+/ before this - so query logging sits outside permissions and records refused queries too.
 querylogwired:0b
 qlflushtime:0D
 
@@ -310,6 +360,11 @@ init:{[proctype;procname;overrides]
     startbuiltin[proctype;config;deps];
     startcustom[proctype;config;deps]
     ];
+  / optional permissions - before initclients/initquerylog, which wrap .z.pg/.z.ps by direct
+  / assignment (claiming the exec owner after them would discard their wrappers), and before the
+  / rule cascade, which needs di.permissions' admin api to exist
+  initpermissions[config;deps];
+  loadpermissionrules[logdep;config;proctype;procname];
   / app-level add-on code (code/<common|proctype|procname>/*.q) - loaded AFTER the process
   / module init (so it can reference the module's tables/state) and BEFORE runhook (so an
   / app file may define/override .<proctype>.run for the hook to pick up).

@@ -1,0 +1,88 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,pm:use`di.permissions,1,,load module
+before,0,0,q,"system ""l di/permissions/test.q""",1,,mock log/handlers deps and rule helpers
+before,0,0,q,setupfixture[],1,,root fixture tables for variable-reference checks
+
+comment,0,0,q,,1,,--- init and dependency validation ---
+fail,0,0,q,pm[`init][cfg[1b];()!()],1,,init without any deps must error
+fail,0,0,q,"pm[`init][cfg[1b];enlist[`log]!enlist mocklog[]]",1,,init with log but no handlers must error
+fail,0,0,q,pm[`init][cfg[1b];badlog[]],1,,init with a log dict missing error must error
+fail,0,0,q,pm[`init][cfg[1b];`log`handlers!(1 2 3;mockhandlers[])],1,,init with a non-dict log must error
+
+true,0,0,q,allexported adminnames[],1,,the whole admin api is exported
+true,0,0,q,0<count pm`version,1,,version string is present
+
+comment,0,0,q,,1,,--- enabled: handler registration and root publication ---
+run,0,0,q,resetcalls[],1,,reset the capturing log
+run,0,0,q,resetreg[],1,,reset the registration record
+run,0,0,q,pm[`init][cfg[1b];mockdeps[]],1,,init with permissions enabled
+true,0,0,q,execevents[]~`.z.pg`.z.pi`.z.pp`.z.ps`.z.pw`.z.ws,1,,owns the exec phase of every message handler
+true,0,0,q,pcregistered[],1,,registers on .z.pc to drop public users
+true,0,0,q,not any adminnames[] in `$2_'string key `.pm,1,,the admin api is NOT in a root namespace
+true,0,0,q,allpublished gatewaynames[],1,,the four names the gateway reads by symbol are published
+true,0,0,q,4=rootcount[],1,,the .pm namespace holds exactly those four names and nothing else
+true,0,0,q,(`$"*")~pm`ALL,1,,the wildcard marker is exported
+true,0,0,q,logged "permissions enabled*",1,,init logs one line when enabled
+
+comment,0,0,q,,1,,--- the admin api rejects conflicting names and unknown entities ---
+run,0,0,q,buildrules[],1,,apply a ruleset through the root names as a TorQ permissions file does
+fail,0,0,q,pm[`adduser][`readers;`local;`md5;md5"x"],1,,a user may not take an existing group's name
+fail,0,0,q,pm[`addgroup][`alice;"clashes with a user"],1,,a group may not take an existing user's name
+fail,0,0,q,pm[`addtogroup][`bob;`nosuchgroup],1,,addtogroup needs the group to exist
+fail,0,0,q,pm[`assignrole][`bob;`nosuchrole],1,,assignrole needs the role to exist
+
+comment,0,0,q,,1,,--- access checks ---
+true,0,0,q,"chk[`alice;""select from trade""]",1,,a superuser may select from any table
+true,0,0,q,"chk[`alice;""select from quote""]",1,,a superuser is not limited by the access table
+true,0,0,q,"chk[`bob;""select from trade""]",1,,a reader may select from the table granted to its group
+true,0,0,q,"not chk[`bob;""select from quote""]",1,,a reader may not select from an ungranted table
+true,0,0,q,"chk[`bob;""trade""]",1,,a bare variable reference is allowed when read access is granted
+true,0,0,q,"not chk[`bob;""quote""]",1,,a bare variable reference is refused without read access
+true,0,0,q,"not chk[`bob;""update px:0 from `trade""]",1,,read access does not imply write access
+true,0,0,q,"not chk[`nemo;""select from trade""]",1,,an unknown user is refused
+
+comment,0,0,q,,1,,--- group hierarchy: a group may contain a group ---
+run,0,0,q,buildnested[],1,,carol is in seniors which is in readers
+true,0,0,q,"chk[`carol;""select from trade""]",1,,access is inherited through the group chain
+
+comment,0,0,q,,1,,--- virtual tables ---
+run,0,0,q,buildvirtual[],1,,vtrade is trade with an enforced where clause
+true,0,0,q,"chk[`bob;""select from vtrade""]",1,,a granted virtual table is readable
+true,0,0,q,1=count pm[`requ][`bob;"select from vtrade"],1,,the enforced where clause subsets the real table
+
+comment,0,0,q,--- authentication ---,1,,
+true,0,0,q,"1b~pm[`login][`alice;""secret""]",1,,a correct md5 password authenticates
+true,0,0,q,"0b~pm[`login][`alice;""wrong""]",1,,an incorrect password is refused
+true,0,0,q,"0b~pm[`login][`nemo;""x""]",1,,an unknown user is refused
+true,0,0,q,"0b~pm[`login][`alice;""""]",1,,an empty password is refused when public users are off
+
+comment,0,0,q,,1,,--- maxsize ---
+run,0,0,q,"pm[`init][cfgwith[`maxsize;10];mockdeps[]]",1,,re-init with a tiny maxsize
+fail,0,0,q,"pm[`requ][`alice;""select from trade""]",1,,a result over maxsize is refused
+
+comment,0,0,q,,1,,--- permissivemode. allowed/cando ignore it (allowed is mainexpr[;;0b;0b] as in TorQ) so only requ honours it ---
+run,0,0,q,pm[`init][cfg[1b];mockdeps[]],1,,re-init with the defaults
+fail,0,0,q,"pm[`requ][`bob;""select from quote""]",1,,an unlisted table is refused by default
+run,0,0,q,"pm[`init][cfgwith[`permissivemode;1b];mockdeps[]]",1,,re-init in permissive mode
+true,0,0,q,"2=count pm[`requ][`bob;""select from quote""]",1,,an unlisted table is readable in permissive mode
+true,0,0,q,"not chk[`bob;""select from quote""]",1,,allowed still refuses it - permissivemode is deliberately not applied there
+
+comment,0,0,q,,1,,--- disabled: no handlers registered and nothing is checked ---
+run,0,0,q,resetreg[],1,,reset the registration record
+run,0,0,q,resetcalls[],1,,reset the capturing log
+run,0,0,q,pm[`init][cfg[0b];mockdeps[]],1,,init with permissions disabled
+true,0,0,q,0=count reg,1,,no handlers are registered when disabled
+true,0,0,q,logged "permissions are disabled*",1,,init says so when disabled
+true,0,0,q,allpublished gatewaynames[],1,,the gateway entry points are published even when disabled
+true,0,0,q,"1b~pm[`cando][`nemo;""select from trade""]",1,,cando allows anything when permissions are disabled
+
+comment,0,0,q,,1,,--- api metadata ---
+true,0,0,q,`name`public`descrip`params`return~cols pm[`getapimeta][],1,,getapimeta returns the registry shape
+true,0,0,q,all pm[`getapimeta][][`name] in key pm,1,,every documented name is an exported function
+
+comment,0,0,q,,1,,--- a dispatched payload q elides when stringified (di.asyncdispatch's shape) ---
+run,0,0,q,pm[`init][cfg[1b];mockdeps[]],1,,re-init with the defaults
+true,0,0,q,"runsok[`alice;elidedpayload[]]",1,,lamq's tokenizer must not signal on an elided function source
+true,0,0,q,"`.gw.addserverresult~first pm[`requ][`alice;elidedpayload[]]",1,,and the payload runs - it reports the result callback
+
+after,0,0,q,teardownfixture[],1,,drop the root fixture tables

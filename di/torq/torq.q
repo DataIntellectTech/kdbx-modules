@@ -17,10 +17,11 @@ frameworkhome:{[]
   if[count h:getenv`TORQXHOME;:h];
   / the module search path, as use searches it: QPATH's non-empty entries, or $QHOME/mod when it has none
   p:":" vs getenv`QPATH;
-  p:$[count p:p where 0<count each p;p;enlist getenv[`QHOME],"/mod"];
+  p:p where 0<count each p;
+  if[(0=count p) and 0<count getenv`QHOME;p:enlist getenv[`QHOME],"/mod"];
   d:{$["/"=first x;x;(system "cd"),"/",x]} each p;
   d:d where {not ()~key hsym `$x,"/di/torq/init.q"} each d;
-  if[not count d;'"di.torq: TORQXHOME is not set and no module search path entry holds di/torq"];
+  if[not count d;'"di.torq: TORQXHOME is not set and di/torq was not found; searched: ",$[count p;", " sv p;"nothing, QPATH and QHOME are unset"]];
   first d
   }
 

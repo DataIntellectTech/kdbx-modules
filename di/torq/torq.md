@@ -55,7 +55,7 @@ nothing at all).
 
 | var | what it points at | used for |
 |---|---|---|
-| `TORQXHOME` | the `di.torq`/framework checkout; when unset, the module search path entry that holds `di/torq` (`QPATH`'s non-empty entries, or `$QHOME/mod` when it has none, as `use` searches) | builtin settings root (`<home>/di/torq/settings`) and framework permissions root (`<home>/di/torq/permissions`) |
+| `TORQXHOME` | the `di.torq`/framework checkout; when unset, the module search path entry that holds `di/torq` (`QPATH`'s non-empty entries, or `$QHOME/mod` when it has none, as `use` searches; with both unset, set `TORQXHOME`) | builtin settings root (`<home>/di/torq/settings`) and framework permissions root (`<home>/di/torq/permissions`) |
 | `TORQXAPPCONFIG` | the app's `appconfig/` directory | app settings root (`$TORQXAPPCONFIG/settings`) and `process.csv` |
 | `TORQXAPPHOME` | the app's own project root | `code/processes/{proctype}.q` (custom proctypes), and where `di.torq.proc.hdb`'s relative `dir:` settings resolve against |
 

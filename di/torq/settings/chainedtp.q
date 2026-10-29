@@ -25,3 +25,5 @@ tpcheckcycles:0W
 connections:`tickerplant
 / create connections
 startup:1b
+/ no heartbeats
+heartbeatenabled:0b

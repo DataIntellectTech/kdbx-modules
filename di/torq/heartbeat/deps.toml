@@ -1,0 +1,4 @@
+# Peer modules di.torq.heartbeat `use`s (see di/torq/depcheck/depcheck.md).
+[dependencies]
+"di.pubsub" = "0.4.0"
+"di.torq.servers" = "0.7.0"       # root .servers.getservers and .servers.connectcustom

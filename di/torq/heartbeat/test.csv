@@ -1,0 +1,95 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,hb:use`di.torq.heartbeat,1,,load module
+before,0,0,q,system "l di/torq/heartbeat/test.q",1,,load fixture helpers
+before,0,0,q,"UPDS:();upd:{[t;x] `UPDS set UPDS,enlist t}",1,,a root upd for the wrap to chain onto
+before,0,0,q,"origcc:{[x] `CCROWS set x};.servers.connectcustom:origcc",1,,a root connectcustom for the wrap to chain onto
+
+comment,,,,,,,init - required deps and settings
+fail,0,0,q,"hb.init[cfg ()!();`timer`handlers#deps]",1,,init without log errors
+fail,0,0,q,"hb.init[cfg ()!();`log`handlers#deps]",1,,init without timer errors
+fail,0,0,q,"hb.init[cfg ()!();`log`timer#deps]",1,,init without handlers errors
+run,0,0,q,"hb.init[cfg ()!();`log`timer`handlers#deps]",1,,init without servers succeeds
+fail,0,0,q,"hbinit enlist[`heartbeatpublishinterval]!enlist ""bad""",1,,an unconvertible publish interval errors
+fail,0,0,q,"hbinit enlist[`heartbeatcheckinterval]!enlist ""bad""",1,,an unconvertible check interval errors
+fail,0,0,q,"hb.init[`heartbeatenabled _ cfg ()!();deps]",1,,init with a missing setting errors
+
+comment,,,,,,,init - timer jobs and handlers
+run,0,0,q,hbinit ()!(),1,,defaults: publish and check on
+true,0,0,q,"((`publishheartbeat;0D00:00:30;3);(`checkheartbeat;0D00:00:10;3))~jobrows[]",1,,publish and check jobs at their intervals in mode 3
+true,0,0,q,"(enlist(`.z.pc;`hbpubsub))~flip value flip regs",1,,.stpps.closesub bound to .z.pc
+run,0,0,q,hbinit `heartbeatpublishinterval`heartbeatcheckinterval!("0D00:00:05";2),1,,intervals given as a string and a number
+true,0,0,q,"(0D00:00:05;0D00:00:02)~jobs`period",1,,intervals converted to timespans
+run,0,0,q,hbinit enlist[`heartbeatenabled]!enlist 0b,1,,heartbeatenabled false
+true,0,0,q,0=count jobs,1,,no jobs when heartbeatenabled is false
+run,0,0,q,".proc.lowpowermode:1b;hbinit ()!();.proc.lowpowermode:0b",1,,lowpowermode
+true,0,0,q,0=count jobs,1,,no jobs in lowpowermode
+run,0,0,q,"hbinit `heartbeatenabled`heartbeatsubscribeenabled!01b",1,,subscribe only
+true,0,0,q,"(enlist(`hbsubscriptions;0D00:01;1))~jobrows[]",1,,1-minute resubscribe job in mode 1 when heartbeatenabled is false
+true,0,0,q,"0b~first[jobs`opts]`dupcheck",1,,resubscribe job has dupcheck off
+true,0,0,q,"`hbpubsub`heartbeat~regs`name",1,,subscriber .z.pc handler registered
+
+comment,,,,,,,upd and connectcustom wraps
+run,0,0,q,"upd[`trade;([]a:enlist 1)];upd[`heartbeat;hbrow[`hdb;`hdb1;.z.p]]",1,,root upd called for a table and for heartbeat
+true,0,0,q,"`trade`heartbeat~UPDS",1,,the original upd still receives every table
+true,0,0,q,`hdb1 in exec procname from ms`hb,1,,heartbeat rows go to storeheartbeat
+run,0,0,q,"@[M;`CONNECTIONS;:;enlist`rdb];@[M;`subscribedhandles;:;0 0N 7i];.servers.connectcustom ([]w:7 8 9i;proctype:`rdb`rdb`hdb)",1,,connectcustom with one subscribed and one unwanted row
+true,0,0,q,"(enlist 8i)~CCROWS`w",1,,the wrapped connectcustom gets the filtered rows
+true,0,0,q,"any calls[`msg] like ""*handle 8:*""",1,,only the unsubscribed rdb handle is subscribed to
+true,0,0,q,"not any calls[`msg] like ""*handle 9:*""",1,,proctypes outside CONNECTIONS are skipped
+run,0,0,q,"@[M;`CONNECTIONS;:;`ALL];.servers.connectcustom ([]w:enlist 9i;proctype:`hdb)",1,,connectcustom with `ALL
+true,0,0,q,"any calls[`msg] like ""*handle 9:*""",1,,`ALL subscribes to every proctype
+run,0,0,q,@[M;`subscribedhandles;:;0 0Ni],1,,reset subscribed handles
+run,0,0,q,"hbinit enlist[`heartbeatsubscribetypes]!enlist (""rdb"";""hdb"")",1,,subscribe types given as strings
+true,0,0,q,"`rdb`hdb~ms`CONNECTIONS",1,,string subscribe types become symbols
+run,0,0,q,"hbinit enlist[`heartbeatsubscribetypes]!enlist ""ALL"";ms[`connectcustom][{x};([]w:enlist 9i;proctype:`hdb)]",1,,ALL given as a string
+true,0,0,q,"any calls[`msg] like ""*handle 9:*""",1,,"ALL as a string subscribes to every proctype"
+run,0,0,q,@[M;`subscribedhandles;:;0 0Ni],1,,reset subscribed handles
+
+comment,,,,,,,storeheartbeat and addprocs
+run,0,0,q,"hbinit hooks;@[M;`hb;0#]",1,,init with warning and error hooks; empty hb
+run,0,0,q,ms[`addprocs][`rdb`hdb;`rdb1`hdb1],1,,seed two processes
+true,0,0,q,"(`rdb`hdb;`rdb1`hdb1)~value flip key ms`hb",1,,addprocs seeds hb by sym and procname
+run,0,0,q,"ms[`storeheartbeat] hbrow[`rdb;`rdb1;.z.p],update counter:2 from hbrow[`rdb;`rdb1;.z.p+1]",1,,store two heartbeats for one process
+true,0,0,q,"2=exec first counter from ms[`hb] where procname=`rdb1",1,,the last heartbeat per process is stored
+
+comment,,,,,,,checkheartbeat - ok warning error recovery
+run,0,0,q,"settime[`rdb1`hdb1;.z.p];ms[`checkheartbeat][]",1,,both fresh
+true,0,0,q,"(00b;00b)~flags each `rdb1`hdb1",1,,ok - no flags
+true,0,0,q,"(0=count nonempty WARNED) and 0=count nonempty ERRED",1,,ok - hooks get no rows
+run,0,0,q,"settime[`rdb1;.z.p-0D00:00:50];ms[`checkheartbeat][]",1,,rdb1 past the 45s warning period
+true,0,0,q,"10b~flags`rdb1",1,,warning flagged
+true,0,0,q,"(enlist`rdb1)~exec procname from last WARNED",1,,processwarning gets the warning rows
+run,0,0,q,ms[`checkheartbeat][],1,,check again
+true,0,0,q,1=count nonempty WARNED,1,,an existing warning is not raised again
+run,0,0,q,"settime[`rdb1;.z.p-0D00:01:10];ms[`checkheartbeat][]",1,,rdb1 past the 60s error period
+true,0,0,q,"11b~flags`rdb1",1,,error flagged
+true,0,0,q,"(enlist`rdb1)~exec procname from last ERRED",1,,processerror gets the error rows
+true,0,0,q,"any (calls`lvl)=`error",1,,heartbeatdebug logs the error
+run,0,0,q,ms[`storeheartbeat] hbrow[`rdb;`rdb1;.z.p],1,,rdb1 heartbeats again
+true,0,0,q,"00b~flags`rdb1",1,,recovery clears both flags
+
+comment,,,,,,,publishheartbeat
+run,0,0,q,"@[M;`hbcounter;:;0j];.ps.initialised:0b;ms[`publishheartbeat][]",1,,publish before .ps.initialise
+true,0,0,q,0=ms`hbcounter,1,,nothing published before pubsub is initialised
+run,0,0,q,".ps.initialise[];ms[`publishheartbeat][]",1,,publish after .ps.initialise
+true,0,0,q,1=ms`hbcounter,1,,published once pubsub is initialised
+
+true,0,0,q,"11h=type cfg[()!()]`heartbeatsubscribetypes",1,,the subscribe types default is typed so a command-line override parses
+
+comment,,,,,,,tickerplants - no heartbeats
+true,0,0,q,"all {hbinit (use`di.torq.config)[`parsefile] ""di/torq/settings/"",x,"".q""; 0=count jobs} each (""tickerplant"";""segmentedtp"";""chainedtp"")",1,,tickerplant settings add no heartbeat jobs
+
+comment,,,,,,,two processes - a publisher's heartbeat reaches a subscriber
+before,0,0,q,startpub[],1,,spawn a publisher on an OS-assigned port
+run,0,0,q,"@[M;`hb;0#];subtopub[]",1,,subscribe to the publisher through getheartbeats
+true,0,0,q,PH in ms`subscribedhandles,1,,the publisher handle is recorded as subscribed
+run,0,0,q,pubonce[],1,,the publisher publishes a heartbeat
+true,0,0,q,"(enlist`tp1)~exec procname from ms[`hb] where sym=`tickerplant",1,,the heartbeat reached the subscriber's hb
+true,0,0,q,"1=PH"".m.di.0torq.0heartbeat.hbcounter""",1,,the publisher counted one heartbeat
+run,0,0,q,stoppub[],1,,stop the publisher
+
+comment,,,,,,,real di.timer
+run,0,0,q,"tm:use`di.timer;(tm`init)[enlist[`log]!enlist mocklog];rt:enlist[`addjob]!enlist (tm`addjob)`custom",1,,init the real di.timer
+run,0,0,q,"hb.init[cfg ()!();`log`timer`handlers!(mocklog;rt;mockhandlers)]",1,,init against the real timer
+true,0,0,q,"(`publishheartbeat`checkheartbeat!3 3h)~exec id!mode from (tm`getalljobs)[] where id in `publishheartbeat`checkheartbeat",1,,publish and check jobs are in getalljobs in mode 3
+run,0,0,q,(tm`disable)[],1,,stop the real timer

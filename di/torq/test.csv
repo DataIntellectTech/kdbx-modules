@@ -28,6 +28,7 @@ true,0,0,q,`k4unittest~(r`config)`owner,1,,config cascade reached the app-level 
 true,0,0,q,000b~(r`config)`discoveryregister`connectionsfromdiscovery`debug,1,,builtin default.q leaves discovery off and debug off
 true,0,0,q,`widgets in tables[],1,,the built-in hdb module actually mounted the fixture hdb dir
 true,0,0,q,(`handlers`log`servers`timer)~asc key r`deps,1,,all four core deps (incl injected servers) were built and passed through
+true,0,0,q,".m.di.0torq.heartbeatwired and `heartbeat in .stpps.t",1,,heartbeat wired and its root table registered by .ps.initialise
 true,0,0,q,99h=type .clients.clients,1,,init wired client tracking (.clients.clients exists)
 run,0,0,q,"ctorig:(.m.di.0clienttracking.hit;.m.di.0clienttracking.hite); .m.di.0clienttracking.hit:{HITS+::1;x}; .m.di.0clienttracking.hite:{HITE+::1;'x}; HITS::HITE::UPD::0; tgt:{[x] x}; upd:{[t;x] UPD+::1}; .u.upd:upd",1,,count client-tracking hits and upd calls
 run,0,0,q,.z.ps (`tgt;1),1,,a non-upd async message

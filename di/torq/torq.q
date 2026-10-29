@@ -155,6 +155,10 @@ runhook:{[proctype;overrides]
 clientswired:0b
 initclients:{[config;deps] if[.z.m.clientswired;:()]; ((use`di.clienttracking)`init)[config;deps]; .z.m.clientswired:1b;}
 
+/ heartbeats, every process
+heartbeatwired:0b
+initheartbeat:{[config;deps] if[.z.m.heartbeatwired;:()]; ((use`di.torq.heartbeat)`init)[config;deps]; .z.m.heartbeatwired:1b;}
+
 / --- optional permissions -----------------------------------------------------------------
 / Wires di.permissions behind a [permissions] settings section - a no-op unless enabled=true,
 / same convention as logroll and querylog. It claims the exec owner of .z.pg/.z.ps/etc through
@@ -305,6 +309,7 @@ init:{[proctype;procname;overrides]
   loadpermissionrules[logdep;config;proctype;procname];
   / app code, after the process module's init and before runhook
   loadappcode[logdep;config;proctype;procname];
+  initheartbeat[config;deps];
   / initialise pubsub
   if[@[value;`.ps.loaded;0b];.ps.initialise[]];
   / initialise connections

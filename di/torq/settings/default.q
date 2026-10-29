@@ -1,4 +1,4 @@
-/ built-in framework defaults: the servers, subscriptions and clienttracking settings
+/ built-in framework defaults: the servers, subscriptions, clienttracking and heartbeat settings
 
 / discovery - off unless the app turns it on
 discoveryregister:0b                / register with the discovery service
@@ -28,3 +28,13 @@ clientsintrusive:0b                / ask each new kdb+ client for its details
 clientsautoclean:1b                / not read
 clientsretain:`long$0D02           / nanoseconds to keep a closed row
 clientsmaxidle:`long$0D            / nanoseconds of idleness before a handle is closed; 0 means never
+
+/ heartbeats
+heartbeatenabled:1b                     / publish and check heartbeats
+heartbeatsubscribeenabled:0b            / subscribe to heartbeats
+heartbeatdebug:1b                       / log warnings and errors
+heartbeatpublishinterval:0D00:00:30     / how often heartbeats are published
+heartbeatcheckinterval:0D00:00:10       / how often heartbeats are checked
+heartbeatwarningtolerance:1.5           / warning after this many publish intervals without a heartbeat
+heartbeaterrortolerance:2f              / error after this many publish intervals without a heartbeat
+heartbeatsubscribetypes:`symbol$()      / proctypes to subscribe to heartbeats from; `ALL for all

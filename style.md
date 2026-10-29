@@ -141,6 +141,14 @@ Unless it is unavoidable lines of code should not exceed 150 characters.
 - `enlist` of a dict is a one-row table, so ``enlist[`log]!enlist d`` holds a table. Indexed amend
   into it spreads the new value across the table, and amending a dict value into a typed dict throws
   `'type`. Start mixed dicts from `()!()` and add keys by join.
+- q evaluates right to left with no precedence, so `not a or b` is `not[a or b]`, not
+  `(not a) or b`.
+- `and` and `or` evaluate both sides: ``(x~(::)) or not `k in key x`` still runs `key x` and throws
+  when `x` is `(::)`. Guard with sequential `if[...;:...]` returns or `$[...]` instead.
+- A list of char atoms is a string: `("1";"2")` is `"12"`, not two items. Write
+  `(enlist"1";enlist"2")` for a list of strings.
+- `system` from a secondary thread (inside `peach` with `-s`) throws `'sys`; run shell commands on
+  the main thread.
 
 ## Notes (framework tier)
 

@@ -78,8 +78,8 @@ an interactive session.
 
 Requires `log` and `timer` in the injected `deps` (same validation style as
 `di/torq/proc/hdb/hdb.q:21`). When enabled: calls `rollnow[]` once immediately, then
-schedules the recurring roll via the injected timer contract - `period=86400`
-(seconds/day), `mode=1h` (`kdbx-modules` `di.timer`'s "x seconds after previously
+schedules the recurring roll via the injected timer contract - `period=1D`
+(one day), `mode=1h` (`kdbx-modules` `di.timer`'s "one period after previously
 scheduled start" - fixed-rate, no drift), with `opts.startattime` overriding just
 the first fire to next UTC midnight (`` `timestamp$1+`date$.z.p ``), so the very
 first roll happens at the next real day boundary rather than 24h after whenever the

@@ -2,7 +2,7 @@
 / project. Turns this q session into a TorqX process. Replaces per-process
 / start_<name>.q launcher files.
 / -
-/ Usage (via an alias such as `alias torqx='QINIT=$TORQXHOME/di/torq/bin/torqx_init.q $QCMD'`,
+/ Usage (via an alias such as `alias torqx='QINIT=<kdbx-modules>/di/torq/bin/torqx_init.q $QCMD'`,
 / see TorqX-POC/setenv.sh, or invoked directly by bin/torqx.sh):
 /   torqx -proctype hdb -procname hdb1      (explicit identity)
 /   torqx -p 5560                           (auto-detect identity from process.csv)

@@ -52,7 +52,7 @@ subfiltered:{[table;filters]
 addfiltered:{[table;cond]
   / subscribe to tables with custom conditions
   / if either filters or columns parsing fails, subscription should not be logged as no half query should be created
-  filters:$[all null f:cond[table;`filts];();@[parse;"select from t where ",f;{'"incorrect filters for parsing"}][2]];
+  filters:$[all null f:cond[table;`filters];();@[parse;"select from t where ",f;{'"incorrect filters for parsing"}][2]];
   columns:$[all null c:cond[table;`columns];();@[parse;"select ",c," from t";{'"incorrect columns for parsing"}][4]];
   @[eval;(?;schemas table;filters;0b;columns);{'"incorrect query with filters-",.Q.s1[y],"  columns-",.Q.s1[z]," error-",x}[;filters;columns]];
   @[.z.M;`reqfilteredtbl;upsert;(table;.z.w;filters;columns)]
@@ -111,7 +111,7 @@ subscribestr:{[table;syms]
 
 subscribestrfilter:{[table;filters;columns]
   / allow non-kdb+ process to subscribe to tables with custom conditions
-  res:subscribe[`$table;1!enlist `table`filts`columns!(`$table;filters;columns)];
+  res:subscribe[`$table;1!enlist `table`filters`columns!(`$table;filters;columns)];
   :$[10h~type last res;'last res;res];
   };
 

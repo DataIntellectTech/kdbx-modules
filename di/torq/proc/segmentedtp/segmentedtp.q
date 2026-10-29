@@ -2,6 +2,19 @@
 
 / a symbol, a string or a list of strings (TOML has no symbol type)
 tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
+/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
+
+/ di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
+eodconfig:{[s]
+  d:()!();
+  if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist tosym s`rolltimezone];
+  if[`datatimezone in key s;d:d,enlist[`datatimezone]!enlist tosym s`datatimezone];
+  if[`rolltimeoffset in key s;
+    if[null o:totimespan s`rolltimeoffset;'"di.torq.proc.segmentedtp: rolltimeoffset must be a timespan"];
+    d:d,enlist[`rolltimeoffset]!enlist o];
+  d
+  };
 
 / a relative path is under the app home (TorQ's app config dir)
 apppath:{[x] s:$[":"=first s:string x;1_s;s]; hsym`$$[("/"=first s) or 0=count h:getenv`TORQXAPPHOME;s;h,"/",s]};
@@ -26,7 +39,7 @@ init:{[config;deps]
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];
   .z.m.os:use`di.os;
   .z.m.eod:use`di.eodtime;
-  .z.m.eod.init[(enlist[`log]!enlist deps`log),$[`eodtime in key config;config`eodtime;()!()]];
+  .z.m.eod.init[(enlist[`log]!enlist deps`log),eodconfig $[`eodtime in key config;config`eodtime;()!()]];
   if[`stplgkdbtplog in key config;.stplg.kdbtplog:tosym config`stplgkdbtplog];
   .stplg.multilog:tosym config`stplgmultilog;
   .stplg.multilogperiod:config`stplgmultilogperiod;
@@ -111,8 +124,9 @@ init:{[config;deps]
   .stplg.updmsg:.stplg.upd[batch];
   .stplg.ts:.stplg.zts[batch];
   .u.upd:.stpps.upd[chainmode];
-  / the batch timer and end checks run as a 1s di.timer job; the end guards disable only this job
-  .z.m.timer[`addjob][`stpzts;.stpps.zts[chainmode];();1;1;(enlist`disableonfail)!enlist 0b];
+  / the batch timer and end checks run every -t ms (config timerms, 1000 if unset), as TorQ's .z.ts; the end guards disable only this job
+  ms:$[`timerms in key .z.m.params;.z.m.params`timerms;0N];
+  .z.m.timer[`addjob][`stpzts;.stpps.zts[chainmode];();0D00:00:00.001*$[ms>0;ms;1000];1;(enlist`disableonfail)!enlist 0b];
   / error mode: failed updates go to a separate log
   if[.stplg.errmode;
     .stp.upd:.u.upd;

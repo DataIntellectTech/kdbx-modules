@@ -1,7 +1,7 @@
 / fixture helpers for di.torq's tests.
-/ Assumes q is started with the kdbx-modules repo root as the working directory AND with
-/ TORQXHOME already pointing at the real kdbx-modules checkout (di.torq's own built-in
-/ settings and `builtin` registry genuinely live there - there is no faking that part).
+/ Assumes q is started with the kdbx-modules repo root as the working directory and on QPATH
+/ (di.torq's own built-in settings and `builtin` registry genuinely live there - there is no
+/ faking that part).
 / TORQXAPPCONFIG and TORQXAPPHOME are both repointed at a temp fixture below to
 / isolate everything else (process.csv, app-level settings, a scratch hdb dir, the
 / custom proctype's code file) from any real app - nothing this test does touches a
@@ -14,8 +14,15 @@ APPBASE:"/tmp/di_torq_k4unit_app"
 HDBDIR:APPBASE,"/hdb"
 TESTPROCNAME:`k4unittestproc
 TESTPROCFILE:APPBASE,"/code/processes/",string[TESTPROCNAME],".q"
+QBIN:first system "readlink -f /proc/",(string .z.i),"/exe"
 
 writelines:{[path;lines] (hsym `$path) 0: lines; }
+
+/ the kdbx-modules checkout: the working directory
+REPO:system "cd"
+
+/ f[] with env var e set to v, then e restored; f's error is re-signalled after the restore
+withenv:{[e;v;f] o:getenv e; setenv[e;v]; r:@[{(1b;x[])};f;{(0b;x)}]; setenv[e;o]; $[r 0;r 1;'r 1]}
 
 setupfixture:{[]
   system "rm -rf ",APPBASE;
@@ -28,6 +35,11 @@ setupfixture:{[]
   writelines[APPBASE,"/code/common/appcommon.q";enlist "APPCOMMON_LOADED:1b"];
   writelines[APPBASE,"/code/",string[TESTPROCNAME],"/appproc.q";enlist "APPPROC_LOADED:1b"];
   writelines[APPBASE,"/code/testinst/appname.q";enlist "APPNAME_LOADED:1b"];
+  / -parentproctype fixtures: a parent settings tier (a parent-only key, a key the proctype also sets, and loadprocesscode
+  / declared so -loadprocesscode can override it) and parent code recording whether the proctype's code had loaded yet
+  writelines[APPBASE,"/settings/pptparent.q";("pptonly:1";"widget:0";"loadprocesscode:1b")];
+  system "mkdir -p ",APPBASE,"/code/pptparent";
+  writelines[APPBASE,"/code/pptparent/pptcode.q";("PPTCODE:1b";"PPTBEFOREPROC:@[value;`APPPROC_LOADED;0b]")];
 
   / a scratch hdb: just a serialized table, the simplest thing \l can load
   (hsym `$HDBDIR,"/widgets") set ([]id:1 2 3);
@@ -58,7 +70,32 @@ setupfixture:{[]
      "  };";
      "run:{[] runcalled::runcalled+1};";
      "\\d .")];
+
+  / a launcher that starts a real process through torqx_init.q and writes the timerms its config carried
+  writelines[APPBASE,"/launch.q";
+    ("system \"l ",REPO,"/di/torq/bin/torqx_init.q\";";
+     "(hsym`$getenv[`TORQXAPPHOME],\"/timerms.txt\") 0: enlist .Q.s1 .k4unittestproc.capturedconfig`timerms;";
+     "exit 0")];
   }
+
+/ a launcher that starts a real process through torqx_init.q and writes what -parentproctype changed
+pptlauncher:{[] writelines[APPBASE,"/launchppt.q";
+  ("system \"l ",REPO,"/di/torq/bin/torqx_init.q\";";
+   "c:.k4unittestproc.capturedconfig;";
+   "(hsym`$getenv[`TORQXAPPHOME],\"/ppt.txt\") 0: enlist .Q.s1 (c`parentproctype;$[`pptonly in key c;c`pptonly;0N];c`widget;@[value;`PPTCODE;0b];@[value;`PPTBEFOREPROC;0N]);";
+   "exit 0")]}
+
+/ launch a real process with extra q flags; return (parentproctype;pptonly;widget;parent code loaded;proctype code loaded before it)
+launchppt:{[flags]
+  pptlauncher[]; f:APPBASE,"/ppt.txt"; system "rm -f ",f;
+  system QBIN," ",APPBASE,"/launchppt.q -proctype ",(string TESTPROCNAME)," -procname testinst",flags," -q </dev/null >",APPBASE,"/ppt.log 2>&1";
+  value first read0 hsym`$f}
+
+/ launch a real process through torqx_init.q with extra q flags; return the timerms in its config
+launchtimerms:{[flags]
+  f:APPBASE,"/timerms.txt"; system "rm -f ",f;
+  system QBIN," ",APPBASE,"/launch.q -proctype ",(string TESTPROCNAME)," -procname testinst",flags," -q </dev/null >",APPBASE,"/launch.log 2>&1";
+  value first read0 hsym`$f}
 
 / helper so the test.csv cell stays comma-free (k4unit's CSV splits unquoted commas): writes
 / loadnamecode into the procname settings tier to turn on the procname-tier app-code cascade.

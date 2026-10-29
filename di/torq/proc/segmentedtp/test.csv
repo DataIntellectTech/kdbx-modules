@@ -16,11 +16,18 @@ true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv ``sctp,`$4_string k}[x] each k 
 true,0,0,q,"`:/x/c.csv~.m.di.0torq.0proc.0segmentedtp.apppath`$""/x/c.csv""",1,,an absolute customcsv is kept
 true,0,0,q,"`:/x/c.csv~.m.di.0torq.0proc.0segmentedtp.apppath`:/x/c.csv",1,,an hsym customcsv is kept
 true,0,0,q,"(hsym`$$[count h:getenv`TORQXAPPHOME;h,""/"";""""],""a/c.csv"")~.m.di.0torq.0proc.0segmentedtp.apppath`$""a/c.csv""",1,,a relative customcsv is under the app home
+true,0,0,q,"((`$""America/New_York"");`$""Asia/Tokyo"";0D17:00:00)~eodinit`rolltimezone`datatimezone`rolltimeoffset!(""America/New_York"";""Asia/Tokyo"";""0D17:00:00"")",1,,an [eodtime] section of strings reaches di.eodtime as symbols and a timespan
+true,0,0,q,"(`GMT;`GMT;0D01)~eodinit enlist[`rolltimeoffset]!enlist""0D01:00:00""",1,,a string rolltimeoffset alone reaches di.eodtime as a timespan
+true,0,0,q,"(`$""Asia/Tokyo"";`GMT;0D)~eodinit enlist[`rolltimezone]!enlist""Asia/Tokyo""",1,,a string rolltimezone alone reaches di.eodtime as a symbol
+fail,0,0,q,"eodinit enlist[`rolltimeoffset]!enlist""junk""",1,,an unparseable rolltimeoffset errors
 true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperiod""",1,,stplg keys override the defaults; singular rolls daily
 true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
 true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered
 true,0,0,q,"`stplg in ha""exec name from h.list`.z.exit""",1,,.z.exit observer registered
-true,0,0,q,"(`stpzts;1;1;(enlist`disableonfail)!enlist 0b)~ha""tickjob""",1,,batch timer added as a 1s timer job that retries on failure
+true,0,0,q,"(`stpzts;0D00:00:01;1;(enlist`disableonfail)!enlist 0b)~ha""tickjob""",1,,batch timer added as a 1s timer job that retries on failure (no -t: 1000ms as legacy)
+true,0,0,q,"(`stpzts;0D00:00:00.2;1;(enlist`disableonfail)!enlist 0b)~hb""tickjob""",1,,batch timer period follows -t (b started with -t 200 then sets its own \t 60000) as legacy .z.ts runs at -t
+true,0,0,q,"(`stpzts;0D00:00:01;1;(enlist`disableonfail)!enlist 0b)~hc""tickjob""",1,,-t 0 falls back to 1000ms as legacy (system t 1000 when t is unset)
+true,0,0,q,"(`stpzts;0D00:00:00.3;1;(enlist`disableonfail)!enlist 0b)~hs""tickjob""",1,,a segmentedchainedtp (s) started with -t 300 batches every 300ms
 
 comment,,,,,,,subscribe handshake
 true,0,0,q,"`segmented~ha""tptype""",1,,tptype is segmented
@@ -78,6 +85,7 @@ true,0,0,q,"(string hs""currlog[`trade;`logname]"") like ""*/sctp1_"",(string .z
 true,0,0,q,"(`parent;`stp1;`)~hp"".sctp`loggingmode`tickerplantname`subscribeto""",1,,toml-style sctp strings become symbols
 true,0,0,q,"(ha"".stplg.replaylog`trade"")~hp"".stplg.replaylog`trade""",1,,parent mode replays the upstream logs
 true,0,0,q,"hp""all (::)~/:value loghandles""",1,,parent mode writes no logs
+true,0,0,q,"(`GMT;0D)~hp""e:use`di.eodtime;(e[`getrolltimezone][];e[`getrolltimeoffset][])""",1,,toml-style eodtime strings reach di.eodtime
 
 comment,,,,,,,end of period
 run,0,0,q,"eops:(); ha"".stplg.nextperiod:.z.p-0D00:00:01; .stplg.getnextendUTC[]; tick[]""",1,,force the period end

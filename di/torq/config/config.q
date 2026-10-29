@@ -61,8 +61,8 @@ parsetier:{[base]
   (parsefile base,".q"),parsefile base,".toml"
   };
 
-cascade:{[builtinroot;approot;proctype;procname]
-  / resolve the cascade over the two roots x (default;proctype;procname) and RETURN the merged flat
+cascade:{[builtinroot;approot;parentproctype;proctype;procname]
+  / resolve the cascade over the two roots x (default;parentproctype;proctype;procname) and RETURN the merged flat
   / dict. pure (no init/logger/globals). name-major: a more specific NAME wins over the root layer,
   / and within a name the app root wins (parsetier gives .toml>.q within a tier). the accumulator is
   / seeded with a sentinel (`)!(::) key so its value list stays general from the first merge (a
@@ -70,19 +70,33 @@ cascade:{[builtinroot;approot;proctype;procname]
   / proctype/procname must be non-null symbol atoms: string`` is "", which would build a bogus
   / "<root>/" base and read a file named ".q"/".toml". a null means identity resolution failed, so
   / surface it. (a null symbol is still type -11h, so the null check is separate from the type check.)
-  if[not all -11h=type each (proctype;procname);
-    '"di.torq.config: cascade requires proctype and procname to be symbol atoms"];
+  if[not all -11h=type each (parentproctype;proctype;procname);
+    '"di.torq.config: cascade requires parentproctype, proctype and procname to be symbol atoms"];
   if[(null proctype)|null procname;
     '"di.torq.config: cascade requires non-null proctype and procname; got ",(-3!proctype)," and ",-3!procname];
   dirs:(builtinroot;approot);
   / dedup (distinct keeps first-occurrence order, preserving least->most-specific). without it a
   / repeated name re-applies its tier at a LATER slot: procname~proctype is redundant, but
   / procname~`default would put default LAST and wrongly override proctype.
-  names:distinct `default,proctype,procname;
+  / a null parentproctype is none; when set its tier sits between default and proctype, as TorQ's torq.q:593
+  names:distinct (`default,parentproctype,proctype,procname) except `;
   bases:raze {[ds;nm] ds,\:"/",string nm}[dirs;] each names;
   acc:{[a;b] a,parsetier b}/[(enlist `)!enlist(::);bases];
   acc _ `
   };
+
+/ the config file(s) for a path relative to the two roots, app before builtin, as TorQ's .proc.getconfig (torq.q:149-172):
+/ level 0 the first existing (else the builtin path), 1 each existing app path then the builtin path, 2 both regardless.
+/ an empty approot is an unset app root, as an unset $KDBAPPCONFIG. pure: no env read.
+getconfig:{[builtinroot;approot;path;level]
+  appconf:$[count approot;`$approot,"/",path;()];
+  if[(level<2) and $[count appconf;()~key hsym appconf;0b];appconf:()];
+  conf:`$builtinroot,"/",path;
+  (),$[level;appconf,conf;first appconf,conf]
+  };
+
+/ the first config file for a path, as TorQ's .proc.getconfigfile (torq.q:174)
+getconfigfile:getconfig[;;;0];
 
 / --- command-line override layer (top of the cascade) ---
 
@@ -181,8 +195,10 @@ getapimeta:{[]
   / names are bare (di.torq qualifies them). one (name;public;descrip;params;return) row per line.
   :flip `name`public`descrip`params`return!flip(
     (`init;           0b; "wire the injected logger (required by overrideconfig)";       "[dict: deps with a `log key]";                                                    "null");
-    (`cascade;        1b; "resolve the settings cascade over two roots -> merged flat dict (name-major, .toml>.q)"; "[string: builtinroot; string: approot; symbol: proctype; symbol: procname]"; "dict: merged setting -> value");
+    (`cascade;        1b; "resolve the settings cascade over two roots -> merged flat dict (name-major, .toml>.q)"; "[string: builtinroot; string: approot; symbol: parentproctype (` if none); symbol: proctype; symbol: procname]"; "dict: merged setting -> value");
     (`overrideconfig; 1b; "apply the command-line override layer onto a resolved config dict"; "[dict: resolved config; dict: setting name (symbol) -> string or list of strings]";  "dict: updated config");
+    (`getconfig;      1b; "the config file(s) for a path over the two roots, app before builtin (TorQ .proc.getconfig)"; "[string: builtinroot; string: approot (empty if unset); string: path; long: level 0/1/2]"; "symbol list: config file path(s)");
+    (`getconfigfile;  1b; "the first config file for a path over the two roots (TorQ .proc.getconfigfile)"; "[string: builtinroot; string: approot; string: path]"; "symbol list: one config file path");
     (`parsefile;      1b; "parse one .q or .toml settings file into a flat dict";        "[string: file path (.q flat name:value, or .toml via di.util.toml)]";                   "dict: setting -> value (empty if the file is missing)");
     (`getapimeta;     0b; "this module's api metadata rows";                             "[]";                                                                               "table: metadata rows"));
   };

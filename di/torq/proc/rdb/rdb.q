@@ -65,8 +65,12 @@ endofday:{[date]
     .z.m.eodtabcount:st!count each value each st;
     .z.m.log[`info][`rdb;"reload enabled - wdb owns writedown; snapshotted EOD row counts: ",.Q.s1 .z.m.eodtabcount];
     :()];
+  attrs:st!grabattrs each st;                  / capture before the clear wipes them, as legacy rdb.q:104
   savefn[.z.m.hdbdir;date] each st;
   @[`.;;0#] each st;                          / clear the saved tables (root)
+  reapplyattrs'[st;attrs st];
+  / call the postreplay hook, unprotected as TorQ's rdb.q:118
+  (.z.m.dbw`postreplay)[hsym`$.z.m.hdbdir;date];
   notifyhdbs[];
   .z.m.log[`info][`rdb;"end of day complete, saved+cleared: ",(", " sv string st)];
   }
@@ -116,6 +120,14 @@ init:{[config;deps]
   replaylog:$[`replaylog in key config;`boolean$config`replaylog;1b];
   timeout:$[`tpwaittimeout in key config;"j"$config`tpwaittimeout;30000];
 
+  / di.dbwrite for savedown (optional sort.csv sort/attr config), set before the tickerplant wait as legacy reads its hooks at load
+  .z.m.dbw:use`di.dbwrite;
+  / the save down hooks from config, defaulting as TorQ's rdb.q:42-43, go to di.dbwrite
+  sdm:$[`savedownmanipulation in key config;config`savedownmanipulation;()!()];
+  pr:$[`postreplay in key config;config`postreplay;{[d;p]}];
+  (.z.m.dbw`init)[`log`savedownmanipulation`postreplay!(deps`log;sdm;pr)];
+  if[`sortcsv in key config;(.z.m.dbw`readcsv)[resolvedir[apphome[];config`sortcsv]]];
+
   / publish the root-safe upd BEFORE subscribing (replay drives it too)
   @[`.;`upd;:;updfn];
 
@@ -135,12 +147,6 @@ init:{[config;deps]
   (.z.m.subs`init)[config;deps];
   sd:.sub.subscribe[subscribeto;subscribesyms;1b;replaylog;first .sub.getsubscriptionhandles[tpt;`;()!()]];
   if[count sd;.z.m.log[`info][`rdb;"subscribed, partition date ",string sd`d]];
-
-  / di.dbwrite for savedown (optional sort.csv sort/attr config). Takes the injected binary
-  / (ctx;msg) log dep directly - no adapter, since di.dbwrite now uses the same contract.
-  .z.m.dbw:use`di.dbwrite;
-  (.z.m.dbw`init)[enlist[`log]!enlist deps`log];
-  if[`sortcsv in key config;(.z.m.dbw`readcsv)[resolvedir[apphome[];config`sortcsv]]];
 
   / publish the EOD entry points at root.
   / reload[date] is the wdb's IPC entry point when reloadenabled (harmless if never called).

@@ -4,8 +4,12 @@
 / attributes that may legitimately appear in a config (empty leaves a column unattributed)
 validatts:``p`s`g`u;
 
-/ built-in fallback config - sort every table by time ascending when no config is supplied
-defaultparams:([] tabname:enlist`default; att:enlist`; column:enlist`time; sort:enlist 1b);
+/ built-in fallback config, TorQ's config/sort.csv: p# on sym, sorted by sym then time
+defaultparams:([] tabname:`default`default; att:`p`; column:`sym`time; sort:11b);
+
+/ save down hooks, as TorQ's .save.savedownmanipulation and .save.postreplay; init sets them only when passed
+savedownmanipulation:()!();
+posthook:{[d;p]};
 
 init:{[deps]
   / wire the injected logger - required, no silent fallback. deps: a dict with a `log key
@@ -24,7 +28,19 @@ init:{[deps]
   .z.m.logwarn:deps[`log]`warn;
   .z.m.logerr:deps[`log]`error;
   .z.m.sortconfig:(::);
+  if[`savedownmanipulation in key deps;.z.m.savedownmanipulation:deps`savedownmanipulation];
+  if[`postreplay in key deps;.z.m.posthook:deps`postreplay];
   };
+
+/ apply the table's savedownmanipulation, if any, keeping the data on failure, as TorQ's .save.manipulate
+manipulate:{[t;x]
+  $[t in key .z.m.savedownmanipulation;
+    @[.z.m.savedownmanipulation t;x;{[x;e] .z.m.logerr[`manipulate;"save down manipulation failed : ",e];x}[x]];
+    x]
+  };
+
+/ call the postreplay hook after a partition is written, as TorQ's .save.postreplay
+postreplay:{[d;p] .z.m.posthook[d;p]};
 
 readcsv:{[file]
   / read a sort-config csv and store it in .z.m.sortconfig; used by sort and savedown
@@ -196,7 +212,7 @@ savedown:{[dir;part;tabname;data]
   / enumerates syms against the hdb sym file; sorting and attributes are driven by .z.m.sortconfig
   .z.m.loginfo[`savedown;"saving ",string[tabname]," partition ",string[part]," to ",string dir];
   path:` sv (.Q.par[dir;part;tabname];`);
-  path set .Q.en[dir;data];
+  path set .Q.en[dir;manipulate[tabname;data]];
   sort[tabname;path];
   .z.m.loginfo[`savedown;"finished saving ",string tabname];
   gc[];
@@ -212,7 +228,7 @@ appenddown:{[dir;part;tabname;data]
     .z.m.logerr[`appenddown;err:"di.dbwrite: appenddown partition does not exist at ",string path];
     'err;
   ];
-  .[path;();,;.Q.en[dir;data]];
+  .[path;();,;.Q.en[dir;manipulate[tabname;data]]];
   .z.m.loginfo[`appenddown;"finished appending ",string tabname];
   };
 

@@ -118,6 +118,17 @@ segments:{[]
     3=count select from ps where ptdir like "*trade*")
   };
 
+/ a merge that fails (hdb destination with a mismatched sym type) stops end of day before the segments are deleted
+failedmerge:{[]
+  freshwdb cfg[],`writedownmode`mergemode!(`partbyattr;`part);
+  feed[];
+  (` sv hdbpart[`trade],`) set ([]time:`timestamp$();sym:`long$();price:`float$());
+  ok:@[{.u.end x;1b};today[];{0b}];
+  segs:@[{key hsym `$(1_string x),"/trade"};wdbpart[];{()}];
+  (use`di.merge)[`clearpartsizes][];
+  chk `signalled`segskept!(not ok;`aapl`ibm`msft~asc segs)
+  };
+
 / startup writes empty schemas into the working partition for the idb
 missingtables:{[]
   freshwdb cfg[];
@@ -145,6 +156,18 @@ postreplay:{[]
   feed[];
   .u.end today[];
   (last POST)~today[]
+  };
+
+/ a failing postreplay propagates out of end of day after the move, as TorQ's wdb: no reload, the partition does not advance
+failedpostreplay:{[]
+  freshwdb cfg[],(enlist`postreplay)!enlist {[d;p] '"boom"};
+  feed[];
+  e:@[{.u.end x;""};today[];{x}];
+  chk `signalled`moved`noreload`notadvanced!(
+    e~"boom";
+    0<count key hdbpart`trade;
+    not loggedlike[`info;"sending reload call*"];
+    today[]~.m.di.0torq.0proc.0wdb.currentpartition)
   };
 
 compression:{[]
@@ -191,6 +214,15 @@ initidempotent:{[]
   added:`wdbsave in tjobs;
   again:@[{[c;dd] wdb.init[c;dd];1b}[cfg[]];d;{0b}];
   chk `registered`reinitok`noduplicate!(added;again;1=sum tjobs=`wdbsave)
+  };
+
+/ the flush job reschedules from the end of the previous run (di.timer mode 3), as TorQ's .timer.repeat does
+savejobmode:{[]
+  `tmodes set (`symbol$())!`short$();
+  d:recdeps[];
+  d[`timer]:`addjob`deletejobs!({[a;b;c;e;f;g] tmodes[a]:`short$f;};{[x]});
+  wdb.init[cfg[];d];
+  3h=tmodes`wdbsave
   };
 
 numtabdefault:{[]

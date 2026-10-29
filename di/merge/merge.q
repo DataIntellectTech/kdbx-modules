@@ -141,38 +141,21 @@ mergebypart:{[extrapartitiontype;dest;partchunks]
   / re-sorts the batch by the parted column(s) first if the p# attribute cannot otherwise be applied
   requireinit[`mergebypart];
   .z.m.loginfo[`merge;"reading partition/partitions ",", " sv string partchunks];
-  / read each segment separately and protected, so one missing/corrupt segment file does not take
-  / its batch-mates down with it - a bare get each/join here would fail the whole batch together
-  reads:{[p] @[get;p;{[p;e] .z.m.logerr[`merge;"failed to read segment ",(string p),
-    ", not merged this batch - error is - ",e];(::)}[p;]]} each partchunks;
-  ok:98h=type each reads;
-  if[not all ok;
-    .z.m.logerr[`merge;"skipping ",string[sum not ok]," of ",string[count partchunks],
-      " segment(s) in this batch that failed to read"]];
-  chunks:reads where ok;
-  if[0=count chunks;
-    .z.m.logerr[`merge;"no segments in this batch read successfully, nothing upserted to ",string dest];
-    :(::)];
+  / an unreadable segment fails the batch before anything is upserted, so the segments are kept
+  chunks:get each partchunks;
   / a single segment reads back as a table; multiple read back as a list of tables to join
   if[98<>type chunks;chunks:(,/)chunks];
   .z.m.loginfo[`resort;"checking that the contents of this subpartition conform"];
   / can the p# attribute be applied as-is? if not, the data must be re-sorted by the parted column
-  / applying p# here would not survive the upsert below - upsert appends raw values onto the
-  / on-disk column and does not persist an in-memory attribute, so this only orders the rows
-  / within this batch; mergehybrid applies the real, persisted attribute once across the whole
-  / destination after every batch (and any mergebycol columns) have been upserted
   pattrtest:@[{@[x;y;`p#];0b}[chunks;];extrapartitiontype;{1b}];
   if[pattrtest;
     .z.m.loginfo[`resort;"re-sorting contents of subpartition"];
     chunks:xasc[extrapartitiontype;chunks];
     ];
   .z.m.loginfo[`merge;"upserting ",(string count chunks)," rows to ",string dest];
-  / append the merged rows to permanent storage, logging (not throwing) on failure
-  / e arrives already a string from the protected-apply mechanism - do not re-stringify it: string
-  / of an already-string value maps over each char individually, corrupting the message and making
-  / this handler itself throw, which defeats the log-not-throw contract this line exists to provide
+  / append the merged rows to permanent storage; a failure is logged and signalled so the caller keeps the segments
   .[upsert;(dest;chunks);
-    {[e;d;p] .z.m.logerr[`merge;"failed to merge to ",string[d]," from segments ",(", " sv string p)," Error is - ",e]}[;dest;partchunks]];
+    {[e;d;p] .z.m.logerr[`merge;"failed to merge to ",string[d]," from segments ",(", " sv string p)," Error is - ",e];'e}[;dest;partchunks]];
   };
 
 / merge one segment into the destination partition a column at a time
@@ -206,25 +189,6 @@ mergehybrid:{[extrapartitiontype;tableinfo;dest;partdirs;mergelimit]
       (` sv dest,`.d) set cols tableinfo[1];
       ];
     ];
-  / mergebypart applies p# per batch and mergebycol applies none at all, so neither guarantees the
-  / full destination ends up grouped once multiple batches and/or both methods have all appended
-  / to it - re-sort and re-apply the attribute to the whole destination once, here, after every
-  / path above has finished, rather than leaving that guarantee split across per-batch calls
-  if[0<count extrapartitiontype;
-    .z.m.loginfo[`merge;"applying ",(", " sv string extrapartitiontype)," attribute to the full destination ",string dest];
-    / select from dest (not get dest) - a table read straight back from a splayed directory can
-    / still carry file-mapped internals that make xasc throw 'splay; a plain select materialises
-    / an ordinary in-memory table first, matching this file's existing style-guide preference for
-    / regular over functional q-sql
-    / f itself must stay unapplied here - currying both params in before handing it to . would
-    / execute it immediately and unprotected, and . would then misread the leftover pieces as an
-    / indexed-amend call rather than a protected apply
-    .[{[dest;extrapartitiontype] (` sv dest,`) set @[xasc[extrapartitiontype;select from dest];extrapartitiontype;`p#]};(dest;extrapartitiontype);
-      / a failure here can be a kdb+ built-in error (e.g. `splay, `type) rather than merge's own
-      / thrown strings - those arrive as symbols/other non-string values, not the plain string the
-      / rest of this file's handlers assume, so stringify defensively with .Q.s1 instead of ","
-      {[dest;e] .z.m.logerr[`merge;"failed to apply the parted attribute to ",(string dest)," - error is - ",.Q.s1 e]}[dest;]];
-    ];
   };
 
 / ============================================================
@@ -243,10 +207,11 @@ checkpartitiontype:{[tablename;extrapartitiontype]
 / confirm every parted column has an enumerable type (h/i/j/s) so it can key a partition
 checkenumerabletype:{[tablename;extrapartitiontype]
   requireinit[`checkenumerabletype];
-  $[all extrapartitiontype in exec c from meta[tablename] where t in "hijs";
-    .z.m.loginfo[`checkenumerable;"all columns do have an enumerable type in ",(string tablename)," table"];
-    .z.m.logerr[`checkenumerable;"not all columns ",(", " sv string extrapartitiontype),
-      " do have an enumerable type in ",(string tablename)," table"]];
+  if[not all extrapartitiontype in exec c from meta[tablename] where t in "hijs";
+    .z.m.logerr[`checkenumerable;m:"not all columns ",(", " sv string extrapartitiontype),
+      " do have an enumerable type in ",(string tablename)," table"];
+    'm];
+  .z.m.loginfo[`checkenumerable;"all columns do have an enumerable type in ",(string tablename)," table"];
   };
 
 / distinct combinations of the parted column values - one per partition directory
@@ -272,7 +237,8 @@ getextrapartitiontype:{[sortconfig;tablename]
     count defaultparts:distinct exec column from sortconfig where tabname=`default,sort=1,att=`p;
     [.z.m.loginfo[`getextraparttype;"parted attribute p not found in sort.csv for ",(string tablename)," table, using default instead"];
      defaultparts];
-    [.z.m.logerr[`getextraparttype;"parted attribute p not found in sort.csv for ",(string tablename)," table and default not defined"]]
+    [.z.m.logerr[`getextraparttype;"parted attribute p not found in sort.csv for ",(string tablename)," table and default not defined"];
+     ()]
     ];
   tabparts
   };

@@ -5,6 +5,18 @@ before,0,0,q,setupfixture[],1,,create a temp app fixture: settings, process.csv,
 
 fail,0,0,q,tq.reqenv[`DI_TORQ_TEST_NO_SUCH_VAR],1,,reqenv on a missing env var must error
 
+comment,,,,,,,framework home: TORQXHOME if set, else the QPATH entry holding di/torq
+true,0,0,q,"REPO~withenv[`TORQXHOME;"""";{.m.di.0torq.frameworkhome[]}]",1,,without TORQXHOME the framework home is the QPATH checkout
+true,0,0,q,"""/opt/torqx""~withenv[`TORQXHOME;""/opt/torqx"";{.m.di.0torq.frameworkhome[]}]",1,,TORQXHOME is used as given when set
+fail,0,0,q,"withenv[`TORQXHOME;"""";{withenv[`QPATH;""/nonexistent"";{.m.di.0torq.frameworkhome[]}]}]",1,,without TORQXHOME and no QPATH entry holding di/torq it errors
+fail,0,0,q,"withenv[`TORQXHOME;"""";{withenv[`QPATH;""/nonexistent:"";{.m.di.0torq.frameworkhome[]}]}]",1,,an empty QPATH entry is not the working directory
+run,0,0,q,"system ""mkdir -p "",APPBASE,""/qhome/mod/di/torq""; (hsym`$APPBASE,""/qhome/mod/di/torq/init.q"") 0: ()",1,,a QHOME holding di/torq under mod
+true,0,0,q,"(APPBASE,""/qhome/mod"")~withenv[`TORQXHOME;"""";{withenv[`QHOME;APPBASE,""/qhome"";{withenv[`QPATH;"""";{.m.di.0torq.frameworkhome[]}]}]}]",1,,without QPATH the framework home is $QHOME/mod, where use searches
+true,0,0,q,"@[{withenv[`TORQXHOME;"""";{withenv[`QPATH;"""";{withenv[`QHOME;"""";{.m.di.0torq.frameworkhome[]}]}]}]};::;{x}] like ""*QPATH and QHOME are unset*""",1,,without QPATH or QHOME the error says so rather than searching /mod
+true,0,0,q,"@[{withenv[`TORQXHOME;"""";{withenv[`QPATH;""/nonexistent"";{.m.di.0torq.frameworkhome[]}]}]};::;{x}] like ""*searched: /nonexistent*""",1,,the error names the entries searched
+true,0,0,q,"(REPO,""/di/torq/settings"")~first withenv[`TORQXHOME;"""";{.m.di.0torq.roots[]}]",1,,the builtin settings root needs no TORQXHOME
+true,0,0,q,"(REPO,""/di/torq/permissions"")~first withenv[`TORQXHOME;"""";{.m.di.0torq.permissionroots[]}]",1,,the framework permissions root needs no TORQXHOME
+
 fail,0,0,q,tq.init[`;`;()!()],1,,"auto-detect with no port set (system""p""=0) and two localhost rows in process.csv must fail as ambiguous"
 
 run,0,0,q,system "p 19999",1,,bind a port that appears nowhere in the fixture process.csv
@@ -29,7 +41,7 @@ true,0,0,q,"(2;3)~(HITS;UPD)",1,,is not skipped: the ignorelist check only match
 run,0,0,q,"zps:.z.ps; .m.di.0torq.zpsignorewired:0b; .m.di.0torq.initzpsignore[enlist[`zpsignore]!enlist enlist[`enabled]!enlist 0b]",1,,zpsignore with enabled 0b
 true,0,0,q,zps~.z.ps,1,,leaves .z.ps untouched
 run,0,0,q,".m.di.0clienttracking.hit:first ctorig; .m.di.0clienttracking.hite:last ctorig",1,,restore client tracking
-run,0,0,q,"ctp:{(use`di.torq.config)[`cascade] . .m.di.0torq.roots[],x,`$string[x],""1""} each `tickerplant`segmentedtp",1,,cascade the tickerplant and segmentedtp settings
+run,0,0,q,"ctp:{(use`di.torq.config)[`cascade] . .m.di.0torq.roots[],(`;x),`$string[x],""1""} each `tickerplant`segmentedtp",1,,cascade the tickerplant and segmentedtp settings
 true,0,0,q,"all {(1b;0b)~(x`clientsopencloseonly;(x`zpsignore)`enabled)} each ctp",1,,tickerplants track connections only and have no zpsignore
 
 run,0,0,q,r2:tq.init[`hdb;`hdb;enlist[`log]!enlist`di.util.log],1,,init with an explicit (if trivial) log override still works
@@ -39,6 +51,12 @@ true,0,0,q,`di.torq.proc.segmentedtp~.m.di.0torq.builtin`segmentedchainedtp,1,,s
 run,0,0,q,r3:tq.init[TESTPROCNAME;`testinst;()!()],1,,explicit-identity init for a custom proctype
 true,0,0,q,TESTPROCNAME~r3`proctype,1,,identity resolved for the custom proctype
 true,0,0,q,`widget in key .k4unittestproc.capturedconfig,1,,config cascade reached the custom proctype's own settings file
+true,0,0,q,"(`timerms in key .k4unittestproc.capturedconfig)&0N~.k4unittestproc.capturedconfig`timerms",1,,init stamps timerms from q's own -t (null here: this test process runs without -t)
+true,0,0,q,"200~launchtimerms["" -t 200""]",1,,a process launched through torqx_init.q with -t 200 has timerms 200 in its config
+true,0,0,q,"0N~launchtimerms[""""]",1,,a process launched without -t has a null timerms
+true,0,0,q,"(`pptparent;1;1;1b;0b)~launchppt["" -parentproctype pptparent""]",1,,-parentproctype: stamped as a symbol; its settings tier read; proctype beats it; code/<parent>/ loaded before code/<proctype>/
+true,0,0,q,"((`);0N;1;0b;0N)~launchppt[""""]",1,,without -parentproctype: parentproctype is a null symbol and no parent tier or code is loaded
+true,0,0,q,"(`pptparent;1;1;0b;0N)~launchppt["" -parentproctype pptparent -loadprocesscode 0""]",1,,loadprocesscode 0b: the parent's code is not loaded (gated as torq.q:643); its settings still are
 true,0,0,q,(`handlers`log`servers`timer)~asc key .k4unittestproc.captureddeps,1,,deps (incl injected servers) were passed through to the custom proctype's init exactly like a built-in one
 true,0,0,q,1=.k4unittestproc.runcalled,1,,the .run hook fired automatically after init - no launcher-side proctype knowledge needed
 true,0,0,q,1=.k4unittestproc.deferredcalled,1,,a function queued with .proc.addinitlist ran once after init
@@ -68,6 +86,7 @@ true,0,0,q,not any `proctype`procname`torqxstackid`p`norun in key .m.di.0torq.cl
 true,0,0,q,(enlist"7")~(.m.di.0torq.clioverrideparams[cliopts])`myrows,1,,kept override values are unchanged (the .Q.opt string-list shape overrideconfig expects)
 true,0,0,q,0=count .m.di.0torq.clioverrideparams[()!()],1,,an empty command line yields no overrides
 true,0,0,q,0=count .m.di.0torq.clioverrideparams[`proctype`p!((enlist"hdb");(enlist"5560"))],1,,a command line of only reserved flags yields no overrides
+true,0,0,q,"0=count .m.di.0torq.clioverrideparams[enlist[`parentproctype]!enlist enlist""wdb""]",1,,-parentproctype is a reserved flag (an identity input) not a config override
 
 comment,,,,,,,optional query logging - initquerylog wires di.querylog from a [querylog] settings section (init calls it last)
 run,0,0,q,.m.di.0torq.initquerylog[qlcfg 0b;r4`deps],1,,a [querylog] section with enabled=false is a silent no-op
@@ -78,6 +97,7 @@ true,0,0,q,"(`upd;`.u.upd;""upd"";"".u.upd"")~.m.di.0torq.qlignore (""upd"";"".u
 run,0,0,q,.m.di.0torq.initquerylog[qlcfg 1b;r4`deps],1,,enable with defaults - memory-only log plus the flush timer job
 true,0,0,q,.m.di.0torq.querylogwired,1,,the wired flag is set
 true,0,0,q,`querylogflush in exec id from (r4[`deps][`timer][`getactivejobs])[],1,,the in-memory flush job was scheduled on the injected timer
+true,0,0,q,3h=exec first mode from (r4[`deps][`timer][`getactivejobs])[] where id=`querylogflush,1,,the flush job reschedules from the end of the previous run (mode 3) as TorQ's .timer.repeat does
 run,0,0,q,n0:qlcompleted`pg,1,,baseline sync-query completions
 run,0,0,q,qlsync[],1,,one sync query through the wrapped .z.pg
 true,0,0,q,1=(qlcompleted`pg)-n0,1,,one sync query logs exactly one completion row

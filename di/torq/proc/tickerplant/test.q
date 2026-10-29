@@ -14,9 +14,9 @@ mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 mocklog:{[] `info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;])}
 
 / mock timer - records scheduled jobs
-timercalls:([]id:`symbol$();period:`int$();mode:`short$())
-resettimer:{[] `timercalls set ([]id:`symbol$();period:`int$();mode:`short$()); }
-mockaddjob:{[id;func;params;period;mode;opts] `timercalls insert (id;`int$period;mode); }
+timercalls:([]id:`symbol$();period:`timespan$();mode:`short$())
+resettimer:{[] `timercalls set ([]id:`symbol$();period:`timespan$();mode:`short$()); }
+mockaddjob:{[id;func;params;period;mode;opts] `timercalls insert (id;period;mode); }
 mocktimer:{[] enlist[`addjob]!enlist mockaddjob}
 
 / mock handlers - records (event;name) registrations with di.torq.handlers' register shape
@@ -40,13 +40,18 @@ setupfixture:{[]
 teardownfixture:{[] system "rm -rf ",BASE; }
 
 / config builders (kept out of test.csv: they contain commas/backticks)
-immcfg:{[] `publishmode`tplogdir`schemafile!(`immediate;BASE,"/log";BASE,"/database.q")}
-batchcfg:{[] `publishmode`pubperiod`tplogdir`schemafile!(`batched;2;BASE,"/batchlog";BASE,"/database.q")}
-nologcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/database.q")}
-badcfg:{[] `publishmode`schemafile!(`immediate;BASE,"/badschema.q")}
-replaycfg:{[] `publishmode`tplogdir`schemafile!(`batched;BASE,"/replog";BASE,"/database.q")}
-subdcfg:{[] `publishmode`tplogdir`schemafile!(`immediate;BASE,"/subdlog";BASE,"/database.q")}
-subdbcfg:{[] `publishmode`pubperiod`tplogdir`schemafile!(`batched;2;BASE,"/subdblog";BASE,"/database.q")}
+immcfg:{[] `tplogdir`schemafile!(BASE,"/log";BASE,"/database.q")}
+batchcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/batchlog";BASE,"/database.q")}
+nologcfg:{[] enlist[`schemafile]!enlist BASE,"/database.q"}
+badcfg:{[] enlist[`schemafile]!enlist BASE,"/badschema.q"}
+replaycfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/replog";BASE,"/database.q")}
+subdcfg:{[] `tplogdir`schemafile!(BASE,"/subdlog";BASE,"/database.q")}
+subdbcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/subdblog";BASE,"/database.q")}
+tzcfg:{[] `schemafile`rolltimezone`datatimezone`rolltimeoffset!(BASE,"/database.q";`$"America/New_York";`$"Asia/Tokyo";0D01)}
+/ the same settings as TOML delivers them: strings
+tzstrcfg:{[] `schemafile`rolltimezone`datatimezone`rolltimeoffset!(BASE,"/database.q";"America/New_York";"Asia/Tokyo";"0D17:00:00.000")}
+/ -t decides the mode, as TorQ's tickerplant.q: timerms (q's -t, stamped by di.torq) 200, null or 0
+tcfg:{[ms] `timerms`schemafile!(ms;BASE,"/database.q")}
 
 / feed n trade rows through the published root upd (columns form, single record each)
 feedtrades:{[n] {upd[`trade;(.z.p;`$"S",string x;1.0*x;`int$x)]} each til n; }
@@ -56,8 +61,16 @@ logcount:{[dir] c:-11!(-2;hsym`$dir,"/tp",string "d"$.z.p); $[0>type c;c;first c
 
 / assertion helpers factored here because they contain raw commas (which split CSV fields)
 loghas:{[sub;n] n=logcount[BASE,"/",sub]}
-flushperiodok:{[] 2=first exec period from timercalls where id=`tpflush}
+flushperiodok:{[] 0D00:00:02=first exec period from timercalls where id=`tpflush}
 rolledfile:{[sub;date] not ()~key hsym`$BASE,"/",sub,"/tp",string date}
+/ an upd arriving after the roll time: put the roll 1s in the past, send one trade (stamped by the feed or not),
+/ return (date before;date after;messages in the next day's log)
+pastroll:{[sub;stamped]
+  (use`di.eodtime)[`setnextroll] .z.p-0D00:00:01;
+  d0:.u.d;
+  upd[`trade;$[stamped;(.z.p;`R;1f;1i);(`R;1f;1i)]];
+  f:hsym`$BASE,"/",sub,"/tp",string d0+1;
+  (d0;.u.d;$[()~key f;0;first -11!(-2;f)])}
 
 / init helpers that store handles / state for assertions
 doinit:{[cfg] resetcalls[]; resettimer[]; resethandlers[]; (tk`init)[cfg;deps[]]; }

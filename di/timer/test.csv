@@ -8,50 +8,50 @@ before,0,0,q,.m.di.0timer.cycletime:100,1,,Set cycletime for testing
 
 run,0,0,q,timer.deletejobs key[.m.di.0timer.jobs]`id,1,,Clear jobs table in case of test rerun
 
-run,0,0,q,timer.addjob.custom[`testcustom1;{};();10;1;(enlist `maxruns)!(enlist 3)],1,,Add job for custom 1
+run,0,0,q,timer.addjob.custom[`testcustom1;{1};();0D00:00:10;1;(enlist `maxruns)!(enlist 3)],1,,Add job for custom 1
 true,0,0,q,`testcustom1 in key .m.di.0timer.jobs,1,,Test job in table for custom 1
 true,0,0,q,.m.di.0timer.jobs[`testcustom1][`maxruns]=3,1,,Test option overwrite for custom 1
 true,0,0,q,all .m.di.0timer.jobs[`testcustom1][`maxtime`disableonfail`startattime]=(0Wp;1b;0Np),1,,Test option defaults for custom 1
-true,0,0,q,.m.di.0timer.jobs[`testcustom1][`nextstart]=2025.03.03D12:00:10.000,1,,Test nextstart calculated for custom 1
+true,0,0,q,.m.di.0timer.jobs[`testcustom1][`nextstart]=2025.03.03D12:00:00.000,1,,Test nextstart calculated for custom 1
 
-run,0,0,q,timer.addjob.custom[`testcustom2;{};();10;2;(enlist `maxtime)!(enlist 2025.03.03D13:00:10.000)],1,,Add job for custom 2
+run,0,0,q,timer.addjob.custom[`testcustom2;{2};();0D00:00:10;2;(enlist `maxtime)!(enlist 2025.03.03D13:00:10.000)],1,,Add job for custom 2
 true,0,0,q,`testcustom2 in key .m.di.0timer.jobs,1,,Test job in table for custom 2
 true,0,0,q,.m.di.0timer.jobs[`testcustom2][`maxtime]=2025.03.03D13:00:10.000,1,,Test option overwrite for custom 2
 true,0,0,q,all .m.di.0timer.jobs[`testcustom2][`maxruns`disableonfail`startattime]=(0Wi;1b;0Np),1,,Test option defaults for custom 2
-true,0,0,q,.m.di.0timer.jobs[`testcustom2][`nextstart]=2025.03.03D12:00:10.000,1,,Test nextstart calculated for custom 2
-run,0,0,q,timer.addjob.custom[`testcustom3;{};();10;1;(enlist `disableonfail)!(enlist 0b)],1,,Add job for custom 3
+true,0,0,q,.m.di.0timer.jobs[`testcustom2][`nextstart]=2025.03.03D12:00:00.000,1,,Test nextstart calculated for custom 2
+run,0,0,q,timer.addjob.custom[`testcustom3;{3};();0D00:00:10;1;(enlist `disableonfail)!(enlist 0b)],1,,Add job for custom 3
 true,0,0,q,`testcustom3 in key .m.di.0timer.jobs,1,,Test job in table for custom 3
 true,0,0,q,not .m.di.0timer.jobs[`testcustom3][`disableonfail],1,,Test option overwrite for custom 3
 true,0,0,q,all .m.di.0timer.jobs[`testcustom3][`maxruns`maxtime`startattime]=(0Wi;0Wp;0Np),1,,Test option defaults for custom 3
-true,0,0,q,.m.di.0timer.jobs[`testcustom3][`nextstart]=2025.03.03D12:00:10.000,1,,Test nextstart calculated for custom 3
+true,0,0,q,.m.di.0timer.jobs[`testcustom3][`nextstart]=2025.03.03D12:00:00.000,1,,Test nextstart calculated for custom 3
 
-run,0,0,q,timer.addjob.custom[`testcustom4;{};();10;1;(enlist `startattime)!(enlist 2025.03.03D13:00:10.000)],1,,Add job for custom 4
+run,0,0,q,timer.addjob.custom[`testcustom4;{4};();0D00:00:10;1;(enlist `startattime)!(enlist 2025.03.03D13:00:10.000)],1,,Add job for custom 4
 true,0,0,q,`testcustom4 in key .m.di.0timer.jobs,1,,Test job in table for custom 4
 true,0,0,q,.m.di.0timer.jobs[`testcustom4][`nextstart]=2025.03.03D13:00:10.000,1,,Test option overwrite for custom 4
 true,0,0,q,all .m.di.0timer.jobs[`testcustom4][`maxruns`maxtime`disableonfail]=(0Wi;0Wp;1b),1,,Test option defaults for custom 4
 true,0,0,q,.m.di.0timer.jobs[`testcustom4][`nextstart]=2025.03.03D13:00:10.000,1,,Test nextstart updated for custom 4
 
-run,0,0,q,timer.addjob.custom[`testcustom5;{};();10;1;(`maxruns`disableonfail)!(4;0b)],1,,Test multiple option defaults for custom 5
+run,0,0,q,timer.addjob.custom[`testcustom5;{5};();0D00:00:10;1;(`maxruns`disableonfail)!(4;0b)],1,,Test multiple option defaults for custom 5
 true,0,0,q,`testcustom5 in key .m.di.0timer.jobs,1,,Test job in table for custom 5
 true,0,0,q,all .m.di.0timer.jobs[`testcustom5][`maxruns`disableonfail]=(4i;0b),1,,Test options overwrites for custom 5
 true,0,0,q,all .m.di.0timer.jobs[`testcustom5][`maxtime`startattime]=(0Wp;0Np),1,,Test options defaults for custom 5
-true,0,0,q,.m.di.0timer.jobs[`testcustom5][`nextstart]=2025.03.03D12:00:10.000,1,,Test nextstart updated for custom 5
-run,0,0,q,timer.addjob.custom[`testcustom6;{};();10;1;(`maxruns`maxtime`disableonfail`startattime)!(3;2025.03.03D13:00:10.000;0b;2025.03.03D13:00:00.000)],1,,Add job for custom 5
+true,0,0,q,.m.di.0timer.jobs[`testcustom5][`nextstart]=2025.03.03D12:00:00.000,1,,Test nextstart updated for custom 5
+run,0,0,q,timer.addjob.custom[`testcustom6;{6};();0D00:00:10;1;(`maxruns`maxtime`disableonfail`startattime)!(3;2025.03.03D13:00:10.000;0b;2025.03.03D13:00:00.000)],1,,Add job for custom 5
 
 true,0,0,q,`testcustom6 in key .m.di.0timer.jobs,1,,Test job in table for custom 6
 true,0,0,q,all .m.di.0timer.jobs[`testcustom6][`maxruns`maxtime`disableonfail`startattime]=(3;2025.03.03D13:00:10.000;0b;2025.03.03D13:00:00.000),1,,Test options overwrites for custom 6
 true,0,0,q,.m.di.0timer.jobs[`testcustom6][`nextstart]=2025.03.03D13:00:00.000,1,,Test nextstart updated for custom 6
 
-run,0,0,q,timer.addjob.default[`testdefault1;{x+y};(1;2);10;1],1,,Add job for default 1
+run,0,0,q,timer.addjob.default[`testdefault1;{x+y};(1;2);0D00:00:10;1],1,,Add job for default 1
 true,0,0,q,`testdefault1 in key .m.di.0timer.jobs,1,,Test job in table for deafult 1
-true,0,0,q,.m.di.0timer.jobs[`testdefault1][`nextstart]=2025.03.03D12:00:10.000,1,,Test nextstart updated for default 1
-run,0,0,q,timer.addjob.default[`testdefault2;{x};(5);10;1],1,,Add job for default 2
+true,0,0,q,.m.di.0timer.jobs[`testdefault1][`nextstart]=2025.03.03D12:00:00.000,1,,Test nextstart updated for default 1
+run,0,0,q,timer.addjob.default[`testdefault2;{x};(5);0D00:00:10;1],1,,Add job for default 2
 true,0,0,q,`testdefault2 in key .m.di.0timer.jobs,1,,Test job in table for deafult 2
-true,0,0,q,.m.di.0timer.jobs[`testdefault2][`nextstart]=2025.03.03D12:00:10.000,1,,Test nextstart updated for default 2
+true,0,0,q,.m.di.0timer.jobs[`testdefault2][`nextstart]=2025.03.03D12:00:00.000,1,,Test nextstart updated for default 2
 
-run,0,0,q,timer.addjob.simple[`testsimple1;{};10],1,,Add job for simple 1
+run,0,0,q,timer.addjob.simple[`testsimple1;{7};0D00:00:10],1,,Add job for simple 1
 true,0,0,q,`testsimple1 in key .m.di.0timer.jobs,1,,Test job in table for simple 1
-true,0,0,q,.m.di.0timer.jobs[`testsimple1][`nextstart]=2025.03.03D12:00:10.000,1,Test nextstart updated for simple 1
+true,0,0,q,.m.di.0timer.jobs[`testsimple1][`nextstart]=2025.03.03D12:00:00.000,1,Test nextstart updated for simple 1
 
 comment,,,,,,,Testing for utlity functions: enabling,disabling etc.
 run,0,0,q,timer.disable[],1,,Run timer disabling
@@ -73,13 +73,154 @@ true,0,0,q,all not `testcustom2`testcustom3 in\: key .m.di.0timer.jobs,1,,Check 
 true,0,0,q,6=count timer.getactivejobs[],1,,Check get active utility function
 
 comment,,,,,,,Testing job execution and status/start time updates
-run,0,0,q,timer.addjob.custom[`testexec1;{.test.exec1:1b};();10;1;(enlist `maxruns)!(enlist 1)],1,,Add job for exec 1
+run,0,0,q,timer.addjob.custom[`testexec1;{.test.exec1:1b};();0D00:00:10;1;(enlist `maxruns)!(enlist 1)],1,,Add job for exec 1
 run,0,0,q,.m.di.0timer.runandschedule[`testexec1],1,,Test timer function exec 1
 true,0,0,q,.test.exec1,1,,Test run suceeded for exec 1
 true,0,0,q,not .m.di.0timer.jobs[`testexec1][`status],1,,Test maxruns disabled job
-run,0,0,q,timer.addjob.default[`testexec2;{.test.exec2:x};(1b);10;1],1,,add job for exec 2
+run,0,0,q,timer.addjob.default[`testexec2;{.test.exec2:x};(1b);0D00:00:10;1],1,,add job for exec 2
 run,0,0,q,.m.di.0timer.runandschedule[`testexec2],1,,Test timer function exec 2
 true,0,0,q,.test.exec2,1,,Test run succeeded for exec 2
-run,0,0,q,testexec3:{.test.exec3:x+y};timer.addjob.default[`testexec3;`testexec3;(2;3);10;1],1,,Add job for exec 3
+run,0,0,q,testexec3:{.test.exec3:x+y};timer.addjob.default[`testexec3;`testexec3;(2;3);0D00:00:10;1],1,,Add job for exec 3
 run,0,0,q,.m.di.0timer.runandschedule[`testexec3],1,,Test timer function exec 3
 true,0,0,q,.test.exec3=5,1,,Test run succeeded for exec 3
+
+comment,,,,,,,init requires the injected logger and a failed job is logged through it
+fail,0,0,q,timer.init[()!()],1,,init without a log dependency must error
+fail,0,0,q,timer.init[(::)],1,,init without deps must error
+run,0,0,q,"caplog:([] fn:`symbol$();ctx:`symbol$();msg:())",1,,capture table for the log assertions
+run,0,0,q,logcap:`info`warn`error!({[c;m]`caplog upsert(`info;c;m)};{[c;m]`caplog upsert(`warn;c;m)};{[c;m]`caplog upsert(`error;c;m)}),1,,capturing logger
+run,0,0,q,timer.init[`log`debug!(logcap;0b)],1,,init with the capturing logger and debug off
+run,0,0,q,system"t 0",1,,stop the timer cycle so jobs only run when the test calls them
+run,0,0,q,timer.addjob.custom[`testfail1;{'"boom"};();0D00:00:10;1;()!()],1,,add a job that fails
+run,0,0,q,.m.di.0timer.runandschedule[`testfail1],1,,run the failing job
+true,0,0,q,1=count select from caplog where fn=`error,1,,the failure is logged once as an error with debug off
+true,0,0,q,"any {all 0<count each x ss/:(""testfail1"";""boom"";""will not be rescheduled"")} each caplog`msg",1,,the log names the job and the error and says it will not be rescheduled
+true,0,0,q,not .m.di.0timer.jobs[`testfail1][`status],1,,the failed job is disabled
+run,0,0,q,timer.addjob.custom[`testfail2;{'"boom2"};();0D00:00:10;1;(enlist`disableonfail)!enlist 0b],1,,add a failing job that stays enabled on failure
+run,0,0,q,.m.di.0timer.runandschedule[`testfail2],1,,run it
+true,0,0,q,2=count select from caplog where fn=`error,1,,its failure is logged too
+true,0,0,q,.m.di.0timer.jobs[`testfail2][`status],1,,and it stays enabled
+run,0,0,q,timer.addjob.custom[`testfail3;{1+`a};();0D00:00:10;1;()!()],1,,add a job that fails with a q error rather than a signalled string
+run,0,0,q,.m.di.0timer.runandschedule[`testfail3],1,,run it through the 0 handle (logcall on)
+true,0,0,q,"any {all 0<count each x ss/:(""testfail3"";""type"")} each caplog`msg",1,,the q error text reaches the log line
+run,0,0,q,.m.di.0timer.logcall:0b,1,,run jobs through value instead of the 0 handle
+run,0,0,q,"timer.addjob.custom[`testfail4;{'""boomvalue""};();0D00:00:10;1;()!()]",1,,add a failing job for the value path
+run,0,0,q,.m.di.0timer.runandschedule[`testfail4],1,,run it through value
+true,0,0,q,"any {all 0<count each x ss/:(""testfail4"";""boomvalue"")} each caplog`msg",1,,the error text reaches the log line on the value path too
+run,0,0,q,.m.di.0timer.logcall:1b,1,,restore logcall
+
+comment,,,,,,,a failing job does not stop other jobs due in the same tick
+run,0,0,q,caplog:0#caplog,1,,reset the capture
+run,0,0,q,.test.good:0b,1,,flag set by the healthy job
+run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,only the two jobs below are scheduled
+run,0,0,q,timer.addjob.custom[`testbad;{'"bad"};();0D00:00:10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,a failing job already due
+run,0,0,q,timer.addjob.custom[`testgood;{.test.good:1b};();0D00:00:10;1;(enlist`startattime)!enlist 2025.03.03D11:00:00.000],1,,a healthy job due in the same tick
+run,0,0,q,timer.setcp[{2025.03.03D13:00:00.000}],1,,move the clock past the scheduler's next scan time
+run,0,0,q,.m.di.0timer.main[],1,,one scheduler tick
+run,0,0,q,timer.setcp[{2025.03.03D12:00:00.000}],1,,restore the test clock
+true,0,0,q,.test.good,1,,the healthy job still ran
+true,0,0,q,(enlist`timer)~exec ctx from caplog where fn=`error,1,,only the failing job is logged as an error
+true,0,0,q,not .m.di.0timer.jobs[`testbad][`status],1,,the failing job is disabled
+true,0,0,q,.m.di.0timer.jobs[`testgood][`status],1,,the healthy job stays enabled
+
+comment,,,,,,,a job's next run past its maxtime disables it before that run (as TorQ's timer checks the next run against the period end)
+run,0,0,q,.test.dt2:0,1,,run counter
+run,0,0,q,timer.addjob.custom[`dt2;{.test.dt2+:1};();0D00:00:10;1;(enlist`maxtime)!enlist 2025.03.03D12:00:15.000],1,,10s job ending at 12:00:15 - first run due now (12:00:00)
+run,0,0,q,.m.di.0timer.runandschedule[`dt2],1,,first run (next due 12:00:10)
+true,0,0,q,.m.di.0timer.jobs[`dt2][`status],1,,still enabled - its next run is inside the end time
+run,0,0,q,.m.di.0timer.runandschedule[`dt2],1,,second run (next would be 12:00:20)
+true,0,0,q,not .m.di.0timer.jobs[`dt2][`status],1,,disabled - its next run would fall after the end time
+
+comment,,,,,,,once - a one-off job that runs at a set time
+run,0,0,q,.test.once:0,1,,run counter
+run,0,0,q,timer.addjob.once[`once1;{.test.once+:1};();2025.03.03D11:00:00.000],1,,add a one-off job
+true,0,0,q,2025.03.03D11:00:00.000=.m.di.0timer.jobs[`once1][`nextstart],1,,it is due at the requested time
+run,0,0,q,.m.di.0timer.runandschedule[`once1],1,,run it
+true,0,0,q,1=.test.once,1,,it ran once
+true,0,0,q,not .m.di.0timer.jobs[`once1][`status],1,,and is then disabled
+
+comment,,,,,,,removefunc - remove jobs by function and parameters
+run,0,0,q,.test.rf:{x},1,,shared job function
+run,0,0,q,timer.addjob.custom[`rf1;.test.rf;enlist 1;0D00:00:10;1;()!()],1,,job on .test.rf with parameter 1
+run,0,0,q,timer.addjob.custom[`rf2;.test.rf;enlist 2;0D00:00:10;1;()!()],1,,job on .test.rf with parameter 2
+run,0,0,q,timer.removefunc[.test.rf;enlist 1],1,,remove the job with parameter 1
+true,0,0,q,not `rf1 in key .m.di.0timer.jobs,1,,the matching job is removed
+true,0,0,q,`rf2 in key .m.di.0timer.jobs,1,,the job with other parameters stays
+
+comment,,,,,,,params of any type, an atom first, do not type the params column
+run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,empty the jobs table
+run,0,0,q,"timer.addjob.custom[`pt1;{x+1};5;0D00:00:10;1;()!()]",1,,first job takes an atom parameter
+run,0,0,q,"timer.addjob.custom[`pt2;{x};`sym;0D00:00:10;1;()!()]",1,,a later job takes a symbol parameter
+run,0,0,q,"timer.addjob.custom[`pt3;{x,y};(1;`x);0D00:00:10;1;()!()]",1,,and another a mixed list
+true,0,0,q,all `pt1`pt2`pt3 in exec id from timer.getalljobs[],1,,all three jobs are added
+true,0,0,q,"(6;`sym;(1;`x))~{$[count y; x . (),y; x@`]}'[exec func from .m.di.0timer.jobs;exec params from .m.di.0timer.jobs]",1,,each job's function still gets its parameter as passed
+
+comment,,,,,,,removefunc and once failure cases
+run,0,0,q,timer.addjob.custom[`rfx;.test.rf;enlist 9;0D00:00:10;1;()!()],1,,a job on .test.rf
+run,0,0,q,.test.n0:count timer.getalljobs[],1,,job count before
+run,0,0,q,"timer.removefunc[{x+1};()]",1,,removefunc on a function that is not scheduled does not error
+true,0,0,q,.test.n0=count timer.getalljobs[],1,,and removes nothing
+fail,0,0,q,"timer.addjob.once[`rfx;{x};();2025.03.03D11:00:00.000]",1,,once rejects a job id that already exists
+
+comment,,,,,,,a job added after the jobs table has emptied still runs (D-T3)
+run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,empty the jobs table
+run,0,0,q,.m.di.0timer.main[],1,,a scheduler tick on the empty table
+run,0,0,q,.test.dt3:0,1,,run counter
+run,0,0,q,timer.setcp[{2025.03.04D00:00:00.000}],1,,a later clock so the scheduler's next scan time is past
+run,0,0,q,timer.addjob.custom[`dt3;{.test.dt3+:1};();0D00:00:10;1;()!()],1,,add a job due now
+run,0,0,q,"timer.setcp[{2025.03.04D00:00:01.000}];.m.di.0timer.main[]",1,,the next tick, a second later
+true,0,0,q,1=.test.dt3,1,,the job runs
+run,0,0,q,timer.deletejobs `dt3,1,,remove it
+run,0,0,q,".test.n3:0;.test.f3:{.test.n3+:1}",1,,counter and job function for the removefunc case
+run,0,0,q,timer.addjob.custom[`dt3b;.test.f3;();0D00:00:10;1;()!()],1,,a job on .test.f3
+run,0,0,q,timer.removefunc[.test.f3;()],1,,removefunc empties the jobs table
+run,0,0,q,.m.di.0timer.main[],1,,a scheduler tick on the empty table
+run,0,0,q,timer.addjob.custom[`dt3c;.test.f3;();0D00:00:10;1;()!()],1,,add a new job due now
+run,0,0,q,"timer.setcp[{2025.03.04D00:00:11.000}];.m.di.0timer.main[]",1,,the first tick after the stale next scan time (00:00:10)
+true,0,0,q,1=.test.n3,1,,the new job runs
+run,0,0,q,timer.setcp[{2025.03.03D12:00:00.000}],1,,restore the test clock
+
+comment,,,,,,,round 2 - shared simulated clock: each case starts a day later than the last so the scheduler's next scan time is always due
+run,0,0,q,".test.clk:2025.04.01D09:00;timer.setcp[{.test.clk}]",1,,a clock the tests move
+run,0,0,q,".test.fresh:{timer.deletejobs exec id from timer.getalljobs[];.test.clk+:1D;.test.t0::.test.clk;.test.ev::()}",1,,empty the table and start a new day
+run,0,0,q,".test.job:{.test.ev,:.test.clk}",1,,a job that records when it ran
+run,0,0,q,".test.sim:{[n] do[n;.test.clk+:0D00:00:01;.m.di.0timer.main[]];`second$.test.ev-.test.t0}",1,,tick n seconds; run times relative to the case start
+
+comment,,,,,,,mode range: a mode outside the nextstart modes is rejected and not stored (legacy timer.q:38 checks nextsch)
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`okjob;.test.job;();0D00:00:10;1h;()!()]",1,,a healthy job
+fail,0,0,q,"timer.addjob.custom[`bad0;{8};();0D00:00:10;0h;()!()]",1,,mode 0h is rejected
+fail,0,0,q,"timer.addjob.custom[`bad9;{9};();0D00:00:10;9h;()!()]",1,,mode 9h is rejected
+true,0,0,q,"not any `bad0`bad9 in exec id from timer.getalljobs[]",1,,the rejected jobs are not stored
+true,0,0,q,"0<count .test.sim 12",1,,the existing job keeps running
+
+comment,,,,,,,period is a timespan, as legacy .timer.repeat: an integer period is rejected and not stored
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`okjob;.test.job;();0D00:00:10;1h;()!()]",1,,a healthy job
+fail,0,0,q,"timer.addjob.custom[`intper;{10};();10;1h;()!()]",1,,an integer period is rejected
+true,0,0,q,"not `intper in exec id from timer.getalljobs[]",1,,the rejected job is not stored
+true,0,0,q,"0<count .test.sim 12",1,,the existing job keeps running
+
+comment,,,,,,,first run as legacy timer.q:39: a null start runs now; a past start aligns forward on its period (no catch-up burst)
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`snull;.test.job;();0D00:00:10;1h;()!()]",1,,null start
+true,0,0,q,"(00:00:01 00:00:11 00:00:21)~.test.sim 30",1,,legacy run times for a null start (differential case start_null)
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`spast;.test.job;();0D00:00:10;1h;(enlist`startattime)!enlist .test.clk-0D00:00:25]",1,,start 25s in the past
+true,0,0,q,"(00:00:06 00:00:16 00:00:26)~.test.sim 30",1,,legacy run times for a past start (differential case start_past)
+
+comment,,,,,,,dupcheck on function plus parameters, as legacy timer.q:29-32 (repeat and once default it on)
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,".test.dupf:{x};timer.addjob.custom[`dup1;.test.dupf;enlist 1;0D00:00:10;1h;()!()]",1,,a job on .test.dupf with parameter 1
+fail,0,0,q,"timer.addjob.custom[`dup2;.test.dupf;enlist 1;0D00:00:10;1h;(enlist`dupcheck)!enlist 1b]",1,,same function and parameters with dupcheck on is rejected
+true,0,0,q,"not `dup2 in exec id from timer.getalljobs[]",1,,and not stored
+run,0,0,q,"timer.addjob.custom[`dup3;.test.dupf;enlist 1;0D00:00:10;1h;(enlist`dupcheck)!enlist 0b]",1,,with dupcheck off the duplicate is allowed
+run,0,0,q,"timer.addjob.custom[`dup4;.test.dupf;enlist 2;0D00:00:10;1h;(enlist`dupcheck)!enlist 1b]",1,,other parameters are not a duplicate
+fail,0,0,q,"timer.addjob.custom[`dup5;.test.dupf;enlist 1;0D00:00:10;1h;()!()]",1,,dupcheck is on by default as legacy repeat/once
+
+comment,,,,,,,description, as legacy's timer description column
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`described;{11};();0D00:00:10;1h;(enlist`description)!enlist ""flush the buffers""]",1,,a job with a description
+true,0,0,q,"""flush the buffers""~first exec description from timer.getalljobs[] where id=`described",1,,the description is stored
+run,0,0,q,"timer.addjob.custom[`nodesc;{12};();0D00:00:10;1h;()!()]",1,,a job without one
+true,0,0,q,"""""~first exec description from timer.getalljobs[] where id=`nodesc",1,,the default description is empty

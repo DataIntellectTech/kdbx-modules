@@ -1,7 +1,7 @@
 #!/bin/bash
 # TorqX process orchestrator - start/stop/restart/status across process.csv.
 # Lives once in the kdbx-modules checkout (never copied into a project),
-# invoked from a project directory: cd myproject && $TORQXHOME/di/torq/bin/torqx.sh start
+# invoked from a project directory: cd myproject && <kdbx-modules>/di/torq/bin/torqx.sh start
 #
 # Deliberately thin: reads process.csv only to ENUMERATE rows (which processes
 # exist, for "start all"/"status all") and to look up a named row's proctype/port.
@@ -27,7 +27,9 @@ else
   exit 1
 fi
 
-: "${TORQXHOME:?TORQXHOME must be set (see setenv.sh)}"
+# torqx_init.q's directory: $TORQXHOME/di/torq/bin if set, else this script's own directory
+TORQXBIN="${TORQXHOME:+$TORQXHOME/di/torq/bin}"
+: "${TORQXBIN:=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 : "${TORQXAPPCONFIG:?TORQXAPPCONFIG must be set (see setenv.sh)}"
 : "${TORQXAPPHOME:?TORQXAPPHOME must be set (see setenv.sh)}"
 : "${TORQXSTACKID:?TORQXSTACKID must be set (see setenv.sh)}"
@@ -126,7 +128,7 @@ start_one() {
     return
   fi
   echo "starting $procname ($PROCTYPE)... log: $logfile"
-  QINIT="$TORQXHOME/di/torq/bin/torqx_init.q" nohup $QCMD \
+  QINIT="$TORQXBIN/torqx_init.q" nohup $QCMD \
     -torqxstackid "$TORQXSTACKID" -proctype "$PROCTYPE" -procname "$procname" \
     $portarg "$@" > "$logfile" 2>&1 &
   disown
@@ -157,7 +159,7 @@ start_one_tmux() {
   # a single bash -c string), then env applies the QHOME/QLIC policy above before exec'ing q.
   local extra="$*"
   tmux new-session -d -s "$sess" -c "$PWD" \
-    "bash -c 'source \"$SETENV\" && exec env $uflags QINIT=\"\$TORQXHOME/di/torq/bin/torqx_init.q\" $aflags \$QCMD -torqxstackid \"\$TORQXSTACKID\" -proctype \"$PROCTYPE\" -procname \"$procname\" $portarg $extra'"
+    "bash -c 'source \"$SETENV\" && exec env $uflags QINIT=\"$TORQXBIN/torqx_init.q\" $aflags \$QCMD -torqxstackid \"\$TORQXSTACKID\" -proctype \"$PROCTYPE\" -procname \"$procname\" $portarg $extra'"
   # keep a crashed process's pane (and its stack trace) visible instead of the session vanishing
   tmux set-option -t "$sess" remain-on-exit on >/dev/null
   # tee the pane to the usual logfile so logs still exist in tmux mode
@@ -207,7 +209,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${TORQXAPPHOME}
-ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="\$TORQXHOME/di/torq/bin/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg}'
+ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="${TORQXBIN}/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg}'
 Restart=on-failure
 RestartSec=2
 

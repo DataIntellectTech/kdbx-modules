@@ -5,7 +5,9 @@ QBIN:first system "readlink -f /proc/",(string .z.i),"/exe"
 isfree:{[p] not @[{hclose hopen x;1b};(`$":localhost:",string p;100);0b]}
 / a peer writes its port once initialised
 waitport:{[n] f:hsym`$FIXDIR,"/",string[n],".port"; d:.z.p+0D00:00:10; while[(.z.p<d) and ()~key f; system "sleep 0.05"]; $[()~key f;0Ni;"I"$first read0 f]}
-start:{[n] system QBIN," ",FIXDIR,"/",string[n],".q -q </dev/null >",FIXDIR,"/",string[n],".log 2>&1 &"}
+/ extra q flags per peer: b, c and s start with -t so their batch periods can be checked
+TFLAGS:(`a`b`c`s`p!5#enlist""),`b`c`s!(" -t 200";" -t 0";" -t 300")
+start:{[n] system QBIN," ",FIXDIR,"/",string[n],".q",(TFLAGS n)," -q </dev/null >",FIXDIR,"/",string[n],".log 2>&1 &"}
 waitfor:{[f] d:.z.p+0D00:00:05; while[(.z.p<d) and not f[]; system "sleep 0.05"]; f[]}
 peer:{[p] hopen `$":localhost:",string p}
 alive:{[p] not isfree p}
@@ -17,7 +19,14 @@ CFGS:`a`b`c`s`p!(
   "`procname`schemafile`stplgkdbtplog`stplgbatchmode`stplgmultilog!(`stp2;FIXDIR,\"/schema.q\";`$FIXDIR,\"/b\";`immediate;`singular)";
   "`procname`schemafile`stplgkdbtplog`stplgbatchmode`stplgmultilog!(`stp3;FIXDIR,\"/schema.q\";`$FIXDIR,\"/c\";`memorybatch;`tabular)";
   "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode!(`sctp1;0b;0b;`$FIXDIR,\"/s\";1b;`create)";
-  "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode`sctptickerplantname`sctpsubscribeto!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\")")
+  "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode`sctptickerplantname`sctpsubscribeto`eodtime!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\";`rolltimezone`rolltimeoffset!(\"GMT\";\"0D00:00:00\"))")
+
+/ di.eodtime rolltimezone, datatimezone and rolltimeoffset after init with an [eodtime] section s, as init passes it
+eodinit:{[s]
+  e:use`di.eodtime;
+  e[`init](enlist[`log]!enlist`info`warn`error!3#enlist{[c;m]}),.m.di.0torq.0proc.0segmentedtp.eodconfig s;
+  (e[`getrolltimezone][];e[`getdatatimezone][];e[`getrolltimeoffset][])
+  }
 
 setupfixture:{[]
   system "rm -rf ",FIXDIR; system "mkdir -p ",FIXDIR;
@@ -37,7 +46,8 @@ setupfixture:{[]
     $[n in `s`p;"(use`di.torq.servers)[`init][`log`timer`handlers`proctype`procname`processcsv`connections`discoveryregister`connectionsfromdiscovery!(nolog;notimer;hd;`segmentedtp;`",string[n],";FIXDIR,\"/process.csv\";`segmentedtp;0b;0b)]";""];
     "system \"t 60000\"";
     "seg:use`di.torq.proc.segmentedtp";
-    "seg.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/default.q\"),((use`di.torq.config)[`parsefile] \"di/torq/settings/segmentedtp.q\"),(enlist[`proctype]!enlist`segmentedtp),",c,";`log`timer`handlers!(nolog;notimer;hd)]";
+    "dt:use`di.torq";
+    "seg.init[((use`di.torq.config)[`parsefile] \"di/torq/settings/default.q\"),((use`di.torq.config)[`parsefile] \"di/torq/settings/segmentedtp.q\"),(enlist[`proctype]!enlist`segmentedtp),(enlist[`timerms]!enlist .m.di.0torq.cmdlinet[]),",c,";`log`timer`handlers!(nolog;notimer;hd)]";
     "(`$\":\",FIXDIR,\"/",string[n],".port\") 0: enlist string system \"p\"")}'[key CFGS;value CFGS];
   start each `a`b`c;
   PORTS[`a`b`c]:waitport each `a`b`c;

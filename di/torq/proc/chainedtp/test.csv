@@ -9,8 +9,6 @@ fail,0,0,q,"ctp.init[cfg[];enlist[`log]!enlist mocklog]",1,,init without timer m
 fail,0,0,q,"ctp.init[cfg[];`log`timer!(mocklog;mocktimer)]",1,,init without handlers must error
 fail,0,0,q,"ctp.init[cfg[];`timer`handlers!(mocktimer;mockhandlers)]",1,,init without log must error
 fail,0,0,q,"ctp.init[`proctype`procname!(`chainedtp;`chainedtp1);deps[]]",1,,init without settings must error
-fail,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:00.500;deps[]]",1,,a sub-second pubinterval must error
-fail,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:01.500;deps[]]",1,,a fractional-second pubinterval must error
 
 comment,,,,,,,init - connect and subscribe
 run,0,0,q,"ctp.init[cfg[],`pubinterval`logdir`tickerplantname`subscribeto`subscribesyms!(""0D00:00:00"";""tplogs"";""tickerplant1"";"""";"""");deps[]]",1,,init with toml-style strings
@@ -86,5 +84,10 @@ true,0,0,q,"sh""1=count subs.getsubscriptions[]""",1,,peer recorded the subscrip
 true,0,0,q,"sd2:sh""(.z.w)(`.u.subdetails;`;`)""; (11h=type sd2`tables) and `trade in sd2`tables",1,,tables is a symbol list for all tables
 run,0,0,q,".m.di.0torq.0proc.0chainedtp.tph({(neg .z.w)(`upd;`trade;x)};rows 2)",1,,upstream publishes 2 rows
 true,0,0,q,"(`trade;2)~sh""(first last got;count last last got)""",1,,peer received the rows
+
+comment,,,,,,,a sub-second pubinterval batches on a timer job at that period, as TorQ's .timer.rep with .ctp.pubinterval
+run,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:00.500;deps[]]",1,,re-init with a 500ms pubinterval is accepted
+true,0,0,q,"(0D00:00:00.5;2)~last each exec (period;mode) from timercalls where id=`publishalltables",1,,the batch job runs every 500ms in mode 2 (legacy mode 1h)
+true,0,0,q,.m.di.0torq.0proc.0chainedtp.upd~.m.di.0torq.0proc.0chainedtp.batchpub,1,,the module's upd batches (root upd is kept from the first init)
 
 after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

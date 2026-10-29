@@ -93,5 +93,5 @@ init:{[config;deps]
   set[`.logroll.rollnow;rollnow];
   rollnow[];
   starttime:`timestamp$1+`date$.z.p;
-  (deps[`timer][`addjob])[`logroll;rollnow;();86400;1h;enlist[`startattime]!enlist starttime];
+  (deps[`timer][`addjob])[`logroll;rollnow;();1D;1h;enlist[`startattime]!enlist starttime];
   }

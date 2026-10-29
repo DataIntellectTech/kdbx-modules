@@ -82,6 +82,9 @@ makepartition:{[]
 / the on-disk hdb partition for a table, read back
 hdbtable:{[t] get hsym `$hdbdir[],"/",(string PDATE),"/",string t};
 
+/ sorted by sym then time, di.dbwrite's default (TorQ's config/sort.csv)
+symtimesorted:{[t] t:update `#sym from select from t; t~update `#sym from `sym`time xasc t};
+
 partitiontables:{[dir] asc key hsym `$dir,"/",string PDATE};
 
 config:{[] `savedir`hdbdir`hdbtypes`rdbtypes`gatewaytypes`reloadorder`permitreload`gc`eodwaittime!
@@ -99,15 +102,15 @@ freshwire:{[cfg]
 
 
 
-/ the happy path: sym reloaded, both tables sorted by time, partition moved, working dir gone
+/ the happy path: sym reloaded, both tables sorted by sym then time, partition moved, working dir gone
 tailok:{[]
   freshwire config[];
   tail[savedir[];PDATE;`trade`quote];
   tr:hdbtable`trade;
   qu:hdbtable`quote;
   chk `sortedtrade`sortedquote`rowstrade`rowsquote`moved`workinggone`symloaded`reloadlogged!(
-    tr[`time]~asc tr`time;
-    qu[`time]~asc qu`time;
+    symtimesorted tr;
+    symtimesorted qu;
     4=count tr;
     2=count qu;
     `quote`trade~partitiontables hdbdir[];
@@ -125,7 +128,7 @@ enumintact:{[]
   / against the root sym the module reloaded, which is the property under test
   chk `enumerated`resolves!(
     20h=type tr`sym;
-    `msft`msft`ibm`ibm~value tr`sym)
+    `ibm`ibm`msft`msft~value tr`sym)
   };
 
 / no table list means "whatever is in the working partition" - what an operator re-running a sort wants
@@ -134,7 +137,7 @@ discovertables:{[]
   tail[savedir[];PDATE;`];
   chk `moved`sorted!(
     `quote`trade~partitiontables hdbdir[];
-    (hdbtable[`trade]`time)~asc hdbtable[`trade]`time)
+    symtimesorted hdbtable`trade)
   };
 
 / an empty savedir on the wire means "use the one I was configured with"
@@ -235,17 +238,17 @@ stringconfig:{[]
     `gateway`hdb`idb`rdb`sortworker`wdb~asc distinct exec arg from scalls where fn=`getservers)
   };
 
-/ the sortcsv is honoured: sorting by sym rather than the time-asc default changes the result
+/ the sortcsv is honoured: time only, with no p#, rather than the sym-then-time p# default
 sortcsvhonoured:{[]
   system "mkdir -p ",BASE,"/appconfig";
-  (hsym `$BASE,"/appconfig/sort.csv") 0: ("tabname,att,column,sort";"default,,sym,1");
+  (hsym `$BASE,"/appconfig/sort.csv") 0: ("tabname,att,column,sort";"default,,time,1");
   freshwire config[],(enlist`sortcsv)!enlist "appconfig/sort.csv";
   tail[savedir[];PDATE;`trade];
   tr:hdbtable`trade;
   hdel hsym `$BASE,"/appconfig/sort.csv";
-  chk `sortedbysym`nottimesorted!(
-    (tr`sym)~asc tr`sym;
-    not (tr`time)~asc tr`time)
+  chk `timesorted`notparted!(
+    (tr`time)~asc tr`time;
+    not `p=attr tr`sym)
   };
 
 / with no sortcsv set, the app's sort.csv under TORQXAPPCONFIG is used
@@ -315,7 +318,7 @@ fanoutok:{[]
   tail[savedir[];PDATE;`trade`quote];
   tr:hdbtable`trade;
   r:chk `sorted`moved`bothworked`logged!(
-    tr[`time]~asc tr`time;
+    symtimesorted tr;
     `quote`trade~partitiontables hdbdir[];
     all 1=count each workersorted each WORKERS;
     loggedlike[`info;"sorting on worker sort*"]);

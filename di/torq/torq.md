@@ -51,22 +51,26 @@ nothing at all).
 
 ### Environment variables
 
-Three independent, explicitly-set env vars - not derived from each other:
+`TORQXHOME` is optional; the app sets the other two:
 
 | var | what it points at | used for |
 |---|---|---|
-| `TORQXHOME` | the `di.torq`/framework checkout | builtin settings root (`$TORQXHOME/di/torq/settings`) |
+| `TORQXHOME` | the `di.torq`/framework checkout; when unset, the module search path entry that holds `di/torq` (`QPATH`'s non-empty entries, or `$QHOME/mod` when it has none, as `use` searches; with both unset, set `TORQXHOME`) | builtin settings root (`<home>/di/torq/settings`) and framework permissions root (`<home>/di/torq/permissions`) |
 | `TORQXAPPCONFIG` | the app's `appconfig/` directory | app settings root (`$TORQXAPPCONFIG/settings`) and `process.csv` |
 | `TORQXAPPHOME` | the app's own project root | `code/processes/{proctype}.q` (custom proctypes), and where `di.torq.proc.hdb`'s relative `dir:` settings resolve against |
 
 ### Config cascade
 
 `roots[]` builds the two roots `di.torq.config.cascade` needs
-(`` `$TORQXHOME/di/torq/settings ``, `` `$TORQXAPPCONFIG/settings ``); `init` calls
+(`` `<home>/di/torq/settings ``, `` `$TORQXAPPCONFIG/settings ``); `init` calls
 `` (cc`cascade)[r 0;r 1;proctype;procname] `` and then adds the resolved
 `proctype`/`procname` into the result itself, so any module (or anything it calls)
 can find out who it is just by looking at its own `config` dict - no global to reach
 for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
+
+It also adds `timerms`: q's own `-t` in milliseconds, or null without `-t`. q consumes `-t`, so
+`cmdlinet` reads it from the full command line `.z.X`, once. The tickerplants batch on it, as TorQ's
+`.z.ts` runs at `-t`, without reading the command line themselves.
 
 ### Dependency building
 
@@ -74,8 +78,8 @@ for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
 contract dependencies (`log`, `timer`, `handlers`), defaulting to `di.util.log`/`di.timer`/
 `di.torq.handlers` respectively, with an override escape hatch - the `overrides` dict passed
 into `init` can specify a different module name under the `` `log ``/`` `timer ``/
-`` `handlers `` key. `buildtimerdep` also initializes `di.timer` itself (with no deps
-of its own - it's Tier 1 standalone) and reshapes its exported `addjob` (a dict of
+`` `handlers `` key. `buildtimerdep` also initializes `di.timer` itself (with the
+injected `log` dep, through which di.timer logs failed jobs) and reshapes its exported `addjob` (a dict of
 `custom`/`default`/`simple` variants) down to the one signature the DI contract
 expects.
 
@@ -112,15 +116,20 @@ The cascade mirrors the config cascade's shape:
 | tier | directory | flag | default |
 |------|-----------|------|---------|
 | common | `code/common/` | `loadcommoncode` | on |
+| parentproctype | `code/<parentproctype>/` | `loadprocesscode`, and `-parentproctype` given | on when given |
 | proctype | `code/<proctype>/` | `loadprocesscode` | on |
 | procname | `code/<procname>/` | `loadnamecode` | **off** |
 
 So **yes, it supports per-procname customisation** just like the config cascade — but, exactly
 as in TorQ (`.proc.loadnamecode` defaults `0b`), the procname tier is **off by default** and
 opt-in via `loadnamecode:1b` in that process's settings. Each flag is read from the merged
-config (so it's overridable per-process in settings). `parentproctype` (TorQ's 4th tier, for
-sharing code between a WDB and its sort workers) is omitted: proctypes `sort` and `sortworker` are
-built in and run `di.torq.proc.wdb` itself, with `settings/sort.q` and `settings/sortworker.q`.
+config (so it's overridable per-process in settings). `-parentproctype` (TorQ's 4th tier, read
+from the command line as `torq.q:376-380` and stamped into config as a symbol atom, null if not
+given) adds a `{parentproctype}` settings tier between `default` and `{proctype}`, and loads
+`code/<parentproctype>/` between `common` and `<proctype>`, gated by `loadprocesscode` as `torq.q:643`.
+It is a reserved flag, not a config override. Proctypes `sort` and `sortworker` still run
+`di.torq.proc.wdb` with `settings/sort.q` and `settings/sortworker.q`; `-parentproctype wdb` adds
+only what an app puts in a `wdb` settings tier or `code/wdb/`.
 
 Within a directory, files load in this order: an optional `order.txt` (one filename per line)
 is loaded first, then the remaining `*.q`/`*.k` files alphabetically — matching TorQ's `loaddir`.
@@ -342,9 +351,10 @@ freshly-started process. tmux mode is for local development; production stays on
 module's tests, and `di.torq`'s actual job is wiring them together correctly, which
 mocking them away wouldn't exercise. Only `TORQXAPPCONFIG`/`TORQXAPPHOME` are
 repointed at a temp fixture (a scratch settings tree, `process.csv`, and a throwaway
-custom proctype file that publishes its own `run` hook to assert on) - `TORQXHOME`
-stays real, since `di.torq`'s own built-in settings and registry genuinely live
-there. Covers: `reqenv` erroring on a missing var, both auto-detect failure modes
+custom proctype file that publishes its own `run` hook to assert on); the built-in
+settings and registry are the checkout's own, found through `QPATH`, so the suite needs
+no env vars set. Covers: `reqenv` erroring on a missing var, the framework home with and
+without `TORQXHOME`, both auto-detect failure modes
 (no match, ambiguous), explicit-identity init for both a built-in and a custom
 proctype, config-cascade/deps reaching the started process type correctly, the
 `.run` hook firing by default and being skipped when `norun` is set, and successful

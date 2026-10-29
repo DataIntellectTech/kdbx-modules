@@ -51,7 +51,7 @@ numrows = 100000                  # global row threshold for an intraday flush
 replaynumrows = 100000            # row threshold during log replay (default numrows); replaynumtab per table
 partitiontype = "date"            # date | month | year
 gc = true                         # .Q.gc[] after each save and after sorting
-settimer = 10                     # seconds between flush checks (di.timer mode 1h = seconds)
+settimer = 10                     # seconds from the end of one flush check to the next (di.timer mode 3h)
 immediate = false                 # true: flush every table on every timer tick (ignore numrows)
 replaylog = true                  # replay the tp log on startup
 tpwaittimeout = 30000             # ms to wait for the tickerplant at startup before init fails
@@ -63,11 +63,11 @@ permitreload = true               # false: sort and move, but leave downstream a
 # savedownmanipulation (optional, .q settings) -> table!function applied before each write
 # getpartition (optional, .q settings) -> niladic function returning the partition value
 # upd (optional, .q settings) -> {[t;x]} the live upd, and the one the replay calls; default insert
-# postreplay (optional, .q settings) -> {[hdbdir;pt]} called after the move, before the reload
+# postreplay (optional, .q settings) -> {[hdbdir;pt]} called after the move, before the reload; an error stops end of day, as TorQ
 # subscribeto / subscribesyms omitted -> all tables, all syms
 # ignorelist omitted -> `heartbeat`logmsg (not written)
 # numtab (optional) -> per-table row thresholds; overrides numrows for those tables
-# sortcsv (optional) -> di.dbwrite sort/attribute config; else $TORQXAPPCONFIG/sort.csv if present, else time asc
+# sortcsv (optional) -> di.dbwrite sort/attribute config; else $TORQXAPPCONFIG/sort.csv if present, else the di.dbwrite default (sort by sym then time, p# on sym)
 ```
 
 The schema comes from the **tickerplant**, not a local `database.q`: `.sub.subscribe` finds the

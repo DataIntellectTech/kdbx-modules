@@ -17,8 +17,8 @@ calls:([]lvl:`symbol$();ctx:`symbol$();msg:())
 resetcalls:{[] `calls set ([]lvl:`symbol$();ctx:`symbol$();msg:()); }
 mocklogfn:{[lvl;ctx;msg] `calls insert (lvl;ctx;msg); }
 mocklog:{[] `info`warn`error!(mocklogfn[`info;;];mocklogfn[`warn;;];mocklogfn[`error;;])}
-timercalls:([]id:`symbol$();period:`long$();mode:`long$())
-mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] `timercalls upsert (id;`long$period;`long$mode);}
+timercalls:([]id:`symbol$();period:`timespan$();mode:`long$())
+mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] `timercalls upsert (id;period;`long$mode);}
 handlercalls:([]event:`symbol$();name:`symbol$())
 mockhandlers:enlist[`register]!enlist {[ev;ph;nm;pri;fn] `handlercalls upsert (ev;nm);}
 deps:{[] `log`timer`handlers!(mocklog[];mocktimer;mockhandlers)}
@@ -81,5 +81,8 @@ pcclosecheck:{[]
   @[{(neg x)"exit 0";(neg x)[]};c;()];
   (a;b)
   }
+
+/ a fresh init with checksubscriptionperiod p; returns the timer jobs it registered
+periodinit:{[p] .m.di.0subscriptions.registered:0b; delete from `timercalls; sub.init[subcfg enlist[`checksubscriptionperiod]!enlist p;deps[]]; flip value flip timercalls}
 
 teardownfixture:{[] @[{(neg x)"exit 0";(neg x)[]};tph;()]; system "sleep 0.3"; system "rm -rf ",BASE; }

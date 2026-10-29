@@ -26,7 +26,7 @@ true,0,0,q,`S1=first trade`sym,1,,the replayed row is the subscribed sym
 
 comment,,,,,,,.sub at root
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`sub",1,,init registered pc on .z.pc
-true,0,0,q,"(enlist(`checksubscriptions;10;1))~flip value flip timercalls",1,,init registered checksubscriptions every 10s
+true,0,0,q,"(enlist(`checksubscriptions;0D00:00:10;1))~flip value flip timercalls",1,,init registered checksubscriptions every 10s
 run,0,0,q,sub.init[subcfg ()!();deps[]],1,,init again
 true,0,0,q,"(1;1)~(count handlercalls;count timercalls)",1,,second init registers nothing new
 true,0,0,q,"((subcfg ()!())`autoreconnect`checksubscriptionperiod)~.m.di.0subscriptions.autoreconnect,.m.di.0subscriptions.checksubscriptionperiod",1,,init stores the settings file values
@@ -54,5 +54,9 @@ run,0,0,q,".servers.enabled:1b;.servers.connectcustom:{[r]};.m.di.0subscriptions
 run,0,0,q,".sub.subscribe[`trade;`;0b;0b;peerproc[]]",1,,subscribe
 true,0,0,q,.m.di.0subscriptions.reconnectinit,1,,subscribe wrapped .servers.connectcustom for autoreconnect once
 true,0,0,q,10b~pcclosecheck[],1,,closing a subscribed handle marks it inactive through .z.pc at once (no checksubscriptions run)
+comment,,,,,,,checksubscriptionperiod from TOML values
+true,0,0,q,"(enlist(`checksubscriptions;0D00:00:10;1))~periodinit ""0D00:00:10""",1,,a string period registers a timespan job
+true,0,0,q,(enlist(`checksubscriptions;0D00:00:10;1))~periodinit 10,1,,a number of seconds registers a timespan job
+fail,0,0,q,"periodinit ""junk""",1,,an unparseable period errors
 
 after,0,0,q,teardownfixture[],1,,remove the temp log dir

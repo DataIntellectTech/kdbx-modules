@@ -47,16 +47,19 @@ true,0,0,q,partbyfirstchar`part,1,,partbyfirstchar sorted then merged by whole p
 true,0,0,q,partbyfirstchar`col,1,,partbyfirstchar sorted then merged column by column
 true,0,0,q,partbyfirstchar`hybrid,1,,partbyfirstchar sorted then merged by the hybrid method
 true,0,0,q,segments[],1,,an intraday flush writes one segment per parted value and tracks its size
+true,0,0,q,failedmerge[],1,,a failed merge signals out of end of day and leaves the segments on disk
 true,0,0,q,missingtables[],1,,startup writes empty table schemas into the working partition
 true,0,0,q,tabsizes[],1,,tablelist orders tables by bytes written
-true,0,0,q,manipulation[],1,,savedownmanipulation is applied before a table is written
+true,0,0,q,manipulation[],1,,savedownmanipulation is applied once before a table is written (5 doubled to 10)
 true,0,0,q,postreplay[],1,,postreplay is called after the move
+true,0,0,q,failedpostreplay[],1,,a failing postreplay stops end of day after the move: no reload and the partition does not advance (as TorQ's wdb)
 true,0,0,q,compression[],1,,compression is applied to the hdb and reset afterwards
 true,0,0,q,fixpartition[],1,,data replayed into the wrong partition is moved to the tp log date
 true,0,0,q,tpretry[],1,,init fails when no tickerplant connects within tpwaittimeout
 true,0,0,q,pattrcheck[],1,,a partitioned writedown mode without a default p attribute is reported
 true,0,0,q,replaythreshold[],1,,replay uses replaynumrows while live flushing uses numrows
 true,0,0,q,initidempotent[],1,,init can be called twice without colliding on its timer job
+true,0,0,q,savejobmode[],1,,the flush job is scheduled from the end of the previous run (mode 3)
 true,0,0,q,numtabdefault[],1,,numtab defaults to legacy quote/trade thresholds and replaynumtab follows it
 true,0,0,q,endofperiodstub[],1,,a root endofperiod stub is published so an stp period roll does not raise
 true,0,0,q,customreload[],1,,a custom proctype in reloadorder is reloaded with legacy root reload
@@ -81,7 +84,7 @@ comment,,,,,,,sort mode - proctypes sort and sortworker
 run,0,0,q,"system ""l di/torq/proc/wdb/testsort.q""",1,,load the sort-mode fixture helpers
 run,0,0,q,setupfixture[],1,,fixture dirs and the env the module resolves paths against
 comment,,,,,,,the end of day tail
-true,0,0,q,tailok[],1,,sym reloaded, both tables sorted by time, partition moved into the hdb, working dir gone
+true,0,0,q,tailok[],1,,sym reloaded, both tables sorted by sym then time, partition moved into the hdb, working dir gone
 true,0,0,q,enumintact[],1,,the sym column still resolves after the move - the point of enumerating against hdb/sym
 true,0,0,q,discovertables[],1,,no table list means whatever is in the working partition
 true,0,0,q,defaultsavedir[],1,,an empty savedir on the wire falls back to the configured one
@@ -95,7 +98,7 @@ true,0,0,q,badreloadorder[],1,,a reloadorder entry that is neither an hdb, rdb, 
 true,0,0,q,idbreloadorder[],1,,idb in reloadorder is dispatched rather than reported as unknown
 comment,,,,,,,config
 true,0,0,q,stringconfig[],1,,string (toml / command-line) settings are parsed into the right types
-true,0,0,q,sortcsvhonoured[],1,,a sortcsv overrides di.dbwrite's time-asc default
+true,0,0,q,sortcsvhonoured[],1,,a sortcsv overrides di.dbwrite's sym-then-time p# default
 true,0,0,q,defaultsortcsv[],1,,with no sortcsv the app's sort.csv is used
 comment,,,,,,,the process entry point
 true,0,0,q,initpublishes[],1,,init opens hdb/rdb/idb/gateway/sortworker/wdb connections (never a tickerplant) and publishes the root entry point

@@ -6,7 +6,7 @@ before,0,0,q,setupfixture[],1,,create a temp serialized table to mount
 fail,0,0,q,hdb.init[absdircfg[];()!()],1,,init without a log dependency must error
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,hdb.init[absdircfg[];mockdeps[]],1,,init with an absolute dir - sidesteps needing TORQXHOME
+run,0,0,q,hdb.init[absdircfg[];mockdeps[]],1,,init with an absolute dir
 true,0,0,q,`widgets in tables[],1,,the fixture table was mounted
 true,0,0,q,3=count widgets,1,,mounted table has the expected row count
 true,0,0,q,0<count select from calls where lvl=`info,1,,init logged at least one info message

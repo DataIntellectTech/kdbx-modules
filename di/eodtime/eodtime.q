@@ -44,7 +44,6 @@ getday:{[p]"d"$(p+adjtime[p])-rolltimeoffset};
 / ============================================================
 
 / recomputes utc offset for datatimezone at current time
-/ call after an eod roll to get a fresh offset - important when datatimezone observes dst
 getdailyadjustment:{
   / utc-equivalent timezones have zero offset
   if[datatimezone in utczones;:0D];
@@ -59,8 +58,7 @@ rolltod:{[p]`timespan$(mod) . "j"$(rolltimeoffset-adjtime[p]),1D};
 / returns utc timestamp of next eod roll after utc timestamp p
 getroll:{[p]
   z:rolltod[p];
-  / kdb-x 5.0: comparing timespan to timestamp checks against p's time-of-day component - true means roll has already passed
-  / recompute the offset at p+1D on rollover - a dst transition overnight can shift it between today and tomorrow
+  / roll time already passed today: use tomorrow's roll time at tomorrow's offset
   $[z<=p;("d"$p+1D)+rolltod[p+1D];("d"$p)+z]
   };
 
@@ -68,7 +66,7 @@ getroll:{[p]
 getd:{d};
 getnextroll:{nextroll};
 getdailyadj:{dailyadj};
-/ the settings, as legacy's .eodtime.rolltimezone/datatimezone/rolltimeoffset (read by dataaccessutils.q:11)
+/ settings getters
 getrolltimezone:{rolltimezone};
 getdatatimezone:{datatimezone};
 getrolltimeoffset:{rolltimeoffset};
@@ -79,12 +77,8 @@ setdailyadj:{.z.m.dailyadj:x};
 setd:{.z.m.d:x};
 
 init:{[deps]
-  / initialise the eodtime module - validate deps, apply config, compute initial state
-  / deps: dict containing `log (required) plus optional `rolltimezone, `datatimezone, `rolltimeoffset
-  / log dep: at minimum `info!{[c;m]} - binary, c=context symbol, m=string
-  / examples:
-  /   eodtime.init[enlist[`log]!enlist logdep]
-  /   eodtime.init[`log`rolltimezone!(logdep;`$"Europe/London")]
+  / validate deps, apply config and compute initial state
+  / deps: `log (`info at minimum, {[c;m]}) plus optional `rolltimezone`datatimezone`rolltimeoffset
   if[99h<>type deps;
     '"di.eodtime: deps must be a dict with `log key"];
   if[not `log in key deps;

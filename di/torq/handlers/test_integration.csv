@@ -3,7 +3,7 @@ comment,,,,,,,integration test - stands up a real child q process and drives a r
 comment,,,,,,,requires a q binary reachable via QHOME (or q on PATH); skips cleanly if the child never comes up
 comment,,,,,,,the child port is OS-assigned via \p 0W - no env var no hardcoded port no configuration step
 comment,,,,,,,cleanup is robust to mid-suite failure - the child self-exits when the parent connection drops for any reason
-comment,,,,,,,note k4unit runs every before row first then the asserts - so results are captured in befores and checked in trues
+comment,,,,,,,k4unit runs every before row first - results are captured in befores and checked in trues
 
 before,0,0,q,handlers:use`di.torq.handlers,1,1,load di.torq.handlers module
 before,0,0,q,logdep:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,silent no-op log mock

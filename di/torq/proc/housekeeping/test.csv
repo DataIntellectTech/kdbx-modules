@@ -6,39 +6,39 @@ before,0,0,q,setupfixture[],1,,create the fixture log dir and job csv
 fail,0,0,q,hk[`init][basecfg[];()!()],1,,init without a log dependency must error
 fail,0,0,q,hk[`init][basecfg[];logonlydeps[]],1,,init without a timer dependency must error
 fail,0,0,q,hk[`init][nojobcsvcfg[];mockdeps[]],1,,init without a jobcsv setting must error
-true,0,0,q,0b~(shippeddefaults[])`runnow,1,,the shipped settings default is off. It must agree with the code default below - a silently disagreeing pair is how legacy shipped 02:00:00 in settings and a dead 12:00 in code
-true,0,0,q,`jobcsv`runtimes`runnow~key shippeddefaults[],1,,the settings file declares every tunable - an undeclared one cannot be overridden from the command line at all
+true,0,0,q,0b~(shippeddefaults[])`runnow,1,,the shipped runnow default is off
+true,0,0,q,`jobcsv`runtimes`runnow~key shippeddefaults[],1,,the settings file declares every tunable
 
 run,0,0,q,resetscheduled[],1,,reset scheduled-job log
-run,0,0,q,hk[`init][noruntimescfg[];mockdeps[]],1,,init with no runtimes in config - exercises the code default a direct caller falls back to
+run,0,0,q,hk[`init][noruntimescfg[];mockdeps[]],1,,init with no runtimes in config falls back to the code default
 true,0,0,q,1=count scheduled,1,,the code default supplies exactly one runtime
 true,0,0,q,expectedfire[02:00:00]~first exec opts[;`startattime] from scheduled,1,,and it is 02:00 - the same value the settings file declares
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,resetscheduled[],1,,reset scheduled-job log
-run,0,0,q,hk[`init][basecfg[];mockdeps[]],1,,init with a jobcsv - bracket-indexed not hk.init: dot-syntax on a use-loaded module dict is unreliable in this kdb-x build
-true,0,0,q,`runjobs in key `.housekeeping,1,,init published runjobs at the real root namespace .housekeeping - NOT run, which di.torq would auto-fire at startup
-true,0,0,q,not `run in key `.housekeeping,1,,nothing is published at .housekeeping.run - di.torq's runhook fires that name after init, which would make every process start do a destructive cleanup pass
+run,0,0,q,hk[`init][basecfg[];mockdeps[]],1,,init with a jobcsv via bracket indexing
+true,0,0,q,`runjobs in key `.housekeeping,1,,init published runjobs at the real root namespace .housekeeping - NOT run,init published runjobs at root .housekeeping
+true,0,0,q,not `run in key `.housekeeping,1,,nothing is published at .housekeeping.run - di.torq's runhook fires that name after init,nothing is published at .housekeeping.run
 true,0,0,q,1=count scheduled,1,,one runtime configured means one scheduled job
 true,0,0,q,1D=first exec period from scheduled,1,,the scheduled job repeats daily
 true,0,0,q,1h=first exec mode from scheduled,1,,mode 1h pins reruns to the scheduled time not the finish time
 true,0,0,q,not null first exec opts[;`startattime] from scheduled,1,,the first fire is pinned to a start time rather than firing immediately
-true,0,0,q,expectedfire[02:00:00]~first exec opts[;`startattime] from scheduled,1,,the first fire is computed on di.timer's UTC clock not local time - a local-time startattime fires late by the UTC offset
-true,0,0,q,(first exec opts[;`startattime] from scheduled)>.z.p,1,,the first fire is still in the future on the clock di.timer actually compares against
+true,0,0,q,expectedfire[02:00:00]~first exec opts[;`startattime] from scheduled,1,,the first fire is computed on di.timer's UTC clock
+true,0,0,q,(first exec opts[;`startattime] from scheduled)>.z.p,1,,the first fire is still in the future on di.timer's clock
 true,0,0,q,0<count select from calls where lvl=`info,1,,init logged at least one info message
-true,0,0,q,`old1.log in survivors[],1,,init with runnow:0b must not have run the jobs. Asserted here before the runnow test consumes the fixture - later and a wrongly-on runnow is indistinguishable from it
-true,0,0,q,`old2.log in survivors[],1,,the second file the runnow test later removes is also still present at this point
+true,0,0,q,`old1.log in survivors[],1,,init with runnow 0b has not run the jobs
+true,0,0,q,`old2.log in survivors[],1,,the second file is also still present
 
-run,0,0,q,hk[`init][norunnowcfg[];mockdeps[]],1,,init with no runnow in config - exercises the code default a direct caller falls back to
-true,0,0,q,`old1.log in survivors[],1,,the code default is off too - omitting runnow entirely must not run the jobs either
+run,0,0,q,hk[`init][norunnowcfg[];mockdeps[]],1,,init with no runnow in config falls back to the code default
+true,0,0,q,`old1.log in survivors[],1,,the code default does not run the jobs
 true,0,0,q,`old2.log in survivors[],1,,both fixture files still present after the defaulted init
 
 run,0,0,q,resetscheduled[],1,,reset scheduled-job log
-run,0,0,q,hk[`init][multiruntimecfg[];mockdeps[]],1,,init with runtimes as a space-separated string - simulates .toml-sourced settings
+run,0,0,q,hk[`init][multiruntimecfg[];mockdeps[]],1,,init with runtimes as a space-separated string as from .toml settings
 true,0,0,q,2=count scheduled,1,,two runtimes in the string means two scheduled jobs
 
 run,0,0,q,resetscheduled[],1,,reset scheduled-job log
-run,0,0,q,hk[`init][timelistcfg[];mockdeps[]],1,,init with runtimes as a real time list - the shape a .q settings file yields
+run,0,0,q,hk[`init][timelistcfg[];mockdeps[]],1,,init with runtimes as a time list as from .q settings
 true,0,0,q,2=count scheduled,1,,both times in the list were scheduled
 
 run,0,0,q,resetcalls[],1,,reset call log
@@ -60,7 +60,7 @@ run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,writetarcsv[],1,,switch the csv to a tardir job matching directories not files
 run,0,0,q,.housekeeping.runjobs[],1,,run the tardir action
 true,0,0,q,`olddir.tar.gz in archfiles[],1,,tar archived the matched directory
-true,0,0,q,not `olddir in archfiles[],1,,tar --remove-files deleted the original directory - the most destructive thing this module does
+true,0,0,q,not `olddir in archfiles[],1,,tar --remove-files deleted the original directory
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,writeminutescsv[],1,,switch the csv to an age in minutes rather than days
@@ -68,8 +68,8 @@ run,0,0,q,.housekeeping.runjobs[],1,,run the minutes-based job - exercises find'
 true,0,0,q,not `stale.log in minfiles[],1,,a file older than the 2 minute threshold was removed
 true,0,0,q,`justnow.log in minfiles[],1,,a file newer than the 2 minute threshold was left alone
 
-comment,,,,,,,legacy csv layouts (housekeeping.q:44-51) and rm on a directory
-run,0,0,q,writefivecsv[],1,,switch to TorQ's own 5-column csv
+comment,,,,,,,5-column and null-row csvs and rm on a directory
+run,0,0,q,writefivecsv[],1,,switch to a 5-column csv
 run,0,0,q,.housekeeping.runjobs[],1,,run it
 true,0,0,q,"not `old.log in dirfiles""five""",1,,a 5-column csv runs: agemin and checkfordirectory default to false
 run,0,0,q,resetcalls[],1,,clear the log capture
@@ -80,14 +80,14 @@ true,0,0,q,"not `old.log in dirfiles""nulls""",1,,the row after the null one sti
 run,0,0,q,resetcalls[],1,,clear the log capture
 run,0,0,q,writermdircsv[],1,,rm with checkfordirectory matching a directory
 run,0,0,q,.housekeeping.runjobs[],1,,run it
-true,0,0,q,"`olddir in dirfiles""rmdir""",1,,rm leaves a matched directory in place (legacy rm -f fails on one)
+true,0,0,q,"`olddir in dirfiles""rmdir""",1,,rm leaves a matched directory in place
 true,0,0,q,"0<count select from calls where lvl=`error,msg like ""action rm failed on*olddir: Is a directory""",1,,and logs it as an error
 
-true,0,0,q,`rm`zip`tardir~(hk`actionnames)[],1,,the built-in action set (legacy's names) before any app registers anything
+true,0,0,q,`rm`zip`tardir~(hk`actionnames)[],1,,the built-in action set before any app registers anything
 fail,0,0,q,(hk`addaction)["notasymbol";{[f]}],1,,addaction must reject a non-symbol name
 fail,0,0,q,(hk`addaction)[`x;42],1,,addaction must reject a handler that is not a function
-fail,0,0,q,(hk`addaction)[`rm;{[f]}],1,,addaction must refuse to shadow a built-in - silently swapping rm out from under a job csv is a footgun
-true,0,0,q,`rm`zip`tardir~(hk`actionnames)[],1,,actionnames is deliberately unguarded - it only reads the action dict so it answers correctly with or without init
+fail,0,0,q,(hk`addaction)[`rm;{[f]}],1,,addaction refuses to replace a built-in
+true,0,0,q,`rm`zip`tardir~(hk`actionnames)[],1,,actionnames works without init
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,resetnoted[],1,,reset the custom handler's record
@@ -106,7 +106,7 @@ run,0,0,q,(hk`addaction)[`throws;throwinghandler],1,,register a custom action th
 run,0,0,q,writethrowingcsv[],1,,a throwing job followed by a working one
 run,0,0,q,.housekeeping.runjobs[],1,,a throwing action must be trapped rather than propagate out of the run
 true,0,0,q,"0<count select from calls where lvl=`error,ctx=`applyjob",1,,the failing action was logged against applyjob
-true,0,0,q,1=count noted,1,,and the job after the throwing one still ran - an untrapped throw reaches di.timer whose disableonfail default kills the schedule for good
+true,0,0,q,1=count noted,1,,and the job after the throwing one still ran
 
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,writeunknownactioncsv[],1,,point the csv at an action that does not exist

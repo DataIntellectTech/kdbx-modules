@@ -176,7 +176,7 @@ run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
 run,0,0,q,.hh.trap:@[{handlers.register[`.z.zz;`;`x;0;{x}]};(::);{x}],1,1,trap a rejected registration
 true,0,0,q,any `error = exec lvl from .hh.captbl,1,1,the domain error was logged at error
 
-comment,,,,,,,the signalled string is the house idiom - di.torq.handlers-prefixed with no per-function context tag and equal to the logged message
+comment,,,,,,,the signalled string is prefixed di.torq.handlers and equals the logged message
 run,0,0,q,.hh.captbl:0#.hh.captbl,1,1,reset log capture
 run,0,0,q,.hh.sig:@[{handlers.register[42;`;`x;0;{x}]};(::);{x}],1,1,capture the signal from a representative rejected register
 true,0,0,q,.hh.sig like "di.torq.handlers: event must be a symbol",1,1,signal is di.torq.handlers-prefixed with no register: context tag
@@ -195,7 +195,7 @@ run,0,0,q,handlers.remove[`.z.pp;`exec;`o],1,1,restore default .z.pp
 run,0,0,q,handlers.remove[`.z.pw;`exec;`auth],1,1,restore default .z.pw
 run,0,0,q,handlers.remove[`.z.ws;`exec;`o2],1,1,restore default .z.ws
 
-comment,,,,,,,phased transform (TorqX addition) - transforms rewrite the result in priority order between exec and post
+comment,,,,,,,phased transform - transforms rewrite the result in priority order between exec and post
 fail,0,0,q,handlers.register[`.z.ps;`transform;`x;0;{x}],1,1,transform before an exec owner is rejected like pre and post
 run,0,0,q,handlers.register[`.z.pg;`exec;`o;0;{x}],1,1,identity exec owner on a freshly-cleaned event
 run,0,0,q,handlers.register[`.z.pg;`transform;`plus1;10;{x+1}],1,1,transform plus1 at priority 10

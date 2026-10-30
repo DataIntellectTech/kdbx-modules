@@ -1,30 +1,12 @@
 / ===========================================================================
-/ di.serverselect integration test (real processes)
-/ Spawns child q listeners, opens REAL IPC handles to them, and drives every
-/ exported function through a realistic gateway lifecycle - register ->
-/ query -> select -> route a live query to the chosen handle -> bulk-register
-/ -> disconnect -> error handling -> init. Unlike a simulated test, the
-/ selection functions hand back handles that are actually queried, so the
-/ assertions prove queries reach the expected backend process.
-/ .
-/ Self-contained: no helper files. The child backends are bare `q` listeners
-/ whose identity (`whoami`) and `ping` api are injected over IPC at setup; the
-/ test launches and tears them down itself.
-/ .
-/ Requirements:
-/   - run THIS script with KDB-X q (needs `use`)
-/   - a q on PATH (override with $QBIN) to launch the child listeners
-/   - some free TCP ports: the test scans for free ports from a pid-derived
-/     base (so concurrent runs don't collide); set $SSPORT to pin the base
-/ Run (QPATH must include this repo and the kx module dir):
-/   QPATH=/path/to/kx/mod:/path/to/kdbx-modules <kdbx>/q integration.q
-/ Exits with a non-zero code equal to the number of failed assertions.
+/ di.serverselect integration test: drives every exported function against real child q processes
+/ run with KDB-X q and QPATH including this repo; needs q on PATH (or $QBIN) and free ports ($SSPORT pins the base)
+/ exits with the number of failed assertions
 / ===========================================================================
 
 srvsel:use`di.serverselect;
 
 / ---- tiny assertion harness ----
-/ note: avoid `desc`/`exp`/`log` as names - they are reserved words in KDB-X
 PASS:0; FAIL:0;
 lbl:{[ok] $[ok;"  ok   | ";"  FAIL | "]};
 chk:{[nm;got;expd]
@@ -53,12 +35,7 @@ qbin:$[0<count s:getenv`QBIN; s; "q"];
 names:`rdb1`rdb2`hdb1`hdb2`gw1`rdb3`hdb3;
 pids:`int$();
 
-/ no hardcoded ports: derive a starting point from this pid (so concurrent runs
-/ on a shared host don't collide) - or take an explicit base from $SSPORT - then
-/ scan upward for ports that are actually free. nothing assumes a fixed port.
-/ probe whether a localhost port is in use: a free port refuses instantly, so this short
-/ timeout only bounds the wait for a filtered (silently-dropped) port - keep it small so a
-/ full scan of 10*count names candidates cannot stall for many seconds
+/ free ports scanned from a pid-derived base, or $SSPORT; a short connect timeout bounds each probe
 inuse:{[p] @[{hclose hopen x; 1b}; (`$":localhost:",string p;50); 0b]};
 baseport:$[0<count s:getenv`SSPORT; "I"$s; 20000+`int$.z.i mod 20000];
 findfree:{[start;n]
@@ -72,9 +49,7 @@ findfree:{[start;n]
 ports:findfree[baseport;count names];
 
 launch:{[port]
-  / start a bare q listener detached and capture its shell background pid ($!) - so every
-  / child can be reaped by exact pid later, whether or not we ever connect to it, and with
-  / no dependence on the qbin path (identity/api are injected over IPC once connected)
+  / start a detached bare q listener and capture its pid
   :"I"$first system qbin," -p ",string[port]," -q </dev/null >/dev/null 2>&1 & echo $!";
   };
 
@@ -86,10 +61,7 @@ connect:{[port]
   };
 
 teardown:{[]
-  / always-run cleanup. kill every launched child by its captured pid (exact). the pkill
-  / fallback is a last resort for the rare case a pid was never captured - keyed on our own
-  / unique port and -q flag (NOT the qbin path, which is configurable), so a custom qbin
-  / cannot break it. the [-]p bracket keeps the pattern from matching this very kill command.
+  / kill every launched child by pid, falling back to pkill on its port
   live:pids where not null pids;
   if[count live; @[system;"kill ",(" " sv string live)," 2>/dev/null; true";{}]];
   {@[system;"pkill -f \"[-]p ",string[x]," -q\" 2>/dev/null; true";{}]} each ports;
@@ -116,11 +88,9 @@ sidhandles:{[sids] exec handle from srvsel.getserverstable[] where serverid in s
 / the gateway's host/port for the hpup column - its real (dynamically chosen) address
 gwhp:`$":localhost:",string ports 4;
 
-/ test steps run at top level (a single enclosing function would exceed q's
-/ per-function constant limit). chk/chkerr trap their own assertion failures;
-/ .z.exit guarantees teardown regardless of how the script ends.
+/ test steps run at top level; .z.exit guarantees teardown
 
-/ init must be called before use (log is a required injected dependency, no default)
+/ init with the required log dependency
 srvsel.init[enlist[`log]!enlist `info`warn`error!({[c;m]};{[c;m]};{[c;m]})];
 
 / =========================================================================
@@ -212,14 +182,10 @@ chk["bulk-registered rdb3 now appears in rdb serverids";1b;6i in raze srvsel.get
 n0:count srvsel.getserverstable[];
 srvsel.addserversfromtable[`rdb;([]w:enlist handles 0;proctype:enlist`rdb;attributes:enlist()!())];
 chk["already-active handle skipped (no new row)";n0;count srvsel.getserverstable[]];
-/ (proctype filter, `ALL, and optional procname/hpup columns are covered in test.csv)
 
 / =========================================================================
 hdr"STEP 9  disconnect: kill a backend, deactivate it, prove routing adapts";
-/ a real gateway's .z.pc handler would call setserveractive[h;0b] on the dropped handle
-/ guard: the kill is only a genuine test if rdb1's pid was captured. if pids 0 were null,
-/ string 0Ni -> "0Ni" and the kill silently no-ops, degrading STEP 9 into a deactivation-only
-/ test. fail loudly here rather than pass on a half-exercised path.
+/ simulate a dropped handle as a gateway's .z.pc would; fail if rdb1's pid was not captured
 chk["rdb1 pid captured (so the kill below is real)";1b;not null pids 0];
 @[system;"kill ",string[pids 0]," 2>/dev/null; true";{}]; system"sleep 0.3";
 srvsel.setserveractive[handles 0;0b];
@@ -261,7 +227,7 @@ chkerr["init rejects non-dictionary deps";{srvsel.init[(::)]}];
 chkerr["init rejects deps missing log key";{srvsel.init[()!()]}];
 chkerr["init rejects log value that is not a dict";{srvsel.init[enlist[`log]!enlist(::)]}];
 chkerr["init rejects log dict missing error key";{srvsel.init[enlist[`log]!enlist(`info`warn!({[c;m]};{[c;m]}))]}];
-/ the module does no adaptation, so wrap the monadic kx.log instance into a binary {[c;m]} dict caller-side
+/ wrap a kx.log instance into a binary {[c;m]} dict
 kxinst:(use`kx.log)[`createLog][];
 kxbinary:`info`warn`error!(
   {[c;m]kxinst[`info][string[c],": ",m]};

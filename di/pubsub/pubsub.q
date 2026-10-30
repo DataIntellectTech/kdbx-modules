@@ -50,8 +50,7 @@ subfiltered:{[table;filters]
   };
 
 addfiltered:{[table;cond]
-  / subscribe to tables with custom conditions
-  / if either filters or columns parsing fails, subscription should not be logged as no half query should be created
+  / subscribe to tables with custom conditions; nothing is recorded if filters or columns fail to parse
   filters:$[all null f:cond[table;`filters];();@[parse;"select from t where ",f;{'"incorrect filters for parsing"}][2]];
   columns:$[all null c:cond[table;`columns];();@[parse;"select ",c," from t";{'"incorrect columns for parsing"}][4]];
   @[eval;(?;schemas table;filters;0b;columns);{'"incorrect query with filters-",.Q.s1[y],"  columns-",.Q.s1[z]," error-",x}[;filters;columns]];
@@ -66,10 +65,7 @@ addsymsub:{[table;syms]
   };
 
 closesub:{[h]
-  / remove handles upon connection close. NOT bound to .z.pc here: a load-time .z.pc assignment from
-  / this module replaced whatever the process had already bound (e.g. the di.torq.handlers dispatcher
-  / carrying di.torq.servers' cleanup hook), so the consumer binds it - via its handlers dependency in
-  / a di.torq process, or .z.pc:pubsub.closesub in a bare one
+  / remove a closed handle's subscriptions; the caller binds this to .z.pc
   delhandle[;h]each key reqalldict;
   delete from .z.M.reqfilteredtbl where handle=h;
   };
@@ -84,7 +80,7 @@ callendofperiod:{[currp;nextp;data] (neg getallhandles[])@\:(`endofperiod;currp;
 extractschema:{[table]0#value table};
 
 subscribe:{[table;filters]
-  / single entry point for subscriptions: uses default list when no table name provided; routes to suball if filters null, otherwise subfiltered
+  / subscribe to a table (` for all), unfiltered if filters is `
   if[`~table;table:t];
   :$[`~filters;suball;subfiltered[;filters]]table;
   };

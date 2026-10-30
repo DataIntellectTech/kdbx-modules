@@ -21,7 +21,7 @@ jobs:(
   maxtime:`timestamp$();       / optional flag to disable job after timestamp
   disableonfail:`boolean$();   / if job fails will disable future runs
   startattime:`timestamp$();   / optional custom start time to run for the first time
-  description:()               / free text description, as TorQ's timer
+  description:()               / free text description
   );
 
 / job functions for adding new functions to be scheduled and executed
@@ -33,17 +33,16 @@ fpjobs:{[f;p] select from jobs where (f~/:func)&((),p)~/:params};
 addjob.custom:{[id;func;params;period;mode;opts]
   / fully configurable base version of adding a timer job to in memory table
   if[id in key .z.M.jobs;'"Cannot add id : ",(string id)," already exists in jobs"];
-  / as TorQ's .timer.rep, the period is a timespan and the mode one of the scheduling modes
+  / period must be a timespan and mode a scheduling mode
   if[-16h<>type period;'"period must be a timespan"];
   if[not (mode:`short$mode) in key nextstart;'"mode can only be one of ",-3!key nextstart];
   if[-11h=type func;get func];
   opts:addjob.opts,opts;
-  / as TorQ's timer check, a duplicate function and parameters is rejected unless dupcheck is off
+  / reject a duplicate function and parameters unless dupcheck is off
   if[opts[`dupcheck]&0<count fpjobs[func;params];'"duplicate timer already exists for function ",(-3!(func;params)),". Set dupcheck to 0b to force the value"];
   row:cols[.z.M.jobs]!(id;func;(),params;cp[];period;mode;0Np;0Np;0Np;0Np;0i;1b;`int$(opts`maxruns);opts`maxtime;opts`disableonfail;opts`startattime;opts`description);
-  / params is stored as a list so an atom parameter cannot type the column
   .z.M.jobs upsert 1!enlist row;
-  / first run as TorQ's timer (modes 1-3): an unset start runs now, a past start aligns forward on its period
+  / modes 1-3: a null start runs now, a past start aligns forward on its period
   st:(now:cp[])^opts`startattime;
   if[mode in 1 2 3h;:.[.z.M.jobs;(id;`nextstart);:;st+$[st<now;period*ceiling(now-st)%period;0D]]];
   $[null (r:.z.M.jobs[id])`startattime;
@@ -54,10 +53,10 @@ addjob.custom:{[id;func;params;period;mode;opts]
 
 addjob.default:addjob.custom[;;;;;()!()];
 addjob.simple:addjob.custom[;;();;1;()!()];
-/ one-off job at runtime, as TorQ's .timer.once
+/ one-off job at runtime
 addjob.once:{[jid;f;p;runtime]
   addjob.custom[jid;f;p;0D00:00:01;1;`startattime`maxruns!(runtime;1)];
-  / due at runtime as given, past or not, as TorQ's .timer.once
+  / due at runtime as given, past or not
   .z.m.jobs:update nextstart:runtime from jobs where id=jid;
   };
 
@@ -112,7 +111,7 @@ enable:{.[.z.M.enabled;();:;1b];};
 enablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:1b from jobs where id in ids};
 disablejobs:{[ids] ids:(),ids;.z.m.jobs:update status:0b from jobs where id in ids};
 deletejobs:{[ids] ids:(),ids;.z.m.jobs:delete from jobs where id in ids};
-/ remove jobs by function and parameters, as TorQ's .timer.removefunc
+/ remove jobs by function and parameters
 removefunc:{[f;p] .z.m.jobs:delete from jobs where (f~/:func)&((),p)~/:params};
 
 getactivejobs:{select from jobs where status};
@@ -126,7 +125,7 @@ nextruntime:-0Wp;
 execute:{$[count y; x . (),y; x@`];1b};
 
 jobfailed:{[id;dof;e]
-  / logs a failed job, as TorQ's timer does, and reports the failure to runandschedule
+  / log a failed job and return 0b to runandschedule
   if[debug;msg.err"Job start failed for job id : ",(string id)," with error: ",e];
   .z.m.logerr[`timer;"timer ID ",(string id)," failed with error ",e,$[dof;".  The function will not be rescheduled";""]];
   :0b;
@@ -142,10 +141,10 @@ runandschedule:{[id]
   r:upd.status[r]; / update status based on job status and configurable options
   @[.z.M.jobs;id;:;r];
   if[r[`status];upd.start[id]]; / update next start time after run
-  / as TorQ's timer, a job whose next run would fall after its end time is disabled
+  / disable a job whose next run falls after its maxtime
   r:.z.M.jobs id;
   if[(not null r`maxtime)&r[`maxtime]<r`nextstart;disablejobs id];
-  / next scan time is only recomputed after a run, as TorQ's timer does
+  / recompute the next scan time
   .z.m.nextruntime:exec min[nextstart] from jobs;
   };
 

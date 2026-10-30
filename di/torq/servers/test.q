@@ -1,7 +1,4 @@
-/ di.torq.servers live-peer integration test helpers (loaded by test.csv).
-/ recording mock deps + a genuinely separate spawned q peer: hopen to a port THIS process is
-/ listening on returns a pseudo-handle 0 and never exercises real disconnect/retry/cleanup, so we
-/ spawn a real peer to dial.
+/ test helpers: recording mock deps and a spawned q peer to connect to
 
 / --- recording mock dependencies ---
 logrows:([]lvl:`symbol$();ctx:`symbol$();msg:());
@@ -10,16 +7,12 @@ mocklog:`info`warn`error!(
   {[c;m]`logrows upsert(`warn;c;m)};
   {[c;m]`logrows upsert(`error;c;m)});
 
-/ timer mock: records (id;period;mode) for the wiring asserts AND captures each job's func by id, so a
-/ test can fire the retry cycle exactly as the real timer would (retry/cleanup are INTERNAL - not
-/ exported - so they are driven only via this captured callback).
+/ timer mock: records (id;period;mode) and captures each job's func by id so tests can fire it
 timercalls:([]id:`symbol$();period:`timespan$();mode:`long$());
 timerjobs:(`symbol$())!();
 mocktimer:enlist[`addjob]!enlist {[id;func;params;period;mode;opts] timerjobs[id]:func; `timercalls upsert (id;period;`long$mode);};
 
-/ handlers mock: records (event;name) with di.torq.handlers' register[event;phase;nm;pri;func] shape. it
-/ does NOT actually bind .z.pc - so the only cleanup path exercised here is the explicit retry->
-/ cleanup, tested in isolation from the auto .z.pc hook (which di.torq.handlers would install for real).
+/ handlers mock: records (event;name); does not bind .z.pc
 handlercalls:([]event:`symbol$();name:`symbol$());
 mockhandlers:`register`remove`list!(
   {[ev;ph;nm;pri;fn]`handlercalls upsert(ev;nm)};
@@ -35,8 +28,7 @@ QBIN:first system "readlink -f /proc/",(string .z.i),"/exe";
 isfree:{[p] not @[{hclose hopen x;1b};(`$":localhost:",string p;100);0b]};
 PEERPORT:0N; DEADPORT:0N; PEERPID:0N;
 
-/ an OS-assigned free port: a q started with -p 0W writes its port and exits before any connection is made,
-/ so the port can be bound again (no port picking: a port with no listener can still be unbindable)
+/ an OS-assigned free port, from a q started with -p 0W that writes its port and exits
 reserveport:{[]
   f:FIXDIR,"/port",string 1+count key hsym`$FIXDIR;
   (hsym`$FIXDIR,"/portprobe.q") 0: enlist "(hsym`$first .z.x) 0: enlist string system\"p\"; exit 0";
@@ -64,8 +56,7 @@ spawnpeer:{[] PEERPID::spawnat["";PEERPORT];};
 killpeer:{[] if[not null PEERPID;@[system;"kill ",string PEERPID;{}]]; PEERPID::0N; system "sleep 0.3";};
 
 setupfixture:{[]
-  / reserve two ports (peer + a never-listening dead one), then write a header'd process.csv
-  / phone book with self, the peer (otherproc), and a dead proctype.
+  / reserve a peer port and a dead port, then write process.csv with self, the peer and a dead proctype
   system "mkdir -p ",FIXDIR;
   PEERPORT::reserveport[];
   DEADPORT::reserveport[];
@@ -122,8 +113,7 @@ refreshregisters:{[]
   .servers.refreshattributes[];
   (b+1)=h"REGN"};
 
-/ build the deps dict di.torq would assemble: injectables + this process's config slice.
-/ discovery off, so startup dials process.csv directly (trackservers.q's own defaults are 1b).
+/ the deps dict di.torq would build, with discovery off so startup dials process.csv directly
 svrdeps:{[conns] `log`timer`handlers`proctype`procname`connections`processcsv`discoveryregister`connectionsfromdiscovery!(mocklog;mocktimer;mockhandlers;`selfproc;`selfinst;conns;FIXDIR,"/process.csv";0b;0b)};
 
 / withcreds is internal (nothing outside the module calls it), so the tests reach into the

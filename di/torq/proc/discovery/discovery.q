@@ -1,4 +1,4 @@
-/ di.torq.proc.discovery - TorQ's discovery service (code/processes/discovery.q) as a kdb-x module
+/ di.torq.proc.discovery - discovery service
 
 / subscriptions - handles to list of required proc types
 subs:(`int$())!()

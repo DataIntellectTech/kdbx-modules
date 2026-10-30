@@ -1,10 +1,10 @@
-/ di.torq.proc.idb - ported from TorQ's idb.q
+/ di.torq.proc.idb - intraday database
 / mounts the wdb's working directory so today's data can be queried before it reaches the hdb
 
 astz:{[x] $[11h=abs type x;x;`$(),x]}
 tolong:{[x] $[10h=abs type x;"J"$(),x;"j"$x]}
 
-/ force loads sym file; the size is only recorded once the load succeeds, so a failed read is retried
+/ force loads sym file, recording its size only on success
 loadsym:{[]
   .z.m.log[`info][`load;"loading the sym file"];
   @[{load x;.z.m.symsize:@[hcount;x;0]};.z.m.symfilepath;{.z.m.log[`error][`load;"failed to load sym file: ",(1_string .z.m.symfilepath)," error: ",x]}];
@@ -42,17 +42,16 @@ intradayreload:{[]
   .z.m.log[`info][`intradayreload;"IDB reload has been finished for partition: ",(string .z.m.currentpartition),". Time taken(ms): ",string .z.t-starttime];
   }
 
-/ checks if sym file has changed since last load of the IDB; hcount trapped as hdb/sym is absent until the wdb's first .Q.en
+/ checks if sym file has changed since last load of the IDB; a missing sym file counts as size 0
 symfilehaschanged:{[] .z.m.symsize<>@[hcount;.z.m.symfilepath;0]}
 
-/ checks if count of partitions has changed since last reload of the IDB. Records new partition count if changed.
-/ the default writedown method doesn't need db reloading as no new directory is being created there.
+/ checks if count of partitions has changed since last reload of the IDB, recording the new count; 0b for default writedown with one partition
 partitioncounthaschanged:{[]
   if[(1j~.z.m.partitionsize) and .z.m.writedownmode~`default;:0b];
   $[.z.m.partitionsize<>c:count key .z.m.idbdir;[.z.m.partitionsize:c;1b];0b]
   }
 
-/ this makes sure running "count trade" queries will return correct row count
+/ clear the partition row-count cache
 clearrowcountcache:{[] set[`.Q.pn;.Q.pt!(count .Q.pt)#()]}
 
 / reads savedir, hdbdir, the current partition and the writedown mode from the wdb
@@ -96,7 +95,7 @@ init:{[config;deps]
   .z.m.partitionsize:0;
   .z.m.log[`info][`init;"loading the db and the sym file first time"];
   loaddb[];
-  / use-loading compiles into a private namespace, so publish the IPC surface and query helpers at root
+  / publish the IPC surface and query helpers at root
   set[`.idb.intradayreload;intradayreload];
   set[`.idb.rollover;rollover];
   set[`maptoint;maptoint];

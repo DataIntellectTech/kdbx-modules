@@ -139,7 +139,7 @@ run,0,0,q,.test.mcdest:`:mergetesttmp/mcdest,1,1,destination partition directory
 run,0,0,q,.test.mcseg:`:mergetesttmp/mcseg,1,1,segment missing the sz column entirely
 run,0,0,q,.test.splay[.test.mcdest;([]px:enlist 1f;sz:enlist 10)],1,1,destination expects both px and sz
 run,0,0,q,.test.splay[.test.mcseg;([]px:enlist 2f)],1,1,segment only has px - sz is missing
-run,0,0,q,.test.mcerr:.[merge.mergebycol;((`quote;.test.cschema);.test.mcdest;.test.mcseg);{x}],1,1,call mergebycol once capturing the propagated error instead of letting it throw out of the test
+run,0,0,q,.test.mcerr:.[merge.mergebycol;((`quote;.test.cschema);.test.mcdest;.test.mcseg);{x}],1,1,call mergebycol capturing the propagated error
 true,0,0,q,10h=type .test.mcerr,1,1,mergebycol signalled rather than returning normally on the missing column
 true,0,0,q,"0<count .test.mcerr ss ""mcseg/sz""",1,1,the propagated error names the failing segment column path
 true,0,0,q,`error in exec fn from caplog,1,1,the failure is logged via logerr before it is re-signalled
@@ -184,7 +184,7 @@ run,0,0,q,.test.splay[.test.edest;([]px:`int$())],1,1,destination column typed i
 run,0,0,q,.test.splay[.test.eseg;([]px:1 2)],1,1,segment column typed long - the upsert will type-mismatch
 fail,0,0,q,merge.mergebypart[`$();.test.slash .test.edest;enlist .test.eseg],1,1,the upsert failure is signalled to the caller
 true,0,0,q,`error in exec fn from caplog,1,1,the upsert failure is logged as an error
-true,0,0,q,"any {0<count x ss ""failed to merge to""} each caplog`msg",1,1,the logged message names the failure clearly rather than being corrupted by a double string conversion
+true,0,0,q,"any {0<count x ss ""failed to merge to""} each caplog`msg",1,1,the logged message names the failure
 run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
 
 comment,,,,,,,mergehybrid merges under-limit partitions whole and over-limit ones column by column

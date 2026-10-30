@@ -1,9 +1,6 @@
-/ fixture helpers for di.torq.proc.wdb's sort-mode tests (proctypes sort and sortworker). Assumes cwd is the kdbx-modules repo root.
-/ Uses the REAL di.dbwrite with a recording mock log and a mock servers dep that hands out no handles -
-/ the sort tail's reload step is then a logged no-op, which is what we assert on, while the sort and the
-/ move (the parts that touch real data) run for real against a working partition built on disk here.
-/ Each scenario helper returns 1b only if every named check passes; the per-check dict is left in LAST so
-/ a failing row can be diagnosed with `show LAST`. Helpers live here because CSV fields cannot hold commas.
+/ fixture helpers for di.torq.proc.wdb's sort-mode tests (proctypes sort and sortworker), loaded from the repo root
+/ real di.dbwrite with a recording log and a servers mock that hands out no handles; sort and move run on disk
+/ each scenario returns 1b only if every check passes, leaving the per-check dict in LAST
 
 BASE:"/tmp/di_sort_k4unit";
 OSSYSCALL:`.m.di.0os.syscall;
@@ -12,8 +9,7 @@ PDATE:2026.01.05;
 chk:{[d] `LAST set d; all value d};
 errmsg:{[f] @[f;::;{x}]};
 
-/ 1b only if f throws AND the error names the expected reason - a bare `fail` row would also pass on an
-/ unrelated error (a fixture bug), proving nothing about the path under test
+/ 1b only if f throws an error naming the expected reason
 throws:{[f;s] r:errmsg f; (10h=type r) and 0<count r ss s};
 
 / --- mocks ---
@@ -33,12 +29,10 @@ mockservers:{[] `startup`getservers!(mockstartup;mockgetservers)};
 
 deps:{[] `log`timer`servers!(mocklog[];(`symbol$())!();mockservers[])};
 
-/ the legacy endofdaysort signature, default writedown mode
+/ the endofdaysort signature, default writedown mode
 tail:{[d;p;t] .m.di.0torq.0proc.0wdb.endofdaysort[d;p;t;`default;()!();(::);`part]};
 
-/ re-SET the recording tables rather than deleting their rows: arg holds a symbol for a getservers
-/ call and a config dict for a startup one, and a delete leaves behind whatever type the column
-/ narrowed to - after a scenario that only recorded symbols, the next startup upsert throws 'type
+/ re-set the recording tables rather than deleting rows, so column types reset
 resetmocks:{[]
   `calls set ([]lvl:`symbol$();ctx:`symbol$();msg:());
   `scalls set ([]fn:`symbol$();arg:());
@@ -59,12 +53,11 @@ setupfixture:{[]
   setenv[`TORQXAPPCONFIG;BASE,"/appconfig"];
   };
 
-/ a deliberately UNSORTED table, so a passing sort assertion cannot be an accident of the input
+/ an unsorted table
 rawtrade:{[] ([]time:PDATE+0D12:03 0D09:01 0D15:30 0D10:00;sym:`ibm`msft`ibm`msft;price:4?100f)};
 rawquote:{[] ([]time:PDATE+0D14:00 0D08:30;sym:`ibm`msft;bid:2?10f)};
 
-/ write one table into the working partition, enumerated against the hdb sym file exactly as the wdb
-/ does - so the column on disk is an enum and sorting it needs the root `sym` the module reloads
+/ write one table into the working partition, enumerated against the hdb sym file
 writepart:{[dir;date;t;data]
   p:` sv (.Q.par[hsym `$dir;date;t];`);
   p set .Q.en[hsym `$hdbdir[];data];
@@ -82,7 +75,7 @@ makepartition:{[]
 / the on-disk hdb partition for a table, read back
 hdbtable:{[t] get hsym `$hdbdir[],"/",(string PDATE),"/",string t};
 
-/ sorted by sym then time, di.dbwrite's default (TorQ's config/sort.csv)
+/ sorted by sym then time, di.dbwrite's default
 symtimesorted:{[t] t:update `#sym from select from t; t~update `#sym from `sym`time xasc t};
 
 partitiontables:{[dir] asc key hsym `$dir,"/",string PDATE};
@@ -90,7 +83,7 @@ partitiontables:{[dir] asc key hsym `$dir,"/",string PDATE};
 config:{[] `savedir`hdbdir`hdbtypes`rdbtypes`gatewaytypes`reloadorder`permitreload`gc`eodwaittime!
   ("wdb";"hdb";`hdb;`rdb;`gateway;`hdb`rdb;1b;0b;0)};
 
-/ wire the module against a fresh fixture, returning nothing - every scenario starts here
+/ wire the module against a fresh fixture
 freshwire:{[cfg]
   resetmocks[];
   makepartition[];
@@ -119,19 +112,18 @@ tailok:{[]
     logged[`info;`reloadsymfile])
   };
 
-/ the sym column survives the move as a resolvable enum - the point of enumerating against hdb/sym
+/ the sym column survives the move as an enum that resolves
 enumintact:{[]
   freshwire config[];
   tail[savedir[];PDATE;`trade`quote];
   tr:hdbtable`trade;
-  / read back from disk the column is an ENUM (20h), not a symbol vector - value resolves it
-  / against the root sym the module reloaded, which is the property under test
+  / the column on disk is an enum (20h); value resolves it against root sym
   chk `enumerated`resolves!(
     20h=type tr`sym;
     `ibm`ibm`msft`msft~value tr`sym)
   };
 
-/ no table list means "whatever is in the working partition" - what an operator re-running a sort wants
+/ no table list sorts whatever is in the working partition
 discovertables:{[]
   freshwire config[];
   tail[savedir[];PDATE;`];
@@ -140,7 +132,7 @@ discovertables:{[]
     symtimesorted hdbtable`trade)
   };
 
-/ an empty savedir on the wire means "use the one I was configured with"
+/ an empty savedir uses the configured one
 defaultsavedir:{[]
   freshwire config[];
   tail[`;PDATE;`];
@@ -157,7 +149,7 @@ workerssetting:{[]
   -2i~r
   };
 
-/ a table already in the hdb partition aborts the whole move, as legacy - nothing is overwritten
+/ a table already in the hdb partition aborts the whole move; nothing is overwritten
 nooverwrite:{[]
   freshwire config[];
   / plant a different trade table in the hdb partition first
@@ -207,9 +199,7 @@ idbreloadorder:{[]
     not loggedlike[`warn;"*is neither*"])
   };
 
-/ run f with di.os's shell calls silenced: a deliberately failing mv writes to stderr, which q does
-/ not capture, so the suite prints it even though the failure is the point. The module's own error
-/ log still fires, which is what the check below asserts.
+/ run f with di.os's shell calls silenced, so a failing mv's stderr is not printed
 quietshell:{[f]
   o:get OSSYSCALL;
   OSSYSCALL set {system x," 2>/dev/null"};
@@ -281,7 +271,7 @@ initpublishes:{[]
 
 NEXTPORT:25931;
 
-/ a sortworker is the wdb module in sort mode with every connection type emptied, as di/torq/settings/sortworker.q does
+/ a sortworker is the wdb module in sort mode with no connection types, as di/torq/settings/sortworker.q
 WCFG:"((enlist`mode)!enlist`sort),`tickerplanttypes`hdbtypes`rdbtypes`idbtypes`gatewaytypes`sorttypes`sortworkertypes`wdbtypes!8#enlist`symbol$()";
 workerinit:{[cfg] "w.init[(",WCFG,"),",cfg,";`log`timer`servers!(`info`warn`error!(lg`info;lg`warn;lg`error);(`symbol$())!();`startup`getservers!({[c]};{[pt] ([]w:`int$())}))];"};
 workerlog:("lg:{[l;c;m] `LOGS upsert `lvl`ctx`msg!(l;c;m);};";"LOGS:([]lvl:`symbol$();ctx:`symbol$();msg:());";"w:use`di.torq.proc.wdb;");
@@ -326,7 +316,7 @@ fanoutok:{[]
   r
   };
 
-/ a worker sorts to its own sortcsv, as legacy's did
+/ a worker sorts to its own sortcsv
 workersortcsv:{[]
   system "mkdir -p ",BASE,"/appconfig";
   (hsym `$BASE,"/appconfig/sym.csv") 0: ("tabname,att,column,sort";"default,,sym,1");

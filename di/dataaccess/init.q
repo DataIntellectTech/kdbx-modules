@@ -1,7 +1,4 @@
-/ di.dataaccess - data access / query normalisation layer over the gateway.
-/ Two entry points over one shared routing + scatter/gather + request-lifecycle core:
-/   getdata / getdatafull - typed, date-normalising, map-reducing (TorqX)
-/   execquery             - arbitrary query STRING, time-sharded, caller-supplied joinfn (kdbx)
+/ time-sharded query layer over the gateway: getdata/getdatafull (typed) and execquery (query string)
 
 \l ::dataaccess.q
 

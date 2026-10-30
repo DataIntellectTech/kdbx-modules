@@ -11,7 +11,7 @@ discovery:enlist`                   / discovery services to use if not in proces
 enabled:1b                          / track servers
 hopentimeout:2000                   / hopen timeout in milliseconds
 retry:0D00:05                       / how often to retry dead connections; 0D means never
-tracknontorqprocess:1b              / track and register non-TorQ processes
+tracknontorqprocess:1b              / track and register processes outside the framework
 debug:0b                            / log each connection attempt
 
 / server records

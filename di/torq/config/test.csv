@@ -25,23 +25,23 @@ comment,,,,,,,parsefile - parse one flat .q settings file into a dict (.toml del
 true,0,0,q,"1~cfg.parsefile[(TD,""builtin/default.q"")]`diconfiga",1,1,parsefile reads a flat name:value .q file into a dict
 true,0,0,q,"2=count cfg.parsefile[(TD,""builtin/default.q"")]",1,1,parsefile returns every setting in the file
 true,0,0,q,"0=count cfg.parsefile[(TD,""nope/default.q"")]",1,1,parsefile returns an empty dict for a missing .q file
-true,0,0,q,"(`a`b!1 2)~cfg.parsefile[(TD,""skip/default.q"")]",1,1,parsefile skips blank/comment/no-colon lines and returns only valid pairs (no-colon line must not crash the split)
-comment,,,,,,,parsefile - .toml integration with the reconciled di.util.toml (existence guarded first; existing .toml delegated)
-true,0,0,q,"0=count cfg.parsefile[(TD,""nope/absent.toml"")]",1,1,a MISSING .toml contributes nothing and does NOT require di.util.toml (existence checked before delegation)
+true,0,0,q,"(`a`b!1 2)~cfg.parsefile[(TD,""skip/default.q"")]",1,1,parsefile skips blank/comment/no-colon lines and returns only valid pairs
+comment,,,,,,,parsefile - .toml files via di.util.toml
+true,0,0,q,"0=count cfg.parsefile[(TD,""nope/absent.toml"")]",1,1,a MISSING .toml contributes nothing and does not require di.util.toml
 true,0,0,q,"1j~(cfg.parsefile[(TD,""toml/present.toml"")])`a",1,1,an EXISTING .toml now parses by delegating to di.util.toml (present on QPATH)
 true,0,0,q,"-7h=type (cfg.parsefile[(TD,""toml/present.toml"")])`a",1,1,the .toml integer came back a long - di.util.toml's typed parse flows through config.parsefile
-comment,,,,,,,cascade - merged flat dict over two roots x default/proctype/procname (name-major; .toml>.q within a tier)
+comment,,,,,,,cascade - merged flat dict over two roots x default/proctype/procname
 true,0,0,q,"100~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdbnofile])`diconfiga",1,1,within a name the later (app) root overrides the builtin root
 true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdbnofile])`diconfigb",1,1,name-major: builtin proctype beats app default (would be 5 under root-major)
 true,0,0,q,"999~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb1])`diconfiga",1,1,name-major: the procname tier (app/rdb1) wins over every less-specific name
 true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb1])`diconfigb",1,1,a key absent from the procname tier keeps its most-specific set value (builtin proctype)
 true,0,0,q,"7~(cfg.cascade[(TD,""builtin"");(TD,""app"");`pptp;`rdb;`rdb1])`diconfigc",1,1,parentproctype: its tier is read (app/pptp)
-true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");`pptp;`rdb;`rdb1])`diconfigb",1,1,parentproctype: the proctype tier beats it (builtin/rdb 10 over app/pptp 3) as TorQ default->parentproctype->proctype->procname
+true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");`pptp;`rdb;`rdb1])`diconfigb",1,1,parentproctype: the proctype tier beats it (builtin/rdb 10 over app/pptp 3)
 true,0,0,q,"100~(cfg.cascade[(TD,""builtin"");(TD,""app"");`pptp;`rdb;`rdbnofile])`diconfiga",1,1,parentproctype: it beats default (app/default 100 stays; pptp sets no diconfiga)
 fail,0,0,q,"cfg.cascade[(TD,""builtin"");(TD,""app"");""pptp"";`rdb;`rdb1]",1,1,cascade rejects a non-symbol parentproctype
 true,0,0,q,"not (`) in key cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb1]",1,1,the sentinel merge key is dropped from the returned dict
 true,0,0,q,"0=count cfg.cascade[(TD,""nope1"");(TD,""nope2"");(`);`rdb;`rdb1]",1,1,an all-missing cascade resolves to an empty dict
-true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`default])`diconfigb",1,1,dedup: procname=`default must NOT re-apply the default tier last and override proctype (would be 5 without distinct)
+true,0,0,q,"10~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`default])`diconfigb",1,1,dedup: procname=`default must NOT re-apply the default tier last and override proctype
 true,0,0,q,"100~(cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;`rdb])`diconfiga",1,1,dedup: proctype~procname resolves correctly (each tier once)
 fail,0,0,q,"cfg.cascade[(TD,""builtin"");(TD,""app"");(`);`rdb;(`)]",1,1,cascade rejects a null procname (else it resolves a bogus root/.q tier)
 fail,0,0,q,"cfg.cascade[(TD,""builtin"");(TD,""app"");(`);(`);`rdb1]",1,1,cascade rejects a null proctype
@@ -73,11 +73,11 @@ true,0,0,q,"""new""~(cfg.overrideconfig[seccfg;enlist[`.replay.dir]!enlist ""new
 true,0,0,q,"7~(cfg.overrideconfig[seccfg;enlist[`replay.first]!enlist enlist""7""])[`replay;`first]",1,1,section.key (no leading dot) works and parses into the key's type
 true,0,0,q,"`xx`yy~(cfg.overrideconfig[seccfg;enlist[`.replay.tabs]!enlist (""xx"";""yy"")])[`replay;`tabs]",1,1,a vector key of a section takes several values
 true,0,0,q,"seccfg~cfg.overrideconfig[seccfg;`.replay.nope`.rows.x`.replay.a.b!3#enlist enlist""1""]",1,1,an unknown section key or a non-dict section or a deeper name is skipped
-comment,,,,,,,getconfig / getconfigfile - TorQ's .proc.getconfig levels over the two roots (app before builtin)
+comment,,,,,,,getconfig / getconfigfile - levels over the two roots (app before builtin)
 run,0,0,q,"(hsym each `$TD,/:(""app/proc.csv"";""builtin/proc.csv"";""builtin/only.csv"")) 0:\: enlist ""a,b""",1,1,proc.csv in both roots; only.csv in builtin only
 true,0,0,q,"(enlist`$TD,""app/proc.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";0]",1,1,level 0: the app file when it exists
 true,0,0,q,"(enlist`$TD,""builtin/only.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";0]",1,1,level 0: the builtin file when the app one is missing
-true,0,0,q,"(enlist`$TD,""builtin/none.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""none.csv"";0]",1,1,level 0: the builtin path even when neither exists (as legacy)
+true,0,0,q,"(enlist`$TD,""builtin/none.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""none.csv"";0]",1,1,level 0: the builtin path even when neither exists
 true,0,0,q,"(enlist`$TD,""builtin/proc.csv"")~cfg.getconfig[TD,""builtin"";"""";""proc.csv"";0]",1,1,level 0: an empty approot is an unset app root
 true,0,0,q,"(`$TD,/:(""app/proc.csv"";""builtin/proc.csv""))~cfg.getconfig[TD,""builtin"";TD,""app"";""proc.csv"";1]",1,1,level 1: the existing app file then the builtin file
 true,0,0,q,"(enlist`$TD,""builtin/only.csv"")~cfg.getconfig[TD,""builtin"";TD,""app"";""only.csv"";1]",1,1,level 1: a missing app file is left out

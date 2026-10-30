@@ -1,6 +1,5 @@
-/ fixture helpers for di.torq.proc.wdb's end-to-end tests. Assumes cwd is the kdbx-modules repo root.
-/ A spawned q process answers .sub.subscribe as a segmented tickerplant, found through a real di.torq.servers;
-/ everything else is mocked.
+/ fixture helpers for di.torq.proc.wdb's end-to-end tests, loaded from the repo root
+/ a spawned q answers .sub.subscribe as a segmented tickerplant, found through a real di.torq.servers; the rest is mocked
 
 BASE:"/tmp/di_wdb_k4unit";
 TPPORT:25961;
@@ -158,7 +157,7 @@ postreplay:{[]
   (last POST)~today[]
   };
 
-/ a failing postreplay propagates out of end of day after the move, as TorQ's wdb: no reload, the partition does not advance
+/ a failing postreplay propagates out of end of day after the move: no reload, the partition does not advance
 failedpostreplay:{[]
   freshwdb cfg[],(enlist`postreplay)!enlist {[d;p] '"boom"};
   feed[];
@@ -201,7 +200,7 @@ pattrcheck:{[]
   loggedlike[`error;"default table not defined in sort.csv*"]
   };
 
-/ di.timer's addjob raises on an id that already exists, so a second init must not collide
+/ a second init does not collide on timer job ids
 initidempotent:{[]
   `calls set 0#calls;
   system "rm -rf ",BASE,"/wdb ",BASE,"/hdb";
@@ -216,7 +215,7 @@ initidempotent:{[]
   chk `registered`reinitok`noduplicate!(added;again;1=sum tjobs=`wdbsave)
   };
 
-/ the flush job reschedules from the end of the previous run (di.timer mode 3), as TorQ's .timer.repeat does
+/ the flush job reschedules from the end of the previous run (di.timer mode 3)
 savejobmode:{[]
   `tmodes set (`symbol$())!`short$();
   d:recdeps[];
@@ -226,7 +225,7 @@ savejobmode:{[]
   };
 
 numtabdefault:{[]
-  / legacy wdb/writedown.q defaults numtab to `quote`trade!10000 50000, and replaynumtab follows it
+  / numtab defaults to `quote`trade!10000 50000 and replaynumtab follows it
   freshwdb (cfg[] _ `numtab) _ `replaynumtab;
   chk `quote`trade`other`replayfollows!(
     10000=.m.di.0torq.0proc.0wdb.maxrows`quote;
@@ -236,8 +235,7 @@ numtabdefault:{[]
   };
 
 endofperiodstub:{[]
-  / legacy shipped a logging endofperiod so an stp's period roll does not raise in the wdb
-  / a segmented tickerplant sends (`endofperiod;curr;next;data)
+  / endofperiod logs a segmented tickerplant's (`endofperiod;curr;next;data)
   freshwdb cfg[];
   r:@[{(1b;`. [`endofperiod] . x)};(09:00;10:00;enlist[`p]!enlist 10:00);{(0b;x)}];
   chk `published`callable`logged!(
@@ -323,11 +321,11 @@ partlimitpassed:{[]
   freshwdb cfg[],(enlist`partlimit)!enlist 7;
   set7:.m.di.0merge.partlimit;
   freshwdb cfg[];
-  / compare against di.merge's own default rather than a literal, so the two cannot drift apart
+  / compare against di.merge's own default
   chk `passed`defaulted!(7=set7;.m.di.0merge.partlimitdefault=.m.di.0merge.partlimit)
   };
 
-/ legacy called root `reload` on any proctype in reloadorder, not just hdb/rdb/idb
+/ any other proctype in reloadorder gets root reload
 customreload:{[]
   `PEERS set enlist[`custom]!enlist enlist h:startpeer`custom;
   freshwdb cfg[],(enlist`reloadorder)!enlist `custom;
@@ -364,7 +362,7 @@ syncreload:{[]
   r
   };
 
-/ tablelist[] orders by bytes from tabsizes, so a partitioned writedown must populate it too
+/ a partitioned writedown populates tabsizes
 tabsizestracked:{[]
   freshwdb cfg[],`writedownmode`mergemode`numrows!(`partbyattr;`part;1);
   feed[];
@@ -377,7 +375,7 @@ tabsizestracked:{[]
     `trade~first (mv`tablelist)[])
   };
 
-/ tabsizes is populated in every mode now, so end of day has to clear it in every mode
+/ end of day clears tabsizes in every mode
 tabsizescleared:{[]
   freshwdb cfg[],`writedownmode`mergemode`numrows!(`partbyattr;`part;1);
   feed[];
@@ -387,7 +385,7 @@ tabsizescleared:{[]
   chk `wastracked`nowempty!(0<before;0=count mv`tabsizes)
   };
 
-/ a deployment with no gateway is normal, so an absent gateway must not log an error every eod
+/ an absent gateway is not logged as an error at eod
 nogatewayquiet:{[]
   freshwdb cfg[];
   feed[];
@@ -395,7 +393,7 @@ nogatewayquiet:{[]
   chk `noerror`saidso!(not loggedlike[`error;"*gateway*"];loggedlike[`info;"no gateway detected*"])
   };
 
-/ legacy exposed getpartition as an overridable setting, so a config value must win over the default
+/ a config getpartition replaces the default
 getpartitionoverride:{[]
   freshwdb cfg[],(enlist`getpartition)!enlist {[] 2001.09.11};
   chk `used`notthedefault!(2001.09.11~(mv`getpartition)[];not 2001.09.11~(mv`defaultgetpartition)[])

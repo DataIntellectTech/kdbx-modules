@@ -15,10 +15,7 @@ servers:([serverid:`u#`int$()]
 serverid:0i;
 
 init:{[deps]
-  / wire the injected logger - required, no silent fallback. deps: a dict with a `log key
-  / holding a binary `info`warn`error dict of {[c;m]} loggers (from di.util.log or hand-rolled).
-  / no adaptation here, so a monadic kx.log instance must be wrapped first.
-  / e.g. di.serverselect.init[enlist[`log]!enlist logdep]
+  / wire the required `log dep (`info`warn`error dict of {[c;m]})
   if[99h<>type deps;
     '"di.serverselect: deps must be a dict with `log key"];
   if[not `log in key deps;
@@ -39,8 +36,7 @@ nextserverid:{
   };
 
 updatestats:{[sid]
-  / internal - update last-access timestamp and hit count for a single server
-  / keyed on serverid (unique) rather than handle, which may be shared by multiple servers
+  / update last-access timestamp and hit count for a server id
   .z.m.servers:update lastp:.z.p,hits:hits+1i from servers where serverid=sid;
   };
 
@@ -95,9 +91,7 @@ addserversfromtable:{[proctypes;conntable]
   };
 
 attributematch:{[req;avail]
-  / compute match result for each key in req against what avail advertises
-  / returns dict of attrname!(complete_match_bool;matched_values) for each required attribute key
-  / keys present in req but absent in avail return (0b;())
+  / per required attribute: (complete match;matched values) against avail; (0b;()) if absent
   vals:key[req] inter key avail;
   notpresent:noval!(count noval:key[req] except key avail)#enlist(0b;());
   :notpresent,vals!{($[0>type y;x~y;all x in y];(x,()) inter y,())}'[req vals;avail vals];
@@ -148,12 +142,9 @@ gethandlebytype:getserverbytype[;`handle;];
 gethpbytype:getserverbytype[;`hpup;];
 
 getserverids:{[att]
-  / return server IDs matching a servertype list or attribute requirement dictionary
-  / att: symbol list of servertypes, or dict of attribute requirements (optionally keyed on `servertype)
-  / dispatch the symbol-list path to getserveridsbytype and the dict path to getserveridstype
+  / server ids for a servertype list, or a dict of attribute requirements
   if[99h<>type att; :getserveridsbytype att];
-  / validate attribute-requirement values are atoms or simple vectors (control keys excepted);
-  / a nested/general-list value (type 0h) would otherwise crash the cross matcher with a raw 'type
+  / attribute requirement values must be atoms or simple vectors
   reqkeys:key[att] except `servertype`attributetype`besteffort;
   if[count badkeys:reqkeys where 0h=type each att reqkeys;
     .z.m.logerr[`getserverids;err:"di.serverselect: attribute requirement values must be atoms or simple vectors; nested/mixed for: ",", " sv string badkeys];
@@ -194,8 +185,7 @@ getserveridsbytype:{[att]
   };
 
 getserveridstype:{[att;typ]
-  / internal - filter active servers by servertype and attribute requirements
-  / resolves besteffort and attributetype control keys then dispatches to cross or independent matching
+  / internal - active servers matching servertype and attribute requirements, cross or independent
   besteffort:1b;
   attype:`cross;
   svrs:$[typ=`all;

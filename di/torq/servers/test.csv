@@ -30,11 +30,11 @@ true,0,0,q,"warnlogged[""failed to open connection""]",1,1,the failed dial was l
 comment,,,,,,,gethandlebytype - a genuinely live remote handle
 run,0,0,q,h:svc.gethandlebytype[`otherproc;`any],1,1,get a handle to the peer
 true,0,0,q,"2=h ""1+1""",1,1,the handle is a live remote connection to a separate process
-comment,,,,,,,root .servers.gethpbytype over SERVERS (trackservers.q:97-107)
+comment,,,,,,,root .servers.gethpbytype over SERVERS
 true,0,0,q,".servers.gethpbytype[`otherproc;`any]~first exec hpup from .servers.SERVERS where proctype=`otherproc",1,1,gethpbytype returns the live otherproc row's hpup
-true,0,0,q,"(`symbol$())~.servers.gethpbytype[`deadproc;`any]",1,1,a proctype with no live server gives an empty list after the reopen attempt (as legacy r[serverval])
+true,0,0,q,"(`symbol$())~.servers.gethpbytype[`deadproc;`any]",1,1,a proctype with no live server gives an empty list after the reopen attempt
 fail,0,0,q,".servers.gethpbytype[`otherproc;`nosuch]",1,1,an unknown selection signals
-true,0,0,q,".servers.gethandlebytype[`otherproc;`any]~first exec w from .servers.SERVERS where proctype=`otherproc",1,1,root gethandlebytype (legacy getserverbytype[;`w;]) returns the live otherproc handle
+true,0,0,q,".servers.gethandlebytype[`otherproc;`any]~first exec w from .servers.SERVERS where proctype=`otherproc",1,1,root gethandlebytype returns the live otherproc handle
 comment,,,,,,,cleanup + retry recover an ungraceful kill
 run,0,0,q,killpeer[],1,1,kill the peer ungracefully (handlers are mocked so no auto .z.pc fires)
 run,0,0,q,"@[{h ""1+1""};();{[e]e}]",1,1,touch the dead handle so kdb+ drops it from .z.W (protected - expected to error)
@@ -45,7 +45,7 @@ run,0,0,q,".servers.connectcustom:{[r] `ccrows set r}",1,1,record what retryrows
 run,0,0,q,firejob[`serversretry],1,1,fire retry again - should reconnect now a peer is listening
 true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
 true,0,0,q,(enlist`otherinst)~exec procname from ccrows,1,1,retryrows passed the reconnected row to .servers.connectcustom
-comment,,,,,,,addh and the addprocscustom hook (trackservers.q:130-134; 244-247)
+comment,,,,,,,addh and the addprocscustom hook
 true,0,0,q,addhpeer[],1,1,addh opens a working handle to the peer and stores it in SERVERS
 fail,0,0,q,".servers.addh `$"":localhost:"",string DEADPORT",1,1,addh signals when nothing is listening
 true,0,0,q,addprocshook[],1,1,addprocs calls .servers.addprocscustom with the rows it added and the procs
@@ -72,7 +72,7 @@ run,0,0,q,svc.startup[svrdeps[`tpproc]],1,1,startup while discovery is down - th
 true,0,0,q,0=count svc.getservers[`discovery],1,1,discovery is not live after startup
 run,0,0,q,spawndisc[],1,1,bring up the tpproc peer then discovery
 true,0,0,q,svc.waitfortype[`tpproc;3000;200],1,1,waitfortype reaches discovery and connects to the tpproc it names
-true,0,0,q,refreshregisters[],1,1,refreshattributes sends one register to each live discovery service (trackservers.q:255-258)
+true,0,0,q,refreshregisters[],1,1,refreshattributes sends one register to each live discovery service
 comment,,,,,,,retry periods from toml
 run,0,0,q,"svc.init[svrdeps[`otherproc],`retry`discoveryretry!(""0D00:00:10"";10)]",1,1,retry as a string and discoveryretry as seconds
 true,0,0,q,"(0D00:00:10;0D00:00:10)~(.servers.RETRY;.servers.DISCOVERYRETRY)",1,1,both become timespans

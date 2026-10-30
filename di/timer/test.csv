@@ -123,7 +123,7 @@ true,0,0,q,(enlist`timer)~exec ctx from caplog where fn=`error,1,,only the faili
 true,0,0,q,not .m.di.0timer.jobs[`testbad][`status],1,,the failing job is disabled
 true,0,0,q,.m.di.0timer.jobs[`testgood][`status],1,,the healthy job stays enabled
 
-comment,,,,,,,a job's next run past its maxtime disables it before that run (as TorQ's timer checks the next run against the period end)
+comment,,,,,,,a job's next run past its maxtime disables it before that run
 run,0,0,q,.test.dt2:0,1,,run counter
 run,0,0,q,timer.addjob.custom[`dt2;{.test.dt2+:1};();0D00:00:10;1;(enlist`maxtime)!enlist 2025.03.03D12:00:15.000],1,,10s job ending at 12:00:15 - first run due now (12:00:00)
 run,0,0,q,.m.di.0timer.runandschedule[`dt2],1,,first run (next due 12:00:10)
@@ -162,7 +162,7 @@ run,0,0,q,"timer.removefunc[{x+1};()]",1,,removefunc on a function that is not s
 true,0,0,q,.test.n0=count timer.getalljobs[],1,,and removes nothing
 fail,0,0,q,"timer.addjob.once[`rfx;{x};();2025.03.03D11:00:00.000]",1,,once rejects a job id that already exists
 
-comment,,,,,,,a job added after the jobs table has emptied still runs (D-T3)
+comment,,,,,,,a job added after the jobs table has emptied still runs
 run,0,0,q,timer.deletejobs exec id from timer.getalljobs[],1,,empty the jobs table
 run,0,0,q,.m.di.0timer.main[],1,,a scheduler tick on the empty table
 run,0,0,q,.test.dt3:0,1,,run counter
@@ -180,13 +180,13 @@ run,0,0,q,"timer.setcp[{2025.03.04D00:00:11.000}];.m.di.0timer.main[]",1,,the fi
 true,0,0,q,1=.test.n3,1,,the new job runs
 run,0,0,q,timer.setcp[{2025.03.03D12:00:00.000}],1,,restore the test clock
 
-comment,,,,,,,round 2 - shared simulated clock: each case starts a day later than the last so the scheduler's next scan time is always due
+comment,,,,,,,simulated clock: each case starts a day after the last
 run,0,0,q,".test.clk:2025.04.01D09:00;timer.setcp[{.test.clk}]",1,,a clock the tests move
 run,0,0,q,".test.fresh:{timer.deletejobs exec id from timer.getalljobs[];.test.clk+:1D;.test.t0::.test.clk;.test.ev::()}",1,,empty the table and start a new day
 run,0,0,q,".test.job:{.test.ev,:.test.clk}",1,,a job that records when it ran
 run,0,0,q,".test.sim:{[n] do[n;.test.clk+:0D00:00:01;.m.di.0timer.main[]];`second$.test.ev-.test.t0}",1,,tick n seconds; run times relative to the case start
 
-comment,,,,,,,mode range: a mode outside the nextstart modes is rejected and not stored (legacy timer.q:38 checks nextsch)
+comment,,,,,,,mode range: a mode outside the nextstart modes is rejected and not stored
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,"timer.addjob.custom[`okjob;.test.job;();0D00:00:10;1h;()!()]",1,,a healthy job
 fail,0,0,q,"timer.addjob.custom[`bad0;{8};();0D00:00:10;0h;()!()]",1,,mode 0h is rejected
@@ -194,31 +194,31 @@ fail,0,0,q,"timer.addjob.custom[`bad9;{9};();0D00:00:10;9h;()!()]",1,,mode 9h is
 true,0,0,q,"not any `bad0`bad9 in exec id from timer.getalljobs[]",1,,the rejected jobs are not stored
 true,0,0,q,"0<count .test.sim 12",1,,the existing job keeps running
 
-comment,,,,,,,period is a timespan, as legacy .timer.repeat: an integer period is rejected and not stored
+comment,,,,,,,period is a timespan: an integer period is rejected and not stored
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,"timer.addjob.custom[`okjob;.test.job;();0D00:00:10;1h;()!()]",1,,a healthy job
 fail,0,0,q,"timer.addjob.custom[`intper;{10};();10;1h;()!()]",1,,an integer period is rejected
 true,0,0,q,"not `intper in exec id from timer.getalljobs[]",1,,the rejected job is not stored
 true,0,0,q,"0<count .test.sim 12",1,,the existing job keeps running
 
-comment,,,,,,,first run as legacy timer.q:39: a null start runs now; a past start aligns forward on its period (no catch-up burst)
+comment,,,,,,,first run: a null start runs now; a past start aligns forward on its period (no catch-up burst)
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,"timer.addjob.custom[`snull;.test.job;();0D00:00:10;1h;()!()]",1,,null start
-true,0,0,q,"(00:00:01 00:00:11 00:00:21)~.test.sim 30",1,,legacy run times for a null start (differential case start_null)
+true,0,0,q,"(00:00:01 00:00:11 00:00:21)~.test.sim 30",1,,run times for a null start
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,"timer.addjob.custom[`spast;.test.job;();0D00:00:10;1h;(enlist`startattime)!enlist .test.clk-0D00:00:25]",1,,start 25s in the past
-true,0,0,q,"(00:00:06 00:00:16 00:00:26)~.test.sim 30",1,,legacy run times for a past start (differential case start_past)
+true,0,0,q,"(00:00:06 00:00:16 00:00:26)~.test.sim 30",1,,run times for a past start
 
-comment,,,,,,,dupcheck on function plus parameters, as legacy timer.q:29-32 (repeat and once default it on)
+comment,,,,,,,dupcheck on function plus parameters
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,".test.dupf:{x};timer.addjob.custom[`dup1;.test.dupf;enlist 1;0D00:00:10;1h;()!()]",1,,a job on .test.dupf with parameter 1
 fail,0,0,q,"timer.addjob.custom[`dup2;.test.dupf;enlist 1;0D00:00:10;1h;(enlist`dupcheck)!enlist 1b]",1,,same function and parameters with dupcheck on is rejected
 true,0,0,q,"not `dup2 in exec id from timer.getalljobs[]",1,,and not stored
 run,0,0,q,"timer.addjob.custom[`dup3;.test.dupf;enlist 1;0D00:00:10;1h;(enlist`dupcheck)!enlist 0b]",1,,with dupcheck off the duplicate is allowed
 run,0,0,q,"timer.addjob.custom[`dup4;.test.dupf;enlist 2;0D00:00:10;1h;(enlist`dupcheck)!enlist 1b]",1,,other parameters are not a duplicate
-fail,0,0,q,"timer.addjob.custom[`dup5;.test.dupf;enlist 1;0D00:00:10;1h;()!()]",1,,dupcheck is on by default as legacy repeat/once
+fail,0,0,q,"timer.addjob.custom[`dup5;.test.dupf;enlist 1;0D00:00:10;1h;()!()]",1,,dupcheck is on by default
 
-comment,,,,,,,description, as legacy's timer description column
+comment,,,,,,,description column
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,"timer.addjob.custom[`described;{11};();0D00:00:10;1h;(enlist`description)!enlist ""flush the buffers""]",1,,a job with a description
 true,0,0,q,"""flush the buffers""~first exec description from timer.getalljobs[] where id=`described",1,,the description is stored

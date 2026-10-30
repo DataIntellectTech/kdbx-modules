@@ -114,8 +114,8 @@ run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`quote",1,,
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,res[`filts][0]~enlist enlist(>;`bid;50f),1,, test symbols are listed under filters
 
-run,0,0,q,"tconds:([tabname:enlist`trade]filters:enlist""price>10"";columns:enlist""sym,price"")",1,,conditions in TorQ's tabname/filters/columns shape
-run,0,0,q,res:h(`pubsub.subscribe;`trade;tconds),1,,subscribe trade with TorQ-shaped conditions
+run,0,0,q,"tconds:([tabname:enlist`trade]filters:enlist""price>10"";columns:enlist""sym,price"")",1,,conditions keyed on tabname with filters and columns
+run,0,0,q,res:h(`pubsub.subscribe;`trade;tconds),1,,subscribe trade with tabname-keyed conditions
 run,0,0,q,res:h"select from .m.di.0pubsub.reqfilteredtbl where table=`trade",1,,check filtered table for the subscription
 run,0,0,q,res:select from res where handle=clt,1,,check filtered table for the subscription
 true,0,0,q,(enlist enlist enlist(>;`price;10))~res`filts,1,,filters column is parsed into the where clause

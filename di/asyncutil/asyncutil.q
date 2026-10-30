@@ -11,7 +11,7 @@ deferred:{[handles;query]
   (res[;0];res[;1])}
 
 postback:{[handles;query;postback]
-  / for sending asynchronous postback message to a list of handles via async broadcast where the message is wrapped in the function postback
+  / async broadcast query to handles, results returned via the postback function
   q:({[q;p] (p;@[value;q;{"error: server fail: ",x}])};query;postback);
   tosend:({[q] @[neg .z.w;@[{[q] value q};q;{"error: server fail: ",x}];()]};q);
   / error trapping sending the query down the handle followed by an async flush

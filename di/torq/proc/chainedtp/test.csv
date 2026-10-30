@@ -85,9 +85,9 @@ true,0,0,q,"sd2:sh""(.z.w)(`.u.subdetails;`;`)""; (11h=type sd2`tables) and `tra
 run,0,0,q,".m.di.0torq.0proc.0chainedtp.tph({(neg .z.w)(`upd;`trade;x)};rows 2)",1,,upstream publishes 2 rows
 true,0,0,q,"(`trade;2)~sh""(first last got;count last last got)""",1,,peer received the rows
 
-comment,,,,,,,a sub-second pubinterval batches on a timer job at that period, as TorQ's .timer.rep with .ctp.pubinterval
+comment,,,,,,,a sub-second pubinterval batches on a timer job at that period,a sub-second pubinterval batches on a timer job at that period
 run,0,0,q,"ctp.init[cfg[],enlist[`pubinterval]!enlist 0D00:00:00.500;deps[]]",1,,re-init with a 500ms pubinterval is accepted
-true,0,0,q,"(0D00:00:00.5;2)~last each exec (period;mode) from timercalls where id=`publishalltables",1,,the batch job runs every 500ms in mode 2 (legacy mode 1h)
+true,0,0,q,"(0D00:00:00.5;2)~last each exec (period;mode) from timercalls where id=`publishalltables",1,,the batch job runs every 500ms in mode 2
 true,0,0,q,.m.di.0torq.0proc.0chainedtp.upd~.m.di.0torq.0proc.0chainedtp.batchpub,1,,the module's upd batches (root upd is kept from the first init)
 
 after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

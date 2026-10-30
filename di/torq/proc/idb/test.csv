@@ -8,7 +8,7 @@ fail,0,0,q,idb[`init][cfg[];()!()],1,,init without a log dependency must error
 fail,0,0,q,"idb[`init][cfg[];enlist[`log]!enlist mockdeps[]`log]",1,,init without a servers dependency must error
 
 run,0,0,q,resetcalls[],1,,reset call log
-run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init with an absolute savedir + hdbdir - bracket-indexed, not idb.init: dot-syntax on a use-loaded module dict breaks once a real enumerated (.Q.en) table exists at root, see idb.md's Testing note
+run,0,0,q,idb[`init][cfg[];mockdeps[]],1,,init with an absolute savedir + hdbdir - bracket-indexed, not idb.init: dot-syntax on a use-loaded module dict breaks once a real enumerated (.Q.en) table exists at root,init via bracket indexing
 true,0,0,q,`widgets in tables[],1,,the fixture table was mounted
 true,0,0,q,`widgets in .Q.pt,1,,the root mount is a PARTITIONED db - no date had to be supplied
 true,0,0,q,`date in cols widgets,1,,partitioned tables carry the virtual date column

@@ -1,20 +1,15 @@
-/ di.simtick - realistic intraday tick simulator
+/ intraday tick simulator
 
-/ Hawkes process: safety multiplier for lambda upper bound
-/ ensures thinning algorithm acceptance rate stays reasonable
-/ higher values = more conservative bound = slower but safer
+/ Hawkes process: safety multiplier for the thinning intensity upper bound
 excitebuffer:3
 
 / quote generation: maximum intermediate quote updates between trades
-/ caps computation cost for large time gaps
 maxquoteupdates:10
 
-/ quote generation: random jitter range for initial quote offset (milliseconds)
-/ adds realism by varying the pre-trade quote timing
+/ quote generation: random jitter range for the initial quote offset (milliseconds)
 initquotejitterms:100
 
-/ price movement: fractional tick size for intermediate quote mid-price drift
-/ controls how much the mid moves between trades (as fraction of price)
+/ price movement: intermediate quote mid-price drift as a fraction of price
 quoteticksize:0.0001
 
 / time unit conversions
@@ -77,9 +72,7 @@ shape:{[cfg;progress]
   / cfg: config dict with `openmult`midmult`closemult`transitionpoint
   / progress: fraction of trading day elapsed (0 to 1)
   / returns: intensity multiplier for current time
-  /
-  / transitionpoint controls when to switch from open->mid to mid->close
-  / 0.5 = symmetric (U-shape), 0.3 = asymmetric (J-shape)
+  / transitionpoint: when open->mid switches to mid->close (0.5 U-shape, 0.3 J-shape)
   openmult:cfg`openmult;
   midmult:cfg`midmult;
   closemult:cfg`closemult;
@@ -128,7 +121,6 @@ arrivals:{[cfg]
   / generate trade arrival times using Hawkes process (Ogata thinning)
   / cfg: configuration dictionary
   / returns: list of arrival times in seconds from session start
-  /
   / Required config keys:
   /   baseintensity, alpha, beta, openingtime, closingtime,
   /   openmult, midmult, closemult, transitionpoint
@@ -212,7 +204,6 @@ price:{[cfg;times]
   / cfg: configuration dictionary
   / times: list of arrival times in seconds from session start
   / returns: list of prices corresponding to each arrival time
-  /
   / Required config keys:
   /   openingtime, closingtime, tradingdays, pricemodel, startprice, vol, drift
   /   For jump model: jumpintensity, jumpmean, jumpvol
@@ -415,12 +406,7 @@ validate:{[cfg]
   / validate configuration dictionary for run
   / cfg: configuration dictionary
   / returns: cfg if valid, throws error otherwise
-  /
-  / Checks:
-  /   - Hawkes stability: alpha < beta
-  /   - Positive multipliers: openmult, midmult, closemult > 0
-  /   - Positive base intensity
-  /   - Transitionpoint in valid range (prevents division by zero)
+  / checks alpha<beta, positive multipliers and base intensity, transitionpoint in range
 
   / check Hawkes stability condition
   if[cfg[`alpha]>=cfg`beta; '"validate: Hawkes unstable - alpha must be < beta"];
@@ -428,7 +414,7 @@ validate:{[cfg]
   if[0>=min cfg`openmult`midmult`closemult; '"validate: multipliers must be positive"];
   / check base intensity
   if[0>=cfg`baseintensity; '"validate: baseintensity must be positive"];
-  / check transitionpoint bounds (prevents division by zero in shape function)
+  / check transitionpoint bounds
   if[not cfg[`transitionpoint] within 0.01 0.99;
     '"validate: transitionpoint must be between 0.01 and 0.99"];
   cfg
@@ -439,12 +425,6 @@ run:{[cfg]
   / main simulation entry point
   / cfg: configuration dictionary (typically loaded via loadconfig)
   / returns: trade table if generatequotes=0b, else dict with `trade`quote
-  /
-  / Example:
-  /   cfg:first loadconfig`:presets.csv
-  /   trades:run[cfg]
-  /   cfg[`generatequotes]:1b
-  /   result:run[cfg]  / result`trade, result`quote
   cfg:.z.m.validate[cfg];
 
   / set seed for reproducibility
@@ -522,20 +502,12 @@ loadconfig:{[filepath]
   / load preset configurations from CSV file
   / filepath: file handle to CSV (e.g., `:presets.csv)
   / returns: keyed table with preset name as key
-  /
-  / Example:
-  /   cfgs:loadconfig`:di/simtick/presets.csv
-  /   cfg:cfgs`default
-  /   run[cfg]
   if[not -11h=type filepath; '"loadconfig: filepath must be a file handle"];
   1!(.z.m.csvtypes;enlist csv) 0: filepath
   };
 
 describe:{[]
   / return configuration schema as a table
-  / useful for documentation and introspection
-  / Example:
-  /   simtick.describe[]
   ([]param:key .z.m.schema;typ:first each value .z.m.schema;description:last each value .z.m.schema)
   };
 

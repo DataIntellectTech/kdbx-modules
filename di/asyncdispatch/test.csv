@@ -11,7 +11,7 @@ before,0,0,q,cl:{.m.di.0asyncdispatch.clients},1,,live clients table
 before,0,0,q,res:{.m.di.0asyncdispatch.results},1,,live results dict
 before,0,0,q,mocklog:`info`warn`error!3#enlist{[c;m]},1,,mock log dep - binary {[c;m]} no-op
 before,0,0,q,ad.init[enlist[`log]!enlist mocklog],1,,initialise with mock logger
-before,0,0,q,ad.setcallbacks[`.m.di.0asyncdispatch.addserverresult;`.m.di.0asyncdispatch.addservererror],1,,configure result/error callbacks once on the dispatcher; serverexecute now bakes these into the dispatched call so backends need no pushed callback vars
+before,0,0,q,ad.setcallbacks[`.m.di.0asyncdispatch.addserverresult;`.m.di.0asyncdispatch.addservererror],1,,configure result/error callbacks on the dispatcher
 before,0,0,q,bh:hopen`$raze("::";string p),1,,open handle to backend
 before,0,0,q,ad.addserver[bh;`mock],1,,register first backend as mock server
 before,0,0,q,bh2:hopen`$raze("::";string p2),1,,open handle to second backend
@@ -153,7 +153,6 @@ true,0,0,q,0~count select from cl[] where clienth=7i,1,,client audit row purged
 run,0,0,q,.m.di.0asyncdispatch.setcp[{.z.p}],1,,restore the real clock
 
 / Test 17: join-failure path - join function throws, client receives error and query is finished
-/ dispatched to the scatter backend (bh2): the mock backend (bh) is left inuse by the in-flight timeout in test 15
 run,0,0,q,.m.di.0asyncdispatch.addquery["2+2";enlist`scatter;{'"joinboom"};();0Wn;0b],1,,queue a query whose join function throws
 run,0,0,q,qid8:exec first queryid from qq[] where join~\:{'"joinboom"},1,,capture the query id
 run,0,0,q,.m.di.0asyncdispatch.runnextquery[],1,,dispatch to the scatter backend
@@ -168,8 +167,7 @@ true,0,0,q,99i~first exec clienth from qq[] where queryid=qid9,1,,replyto stored
 true,0,0,q,0b~first exec local from qq[] where queryid=qid9,1,,local flag is 0b for a non-null replyto
 run,0,0,q,bh2"",1,,sync flush - completes the backend round-trip (reply to fake 99i fails silently)
 
-/ Test 19: pluggable server source - dispatch against an injected source whose servertype is not in the
-/ internal registry; result routing uses the query's dispatch record so no internal registration is needed
+/ Test 19: dispatch against an injected server source
 run,0,0,q,savedavail:.m.di.0asyncdispatch.availableservers,1,,save the default (internal-registry) server source
 run,0,0,q,ad.setavailableservers[{[eu]([]handle:enlist bh;servertype:enlist`ext)}],1,,inject a source presenting bh under servertype ext (bh is registered as mock)
 run,0,0,q,.m.di.0asyncdispatch.addquery["6*7";enlist`ext;raze;();0Wn;0b],1,,queue a query for the external-only servertype

@@ -1,5 +1,4 @@
-/ fixture helpers for di.compression's worker-process and single-file tests. Assumes cwd is the kdbx-modules repo root.
-/ two real worker q processes on ephemeral ports serve peach with \s -2; each writes its port to a file.
+/ fixture helpers for worker-process and single-file tests, run from the repo root
 
 WDIR:"cmpWorkers_",string .z.i;
 WPORTS:();
@@ -49,7 +48,7 @@ stopworkers:{[]
   system "rm -rf ",WDIR;
   };
 
-/ the single-file compress legacy housekeeping's kdbzip calls: .cmp.compress[f;2;17;4;hcount f] (housekeeping.q:64)
+/ compress a single file with .cmp.compress[f;2;17;4;hcount f]
 onefile:{[]
   f:hsym`$WDIR,"_one";
   f set v:100000?100f;

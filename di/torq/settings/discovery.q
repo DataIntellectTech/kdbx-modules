@@ -5,9 +5,9 @@ connections:`ALL
 discoveryregister:0b
 / whether to get connection details from the discovery service (as opposed to the static file)
 connectionsfromdiscovery:0b
-/ whether to track and register non torQ processes throught discovery
+/ whether to track and register processes outside the framework through discovery
 tracknontorqprocess:1b
-/ whether the retry timers run; off, since retry and discoveryretry below are already 0
+/ whether the retry timers run
 enabled:0b
 / how often to retry the connection to the discovery service.  If 0, no connection is made
 discoveryretry:0D

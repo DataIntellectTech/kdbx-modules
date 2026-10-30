@@ -1,9 +1,5 @@
-/ fixture helpers for di.torq.proc.tickerplant's tests. Assumes cwd is the kdbx-modules repo root.
-/ Uses REAL di.pubsub / di.tplogmgr / di.eodtime (this is an integration test of the
-/ wiring) with a mock log (recording) and a mock timer (recording addjob calls, not
-/ running a cycle - so endofday/flush fire only when the test calls them directly).
-/ Real feed->TP->subscriber delivery is covered by the torqx.sh end-to-end, not here:
-/ pubsub publishes via async -25!, which does not flush inside a synchronous test.
+/ fixture helpers for di.torq.proc.tickerplant's tests, loaded from the repo root
+/ real di.pubsub, di.tplogmgr and di.eodtime with recording log and timer mocks; timer jobs run only when called
 
 BASE:"/tmp/di_tickerplant_k4unit"
 
@@ -39,7 +35,7 @@ setupfixture:{[]
   }
 teardownfixture:{[] system "rm -rf ",BASE; }
 
-/ config builders (kept out of test.csv: they contain commas/backticks)
+/ config builders
 immcfg:{[] `tplogdir`schemafile!(BASE,"/log";BASE,"/database.q")}
 batchcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/batchlog";BASE,"/database.q")}
 nologcfg:{[] enlist[`schemafile]!enlist BASE,"/database.q"}
@@ -50,7 +46,7 @@ subdbcfg:{[] `timerms`tplogdir`schemafile!(2000;BASE,"/subdblog";BASE,"/database
 tzcfg:{[] `schemafile`rolltimezone`datatimezone`rolltimeoffset!(BASE,"/database.q";`$"America/New_York";`$"Asia/Tokyo";0D01)}
 / the same settings as TOML delivers them: strings
 tzstrcfg:{[] `schemafile`rolltimezone`datatimezone`rolltimeoffset!(BASE,"/database.q";"America/New_York";"Asia/Tokyo";"0D17:00:00.000")}
-/ -t decides the mode, as TorQ's tickerplant.q: timerms (q's -t, stamped by di.torq) 200, null or 0
+/ timerms (q's -t) 200, null or 0
 tcfg:{[ms] `timerms`schemafile!(ms;BASE,"/database.q")}
 
 / feed n trade rows through the published root upd (columns form, single record each)
@@ -59,7 +55,7 @@ feedtrades:{[n] {upd[`trade;(.z.p;`$"S",string x;1.0*x;`int$x)]} each til n; }
 / message count in a log dir's current-day log (GMT date, matching eodtime GMT config)
 logcount:{[dir] c:-11!(-2;hsym`$dir,"/tp",string "d"$.z.p); $[0>type c;c;first c]}
 
-/ assertion helpers factored here because they contain raw commas (which split CSV fields)
+/ assertion helpers
 loghas:{[sub;n] n=logcount[BASE,"/",sub]}
 flushperiodok:{[] 0D00:00:02=first exec period from timercalls where id=`tpflush}
 rolledfile:{[sub;date] not ()~key hsym`$BASE,"/",sub,"/tp",string date}
@@ -72,15 +68,13 @@ pastroll:{[sub;stamped]
   f:hsym`$BASE,"/",sub,"/tp",string d0+1;
   (d0;.u.d;$[()~key f;0;first -11!(-2;f)])}
 
-/ init helpers that store handles / state for assertions
+/ init helpers
 doinit:{[cfg] resetcalls[]; resettimer[]; resethandlers[]; (tk`init)[cfg;deps[]]; }
 initbad:{[] (tk`init)[badcfg[];deps[]]; }   / expected to throw (used by a fail row)
 
 scheduled:{[id] id in exec id from timercalls}
 
-/ subdetails: after feeding 5 trades, the subscription-details call reports rowcount=5,
-/ the publishable tables + their schemas, and the correct log file / date. (Registration
-/ targets .z.w=0 in-process; here we assert the returned replay metadata.)
+/ subdetails after 5 trades reports rowcount 5, both tables and schemas, and the log file
 subdetailsok:{[]
   doinit[subdcfg[]]; feedtrades[5];        / fresh log dir so rowcount is deterministic
   sd:(tk`subdetails)[`;`];
@@ -93,12 +87,10 @@ subdetailsok:{[]
       sd[`logfile]~hsym`$BASE,"/subdlog/tp",string sd`date)
   }
 
-/ pubsub's subscriber cleanup is registered on .z.pc through the handlers dep (not bound by di.pubsub at load)
+/ pubsub's subscriber cleanup is registered on .z.pc through the handlers dep
 pcregistered:{[] (`.z.pc;`pubsub) in flip value flip hcalls}
 
-/ batched: a subscriber arriving while 3 rows sit unflushed must not get them twice - from the log (rowcount includes
-/ them, as upd logs before it buffers) AND from the next flush. subdetails flushes to the existing subscribers before
-/ registering the caller, so the buffer is empty by the time it is registered and rowcount is what the log holds
+/ batched: subdetails flushes the 3 buffered rows before registering, so rowcount covers them and they are not sent again
 subdetailsbatchedok:{[]
   doinit[subdbcfg[]]; feedtrades[3];
   buffered:count trade;

@@ -1,0 +1,34 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,cmp:use`di.torq.proc.compression,1,,load module
+before,0,0,q,system "l di/torq/proc/compression/test.q",1,,load mock deps and fixture helpers
+before,0,0,q,setupfixture[],1,,build a two-partition fixture hdb and its compression csv
+
+fail,0,0,q,cmp[`init][basecfg[];()!()],1,,init without a log dependency must error
+fail,0,0,q,cmp[`compressnow][],1,,compressnow before init must error rather than die on unset state
+fail,0,0,q,cmp[`init][badhdbcfg[];mockdeps[]],1,,init on a missing hdb path must error - a bad path otherwise compresses nothing and reports success
+
+true,0,0,q,`csvpath`hdbpath`maxage`exitonfinish~key shippeddefaults[],1,,the settings file declares every tunable - an undeclared one cannot be overridden from the command line
+true,0,0,q,1b~(shippeddefaults[])`exitonfinish,1,,shipped default exits on finish. Must agree with the code default asserted below
+true,0,0,q,365~(shippeddefaults[])`maxage,1,,shipped default maxage. Must agree with the code default asserted below
+
+run,0,0,q,cmp[`init][nodefaultscfg[];mockdeps[]],1,,init with only the required paths, so the code defaults apply
+
+run,0,0,q,cmp[`init][basecfg[];mockdeps[]],1,,init with the full fixture config
+true,0,0,q,not compressed[2026.01.01;`price],1,,the fixture starts uncompressed
+run,0,0,q,cmp[`compressnow][],1,,run one compression pass
+true,0,0,q,compressed[2026.01.01;`price],1,,the configured column is compressed in the first partition
+true,0,0,q,compressed[2026.01.02;`price],1,,and in the second - maxage covers both
+true,0,0,q,not compressed[2026.01.01;`size],1,,a column the csv does not name is left alone
+
+true,0,0,q,100h=type get `.compression.run,1,,run is published at a real root name for di.torq's runhook
+true,0,0,q,100h=type get `.compression.compressnow,1,,compressnow is published at a real root name for IPC callers
+
+run,0,0,q,cmp[`init][tomlcfg[];mockdeps[]],1,,init accepts string paths as a .toml settings file delivers them
+run,0,0,q,cmp[`compressnow][],1,,and compresses with them
+
+run,0,0,q,writebadalgocsv[],1,,swap in a csv naming an unsupported algorithm
+run,0,0,q,resetcalls[],1,,clear the captured log
+run,0,0,q,cmp[`compressnow][],1,,an invalid algorithm does NOT throw - di.compression traps its own checkcsv and carries on. Legacy TorQ lets it throw and aborts the run; see compression.md
+true,0,0,q,0<count select from calls where lvl=`error,1,,the invalid config is at least reported as an error
+
+after,0,0,q,teardownfixture[],1,,remove the fixture hdb

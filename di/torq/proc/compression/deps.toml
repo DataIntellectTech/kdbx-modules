@@ -1,0 +1,3 @@
+# Peer modules di.torq.proc.compression `use`s (see di/torq/depcheck/depcheck.md).
+[dependencies]
+"di.compression" = "0.1.0"

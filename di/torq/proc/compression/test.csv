@@ -32,10 +32,16 @@ run,0,0,q,setupfixture[],1,,
 run,0,0,q,cmp[`init][tomlcfg[];mockdeps[]],1,,init accepts the string values a .toml settings file delivers
 run,0,0,q,cmp[`compressnow][],1,,and compresses with them
 true,0,0,q,compressed[PARTS 0;`price],1,,the string-valued maxage was coerced and the pass ran
+fail,0,0,q,cmp[`init][badboolcfg[];mockdeps[]],1,,a boolean setting that is neither true/false nor 1/0 must error rather than silently read as false
+
+run,0,0,q,cmp[`init][nocsvcfg[];mockdeps[]],1,,an app with no compression csv falls back to the one the framework ships
+true,0,0,q,initlog[] like "*di/torq/compressionconfig.csv*",1,,and the init log names it
 
 run,0,0,q,writebadalgocsv[],1,,swap in a csv naming an unsupported algorithm
+run,0,0,q,cmp[`init][basecfg[];mockdeps[]],1,,point back at the fixture csv - the previous row inited against the framework one
 run,0,0,q,resetcalls[],1,,clear the captured log
 run,0,0,q,cmp[`compressnow][],1,,an invalid algorithm is logged and skipped rather than thrown - see compression.md
 true,0,0,q,0<count select from calls where lvl=`error,1,,the invalid config is reported as an error
+true,0,0,q,0<cmp[`errorcount][],1,,and counted - run exits non-zero so a scheduler does not read it as success
 
 after,0,0,q,teardownfixture[],1,,remove the fixture hdb

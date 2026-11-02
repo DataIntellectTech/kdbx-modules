@@ -65,4 +65,10 @@ nodefaultscfg:{[] `csvpath`hdbpath!(`$":",FIXTUREDIR,"/appconfig/compressionconf
 badhdbcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`:/tmp/di_compression_no_such_hdb;0b)}
 
 / values as a .toml settings file delivers them - strings for paths, text for the scalars
-tomlcfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(FIXTUREDIR,"/appconfig/compressionconfig.csv";FIXTUREDIR,"/hdb";"365";"0")}
+tomlcfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(FIXTUREDIR,"/appconfig/compressionconfig.csv";FIXTUREDIR,"/hdb";"365";"false")}
+
+/ a boolean setting that is neither true/false nor 1/0
+badboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";"yes")}
+
+/ a csvpath that does not exist, so resolvecsv falls back to the framework's shipped csv
+nocsvcfg:{[] `csvpath`hdbpath`exitonfinish!(`:no/such/compressionconfig.csv;`$":",FIXTUREDIR,"/hdb";0b)}

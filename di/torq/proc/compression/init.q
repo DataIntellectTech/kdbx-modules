@@ -2,4 +2,4 @@
 
 version:first read0`:::VERSION
 
-export:([init;compressnow;getstatstab;version])
+export:([init;compressnow;getstatstab;errorcount;version])

@@ -26,7 +26,7 @@ procname, or on the command line.
 |---|---|---|
 `csvpath` | `:appconfig/compressionconfig.csv` | the compression config csv. Resolved under `TORQXAPPHOME` — it is config, not data |
 `hdbpath` | `:hdb` | hdb root to compress. Resolved under `TORQXDATAHOME`, falling back to `TORQXAPPHOME` |
-`maxage` | `365` | only scan partitions this many days old or newer |
+`maxage` | `30` | only scan partitions this many days old or newer |
 `exitonfinish` | `1b` | exit the process when the pass completes |
 
 ### Migrating from TorQ
@@ -35,7 +35,7 @@ procname, or on the command line.
 |---|---|
 `.cmp.inputcsv` | `csvpath` — renamed to match `di.compression`'s own `compressmaxage[hdbpath;csvpath;maxage]` parameter |
 `.cmp.hdbpath` | `hdbpath` |
-`.cmp.maxage` | `maxage` |
+`.cmp.maxage` | `maxage` — ships `30`, as TorQ's settings file does (its code default of 365 is overridden there) |
 `.cmp.exitonfinish` | `exitonfinish` |
 
 TorQ's settings file also switched off `.usage`, `.clients`, `.servers` and `.hb`. Here those are
@@ -73,7 +73,7 @@ A batch job with no listening port:
 
 ```
 host,port,proctype,procname,startwithall
-localhost,0,compression,compression1,1
+localhost,0,compression,compression1,0
 ```
 
 ### A bad hdb path is fatal

@@ -27,6 +27,8 @@ true,0,0,q,1b~(cfg`asbool)1h,1,,and a short
 true,0,0,q,0b~(cfg`asbool)0i,1,,an int 0 is false
 true,0,0,q,1b~(cfg`asbool)1.0,1,,a float
 true,0,0,q,1b~(cfg`asbool)1.0e,1,,and a real - excluded while float was accepted would be arbitrary
+true,0,0,q,1b~(cfg`asbool)0x01,1,,and a byte - the guard starts at -4h so the doc says byte through float
+true,0,0,q,0b~(cfg`asbool)0x00,1,,a zero byte is false
 fail,0,0,q,boolbad[],1,,unrecognised text errors rather than silently reading as false
 fail,0,0,q,boolsym[],1,,a symbol errors rather than silently reading as false
 fail,0,0,q,boolnull[],1,,and a null

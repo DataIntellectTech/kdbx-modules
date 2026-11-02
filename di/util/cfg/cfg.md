@@ -20,10 +20,13 @@ Each of these was duplicated across `di.torq.proc.rdb`, `.wdb`, `.tickerplant`,
 `resolvedir` accepts a `.q` settings symbol (`` `:x ``) or a colon-less `.toml` string
 (`"x"`), and leaves an absolute path alone.
 
-`asbool` accepts a real boolean, a nonzero long, or the text `true`/`false`/`1`/`0` in any
-case. **Anything else is an error**, not a silent `0b` - a quoted `enabled = "true"` in a
-toml previously read as false, which in `di.permissions` meant access control was off with
-no warning.
+`asbool` accepts a real boolean, any numeric atom (short/int/long/float, nonzero being true),
+or the text `true`/`false`/`1`/`0` in any case. **Every other type is an error**, not a
+silent `0b`.
+
+Two ways the old copies read a truthy setting as false, both silently: a quoted
+`enabled = "true"` in a toml, and an int or short `1` in a `.q` tier. In `di.permissions`
+either meant access control was off with no warning.
 
 ## Usage
 

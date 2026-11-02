@@ -25,5 +25,7 @@ boolfalse:{[] (cfg`asbool)"False"}
 boolone:{[] (cfg`asbool)"1"}
 boolzero:{[] (cfg`asbool)"0"}
 boolbad:{[] (cfg`asbool)"yes"}
+boolsym:{[] (cfg`asbool)`true}
+boolnull:{[] (cfg`asbool)(::)}
 
 longtext:{[] 365~(cfg`aslong)"365"}

@@ -22,7 +22,12 @@ true,0,0,q,not boolfalse[],1,,text false
 true,0,0,q,boolone[],1,,the legacy 1 form still works
 true,0,0,q,not boolzero[],1,,and 0
 true,0,0,q,1b~(cfg`asbool)1,1,,a nonzero long is true
-fail,0,0,q,boolbad[],1,,anything else errors rather than silently reading as false
+true,0,0,q,1b~(cfg`asbool)1i,1,,an int 1 is true - it used to fall through the type guard and read as false
+true,0,0,q,1b~(cfg`asbool)1h,1,,and a short
+true,0,0,q,0b~(cfg`asbool)0i,1,,an int 0 is false
+fail,0,0,q,boolbad[],1,,unrecognised text errors rather than silently reading as false
+fail,0,0,q,boolsym[],1,,a symbol errors rather than silently reading as false
+fail,0,0,q,boolnull[],1,,and a null
 
 true,0,0,q,365~(cfg`aslong)365,1,,a typed long passes through
 true,0,0,q,longtext[],1,,text is parsed

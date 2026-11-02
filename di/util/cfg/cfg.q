@@ -18,7 +18,7 @@ resolvedir:{[base;dir]
 / anything that is not true/false/1/0 is an error rather than a silent false.
 asbool:{[x]
   if[-1h=type x;:x];
-  if[type[x] in -5 -6 -7 -9h;:0<>x];
+  if[(type x) in -4 -5 -6 -7 -8 -9h;:0<>x];
   if[10h=abs type x;
     s:`$lower (),x;
     :$[s in `1`true;1b;

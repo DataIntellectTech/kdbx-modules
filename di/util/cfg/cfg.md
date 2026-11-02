@@ -20,7 +20,7 @@ Each of these was duplicated across `di.torq.proc.rdb`, `.wdb`, `.tickerplant`,
 `resolvedir` accepts a `.q` settings symbol (`` `:x ``) or a colon-less `.toml` string
 (`"x"`), and leaves an absolute path alone.
 
-`asbool` accepts a real boolean, any numeric atom (short/int/long/float, nonzero being true),
+`asbool` accepts a real boolean, any numeric atom (byte through float, nonzero being true),
 or the text `true`/`false`/`1`/`0` in any case. **Every other type is an error**, not a
 silent `0b`.
 

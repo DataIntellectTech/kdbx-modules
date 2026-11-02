@@ -3,9 +3,6 @@
 / at eod the on-disk data is sorted and attributes applied as specified in the sort.csv file
 / modes: saveandsort, save (the sort is handed to a sort process) and sort (proctypes sort and sortworker)
 
-/ config coercion: toml and command-line values arrive as strings, which must be parsed not cast
-assym:{[x] $[11h=abs type x;x;`$x]}
-aslist:{[x] $[0>type x;enlist x;x]}
 tolong:{[x]
   r:$[10h=abs type x;"J"$(),x;"j"$x];
   if[null r;'"di.torq.proc.wdb: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
@@ -14,14 +11,14 @@ tolong:{[x]
 tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]}
 astimespan:{[x] $[10h=abs type x;$[any ((),x) in "D:";"N"$(),x;`timespan$1000000000*"J"$(),x];-16h=type x;x;`timespan$1000000000*x]}
 
-/ a token-list config (e.g. reloadorder) as a symbol list
-astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
-
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
 apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
+aslist:cfg`aslist;
+assym:cfg`assym;
+astoklist:cfg`astoklist;
 
 partwritemodes:`partbyattr`partbyenum`partbyfirstchar
 

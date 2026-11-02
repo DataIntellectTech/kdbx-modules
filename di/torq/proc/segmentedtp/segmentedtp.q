@@ -1,11 +1,11 @@
 / di.torq.proc.segmentedtp - segmented tickerplant
 
-/ a symbol, a string or a list of strings (TOML has no symbol type)
-tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
-/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
-
 / di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+totimespan:cfg`totimespan;
+tosym:cfg`tosym;
+
 eodconfig:{[s]
   d:()!();
   if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist tosym s`rolltimezone];

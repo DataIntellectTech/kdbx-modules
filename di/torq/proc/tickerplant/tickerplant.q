@@ -6,11 +6,8 @@ cfg:use`di.util.cfg;
 apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
-
-/ config values may be symbols (.q) or strings (.toml)
-astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones)
-/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
+totimespan:cfg`totimespan;
+astz:cfg`assym;
 
 / feed payloads may arrive as a table or as a list of columns; normalise to columns
 tocols:{[x] $[98h=type x;value flip x;x]}

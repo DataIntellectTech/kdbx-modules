@@ -1,10 +1,9 @@
 / di.torq.proc.chainedtp - chained tickerplant
 
-/ a timespan, a "0D00:00:01" string or a number of seconds (TOML has no timespan type)
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
-
-/ a symbol, a string or a list of strings (TOML has no symbol type)
-tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+totimespan:cfg`totimespan;
+tosym:cfg`tosym;
 
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.chainedtp: log dependency is required - see di.util.log"];

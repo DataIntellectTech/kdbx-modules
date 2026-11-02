@@ -1,7 +1,10 @@
 / di.torq.proc.idb - intraday database
 / mounts the wdb's working directory so today's data can be queried before it reaches the hdb
 
-astz:{[x] $[11h=abs type x;x;`$(),x]}
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+astz:cfg`assym;
+
 tolong:{[x] $[10h=abs type x;"J"$(),x;"j"$x]}
 
 / force loads sym file, recording its size only on success

@@ -37,3 +37,23 @@ true,0,0,q,365~(cfg`aslong)365,1,,a typed long passes through
 true,0,0,q,longtext[],1,,text is parsed
 fail,0,0,q,longbad[],1,,text that does not parse errors rather than becoming 0N
 fail,0,0,q,longempty[],1,,and so does an empty string
+
+true,0,0,q,tsspan[],1,,a typed timespan passes through
+true,0,0,q,tstext[],1,,text is parsed
+true,0,0,q,tssym[],1,,and a symbol
+true,0,0,q,tssecs[],1,,a bare number is seconds
+true,0,0,q,tshours[],1,,digits as text are read as hours
+
+true,0,0,q,`abc~(cfg`tosym)"abc",1,,text becomes a symbol
+true,0,0,q,`x~(cfg`tosym)`x,1,,a symbol passes through
+
+true,0,0,q,(enlist 1)~(cfg`aslist)1,1,,an atom is enlisted
+true,0,0,q,1 2~(cfg`aslist)1 2,1,,a list is left alone
+
+true,0,0,q,`UTC~(cfg`assym)`UTC,1,,a symbol passes through
+true,0,0,q,symtext[],1,,text becomes a symbol
+true,0,0,q,symlist[],1,,a list of strings becomes a symbol list
+
+true,0,0,q,toksplit[],1,,a space-separated string is split
+true,0,0,q,(enlist`a)~(cfg`astoklist)`a,1,,a symbol is enlisted
+true,0,0,q,`a`b~(cfg`astoklist)`a`b,1,,a symbol list is left alone

@@ -1,9 +1,10 @@
 / di.torq.proc.tickerlogreplay - replay tickerplant log files into an hdb
 
-/ a symbol, a string or a list of strings (TOML has no symbol type)
-tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
-
 / log the error and exit
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+tosym:cfg`tosym;
+
 ex:{[id;message;code] .z.m.log[`error][id;message]; exit code}
 
 / exit if a setting is null
@@ -289,7 +290,6 @@ savetablesbypart:{[dir;pt;tablename;h]
  if[gc;.z.m.dbw.gc[]];
  };
 
-
 mergetable:{[dir;pt;tablename;mergelimits;h]
  // get int partitions
  intpars:asc key ` sv dir,`$string pt; // list of enumerated partitions 0 1 2 3...
@@ -376,7 +376,6 @@ initandrun:{
     if[not 1=count distinct l;.z.m.log[`error][`replay;m:"Cannot replay logs from different dates in segmented mode!"];'m];
     if[clean;cleanhdb replaydate]
    ];
-
 
   // Replay all logs and exit
   .z.m.log[`info][`initandrun;"Replaying the following log(s): ",csv sv 1_'string logstoreplay];

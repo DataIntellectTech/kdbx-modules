@@ -2,12 +2,13 @@
 / di.asyncdispatch (scatter-gather) and di.dataaccess (getdata); entry points are published at root as .gw.*
 / backends register with empty attributes
 
-assym:{[x] $[11h=abs type x;x;`$x]}
-aslist:{[x] $[0>type x;enlist x;x]}
-/ a token-list config (space-separated string, symbol, symbol list or list of strings) as a symbol list
-astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
-
 / di.dataaccess partition coverage from .z.d: rdb holds today, hdb holds earlier dates
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+aslist:cfg`aslist;
+assym:cfg`assym;
+astoklist:cfg`astoklist;
+
 buildpartitions:{[] mid:`timestamp$.z.d; ([]servertype:`rdb`hdb;coverfrom:(mid;-0Wp);coverto:(0Wp;mid-1))}
 
 / resolve a client's servertype argument (symbol, symbol list or attribute dict) to a servertype symbol list

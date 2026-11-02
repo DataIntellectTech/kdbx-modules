@@ -2,13 +2,14 @@
 / the subscription rowcount, then receive live updates through root `upd`
 
 / registry of active subscriptions
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+totimespan:cfg`totimespan;
+
 SUBSCRIPTIONS:([]handle:`int$();tabs:();syms:();subtime:`timestamp$())
 
 / .sub .z.pc handler and check job are registered once
 registered:0b
-
-/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
 init:{[config;deps]
   if[not `log in key deps;'"di.subscriptions: log dependency is required - see di.util.log"];

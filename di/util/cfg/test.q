@@ -30,3 +30,14 @@ boolnull:{[] (cfg`asbool)(::)}
 longtext:{[] 365~(cfg`aslong)"365"}
 longbad:{[] (cfg`aslong)"3o"}
 longempty:{[] (cfg`aslong)""}
+
+tsspan:{[] 0D00:00:05~(cfg`totimespan)0D00:00:05}
+tstext:{[] 0D00:00:30~(cfg`totimespan)"00:00:30"}
+tssym:{[] 0D00:01~(cfg`totimespan)`00:01:00}
+tssecs:{[] 0D00:00:30~(cfg`totimespan)30}
+tshours:{[] 1D06~(cfg`totimespan)"30"}
+
+symtext:{[] (`$"Europe/London")~(cfg`assym)"Europe/London"}
+symlist:{[] `ab`cd~(cfg`assym)("ab";"cd")}
+
+toksplit:{[] `a`b`c~(cfg`astoklist)"a b c"}

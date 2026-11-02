@@ -31,3 +31,18 @@ aslong:{[x]
   if[null r;'"di.util.cfg: cannot read \"",$[10h=abs type x;(),x;-3!x],"\" as a whole number"];
   r
   }
+
+/ a timespan setting - a bare number is seconds, text is parsed
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;(type x) in -5 -6 -7h;0D00:00:01*x;0Nn]}
+
+/ a symbol setting from text
+tosym:{[x] $[(type x) in 0 10 -10h;`$x;x]}
+
+/ an atom as a one-element list
+aslist:{[x] $[0>type x;enlist x;x]}
+
+/ a symbol or symbol list from text or symbols
+assym:{[x] $[11h=abs type x;x;`$x]}
+
+/ a token list from a space-separated string, a symbol or a symbol list
+astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}

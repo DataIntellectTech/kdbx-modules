@@ -12,7 +12,7 @@ requireinit:{[ctx]
 / coerce a config value that may arrive typed (.q) or as text (.toml)
 asbool:{[x]
   if[-1h=type x;:x];
-  if[type[x] in -5 -6 -7 -9h;:0<>x];
+  if[(type x) in -4 -5 -6 -7 -8 -9h;:0<>x];
   if[10h=abs type x;
     s:`$lower (),x;
     :$[s in `1`true;1b;

@@ -16,7 +16,7 @@
 / config coercion - a .toml tier gives strings, a .q tier gives typed values
 asbool:{[x]
   if[-1h=type x;:x];
-  if[type[x] in -5 -6 -7 -9h;:0<>x];
+  if[(type x) in -4 -5 -6 -7 -8 -9h;:0<>x];
   if[10h=abs type x;
     s:`$lower (),x;
     :$[s in `1`true;1b;

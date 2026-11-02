@@ -70,5 +70,8 @@ tomlcfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(FIXTUREDIR,"/appconfig/compres
 / a boolean setting that is neither true/false nor 1/0
 badboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";"yes")}
 
+/ a boolean setting given as a symbol, which used to read as a silent false
+symboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";`true)}
+
 / a csvpath that does not exist, so resolvecsv falls back to the framework's shipped csv
 nocsvcfg:{[] `csvpath`hdbpath`exitonfinish!(`:no/such/compressionconfig.csv;`$":",FIXTUREDIR,"/hdb";0b)}

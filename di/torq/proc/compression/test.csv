@@ -33,6 +33,7 @@ run,0,0,q,cmp[`init][tomlcfg[];mockdeps[]],1,,init accepts the string values a .
 run,0,0,q,cmp[`compressnow][],1,,and compresses with them
 true,0,0,q,compressed[PARTS 0;`price],1,,the string-valued maxage was coerced and the pass ran
 fail,0,0,q,cmp[`init][badboolcfg[];mockdeps[]],1,,a boolean setting that is neither true/false nor 1/0 must error rather than silently read as false
+fail,0,0,q,cmp[`init][symboolcfg[];mockdeps[]],1,,a symbol must error too - it used to fall through the type guard and read as false
 
 run,0,0,q,cmp[`init][nocsvcfg[];mockdeps[]],1,,an app with no compression csv falls back to the one the framework ships
 true,0,0,q,initlog[] like "*di/torq/compressionconfig.csv*",1,,and the init log names it

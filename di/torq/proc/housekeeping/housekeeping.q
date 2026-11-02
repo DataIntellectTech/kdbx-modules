@@ -17,15 +17,11 @@ astimespans:{[x]
     `timespan$x]
   }
 
-/ base dir for the job csv
-apphome:{getenv[`TORQXAPPHOME]}
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+apphome:cfg`apphome;
+resolvepath:cfg`resolvedir;
 
-/ resolve a possibly-relative path setting (symbol or string, optional leading colon) to an absolute path string under base
-resolvepath:{[base;path]
-  path:$[10h=abs type path;path;string path];
-  path:$[(0<count path) and ":"=first path;1_path;path];
-  $[path like "/*";path;base,"/",path]
-  }
 
 / the next UTC timestamp at time of day t: today if not yet passed, otherwise tomorrow
 nextfire:{[t]

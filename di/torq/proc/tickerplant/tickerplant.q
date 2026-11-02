@@ -1,16 +1,11 @@
 / di.torq.proc.tickerplant - tickerplant built on di.pubsub, di.tplogmgr and di.eodtime; injected deps: log, timer, handlers
 / publishes each update immediately, or in batched mode buffers per table and flushes on a timer
 
-/ base dirs: code and config under TORQXAPPHOME, data under TORQXDATAHOME (default TORQXAPPHOME)
-apphome:{getenv[`TORQXAPPHOME]}
-datahome:{$[count h:getenv[`TORQXDATAHOME];h;getenv[`TORQXAPPHOME]]}
-
-/ resolve a possibly-relative dir setting (symbol or string, optional leading colon) to an absolute path string under base
-resolvedir:{[base;dir]
-  dir:$[10h=abs type dir;dir;string dir];
-  dir:$[(0<count dir) and ":"=first dir;1_dir;dir];
-  $[dir like "/*";dir;base,"/",dir]
-  }
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+apphome:cfg`apphome;
+datahome:cfg`datahome;
+resolvedir:cfg`resolvedir;
 
 / config values may be symbols (.q) or strings (.toml)
 astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones)

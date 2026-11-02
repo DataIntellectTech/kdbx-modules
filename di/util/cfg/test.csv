@@ -1,0 +1,28 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,cfg:use`di.util.cfg,1,,load module
+before,0,0,q,system "l di/util/cfg/test.q",1,,load fixture helpers
+before,0,0,q,setupenv[],1,,set both roots
+
+true,0,0,q,apphomeok[],1,,apphome reads TORQXAPPHOME
+true,0,0,q,datahomeok[],1,,datahome reads TORQXDATAHOME
+run,0,0,q,cleardatahome[],1,,unset TORQXDATAHOME
+true,0,0,q,datahomefellback[],1,,datahome falls back to the app root
+run,0,0,q,setupenv[],1,,restore both roots
+
+true,0,0,q,relstr[],1,,a relative string resolves under base
+true,0,0,q,relsym[],1,,a .q settings symbol has its colon stripped
+true,0,0,q,absstr[],1,,an absolute path is left alone
+true,0,0,q,abssym[],1,,an absolute symbol is left alone
+
+true,0,0,q,1b~(cfg`asbool)1b,1,,a typed boolean passes through
+true,0,0,q,0b~(cfg`asbool)0b,1,,and false
+true,0,0,q,booltrue[],1,,text true
+true,0,0,q,boolupper[],1,,case does not matter
+true,0,0,q,not boolfalse[],1,,text false
+true,0,0,q,boolone[],1,,the legacy 1 form still works
+true,0,0,q,not boolzero[],1,,and 0
+true,0,0,q,1b~(cfg`asbool)1,1,,a nonzero long is true
+fail,0,0,q,boolbad[],1,,anything else errors rather than silently reading as false
+
+true,0,0,q,365~(cfg`aslong)365,1,,a typed long passes through
+true,0,0,q,longtext[],1,,text is parsed

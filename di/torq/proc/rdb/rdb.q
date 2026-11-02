@@ -6,16 +6,11 @@
 assym:{[x] $[11h=abs type x;x;`$x]}
 aslist:{[x] $[0>type x;enlist x;x]}
 
-/ base dirs: code and config under TORQXAPPHOME, data under TORQXDATAHOME (default TORQXAPPHOME)
-apphome:{getenv[`TORQXAPPHOME]}
-datahome:{$[count h:getenv[`TORQXDATAHOME];h;getenv[`TORQXAPPHOME]]}
-
-/ resolve a possibly-relative dir setting to an absolute path string under base
-resolvedir:{[base;dir]
-  dir:$[10h=abs type dir;dir;string dir];
-  dir:$[(0<count dir) and ":"=first dir;1_dir;dir];
-  $[dir like "/*";dir;base,"/",dir]
-  }
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+apphome:cfg`apphome;
+datahome:cfg`datahome;
+resolvedir:cfg`resolvedir;
 
 / upd: append to the root table t, from a table (live) or a list of columns (replay)
 updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]}

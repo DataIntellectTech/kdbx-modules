@@ -1,5 +1,4 @@
-/ fixture helpers for di.util.cfg's tests. Calls setenv, so run in its own q session.
-/ Expressions containing string literals live here - test.csv's reader cannot carry them.
+/ fixture helpers for di.util.cfg's tests - calls setenv
 
 setupenv:{[]
   setenv[`TORQXAPPHOME;"/tmp/app"];
@@ -29,3 +28,5 @@ boolsym:{[] (cfg`asbool)`true}
 boolnull:{[] (cfg`asbool)(::)}
 
 longtext:{[] 365~(cfg`aslong)"365"}
+longbad:{[] (cfg`aslong)"3o"}
+longempty:{[] (cfg`aslong)""}

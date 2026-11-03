@@ -35,3 +35,5 @@ fail,0,0,q,boolnull[],1,,and a null
 
 true,0,0,q,365~(cfg`aslong)365,1,,a typed long passes through
 true,0,0,q,longtext[],1,,text is parsed
+fail,0,0,q,longbad[],1,,text that does not parse errors rather than becoming 0N
+fail,0,0,q,longempty[],1,,and so does an empty string

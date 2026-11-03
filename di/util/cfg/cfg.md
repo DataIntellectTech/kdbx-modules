@@ -15,7 +15,7 @@ Each of these was duplicated across `di.torq.proc.rdb`, `.wdb`, `.tickerplant`,
 `datahome[]` | `$TORQXDATAHOME`, falling back to `$TORQXAPPHOME` - runtime data |
 `resolvedir[base;dir]` | resolve a possibly-relative setting to an absolute path string under `base` |
 `asbool[x]` | a boolean setting |
-`aslong[x]` | a long setting |
+`aslong[x]` | a long setting - errors if the value does not parse, rather than returning `0N` |
 
 `resolvedir` accepts a `.q` settings symbol (`` `:x ``) or a colon-less `.toml` string
 (`"x"`), and leaves an absolute path alone.

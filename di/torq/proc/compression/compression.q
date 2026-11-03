@@ -21,7 +21,11 @@ asbool:{[x]
   '"di.torq.proc.compression: cannot read a value of type ",(string type x)," as a boolean - use true or false"
   }
 
-aslong:{[x] $[-7h=type x;x;10h=abs type x;"J"$(),x;"j"$x]}
+aslong:{[x]
+  r:$[-7h=type x;x;10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.torq.proc.compression: cannot read \"",$[10h=abs type x;(),x;-3!x],"\" as a whole number"];
+  r
+  }
 
 / code and config under TORQXAPPHOME, runtime data under TORQXDATAHOME
 apphome:{getenv[`TORQXAPPHOME]}
@@ -29,7 +33,7 @@ datahome:{$[count h:getenv[`TORQXDATAHOME];h;getenv[`TORQXAPPHOME]]}
 
 / resolve a possibly-relative path setting to an absolute path string under base
 resolvedir:{[base;dir]
-  dir:$[10h=abs type dir;dir;string dir];
+  dir:$[10h=abs type dir;(),dir;string dir];
   dir:$[(0<count dir) and ":"=first dir;1_dir;dir];
   $[dir like "/*";dir;base,"/",dir]
   }
@@ -40,7 +44,7 @@ resolvecsv:{[config]
   $[count key p;p;hsym `$getenv[`TORQXHOME],"/di/torq/compressionconfig.csv"]
   }
 
-/ count errors logged during a pass, so run can exit non-zero
+/ wrap the error logger so a pass's errors are counted
 counterrors:{[logdep]
   logdep,enlist[`error]!enlist {[f;c;m] .z.m.errors+:1; f[c;m]}[logdep`error]
   }
@@ -54,8 +58,7 @@ compressnow:{[]
   .z.m.log[`info][`compression;"finished compression"];
   }
 
-/ di.torq's post-init hook - compress, then exit unless told to stay up.
-/ a pass that logged errors exits non-zero, so a scheduler does not read it as success.
+/ di.torq's post-init hook - compress, then exit; non-zero if the pass logged errors
 run:{[]
   compressnow[];
   if[not .z.m.exitonfinish;:()];
@@ -73,15 +76,15 @@ getstatstab:{[] requireinit[`getstatstab]; (.z.m.cmp`getstatstab)[]}
 errorcount:{[] requireinit[`errorcount]; .z.m.errors}
 
 init:{[config;deps]
-  / resolve and validate first, so a failed init leaves no half-set state
+  / resolve and validate before setting any module state
   if[not `log in key deps;'"di.torq.proc.compression: log dependency is required - see di.util.log"];
   lg:deps`log;
   hp:hsym `$resolvedir[datahome[];$[`hdbpath in key config;config`hdbpath;"hdb"]];
   cp:resolvecsv config;
-  / defaults must agree with di/torq/settings/compression.q - test.csv asserts both halves
+  / defaults - must match the shipped settings file
   ma:$[`maxage in key config;aslong config`maxage;30];
   eof:$[`exitonfinish in key config;asbool config`exitonfinish;1b];
-  / a bad hdb path otherwise compresses nothing and reports success
+  / refuse a missing hdb path
   if[not count key hp;lg[`error][`compression;e:"invalid hdb path ",string hp];'e];
   .z.m.errors:0;
   .z.m.log:counterrors lg;
@@ -91,7 +94,7 @@ init:{[config;deps]
   .z.m.exitonfinish:eof;
   .z.m.cmp:use`di.compression;
   (.z.m.cmp`init)[enlist[`log]!enlist .z.m.log];
-  / root names, so di.torq's runhook and IPC callers can reach them
+  / publish at root names for the runhook and IPC callers
   set[`.compression.run;run];
   set[`.compression.compressnow;compressnow];
   .z.m.log[`info][`init;"initialised, hdbpath=",(string hp),", csvpath=",(string cp),

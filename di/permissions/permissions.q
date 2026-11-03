@@ -24,7 +24,11 @@ asbool:{[x]
        '"di.permissions: cannot read \"",(string s),"\" as a boolean - use true or false"]];
   '"di.permissions: cannot read a value of type ",(string type x)," as a boolean - use true or false"
   };
-aslong:{[x] $[-7h=type x;x;10h=abs type x;"J"$(),x;"j"$x]};
+aslong:{[x]
+  r:$[-7h=type x;x;10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.permissions: cannot read \"",$[10h=abs type x;(),x;-3!x],"\" as a whole number"];
+  r
+  };
 
 / wildcard/superuser marker for functions and data
 ALL:`$"*";

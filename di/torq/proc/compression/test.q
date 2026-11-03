@@ -1,5 +1,4 @@
-/ mocks and fixture helpers for di.torq.proc.compression's tests.
-/ Calls setenv, so run this module's tests in their own q session.
+/ mocks and fixture helpers for di.torq.proc.compression's tests - calls setenv
 
 calls:([]lvl:`symbol$();ctx:`symbol$();msg:())
 
@@ -11,13 +10,12 @@ mockdeps:{[] (enlist`log)!enlist `info`warn`error!(mocklogfn[`info;;];mocklogfn[
 
 FIXTUREDIR:"/tmp/di_compression_k4unit_fixture"
 
-/ partitions relative to today, so the fixture never ages out of the maxage window
+/ fixture partitions, relative to today
 PARTS:.z.D-1 2
-/ outside the window, to prove maxage excludes it
+/ a partition outside the maxage window
 OLD:.z.D-400
 
-/ build the fixture hdb. 200000 rows because kdb will not compress a file below the block size,
-/ so a token few would make a no-op indistinguishable from a failure.
+/ build the fixture hdb - 200000 rows so columns exceed the compression block size
 setupfixture:{[]
   system "rm -rf ",FIXTUREDIR;
   system "mkdir -p ",FIXTUREDIR,"/appconfig";
@@ -31,7 +29,7 @@ setupfixture:{[]
   setenv[`TORQXAPPCONFIG;FIXTUREDIR,"/appconfig"];
   }
 
-/ csv bodies live here, not inline in test.csv, whose reader would split on their commas
+/ write the fixture's compression csv
 writecsv:{[s] (hsym `$FIXTUREDIR,"/appconfig/compressionconfig.csv") 0: enlist s; }
 
 / gzip (algo 2), block 17, level 5, at any age
@@ -46,16 +44,16 @@ writebadalgocsv:{[]
 
 teardownfixture:{[] system "rm -rf ",FIXTUREDIR; }
 
-/ is a column file stored compressed? an empty -21! dict means it is not
+/ is a column file stored compressed?
 compressed:{[dt;col] 0<count -21! hsym `$FIXTUREDIR,"/hdb/",(string dt),"/trade/",string col}
 
-/ the last init log line, so the code defaults can be asserted
+/ the last init log line
 initlog:{[] last exec msg from calls where lvl=`info, ctx=`init}
 
 / the shipped framework defaults, read from the settings file itself
 shippeddefaults:{[] (use`di.torq.config)[`parsefile] "di/torq/settings/compression.q"}
 
-/ config builders - factored out so test.csv rows never need a raw comma
+/ config builders
 basecfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";365;0b)}
 
 / maxage and exitonfinish omitted, so the code defaults apply
@@ -64,14 +62,17 @@ nodefaultscfg:{[] `csvpath`hdbpath!(`$":",FIXTUREDIR,"/appconfig/compressionconf
 / an hdb path that does not exist
 badhdbcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`:/tmp/di_compression_no_such_hdb;0b)}
 
-/ values as a .toml settings file delivers them - strings for paths, text for the scalars
+/ values as a .toml settings file delivers them
 tomlcfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(FIXTUREDIR,"/appconfig/compressionconfig.csv";FIXTUREDIR,"/hdb";"365";"false")}
 
 / a boolean setting that is neither true/false nor 1/0
 badboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";"yes")}
 
-/ a boolean setting given as a symbol, which used to read as a silent false
+/ a boolean setting given as a symbol
 symboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";`true)}
 
-/ a csvpath that does not exist, so resolvecsv falls back to the framework's shipped csv
+/ a long setting that does not parse
+badlongcfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";"3o";0b)}
+
+/ a csvpath that does not exist
 nocsvcfg:{[] `csvpath`hdbpath`exitonfinish!(`:no/such/compressionconfig.csv;`$":",FIXTUREDIR,"/hdb";0b)}

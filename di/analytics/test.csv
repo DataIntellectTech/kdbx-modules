@@ -1,5 +1,5 @@
 action,ms,bytes,lang,code,repeat,minver,comment
-before,0,0,q,analytics:use`analytics,1,1,load module into session
+before,0,0,q,analytics:use`di.analytics,1,1,load module into session
 run,0,0,q,N:20;prob:0.2,1,,initialize testing parameters
 run,0,0,q,zerotable:table:`time xasc ([]time:N?.z.P;sym:N?`AMD`AAPL`MSFT`IBM;ask:N?100f;bid:N?100f;asize:N?500i;bsize:N?500i;ex:N?`NYSE`CME`LSE),1,,define testing table
 run,0,0,q,update ask:?[prob>N?1f;0n;ask] from `table,1,,add null values in testing table
@@ -99,3 +99,75 @@ run,0,0,q,args:(`table`by`piv`var)!(quote;`date`sym;`side`level;`price`size),1,,
 run,0,0,q,res:analytics.pivot args,1,,call pivot function on input
 true,0,0,q,"(99h=type res)&(((),args`by)~cols key res)&(((count distinct (,/') flip string quote args`piv)*count args`by)~count cols value res)",1,,verify output in the correct format
 true,0,0,q,(asc (raze value flip value res) except 0n)~(asc raze quote args`var),1,,verify pivoted values conform to original data 
+
+run,0,0,q,shx:0 1 2 3 4 5 6 7 8 9f,1,,x axis of a worked example - a flat series carrying one spike at x=3
+run,0,0,q,shy:0 0.1 0 5 0 0.2 0 0 0.1 0f,1,,y axis of the worked example
+true,0,0,q,(0 2 3 4 9)~analytics.rdprecur[1f;shx;shy],1,,recursive kernel keeps the endpoints plus the spike and its shoulders
+true,0,0,q,analytics.rdprecur[1f;shx;shy]~analytics.rdpiter[1f;shx;shy],1,,both kernels return identical indices
+true,0,0,q,(til 10)~analytics.rdpiter[0f;shx;shy],1,,a zero tolerance discards nothing from a series with no collinear runs
+true,0,0,q,(0 9)~analytics.rdpiter[100f;shx;shy],1,,a tolerance wider than the series collapses it to its endpoints
+true,0,0,q,(0 3)~analytics.rdprecur[0f;0 1 2 3f;0 0 0 0f],1,,collinear points are redundant and go even at zero tolerance
+true,0,0,q,(0 2 3 5)~analytics.rdpiter[1f;til 6;0 0 9 0 0 0],1,,integer x and y axes are accepted
+
+comment,,,,,,,kernel edge cases - series too short to simplify or with no x extent
+true,0,0,q,(`long$())~analytics.rdprecur[1f;`float$();`float$()],1,,an empty series simplifies to nothing
+true,0,0,q,(`long$())~analytics.rdpiter[1f;`float$();`float$()],1,,an empty series simplifies to nothing
+true,0,0,q,(enlist 0)~analytics.rdprecur[1f;enlist 1f;enlist 2f],1,,a single point is always kept
+true,0,0,q,(0 1)~analytics.rdpiter[1f;1 2f;3 4f],1,,a two point series is always kept in full
+true,0,0,q,(0 3)~analytics.rdpiter[1f;5 5 5 5f;1 2 3 4f],1,,a series with no x extent collapses to its endpoints
+
+comment,,,,,,,properties that must hold for any series - checked against a random walk
+run,0,0,q,M:5000,1,,length of the random walk used for the property tests
+run,0,0,q,rwx:`float$til M,1,,evenly spaced x axis
+run,0,0,q,rwy:sums -0.5+M?1f,1,,random walk on the y axis
+run,0,0,q,"chorddist:{[px;py;a;b] s:(py[b]-py a)%px[b]-px a; c:(py a)-s*px a; m:1+a+til (b-a)-1; max 0f,abs((s*px m)+c-py m)%sqrt 1f+s*s}",1,,independent restatement of the distance the algorithm is supposed to bound - how far the points dropped between retained points a and b sit from their chord
+run,0,0,q,maxresid:{[px;py;idx] max chorddist[px;py]'[-1_idx;1_idx]},1,,largest distance from any dropped point to the chord of the two retained points bracketing it
+run,0,0,q,rwkeep:analytics.rdprecur[0.05;rwx;rwy],1,,simplify the random walk with the recursive kernel
+true,0,0,q,rwkeep~analytics.rdpiter[0.05;rwx;rwy],1,,both kernels agree on a 5000 point random walk
+true,0,0,q,rwkeep~asc distinct rwkeep,1,,retained indices come back ascending with no duplicates
+true,0,0,q,"(0,M-1)~(first rwkeep),last rwkeep",1,,the first and last points of a series are always retained
+true,0,0,q,count[rwkeep]<M,1,,the walk really is reduced
+true,0,0,q,0.05>=maxresid[rwx;rwy;rwkeep],1,,every dropped point lies within tolerance of the chord joining its surviving neighbours
+true,0,0,q,all {[tol] tol>=maxresid[rwx;rwy;analytics.rdpiter[tol;rwx;rwy]]} each 0.01 0.25 1 5f,1,,the tolerance guarantee holds across a range of tolerances
+true,0,0,q,all 0>=1_deltas count each analytics.rdpiter[;rwx;rwy] each 0.01 0.05 0.25 1 5f,1,,raising the tolerance never increases the number of retained points
+
+comment,,,,,,,shrink - the table entry point
+run,0,0,q,"shtab:([]tm:shx;px:shy;sym:10#`A)",1,,table form of the worked example
+run,0,0,q,shres:analytics.shrink `table`xcol`ycol`tolerance!(shtab;`tm;`px;1f),1,,simplify through the table entry point
+true,0,0,q,shres~select from shtab where i in 0 2 3 4 9,1,,shrink keeps the rows the kernel selects and carries every column through
+true,0,0,q,shres~analytics.shrink `table`xcol`ycol`tolerance`method!(shtab;`tm;`px;1f;`iterative),1,,shrink defaults to the iterative method
+true,0,0,q,shres~analytics.shrink `table`xcol`ycol`tolerance`method!(shtab;`tm;`px;1f;`recursive),1,,the recursive method returns the same table
+true,0,0,q,(0#shtab)~analytics.shrink `table`xcol`ycol`tolerance!(0#shtab;`tm;`px;1f),1,,an empty table simplifies to an empty table
+
+run,0,0,q,shkeyed:1!([]tm:shx;px:shy),1,,keyed form of the worked example
+true,0,0,q,(delete sym from shres)~analytics.shrink `table`xcol`ycol`tolerance!(shkeyed;`tm;`px;1f),1,,a keyed table is simplified on its unkeyed form and returned unkeyed
+
+run,0,0,q,"shts:([]tm:2024.01.01D09:00:00+1000000000*til 10;px:shy;sym:10#`A)",1,,worked example on a timestamp x axis
+true,0,0,q,(select from shts where i in 0 2 3 4 9)~analytics.shrink `table`xcol`ycol`tolerance!(shts;`tm;`px;1f),1,,a timestamp x axis is rebased before the distance arithmetic rather than losing resolution to a float cast
+run,0,0,q,"shdt:([]tm:2024.01.01+til 10;px:shy)",1,,worked example on a date x axis
+true,0,0,q,(select from shdt where i in 0 2 3 4 9)~analytics.shrink `table`xcol`ycol`tolerance!(shdt;`tm;`px;1f),1,,a date x axis is accepted
+
+comment,,,,,,,shrink - grouped series
+run,0,0,q,"shby:([]sym:(10#`A),10#`B;tm:shx,shx;px:shy,reverse shy)",1,,two independent series stacked in one table
+run,0,0,q,shbyres:analytics.shrink `table`xcol`ycol`tolerance`by!(shby;`tm;`px;1f;`sym),1,,simplify each sym on its own
+true,0,0,q,shbyres~select from shby where i in 0 2 3 4 9 10 15 16 17 19,1,,each group is simplified independently and rows come back in source order
+run,0,0,q,shby2:update ex:`N from shby,1,,add a second grouping column
+true,0,0,q,shbyres~delete ex from analytics.shrink `table`xcol`ycol`tolerance`by!(shby2;`tm;`px;1f;`sym`ex),1,,multiple by columns are supported
+
+comment,,,,,,,shrink - input validation
+fail,0,0,q,analytics.shrink 5,1,,a non dictionary argument is rejected
+fail,0,0,q,analytics.shrink `table`xcol!(shtab;`tm),1,,missing required keys are rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(5;`tm;`px;1f),1,,a non table is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(shtab;`tm`px;`px;1f),1,,xcol must name exactly one column
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance`method!(shtab;`tm;`px;1f;`quick),1,,an unknown method is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(shtab;`nope;`px;1f),1,,a missing column is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance`by!(shtab;`tm;`px;1f;`nope),1,,a missing by column is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(shtab;`sym;`px;1f),1,,a non numeric x axis is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(shtab;`tm;`sym;1f),1,,a non numeric y axis is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(shtab;`tm;`px;-1f),1,,a negative tolerance is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(shtab;`tm;`px;0n),1,,a null tolerance is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(shtab;`tm;`px;1 2f),1,,a non atomic tolerance is rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(update px:0n from shtab where i=3;`tm;`px;1f),1,,nulls in the measured columns are rejected
+fail,0,0,q,analytics.shrink `table`xcol`ycol`tolerance!(`px xdesc shtab;`tm;`px;1f),1,,an x axis that is not in order is rejected
+fail,0,0,q,analytics.rdprecur[-1f;shx;shy],1,,the kernels validate the tolerance too
+fail,0,0,q,analytics.rdpiter[0n;shx;shy],1,,the kernels validate the tolerance too

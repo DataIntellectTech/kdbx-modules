@@ -237,6 +237,20 @@ initquerylog:{[config;deps]
 
 / zpsignore: ignorelisted async messages skip the .z.ps wrappers
 zpsignorewired:0b
+/ block until the proctypes in startupdeps are connected; init fails after startupdepcycles checks
+waitforstartupdeps:{[lg;config]
+  d:$[`startupdeps in key config;config`startupdeps;`symbol$()];
+  d:except[$[11h=abs type d;(),d;10h=type d;`$" " vs d;0=count d;`symbol$();(),`$d];`];
+  if[not count d;:()];
+  if[not @[value;`.servers.enabled;0b];lg[`warn][`init;"startupdeps ignored - connection tracking is off"];:()];
+  aslong:(use`di.util.cfg)`aslong;
+  sleep:aslong $[`startupdepsleep in key config;config`startupdepsleep;1];
+  cycles:aslong $[`startupdepcycles in key config;config`startupdepcycles;60];
+  lg[`info][`init;"waiting for ",(", " sv string d)," to connect"];
+  .servers.startupdepcycles[d;sleep;cycles];
+  lg[`info][`init;"connected to ",", " sv string d];
+  }
+
 initzpsignore:{[config]
   if[.z.m.zpsignorewired;:()];
   s:$[`zpsignore in key config;config`zpsignore;()!()];
@@ -309,6 +323,8 @@ init:{[proctype;procname;overrides]
   if[@[value;`.ps.loaded;0b];.ps.initialise[]];
   / initialise connections
   if[@[value;`.servers.STARTUP;0b];.servers.startup config];
+  / optional: wait for peers this process needs before it starts serving
+  waitforstartupdeps[logdep;config];
   / run deferred init functions
   if[count .proc.initlist;value each .proc.initlist;.proc.initlist:()];
   / .z.* wrappers: clients, querylog, zpsignore last

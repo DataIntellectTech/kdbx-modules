@@ -101,3 +101,28 @@ teardownfixture:{[]
   system "rm -rf ",APPBASE;
   system "rm -f ",TESTPROCFILE;
   }
+
+/ startupdeps: run waitforstartupdeps with .servers.startupdepcycles mocked; returns the args it got, () if not called
+sdrun:{[enabled;cfg]
+  o:(@[value;`.servers.enabled;0b];@[value;`.servers.startupdepcycles;::]);
+  `.servers.enabled set enabled;
+  `.servers.startupdepcycles set {[d;s;c] `SDCALL set (d;s;c)};
+  `SDCALL set ();
+  .m.di.0torq.waitforstartupdeps[`info`warn`error!3#enlist {[c;m]};cfg];
+  `.servers.enabled set o 0;
+  `.servers.startupdepcycles set o 1;
+  SDCALL
+  }
+sdtoml:{[] (`rdb`idb;2;5)~sdrun[1b;`startupdeps`startupdepsleep`startupdepcycles!("rdb idb";"2";"5")]}
+
+/ a wait that runs out of cycles signals, failing init
+sdfail:{[]
+  o:(@[value;`.servers.enabled;0b];@[value;`.servers.startupdepcycles;::]);
+  `.servers.enabled set 1b;
+  `.servers.startupdepcycles set {[d;s;c] '"cannot connect"};
+  r:@[.m.di.0torq.waitforstartupdeps[`info`warn`error!3#enlist {[c;m]}];enlist[`startupdeps]!enlist`rdb;{x}];
+  `.servers.enabled set o 0;
+  `.servers.startupdepcycles set o 1;
+  r~"cannot connect"
+  }
+

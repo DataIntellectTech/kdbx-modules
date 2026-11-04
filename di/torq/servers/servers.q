@@ -4,7 +4,7 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
-totimespan:cfg`totimespan;
+astimespan:cfg`astimespan;
 
 self:`proctype`procname!``;
 
@@ -70,8 +70,8 @@ init:{[deps]
   @[value;`.servers.SERVERS;{set[`.servers.SERVERS;([]procname:`symbol$();proctype:`symbol$();hpup:`symbol$();w:`int$();hits:`int$();startp:`timestamp$();lastp:`timestamp$();endp:`timestamp$();attributes:())]}];
   / config
   {[deps;k] set[first .z.m.settings k;$[k in key deps;deps k;last .z.m.settings k]]}[deps] each key .z.m.settings;
-  .servers.RETRY:totimespan .servers.RETRY;
-  .servers.DISCOVERYRETRY:totimespan .servers.DISCOVERYRETRY;
+  .servers.RETRY:astimespan[`second;.servers.RETRY];
+  .servers.DISCOVERYRETRY:astimespan[`second;.servers.DISCOVERYRETRY];
   / a string or a list of strings (TOML has no symbol type)
   .servers.CONNECTIONS:$[11h=abs type c:.servers.CONNECTIONS;c;`$c];
   set[`.servers.NONTORQPROCESSFILE;$[`nontorqprocessfile in key deps;hsym deps`nontorqprocessfile;hsym `$("/" sv -1_"/" vs .z.m.processcsv),"/nontorqprocess.csv"]];

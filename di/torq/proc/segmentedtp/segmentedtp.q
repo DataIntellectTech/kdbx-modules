@@ -3,16 +3,14 @@
 / di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
-totimespan:cfg`totimespan;
+astimespan:cfg`astimespan;
 tosym:cfg`tosym;
 
 eodconfig:{[s]
   d:()!();
   if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist tosym s`rolltimezone];
   if[`datatimezone in key s;d:d,enlist[`datatimezone]!enlist tosym s`datatimezone];
-  if[`rolltimeoffset in key s;
-    if[null o:totimespan s`rolltimeoffset;'"di.torq.proc.segmentedtp: rolltimeoffset must be a timespan"];
-    d:d,enlist[`rolltimeoffset]!enlist o];
+  if[`rolltimeoffset in key s;d:d,enlist[`rolltimeoffset]!enlist astimespan[`second;s`rolltimeoffset]];
   d
   };
 

@@ -2,7 +2,7 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
-totimespan:cfg`totimespan;
+astimespan:cfg`astimespan;
 tosym:cfg`tosym;
 
 init:{[config;deps]
@@ -18,7 +18,7 @@ init:{[config;deps]
   (deps[`handlers]`register)[`.z.pc;`;`stpps;0j;.stpps.closesub];
   (use`di.subscriptions)[`init][config;deps];
   .z.m.tickerplantname:tosym config`tickerplantname;
-  .z.m.pubinterval:totimespan config`pubinterval;
+  .z.m.pubinterval:astimespan[`second;config`pubinterval];
   .z.m.tpconnsleep:config`tpconnsleep;
   .z.m.createlogfile:config`createlogfile;
   .z.m.logdir:$[10h=type l:config`logdir;hsym`$l;l];

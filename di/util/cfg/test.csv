@@ -29,7 +29,12 @@ true,0,0,q,1b~(cfg`asbool)1.0,1,,a float
 true,0,0,q,1b~(cfg`asbool)1.0e,1,,and a real - excluded while float was accepted would be arbitrary
 true,0,0,q,1b~(cfg`asbool)0x01,1,,and a byte - the guard starts at -4h so the doc says byte through float
 true,0,0,q,0b~(cfg`asbool)0x00,1,,a zero byte is false
+true,0,0,q,boolyes[],1,,yes
+true,0,0,q,not boolno[],1,,no
+true,0,0,q,boolt[],1,,t
+true,0,0,q,not booln[],1,,n
 fail,0,0,q,boolbad[],1,,unrecognised text errors rather than silently reading as false
+fail,0,0,q,boolnulllong[],1,,a null number errors rather than reading as true
 fail,0,0,q,boolsym[],1,,a symbol errors rather than silently reading as false
 fail,0,0,q,boolnull[],1,,and a null
 
@@ -41,8 +46,17 @@ fail,0,0,q,longempty[],1,,and so does an empty string
 true,0,0,q,tsspan[],1,,a typed timespan passes through
 true,0,0,q,tstext[],1,,text is parsed
 true,0,0,q,tssym[],1,,and a symbol
-true,0,0,q,tssecs[],1,,a bare number is seconds
-true,0,0,q,tshours[],1,,digits as text are read as hours
+true,0,0,q,tstime[],1,,a time atom is cast
+true,0,0,q,tssecs[],1,,a bare number counts in the unit
+true,0,0,q,tsdigits[],1,,bare digits as text count in the unit too - not hours
+true,0,0,q,tsfloat[],1,,a fraction of a unit
+true,0,0,q,tsneg[],1,,a negative offset
+true,0,0,q,tsminutes[],1,,minutes
+true,0,0,q,tshours[],1,,hours
+fail,0,0,q,tsbad[],1,,unreadable text errors rather than becoming 0Nn
+fail,0,0,q,tsempty[],1,,and an empty string
+fail,0,0,q,tsnull[],1,,and a null
+fail,0,0,q,tsunit[],1,,an unknown unit errors
 
 true,0,0,q,`abc~(cfg`tosym)"abc",1,,text becomes a symbol
 true,0,0,q,`x~(cfg`tosym)`x,1,,a symbol passes through

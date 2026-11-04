@@ -6,7 +6,7 @@ cfg:use`di.util.cfg;
 apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
-totimespan:cfg`totimespan;
+astimespan:cfg`astimespan;
 astz:cfg`assym;
 
 / feed payloads may arrive as a table or as a list of columns; normalise to columns
@@ -81,9 +81,7 @@ eoddeps:{[config;logdep]
   d:()!();
   if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist astz config`rolltimezone];
   if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist astz config`datatimezone];
-  if[`rolltimeoffset in key config;
-    if[null o:totimespan config`rolltimeoffset;'"di.torq.proc.tickerplant: rolltimeoffset must be a timespan"];
-    d:d,enlist[`rolltimeoffset]!enlist o];
+  if[`rolltimeoffset in key config;d:d,enlist[`rolltimeoffset]!enlist astimespan[`second;config`rolltimeoffset]];
   / log first, then the eodtime keys
   (enlist[`log]!enlist logdep),d
   }

@@ -13,14 +13,16 @@ resolvedir:{[base;dir]
   $[dir like "/*";dir;base,"/",dir]
   }
 
-/ a boolean setting - a boolean, a numeric atom or true/false/1/0; anything else errors
+/ a boolean setting - a boolean, a numeric atom or true/false, yes/no, t/f, y/n, 1/0; anything else errors
 asbool:{[x]
   if[-1h=type x;:x];
-  if[(type x) in -4 -5 -6 -7 -8 -9h;:0<>x];
+  if[(type x) in -4 -5 -6 -7 -8 -9h;
+    if[null x;'"di.util.cfg: cannot read a null as a boolean - use true or false"];
+    :0<>x];
   if[10h=abs type x;
     s:`$lower (),x;
-    :$[s in `1`true;1b;
-       s in `0`false;0b;
+    :$[s in `true`yes`t`y`1;1b;
+       s in `false`no`f`n`0;0b;
        '"di.util.cfg: cannot read \"",(string s),"\" as a boolean - use true or false"]];
   '"di.util.cfg: cannot read a value of type ",(string type x)," as a boolean - use true or false"
   }
@@ -32,8 +34,21 @@ aslong:{[x]
   r
   }
 
-/ a timespan setting - a bare number is seconds, text is parsed
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;(type x) in -5 -6 -7h;0D00:00:01*x;0Nn]}
+/ what a bare number counts in, for astimespan
+spanunits:`second`minute`hour!0D00:00:01 0D00:01 0D01;
+
+/ a timespan setting - a bare number (or bare digits as text) counts in unit; anything unreadable errors
+astimespan:{[unit;x]
+  if[null u:spanunits unit;'"di.util.cfg: astimespan unit must be one of ",", " sv string key spanunits];
+  x:$[-11h=type x;string x;x];
+  r:$[-16h=type x;x;
+      (type x) in -17 -18 -19h;`timespan$x;
+      (type x) in -5 -6 -7 -8 -9h;`timespan$u*x;
+      10h=abs type x;$[any ((),x) in "D:";"N"$(),x;`timespan$u*"F"$(),x];
+      0Nn];
+  if[null r;'"di.util.cfg: cannot read \"",$[10h=abs type x;(),x;-3!x],"\" as a timespan"];
+  r
+  }
 
 / a symbol setting from text
 tosym:{[x] $[(type x) in 0 10 -10h;`$x;x]}

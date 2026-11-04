@@ -10,17 +10,14 @@ requireinit:{[ctx]
     '"di.torq.proc.housekeeping: ",string[ctx],": init must be called before any other function"];
   }
 
-/ runtimes config as a timespan list: a temporal atom or list (.q settings) or a space-separated string (.toml)
-astimespans:{[x]
-  $[10h=type x;"N"$" " vs x;
-    0>type x;enlist `timespan$x;
-    `timespan$x]
-  }
+/ runtimes config as a timespan list: a temporal atom or list (.q settings) or a space-separated string (.toml); a bare number is an hour
+astimespans:{[x] astimespan[`hour] each $[10h=type x;(" " vs x) except enlist "";0>type x;enlist x;x]}
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
 apphome:cfg`apphome;
 resolvepath:cfg`resolvedir;
+astimespan:cfg`astimespan;
 
 
 / the next UTC timestamp at time of day t: today if not yet passed, otherwise tomorrow

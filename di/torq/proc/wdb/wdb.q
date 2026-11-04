@@ -17,16 +17,11 @@ astimespan:{[x] $[10h=abs type x;$[any ((),x) in "D:";"N"$(),x;`timespan$1000000
 / a token-list config (e.g. reloadorder) as a symbol list
 astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
 
-/ base dirs: code/config under TORQXAPPHOME, runtime data under TORQXDATAHOME falling back to TORQXAPPHOME
-apphome:{getenv[`TORQXAPPHOME]}
-datahome:{$[count h:getenv[`TORQXDATAHOME];h;getenv[`TORQXAPPHOME]]}
-
-/ resolves a possibly-relative dir setting to an absolute path string under base
-resolvedir:{[base;dir]
-  dir:$[10h=abs type dir;dir;string dir];
-  dir:$[(0<count dir) and ":"=first dir;1_dir;dir];
-  $[dir like "/*";dir;base,"/",dir]
-  }
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+apphome:cfg`apphome;
+datahome:cfg`datahome;
+resolvedir:cfg`resolvedir;
 
 partwritemodes:`partbyattr`partbyenum`partbyfirstchar
 

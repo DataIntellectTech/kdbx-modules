@@ -43,6 +43,8 @@ tstime:{[] 0D14:30~(cfg`astimespan)[`second;14:30:00]}
 tssecs:{[] 0D00:00:30~(cfg`astimespan)[`second;30]}
 tsdigits:{[] 0D00:00:30~(cfg`astimespan)[`second;"30"]}
 tsfloat:{[] 0D00:00:01.5~(cfg`astimespan)[`second;1.5]}
+tsreal:{[] 0D00:00:01.5~(cfg`astimespan)[`second;1.5e]}
+tsrealhour:{[] 0D01:30~(cfg`astimespan)[`hour;1.5e]}
 tsneg:{[] -0D00:00:05~(cfg`astimespan)[`second;-5]}
 tsminutes:{[] 0D01:30~(cfg`astimespan)[`minute;90]}
 tshours:{[] 0D02~(cfg`astimespan)[`hour;"2"]}

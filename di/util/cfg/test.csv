@@ -50,6 +50,8 @@ true,0,0,q,tstime[],1,,a time atom is cast
 true,0,0,q,tssecs[],1,,a bare number counts in the unit
 true,0,0,q,tsdigits[],1,,bare digits as text count in the unit too - not hours
 true,0,0,q,tsfloat[],1,,a fraction of a unit
+true,0,0,q,tsreal[],1,,a real fraction - timespan times real rounds the real first
+true,0,0,q,tsrealhour[],1,,and in hours
 true,0,0,q,tsneg[],1,,a negative offset
 true,0,0,q,tsminutes[],1,,minutes
 true,0,0,q,tshours[],1,,hours

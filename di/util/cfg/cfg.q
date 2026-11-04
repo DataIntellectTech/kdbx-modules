@@ -43,7 +43,8 @@ astimespan:{[unit;x]
   x:$[-11h=type x;string x;x];
   r:$[-16h=type x;x;
       (type x) in -17 -18 -19h;`timespan$x;
-      (type x) in -5 -6 -7 -8 -9h;`timespan$u*x;
+      (type x) in -5 -6 -7h;u*x;
+      (type x) in -8 -9h;`timespan$u*`float$x;
       10h=abs type x;$[any ((),x) in "D:";"N"$(),x;`timespan$u*"F"$(),x];
       0Nn];
   if[null r;'"di.util.cfg: cannot read \"",$[10h=abs type x;(),x;-3!x],"\" as a timespan"];

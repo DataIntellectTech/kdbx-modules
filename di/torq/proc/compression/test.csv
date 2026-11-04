@@ -1,0 +1,49 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,cmp:use`di.torq.proc.compression,1,,load module
+before,0,0,q,system "l di/torq/proc/compression/test.q",1,,load mock deps and fixture helpers
+before,0,0,q,setupfixture[],1,,build the fixture hdb and its compression csv
+
+fail,0,0,q,cmp[`init][basecfg[];()!()],1,,init without a log dependency must error
+fail,0,0,q,cmp[`compressnow][],1,,compressnow before init must error
+fail,0,0,q,cmp[`init][badhdbcfg[];mockdeps[]],1,,init on a missing hdb path must error
+
+true,0,0,q,`csvpath`hdbpath`maxage`exitonfinish~key shippeddefaults[],1,,the settings file declares every tunable
+true,0,0,q,1b~(shippeddefaults[])`exitonfinish,1,,shipped exitonfinish default
+true,0,0,q,30~(shippeddefaults[])`maxage,1,,shipped maxage default matches TorQ's config/settings/compression.q
+
+run,0,0,q,resetcalls[],1,,clear the captured log
+run,0,0,q,cmp[`init][nodefaultscfg[];mockdeps[]],1,,init with only the required paths so the code defaults apply
+true,0,0,q,initlog[] like "*maxage=30*",1,,code maxage default agrees with the settings file
+true,0,0,q,initlog[] like "*exitonfinish=1",1,,code exitonfinish default agrees with the settings file
+
+run,0,0,q,cmp[`init][basecfg[];mockdeps[]],1,,init with the full fixture config
+true,0,0,q,not compressed[PARTS 0;`price],1,,the fixture starts uncompressed
+run,0,0,q,cmp[`compressnow][],1,,run one compression pass
+true,0,0,q,compressed[PARTS 0;`price],1,,the configured column is compressed in the first partition
+true,0,0,q,compressed[PARTS 1;`price],1,,and in the second
+true,0,0,q,not compressed[PARTS 0;`size],1,,a column the csv does not name is left alone
+true,0,0,q,not compressed[OLD;`price],1,,a partition older than maxage is left alone
+
+true,0,0,q,100h=type get `.compression.run,1,,run is published at a root name for di.torq's runhook
+true,0,0,q,100h=type get `.compression.compressnow,1,,compressnow is published at a root name for IPC callers
+
+run,0,0,q,teardownfixture[],1,,rebuild the fixture so the toml run has uncompressed files to work on
+run,0,0,q,setupfixture[],1,,
+run,0,0,q,cmp[`init][tomlcfg[];mockdeps[]],1,,init accepts the string values a .toml settings file delivers
+run,0,0,q,cmp[`compressnow][],1,,and compresses with them
+true,0,0,q,compressed[PARTS 0;`price],1,,the string-valued maxage was coerced and the pass ran
+fail,0,0,q,cmp[`init][badboolcfg[];mockdeps[]],1,,a boolean setting that is neither true/false nor 1/0 must error rather than silently read as false
+fail,0,0,q,cmp[`init][symboolcfg[];mockdeps[]],1,,a symbol must error too - it used to fall through the type guard and read as false
+fail,0,0,q,cmp[`init][badlongcfg[];mockdeps[]],1,,a maxage that does not parse must error - a 0N maxage compressed nothing and exited 0
+
+run,0,0,q,cmp[`init][nocsvcfg[];mockdeps[]],1,,an app with no compression csv falls back to the one the framework ships
+true,0,0,q,initlog[] like "*di/torq/compressionconfig.csv*",1,,and the init log names it
+
+run,0,0,q,writebadalgocsv[],1,,swap in a csv naming an unsupported algorithm
+run,0,0,q,cmp[`init][basecfg[];mockdeps[]],1,,point back at the fixture csv - the previous row inited against the framework one
+run,0,0,q,resetcalls[],1,,clear the captured log
+run,0,0,q,cmp[`compressnow][],1,,an invalid algorithm is logged and skipped rather than thrown - see compression.md
+true,0,0,q,0<count select from calls where lvl=`error,1,,the invalid config is reported as an error
+true,0,0,q,0<cmp[`errorcount][],1,,and counted - run exits non-zero so a scheduler does not read it as success
+
+after,0,0,q,teardownfixture[],1,,remove the fixture hdb

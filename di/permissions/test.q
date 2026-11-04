@@ -19,6 +19,9 @@ badlog:{[] enlist[`log]!enlist `info`warn!({[c;m]};{[c;m]})}
 cfg:{[e] (enlist`enabled)!enlist e}
 cfgwith:{[k;v] (`enabled`maxsize`runmode`permissivemode!(1b;200000000;1b;0b)),(enlist k)!enlist v}
 
+/ a maxsize that does not parse
+badmaxsizecfg:{[] cfgwith[`maxsize;"2e8x"]}
+
 / which events got an exec owner
 execevents:{[] asc exec event from reg where phase=`exec}
 pcregistered:{[] 0<count select from reg where event=`.z.pc}

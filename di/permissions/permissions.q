@@ -14,8 +14,21 @@
 / is permitted rather than refused.
 
 / config coercion - a .toml tier gives strings, a .q tier gives typed values
-asbool:{[x] $[-1h=type x;x;10h=abs type x;first "B"$(),x;-7h=type x;0<>x;0b]};
-aslong:{[x] $[-7h=type x;x;10h=abs type x;"J"$(),x;"j"$x]};
+asbool:{[x]
+  if[-1h=type x;:x];
+  if[(type x) in -4 -5 -6 -7 -8 -9h;:0<>x];
+  if[10h=abs type x;
+    s:`$lower (),x;
+    :$[s in `1`true;1b;
+       s in `0`false;0b;
+       '"di.permissions: cannot read \"",(string s),"\" as a boolean - use true or false"]];
+  '"di.permissions: cannot read a value of type ",(string type x)," as a boolean - use true or false"
+  };
+aslong:{[x]
+  r:$[-7h=type x;x;10h=abs type x;"J"$(),x;"j"$x];
+  if[null r;'"di.permissions: cannot read \"",$[10h=abs type x;(),x;-3!x],"\" as a whole number"];
+  r
+  };
 
 / wildcard/superuser marker for functions and data
 ALL:`$"*";

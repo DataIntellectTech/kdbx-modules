@@ -86,13 +86,13 @@ expects.
 ### Process-type dispatch
 
 A built-in registry maps proctype → module name, `` `x → `di.torq.proc.x `` for each of `hdb`,
-`tickerplant`, `rdb`, `wdb`, `gateway`, `idb`, `segmentedtp`, `chainedtp`, `housekeeping`, `discovery`
-and `tickerlogreplay`; `segmentedchainedtp` also maps to `di.torq.proc.segmentedtp` and resolves the
+`tickerplant`, `rdb`, `wdb`, `gateway`, `idb`, `segmentedtp`, `chainedtp`, `housekeeping`, `discovery`,
+`tickerlogreplay` and `compression`; `segmentedchainedtp` also maps to `di.torq.proc.segmentedtp` and resolves the
 `segmentedtp` settings tier (builtin and app root alike); its chained behaviour comes from the instance's own
 settings, e.g. `sctp1.toml`, as any other per-instance distinction does:
 
 ```q
-builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery`tickerlogreplay`segmentedchainedtp!`di.torq.proc.hdb`di.torq.proc.tickerplant ...
+builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery`tickerlogreplay`segmentedchainedtp`compression!`di.torq.proc.hdb`di.torq.proc.tickerplant ...
 ```
 
 If `proctype` is in `builtin`, `startbuiltin` `use`-loads that module and calls its

@@ -65,7 +65,7 @@ Functions shown below allow you to register new timer-based jobs with varying de
 | func          | function   | Function to be executed when job runs                                 |
 | params        | list       | Arguments to pass into the function at run time; stored as a list (`(),params`), so jobs with parameters of any type can share the table |
 | period        | timespan   | Time period for next run time calculations, as TorQ's `.timer.repeat`; anything else is rejected. As in TorQ, a job whose next run falls outside its start and end times is disabled, so an infinite period runs once |
-| mode          | short      | Scheduling mode to determine next run time; a mode outside 1-5 is rejected |
+| mode          | short      | Scheduling mode to determine next run time; a mode outside 1-5 is rejected, and so is a mode 5 period under a minute |
 | opts          | dictionary | Optional additional configuration parameters, specifics below         |
 
 ###### Function Options

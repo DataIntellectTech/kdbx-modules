@@ -36,6 +36,7 @@ addjob.custom:{[id;func;params;period;mode;opts]
   / period must be a timespan and mode a scheduling mode
   if[-16h<>type period;'"period must be a timespan"];
   if[not (mode:`short$mode) in key nextstart;'"mode can only be one of ",-3!key nextstart];
+  if[(5h=mode)&period<0D00:01;'"mode 5 period must be at least a minute"];
   if[-11h=type func;get func];
   opts:addjob.opts,opts;
   / reject a duplicate function and parameters unless dupcheck is off
@@ -100,7 +101,7 @@ nextstart[4h]:{[id;r]
   };
 nextstart[5h]:{[id;r]
   / updates nextstart on the hour in x minute intervals after previous start time
-  r[`nextstart]:{(`date$x)+(`minute$y) xbar (`minute$y)+`minute$x}[;r`period] $[null r`prevstart;r`created;r`prevstart];
+  r[`nextstart]:{(`date$x)+(`long$`minute$y) xbar (`minute$y)+`minute$x}[;r`period] $[null r`prevstart;r`created;r`prevstart];
   @[.z.M.jobs;id;:;r];
   };
 

@@ -1,3 +1,3 @@
 # Peer modules this module `use`s (see di/torq/depcheck/depcheck.md).
 [dependencies]
-"di.util.cfg" = "0.3.0"
+"di.util.cfg" = "0.2.0"

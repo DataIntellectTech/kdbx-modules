@@ -1,4 +1,4 @@
 # Peer modules di.torq.proc.idb `use`s (see di/torq/depcheck/depcheck.md for the manifest-graph mechanism).
 [dependencies]
-"di.util.cfg" = "0.3.0"
+"di.util.cfg" = "0.2.0"
 "di.torq.servers" = "0.3.0"       # requires the INJECTED-servers contract (deps`servers)

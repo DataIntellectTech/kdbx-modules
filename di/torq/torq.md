@@ -51,22 +51,26 @@ nothing at all).
 
 ### Environment variables
 
-Three independent, explicitly-set env vars - not derived from each other:
+`TORQXHOME` is optional; the app sets the other two:
 
 | var | what it points at | used for |
 |---|---|---|
-| `TORQXHOME` | the `di.torq`/framework checkout | builtin settings root (`$TORQXHOME/di/torq/settings`) |
+| `TORQXHOME` | the `di.torq`/framework checkout; when unset, the module search path entry that holds `di/torq` (`QPATH`'s non-empty entries, or `$QHOME/mod` when it has none, as `use` searches; with both unset, set `TORQXHOME`) | builtin settings root (`<home>/di/torq/settings`) and framework permissions root (`<home>/di/torq/permissions`) |
 | `TORQXAPPCONFIG` | the app's `appconfig/` directory | app settings root (`$TORQXAPPCONFIG/settings`) and `process.csv` |
 | `TORQXAPPHOME` | the app's own project root | `code/processes/{proctype}.q` (custom proctypes), and where `di.torq.proc.hdb`'s relative `dir:` settings resolve against |
 
 ### Config cascade
 
 `roots[]` builds the two roots `di.torq.config.cascade` needs
-(`` `$TORQXHOME/di/torq/settings ``, `` `$TORQXAPPCONFIG/settings ``); `init` calls
+(`` `<home>/di/torq/settings ``, `` `$TORQXAPPCONFIG/settings ``); `init` calls
 `` (cc`cascade)[r 0;r 1;proctype;procname] `` and then adds the resolved
 `proctype`/`procname` into the result itself, so any module (or anything it calls)
 can find out who it is just by looking at its own `config` dict - no global to reach
 for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
+
+It also adds `timerms`: q's own `-t` in milliseconds, or null without `-t`. q consumes `-t`, so
+`cmdlinet` reads it from the full command line `.z.X`, once. The tickerplants batch on it, as TorQ's
+`.z.ts` runs at `-t`, without reading the command line themselves.
 
 ### Dependency building
 
@@ -74,17 +78,21 @@ for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
 contract dependencies (`log`, `timer`, `handlers`), defaulting to `di.util.log`/`di.timer`/
 `di.torq.handlers` respectively, with an override escape hatch - the `overrides` dict passed
 into `init` can specify a different module name under the `` `log ``/`` `timer ``/
-`` `handlers `` key. `buildtimerdep` also initializes `di.timer` itself (with no deps
-of its own - it's Tier 1 standalone) and reshapes its exported `addjob` (a dict of
+`` `handlers `` key. `buildtimerdep` also initializes `di.timer` itself (with the
+injected `log` dep, through which di.timer logs failed jobs) and reshapes its exported `addjob` (a dict of
 `custom`/`default`/`simple` variants) down to the one signature the DI contract
 expects.
 
 ### Process-type dispatch
 
-A small built-in registry maps proctype → module name:
+A built-in registry maps proctype → module name, `` `x → `di.torq.proc.x `` for each of `hdb`,
+`tickerplant`, `rdb`, `wdb`, `gateway`, `idb`, `segmentedtp`, `chainedtp`, `housekeeping`, `discovery`,
+`tickerlogreplay` and `compression`; `segmentedchainedtp` also maps to `di.torq.proc.segmentedtp` and resolves the
+`segmentedtp` settings tier (builtin and app root alike); its chained behaviour comes from the instance's own
+settings, e.g. `sctp1.toml`, as any other per-instance distinction does:
 
 ```q
-builtin:(enlist`hdb)!enlist`di.torq.proc.hdb
+builtin:`hdb`tickerplant`rdb`wdb`gateway`idb`segmentedtp`chainedtp`housekeeping`discovery`tickerlogreplay`segmentedchainedtp`compression!`di.torq.proc.hdb`di.torq.proc.tickerplant ...
 ```
 
 If `proctype` is in `builtin`, `startbuiltin` `use`-loads that module and calls its
@@ -108,14 +116,20 @@ The cascade mirrors the config cascade's shape:
 | tier | directory | flag | default |
 |------|-----------|------|---------|
 | common | `code/common/` | `loadcommoncode` | on |
+| parentproctype | `code/<parentproctype>/` | `loadprocesscode`, and `-parentproctype` given | on when given |
 | proctype | `code/<proctype>/` | `loadprocesscode` | on |
 | procname | `code/<procname>/` | `loadnamecode` | **off** |
 
 So **yes, it supports per-procname customisation** just like the config cascade — but, exactly
 as in TorQ (`.proc.loadnamecode` defaults `0b`), the procname tier is **off by default** and
 opt-in via `loadnamecode:1b` in that process's settings. Each flag is read from the merged
-config (so it's overridable per-process in settings). `parentproctype` (TorQ's 4th tier, for
-sharing code between a WDB and its sort workers) is omitted — there is no sort-worker tier yet.
+config (so it's overridable per-process in settings). `-parentproctype` (TorQ's 4th tier, read
+from the command line as `torq.q:376-380` and stamped into config as a symbol atom, null if not
+given) adds a `{parentproctype}` settings tier between `default` and `{proctype}`, and loads
+`code/<parentproctype>/` between `common` and `<proctype>`, gated by `loadprocesscode` as `torq.q:643`.
+It is a reserved flag, not a config override. Proctypes `sort` and `sortworker` still run
+`di.torq.proc.wdb` with `settings/sort.q` and `settings/sortworker.q`; `-parentproctype wdb` adds
+only what an app puts in a `wdb` settings tier or `code/wdb/`.
 
 Within a directory, files load in this order: an optional `order.txt` (one filename per line)
 is loaded first, then the remaining `*.q`/`*.k` files alphabetically — matching TorQ's `loaddir`.
@@ -128,6 +142,29 @@ already uses for `code/processes/`.
 
 App code loads **after** the process module's `init` (so it can reference the module's tables and
 state) and **before** the `.run` hook (so an app file may define/override `` .<proctype>.run ``).
+
+After `.ps.initialise[]` and connections, `init` runs any functions a process queued with
+`.proc.addinitlist[(func;arg)]` (`.proc.initlist`), then empties the list.
+
+### Waiting for peers at startup (optional)
+
+A process can wait for the proctypes it needs before it finishes init and starts serving. A gateway
+set up this way never takes a query while one of its backends is still starting:
+
+```toml
+startupdeps = "rdb hdb idb"    # or ["rdb","hdb","idb"]; .q: startupdeps:`rdb`hdb`idb
+startupdepsleep = 1            # seconds between checks
+startupdepcycles = 60          # checks before init fails; 0W waits forever
+```
+
+After connections are started, `init` passes these to `.servers.startupdepcycles` (TorQ's
+own mechanism), which retries the connections until every listed proctype is connected. If they
+are not all connected after `startupdepcycles` checks, init fails with `<procname> cannot connect to
+<proctype>` and the launcher exits 3. An empty `startupdeps`, the default, skips the wait, and so
+does connection tracking being off (`enabled = false`).
+
+The wait blocks q, so the process does not act on SIGTERM until it ends. `torqx.sh stop` sends only
+SIGTERM, which is why the default is a bounded 60 checks rather than `0W`.
 
 ### The `.run` post-init hook
 
@@ -285,7 +322,8 @@ In practice nothing calls `tq.init` directly like the examples above - that's wh
 does on top of that (start/stop/restart/status across a whole `process.csv`, without
 duplicating any of the identity-resolution logic above - it only reads `process.csv`
 to know *which* processes exist, never to resolve *who a given session is*, which
-stays exclusively `di.torq`'s job).
+stays exclusively `di.torq`'s job). An optional `startwithall` column, as in TorQ, keeps a row with `0` out of
+`torqx.sh start` / `start all`; it can still be started by name.
 
 ### Dev mode (tmux)
 
@@ -322,11 +360,6 @@ freshly-started process. tmux mode is for local development; production stays on
 - **Query logging (`[querylog]`) wraps `.z.*` by direct assignment.** If a phased event's `exec`
   is claimed after startup, logging for that event silently drops to zero with no error. See
   [Query logging](#query-logging-optional).
-- The builtin registry has exactly one entry (`` `hdb ``) so far - every other
-  proctype in a real deployment would be custom, until more `di.*` process-type
-  modules exist.
-- No `di.torq.depcheck`-style pre-flight dependency validation yet (next up per the
-  modularisation plan).
 - `autodetect`'s host-matching has no `-procfile` override and no FinSpace-specific
   host handling - deliberately out of scope, same scoping-down `di.torq.servers` applies
   to its own `process.csv` reading.
@@ -338,9 +371,10 @@ freshly-started process. tmux mode is for local development; production stays on
 module's tests, and `di.torq`'s actual job is wiring them together correctly, which
 mocking them away wouldn't exercise. Only `TORQXAPPCONFIG`/`TORQXAPPHOME` are
 repointed at a temp fixture (a scratch settings tree, `process.csv`, and a throwaway
-custom proctype file that publishes its own `run` hook to assert on) - `TORQXHOME`
-stays real, since `di.torq`'s own built-in settings and registry genuinely live
-there. Covers: `reqenv` erroring on a missing var, both auto-detect failure modes
+custom proctype file that publishes its own `run` hook to assert on); the built-in
+settings and registry are the checkout's own, found through `QPATH`, so the suite needs
+no env vars set. Covers: `reqenv` erroring on a missing var, the framework home with and
+without `TORQXHOME`, both auto-detect failure modes
 (no match, ambiguous), explicit-identity init for both a built-in and a custom
 proctype, config-cascade/deps reaching the started process type correctly, the
 `.run` hook firing by default and being skipped when `norun` is set, and successful

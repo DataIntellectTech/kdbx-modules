@@ -199,7 +199,7 @@ true,0,0,q,`info`warn`error~key logdep,1,,hand-built logdep has the required con
 / Test 31: logdict has its own independent createlog instance, separate from the bare functions
 true,0,0,q,not lg.info~(lg.logdict`log)`info,1,,bare info and logdict's info are distinct implementations
 
-/ Test 32: add rejects an invalid level symbol instead of silently creating an orphaned sink key
+/ Test 32: add rejects an invalid level symbol
 true,0,0,q,.[log1.add;(1i;`notalevel);{1b}],1,,add throws on an unrecognised level symbol
 true,0,0,q,.[log1.add;(1i;`info`notalevel);{1b}],1,,add throws when any level in a mixed list is invalid, not just when all are
 

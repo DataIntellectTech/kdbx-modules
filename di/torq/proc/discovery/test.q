@@ -24,13 +24,13 @@ stubservers:{[]
 
 row:{[pn;pt;hp;wh] ([]procname:enlist pn;proctype:enlist pt;hpup:enlist hp;w:enlist wh;attributes:enlist ()!())};
 
-/ peer A (alpha) and peer B (beta) live; B's hpup listed as a non-torq process
+/ peer A (alpha) and peer B (beta) live; B's hpup in nontorqprocesstab
 initrows:{[]
   .servers.SERVERS::row[`alpha1;`alpha;`:a:1;hA],row[`beta1;`beta;`:b:2;hB];
   .servers.nontorqprocesstab::([]hpup:enlist`:b:2);
   };
 
-/ alpha/beta plus discovery's own row, no non-torq rows
+/ alpha/beta plus discovery's own row, empty nontorqprocesstab
 servicerows:{[]
   .servers.SERVERS::row[`alpha1;`alpha;`:a:1;hA],row[`beta1;`beta;`:b:2;hB],row[`discovery1;`discovery;`:d:3;0Ni];
   .servers.nontorqprocesstab::([]hpup:`symbol$());

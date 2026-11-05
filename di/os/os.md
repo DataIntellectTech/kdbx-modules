@@ -6,6 +6,8 @@ Designed to work on both **Linux/Unix** and **Windows**, functions automatically
 
 **All functions that accept path arguments can accept string or hsym paths.**
 
+`version` holds the module version, read from its `VERSION` file.
+
 ---
 
 ## :desktop_computer: OS Detection

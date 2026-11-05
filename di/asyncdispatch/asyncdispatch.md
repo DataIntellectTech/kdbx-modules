@@ -127,28 +127,28 @@ ad.execqueryto[0Ni;shardquery;servertypes;raze;(`da.shardresult;reqid);0Wn;0b]
 Scan the queue for queries past their timeout, send a timeout error to each client, and mark them complete. Wire into your gateway's timer — every few seconds is typical.
 ```q
 // in gateway timer
-timer.addjob.default[`asyncdispatch.checktimeout;{ad.checktimeout[]};();5i;1]
+timer.addjob.default[`asyncdispatch.checktimeout;{ad.checktimeout[]};();0D00:00:05;1]
 ```
 
 ### `removequeries[age]`
 Purge completed `queryqueue` rows older than `age`. Prevents unbounded growth.
 ```q
 // default age is querykeeptime (0D00:30)
-timer.addjob.default[`asyncdispatch.removequeries;{ad.removequeries[0D00:30]};();300i;1]
+timer.addjob.default[`asyncdispatch.removequeries;{ad.removequeries[0D00:30]};();0D00:05;1]
 ```
 
 ### `removeinactive[age]`
 Purge `servers` rows for backends that have been disconnected longer than `age`. Prevents unbounded growth.
 ```q
 // default age is clearinactivetime (0D01:00)
-timer.addjob.default[`asyncdispatch.removeinactive;{ad.removeinactive[0D01:00]};();300i;1]
+timer.addjob.default[`asyncdispatch.removeinactive;{ad.removeinactive[0D01:00]};();0D00:05;1]
 ```
 
 ### `removeclients[age]`
 Purge `clients` rows older than `age`. The `clients` table is appended to on every client connect (`addclientdetails`) for audit and is not otherwise pruned, so wire this into the timer to prevent unbounded growth. Choose `age` to match your audit retention requirements.
 ```q
 // retain one day of client audit history
-timer.addjob.default[`asyncdispatch.removeclients;{ad.removeclients[1D]};();300i;1]
+timer.addjob.default[`asyncdispatch.removeclients;{ad.removeclients[1D]};();0D00:05;1]
 ```
 
 ### `setformatresponse[f]`
@@ -210,10 +210,10 @@ ad.addserver[hopen`:backend2:5002;`hdb]
 .z.pc:{ad.removeserverhandle[.z.w];ad.removeclienthandle[.z.w]}
 
 // wire housekeeping into the gateway timer
-timer.addjob.default[`asyncdispatch.checktimeout;{ad.checktimeout[]};();5i;1]
-timer.addjob.default[`asyncdispatch.removequeries;{ad.removequeries[0D00:30]};();300i;1]
-timer.addjob.default[`asyncdispatch.removeinactive;{ad.removeinactive[0D01:00]};();300i;1]
-timer.addjob.default[`asyncdispatch.removeclients;{ad.removeclients[1D]};();300i;1]
+timer.addjob.default[`asyncdispatch.checktimeout;{ad.checktimeout[]};();0D00:00:05;1]
+timer.addjob.default[`asyncdispatch.removequeries;{ad.removequeries[0D00:30]};();0D00:05;1]
+timer.addjob.default[`asyncdispatch.removeinactive;{ad.removeinactive[0D01:00]};();0D00:05;1]
+timer.addjob.default[`asyncdispatch.removeclients;{ad.removeclients[1D]};();0D00:05;1]
 
 // a client calls this asynchronously:
 // execquery dispatches to rdb and hdb in parallel, razes results, replies to client

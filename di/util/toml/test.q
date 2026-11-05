@@ -1,6 +1,4 @@
-/ di.util.toml test fixtures (loaded by test.csv). di.util.toml is pure - no mocks needed; the TOML text is
-/ defined here as q string literals (far cleaner than CSV-escaping all the quotes inline) plus a
-/ small temp .toml file fixture for parsefile.
+/ TOML text fixtures and a temp .toml file for parsefile
 
 fflat:"a = 1\nb = 2.5\nc = true\nd = false\ns = \"hello\"";
 fqkey:"\"my key\" = 42";

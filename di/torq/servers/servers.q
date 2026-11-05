@@ -1,4 +1,4 @@
-/ di.torq.servers - connection management; registry, config and protocol functions at root .servers.*. See servers.md
+/ connection management; registry, config and protocol functions at root .servers.*
 
 / --- module-local state (initial values at load; read/written via .z.m at runtime) ---
 
@@ -8,7 +8,7 @@ self:`proctype`procname!``;
 registered:0b;
 
 / flat config key -> (.servers global;default)
-settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery!(
+settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscribetodiscovery`discoveryretry`tracknontorqprocess`hopentimeout`retry`retain`autoclean`debug`startup`discovery`userpass`passwords!(
   (`.servers.enabled;1b);
   (`.servers.CONNECTIONS;`);
   (`.servers.DISCOVERYREGISTER;1b);
@@ -22,15 +22,23 @@ settings:`enabled`connections`discoveryregister`connectionsfromdiscovery`subscri
   (`.servers.AUTOCLEAN;0b);
   (`.servers.DEBUG;1b);
   (`.servers.STARTUP;0b);
-  (`.servers.DISCOVERY;enlist`));
+  (`.servers.DISCOVERY;enlist`);
+  / credentials for OUTBOUND connections, appended by opencon. A process that permissions its
+  / own handlers (see di.permissions) refuses an unauthenticated peer, so without these the
+  / stack cannot talk to itself. `userpass` is `user:pass` for every target; `passwords` is a
+  / per-target override keyed on hpup. di.torq resolves userpass from a credentials file -
+  / see its passwordfile cascade.
+  (`.servers.USERPASS;`);
+  (`.servers.PASSWORDS;enlist[`]!enlist `));
 
 raiseerror:{[ctx;msg]
-  / internal - log an error under ctx via the injected logger, then signal it, so a failure is
-  / observable in the log as well as thrown. used for all post-init domain errors (init's own
-  / dependency validation signals with a plain ' - the logger is not wired yet).
+  / internal - log an error under ctx then signal it
   .z.m.logerr[ctx;msg];
   '"di.torq.servers: ",string[ctx],": ",msg;
   };
+
+/ a timespan, a "0D00:00:10" string or a number of seconds (TOML has no timespan type)
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
 init:{[deps]
   / wire deps and config, publish root names, register .z.pc and retry timers once
@@ -61,38 +69,52 @@ init:{[deps]
   @[value;`.servers.SERVERS;{set[`.servers.SERVERS;([]procname:`symbol$();proctype:`symbol$();hpup:`symbol$();w:`int$();hits:`int$();startp:`timestamp$();lastp:`timestamp$();endp:`timestamp$();attributes:())]}];
   / config
   {[deps;k] set[first .z.m.settings k;$[k in key deps;deps k;last .z.m.settings k]]}[deps] each key .z.m.settings;
+  .servers.RETRY:totimespan .servers.RETRY;
+  .servers.DISCOVERYRETRY:totimespan .servers.DISCOVERYRETRY;
+  / a string or a list of strings (TOML has no symbol type)
+  .servers.CONNECTIONS:$[11h=abs type c:.servers.CONNECTIONS;c;`$c];
   set[`.servers.NONTORQPROCESSFILE;$[`nontorqprocessfile in key deps;hsym deps`nontorqprocessfile;hsym `$("/" sv -1_"/" vs .z.m.processcsv),"/nontorqprocess.csv"]];
   / live-handle checks
   set[`.dotz.liveh;{x in key .z.W}];
   set[`.dotz.livehn;{x in 0Ni,key .z.W}];
   set[`.dotz.liveh0;{x in 0i,key .z.W}];
-  pub:`opencon`cleanup`addnthawc`getdetails`addhw`addw`retry`retrydiscovery`autodiscovery`retryrows`removerows`register`querydiscovery`registerfromdiscovery`addprocs`procupdate`domainsocketsenabled`formathp`formatprocs`startup`pc!(opencon;cleanup;addnthawc;getdetails;addhw;addw;retry;retrydiscovery;autodiscovery;retryrows;removerows;register;querydiscovery;registerfromdiscovery;addprocs;procupdate;domainsocketsenabled;formathp;formatprocs;startup;pc);
+  pub:`opencon`cleanup`addnthawc`getdetails`addhw`addw`addh`retry`retrydiscovery`autodiscovery`retryrows`removerows`register`querydiscovery`registerfromdiscovery`addprocs`procupdate`refreshattributes`getserverbytype`gethandlebytype`gethpbytype`domainsocketsenabled`formathp`formatprocs`startup`pc!(opencon;cleanup;addnthawc;getdetails;addhw;addw;addh;retry;retrydiscovery;autodiscovery;retryrows;removerows;register;querydiscovery;registerfromdiscovery;addprocs;procupdate;refreshattributes;getserverbytype;getserverbytype[;`w;];gethpbytype;domainsocketsenabled;formathp;formatprocs;startup;pc);
+  / root .servers.gethandlebytype is getserverbytype[;`w;], reopening dead handles
   set'[` sv/:`.servers,/:key pub;value pub];
   if[not .z.m.registered;
     / .z.pc
     (.z.m.handlers[`register])[`.z.pc;`;`servers;0j;pc];
     / retry timers
     if[.servers.enabled;
-      if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();`long$.servers.DISCOVERYRETRY%0D00:00:01;3;()!()]];
-      if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();`long$.servers.RETRY%0D00:00:01;3;()!()]]];
+      if[.servers.DISCOVERYRETRY>0;(.z.m.timer[`addjob])[`discoveryretry;retrydiscovery;();.servers.DISCOVERYRETRY;3;()!()]];
+      if[.servers.RETRY>0;(.z.m.timer[`addjob])[`serversretry;retry;();.servers.RETRY;3;()!()]]];
     .z.m.registered:1b;
     ];
   .z.m.loginfo[`init;"di.torq.servers initialised"];
   };
 
 / open a connection
+/ attach outbound credentials, as TorQ's opencon does. A per-target PASSWORDS entry wins over
+/ USERPASS; a hpup that already carries credentials is left alone, which is how the colon count
+/ is used - ":host:port" has two, ":tcps://host:port" three.
+withcreds:{[hpup]
+  s:string hpup;
+  tcps:s like ":tcps:*";
+  up:.servers.USERPASS^.servers.PASSWORDS hpup;
+  $[null up;hpup;(2+tcps)>=sum ":"=s;`$s,":",string up;hpup]
+  };
+
 opencon:{[hpup]
   if[.servers.DEBUG;.z.m.loginfo[`conn;"attempting to open handle to ",string hpup]];
-  r:@[{(hopen (x;.servers.HOPENTIMEOUT);"")};hpup;{(0Ni;x)}];
+  / the credentialed string is never logged - it carries a plaintext password
+  r:@[{(hopen (x;.servers.HOPENTIMEOUT);"")};withcreds hpup;{(0Ni;x)}];
   if[.servers.DEBUG;.z.m.loginfo[`conn;"connection to ",(string hpup),$[null first r;" failed: ",last r;" successful"]]];
   if[null first r;.z.m.logwarn[`servers;"failed to open connection to ",(string hpup),": ",last r]];
   first r
   };
 
 readprocesscsv:{[path]
-  / internal - read the static process.csv phone book (host,port,proctype,procname). the PATH is
-  / supplied by the caller (from config`processcsv); di.torq.servers reads no env itself, holding
-  / di.torq.config's env-free boundary - di.torq resolves the path and puts it in config.
+  / internal - read the process.csv (host,port,proctype,procname) at the given path
   fsym:`$":",path;
   if[0=count key fsym;raiseerror[`readprocesscsv;"process.csv not found at ",path]];
   ("SISS";enlist",") 0: fsym
@@ -126,6 +148,13 @@ addhw:{[hpuP;W]
   addnthawc[name;info`proctype;hpuP;info`attributes;W;0b]}
 
 addw:addhw[`]
+
+/ open a connection to a server and store its details
+addh:{[hpuP]
+  W:opencon hpuP;
+  $[null W;
+    '"failed to open handle to ",string hpuP;
+    addhw[hpuP;W]]}
 
 / after getting new servers run retry to open connections
 retry:{retryrows exec i from `.servers.SERVERS where not .dotz.liveh0 w,not proctype=`discovery}
@@ -189,10 +218,17 @@ addprocs:{[connectiontab;procs;connect]
     if[`attributes in cols connectiontab;
       .servers.SERVERS:.servers.SERVERS lj 3!select procname,proctype,hpup,attributes from connectiontab where not ([]procname;proctype;hpup) in select procname,proctype,hpup from .servers.SERVERS]];
   removerows exec i from `.servers.SERVERS where hpup in exec hpup from res;
-  register[res;;connect] each $[procs~`ALL;exec distinct proctype from res;procs,()];}
+  register[res;;connect] each $[procs~`ALL;exec distinct proctype from res;procs,()];
+  .servers.addprocscustom[res;procs]}
 
 / used to handle updates from the discovery service
 procupdate:{[procs] addprocs[procs;exec distinct proctype from procs;0b];}
+
+/ re-register this process's attributes with each discovery service
+refreshattributes:{
+  retrydiscovery[];
+  (neg exec w from .servers.getservers[`proctype;`discovery;()!();0b;0b])@\:(`..register;`);
+  }
 
 / return true if unix domain sockets can be used
 domainsocketsenabled:{[]
@@ -279,8 +315,7 @@ updatestats:{[wh]
   };
 
 gethandlebytype:{[pt;selection]
-  / get a single live handle for a proctype via a selection algorithm (`any`roundrobin`last), or
-  / 0Ni if none is connected. bumps usage stats on the chosen row.
+  / a live handle for a proctype by selection (`any`roundrobin`last), or 0Ni; bumps usage stats
   if[not -11h=type pt;raiseerror[`gethandlebytype;"proctype must be a symbol"]];
   if[not -11h=type selection;raiseerror[`gethandlebytype;"selection must be a symbol (`any`roundrobin`last)"]];
   r:getservers[pt];
@@ -289,6 +324,16 @@ gethandlebytype:{[pt;selection]
   updatestats[wh];
   wh
   };
+
+/ one server value for a proctype from SERVERS, reopening dead handles first
+getserverbytype:{[ptype;serverval;selection]
+  r:.servers.getservers[`proctype;ptype;()!();1b;1b];
+  if[count r;
+    r:selector[r;selection];
+    updatestats[r`w]];
+  r[serverval]}
+
+gethpbytype:getserverbytype[;`hpup;]
 
 signalfound:{[pt]
   / internal - log and return 1b once a connection to pt exists.
@@ -314,9 +359,7 @@ waitfortype:{[pt;timeoutms;pollms]
   };
 
 getapimeta:{[]
-  / this module's api metadata, one row per CALLABLE API function, for di.torq to register with
-  / di.api. init/getapimeta are plumbing (di.torq calls them by convention) and are deliberately NOT
-  / listed - the registry describes the callable api, not plumbing. names are bare (di.torq qualifies).
+  / this module's api metadata, one row per callable function
   :flip `name`public`descrip`params`return!flip(
     (`startup;         1b; "open connections to the config's proctypes from process.csv (config carries connections + processcsv)"; "[dict: config with `connections + `processcsv]"; "null");
     (`getservers;      1b; "live SERVERS rows for a proctype";                                      "[symbol: proctype]";                              "table: live server rows");
@@ -324,17 +367,14 @@ getapimeta:{[]
     (`waitfortype;     1b; "block until a proctype connects or timeout elapses";                    "[symbol: proctype; long: timeoutms; long: pollms]"; "boolean: 1b connected, 0b timed out"));
   };
 
-/ root .servers functions for .sub and startup waits
-\d .servers
-
 / match required attributes against advertised ones
 attributematch:{[req;avail]
     vals:key[req] inter key avail;
     notpresent:noval!(count noval:key[req] except key avail)#enlist(0b;());
     notpresent,vals!{($[0>type y;x~y;all x in y];(x,()) inter y,())}'[req vals;avail vals]}
 
-/ servers matching types or names, optionally reopening closed handles
-getservers:{[nameortype;lookups;req;autoopen;onlyone]
+/ root, for .sub: servers matching types or names, optionally reopening closed handles
+.servers.getservers:{[nameortype;lookups;req;autoopen;onlyone]
     r:$[`~lookups; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS;
         nameortype~`proctype; select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where proctype in lookups;
         select procname,proctype,lastp,w,hpup,attributes,index:i from .servers.SERVERS where procname in lookups];
@@ -345,15 +385,19 @@ getservers:{[nameortype;lookups;req;autoopen;onlyone]
             if[(alivecount=0) or (not onlyone) or (any not exec max alive by agg:?[nameortype~`proctype;proctype;procname] from r);
                 retryrows exec index from r where not alive;
                 r:select procname,proctype,lastp,w,hpup,attributes,alive:.dotz.liveh w from .servers.SERVERS where i in r`index]]];
-    select procname,proctype,lastp,w,hpup,attributes,attribmatch:.servers.attributematch[req]each attributes from r where alive}
+    select procname,proctype,lastp,w,hpup,attributes,attribmatch:.z.m.attributematch[req]each attributes from r where alive}
 
-/ run on (re)connected SERVERS rows
-connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}]
+/ root, for .sub: run on (re)connected SERVERS rows
+.servers.connectcustom:@[value;`.servers.connectcustom;{[connectedrows]}];
+/ addprocs' hook for bespoke extensions when adding processes
+.servers.addprocscustom:@[value;`.servers.addprocscustom;{{[connectiontab;procs]}}];
 
 / are any required processes not connected
 reqprocsnotconn:{[requiredprocs;typeorname]
     not all requiredprocs in ?[`.servers.SERVERS;enlist (`.dotz.liveh;`w);();typeorname]
   };
+
+reqproctypesnotconn:reqprocsnotconn[;`proctype];
 
 reqprocnamesnotconn:reqprocsnotconn[;`procname];
 
@@ -373,6 +417,9 @@ startupdepcyclestypename:{[requiredprocs;typeornamefunc;timeintv;cycles]
    ];
  };
 
-startupdepnamecycles:startupdepcyclestypename[;.servers.reqprocnamesnotconn;;];
+/ root, for chainedtp and segmentedtp
+.servers.startupdepnamecycles:startupdepcyclestypename[;reqprocnamesnotconn;;];
 
-\d .
+/ root: block until all required proctypes are connected, for a number of cycles or forever
+.servers.startupdepcycles:startupdepcyclestypename[;reqproctypesnotconn;;];
+.servers.startupdependent:startupdepcyclestypename[;reqproctypesnotconn;;0W];

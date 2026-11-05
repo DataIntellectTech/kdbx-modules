@@ -1,6 +1,4 @@
-/ -----datadog.q -----
-/ package used to push metrics and events from a q process to datadog.
-/ default delivery method is through the datadog agent installed on the host. use useweb "1b" to switch delivery to https in the init function
+/ push metrics and events to datadog via the host agent, or https when useweb is set in init
 
 / define tables to capture events and metrics
 metriclog:([]time:`timestamp$();host:`$();message:();name:();metric:`float$();https:`boolean$();status:());
@@ -95,8 +93,7 @@ lin.sendmetric:{[(pars!args):metfilter]
   metriclog,:(.z.p;.z.h;cmd;metricname;"F"$metricvalue;0b;response)
  };
 
-/ following three functions are used to push metrics and events to datadog through udp and powershell on windows os
-/ windows os unable to be tested currently so following three functions have not been unit tested.
+/ push metrics and events to the datadog agent over udp via powershell on windows
 
 pushtodogagent:{[message]
   / shell command to push data
@@ -127,9 +124,8 @@ win.sendevent:{[dict:eventfilter]
   eventlog,:(.z.p;.z.h;ddmsg;eventtitle;eventtext;0b;response);
   };
 
-/ the following two functions are used to push data to datadog through https post using .Q.hp
+/ push metrics and events to the datadog api over https post with .Q.hp
 
-/ TODO: Handle variety of web requests (different post requests, different versions)
 web.sendevent:{[dict:eventfilter]
   (eventtitle;eventtext;eventdate;hostname;priority;alerttype;tags;aggregation_key;source_type_name;related_event_id;device;category;cr_name;cr_type;integration_id;message;timestamp;change_metadata;new_value;prev_value;linkcategory;linkurl;linktitle;authorname;authortype;ir_name;ir_type):dict[`eventtitle`eventtext`eventdate`hostname`priority`alerttype`tags`aggregation_key`source_type_name`related_event_id`device`category`cr_name`cr_type`integration_id`message`timestamp`change_metadata`new_value`prev_value`linkcategory`linkurl`linktitle`authorname`authortype`impacted_resource_name`impacted_resource_type];
   / sends events via https post to datadog api

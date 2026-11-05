@@ -1,20 +1,14 @@
-/ di.subscriptions - subscribe a process (e.g. di.torq.proc.rdb) to a tickerplant. In one flow it
-/ fetches the schema + log details via the TP's .u.subdetails, defines the tables locally,
-/ replays the pre-subscription log EXACTLY once (via di.tplogmgr.replayupto, using the
-/ rowcount the TP reported at subscription time), then lets live updates flow through the
-/ root `upd`. Ported/simplified from TorQ/code/common/subscriptions.q (.sub), written
-/ against di.torq.proc.tickerplant's clean single-call subdetails protocol rather than the classic
-/ standard-TP .u.i/.u.L/.u.d global reads.
-/ ---
-/ Scope (v1, critical path): connect+subscribe+replay for a co-located subscriber (it
-/ reads the TP log file directly, same filesystem - the classic tick assumption). Not yet:
-/ auto-reconnect/resubscribe, filtered-column subscriptions, remote-log streaming.
+/ subscribe to a tickerplant via .u.subdetails: define tables at root, replay the tp log up to
+/ the subscription rowcount, then receive live updates through root `upd`
 
-/ registry of active subscriptions - for health checks now, reconnect later.
+/ registry of active subscriptions
 SUBSCRIPTIONS:([]handle:`int$();tabs:();syms:();subtime:`timestamp$())
 
 / .sub .z.pc handler and check job are registered once
 registered:0b
+
+/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
 init:{[config;deps]
   if[not `log in key deps;'"di.subscriptions: log dependency is required - see di.util.log"];
@@ -22,19 +16,19 @@ init:{[config;deps]
   if[not `handlers in key deps;'"di.subscriptions: handlers dependency is required - see di.torq.handlers"];
   .z.m.log:deps`log;
   .z.m.tp:use`di.tplogmgr;          / for replayupto (repair-aware, count-limited -11!)
-  / .sub settings
-  if[`autoreconnect in key config;.sub.AUTORECONNECT:config`autoreconnect];
-  if[`checksubscriptionperiod in key config;.sub.checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b])*config`checksubscriptionperiod];
+  / all settings required
+  if[count m:`autoreconnect`checksubscriptionperiod except key config;'"di.subscriptions: missing settings: ",", " sv string m];
+  .z.m.autoreconnect:config`autoreconnect;
+  p:totimespan config`checksubscriptionperiod;
+  if[null p;'"di.subscriptions: checksubscriptionperiod must be a timespan"];
+  .z.m.checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b])*p;
   if[not .z.m.registered;
-    (deps[`handlers]`register)[`.z.pc;`;`sub;0j;.sub.pc[::;]];
-    if[.sub.checksubscriptionperiod>0;(deps[`timer]`addjob)[`checksubscriptions;.sub.checksubscriptions;();`long$.sub.checksubscriptionperiod%0D00:00:01;1;()!()]];
+    (deps[`handlers]`register)[`.z.pc;`;`sub;0j;pc[::;]];
+    if[checksubscriptionperiod>0;(deps[`timer]`addjob)[`checksubscriptions;checksubscriptions;();checksubscriptionperiod;1;()!()]];
     .z.m.registered:1b];
   }
 
-/ filtering replay wrapper installed as root `upd` during log replay: forward only rows
-/ for subscribed tables/syms to the real upd. Live data is already TP-filtered; only the
-/ log (which holds every table/sym) needs filtering to match a narrowed subscription.
-/ x is the stamped payload: a list of columns with time first, sym second.
+/ root `upd` during replay: forward only subscribed tables and syms to origupd; x: columns, sym second
 replayfilter:{[origupd;tabs;syms;t;x]
   if[not $[tabs~`;1b;t in tabs]; :()];        / skip tables we didn't subscribe to
   if[not syms~`; x:x@\:where x[1] in syms];   / keep only subscribed syms (col 1)
@@ -44,13 +38,7 @@ replayfilter:{[origupd;tabs;syms;t;x]
 / protected count-limited replay through root `upd`; returns the count, or (`replayerr;e).
 runreplay:{[lf;n] .[{[m;lf;n](m`replayupto)[lf;n]};(.z.m.tp;lf;n);{[e](`replayerr;e)}]}
 
-/ replay the pre-subscription history for a subscription-details dict `sd`, filtered to
-/ the subscribed tables/syms. NB module-namespace boundary: a `use`-loaded module cannot
-/ create/populate ROOT tables via bare symbols (they land in the module's private
-/ namespace) - so table creation uses @[`.;name;:;..] and replay drives the ROOT `upd`
-/ (which di.torq.proc.rdb sets to `insert` at root). For the common all/all subscription we don't
-/ wrap upd at all; for a narrowed subscription we temporarily install a root-level filter
-/ wrapper (built from replayfilter) and restore the original after.
+/ replay the tp log up to sd`rowcount through root `upd`, wrapped by replayfilter if narrowed
 doreplay:{[sd;tabs;syms]
   lf:sd`logfile;
   if[null lf;'"di.subscriptions: TP reports rowcount>0 but no log file - cannot replay"];
@@ -67,14 +55,10 @@ doreplay:{[sd;tabs;syms]
     .z.m.log[`error][`subscriptions;"replay failed for ",(string lf),": ",last r]];
   }
 
-/ subscribe over an already-open tickerplant handle `tph` (di.torq.proc.rdb obtains it via
-/ di.torq.servers). tabs/syms: ` for all, else a list. replay: 1b to replay the tp log.
-/ Returns the subscription-details dict (tables/schemas/logfile/rowcount/date).
+/ subscribe over an open tickerplant handle; tabs/syms: ` for all; returns the subdetails dict
 subscribe:{[tph;tabs;syms;replay]
   sd:tph(`.u.subdetails;tabs;syms);
-  / define the subscribed tables at ROOT from the returned schemas (they carry g# etc.).
-  / @[`.;name;:;schema] targets root explicitly - a bare `name set schema` from inside
-  / this module would create the table in the module's private namespace instead.
+  / define the subscribed tables at root
   {@[`.;x;:;y]}'[key sd`schemas;value sd`schemas];
   if[replay and 0<sd`rowcount; doreplay[sd;tabs;syms]];
   .z.m.SUBSCRIPTIONS:.z.m.SUBSCRIPTIONS,([]handle:enlist tph;tabs:enlist sd`tables;syms:enlist syms;subtime:enlist .z.p);
@@ -82,21 +66,16 @@ subscribe:{[tph;tabs;syms;replay]
   sd
   }
 
-/ are we currently subscribed to anything? (di.torq.proc.rdb's connectivity check)
+/ whether any subscription is active
 subscribed:{[] 0<count .z.m.SUBSCRIPTIONS}
 
 / the active-subscriptions registry (introspection)
 getsubscriptions:{[] .z.m.SUBSCRIPTIONS}
 
-/ .sub
-\d .sub
+/ root, for subscribers and their tests: proctype/procname subscriptions over di.torq.servers
+.sub.SUBSCRIPTIONS:([]procname:`symbol$();proctype:`symbol$();w:`int$();table:();instruments:();createdtime:`timestamp$();active:`boolean$());
 
-AUTORECONNECT:@[value;`AUTORECONNECT;1b];
-checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b]) * @[value;`checksubscriptionperiod;0D00:00:10]
-
-SUBSCRIPTIONS:([]procname:`symbol$();proctype:`symbol$();w:`int$();table:();instruments:();createdtime:`timestamp$();active:`boolean$());
-
-getsubscriptionhandles:{[proctype;procname;attributes]
+.sub.getsubscriptionhandles:{[proctype;procname;attributes]
   data:{select procname,proctype,w from x}each .servers.getservers[;;attributes;1b;0b]'[`proctype`procname;(proctype;procname)];
   $[0h in type each (proctype;procname);distinct raze data;inter/[data]]
  }
@@ -104,7 +83,7 @@ getsubscriptionhandles:{[proctype;procname;attributes]
 updatesubscriptions:{[proc;tab;instrs]
   delete from `.sub.SUBSCRIPTIONS where not active;
   if[instrs~`;instrs,:()];
-  .sub.SUBSCRIPTIONS::0!(4!SUBSCRIPTIONS)upsert enlist proc,`table`instruments`createdtime`active!(tab;instrs;.z.p;1b);
+  .sub.SUBSCRIPTIONS::0!(4!.sub.SUBSCRIPTIONS)upsert enlist proc,`table`instruments`createdtime`active!(tab;instrs;.z.p;1b);
  }
 
 reconnectinit:0b;
@@ -113,7 +92,7 @@ reducesubs:{[tabs;utabs;instrs;proc]
   subtabs:$[tabs~`;utabs;tabs],();
   .z.m.log[`info][`subscribe;"attempting to subscribe to ",(","sv string subtabs)," on handle ",string proc`w];
   if[not instrs~`; instrs,:()];
-  s:select from SUBSCRIPTIONS where ([]procname;proctype;w)~\:proc, table in subtabs,instruments~\:instrs, active;
+  s:select from .sub.SUBSCRIPTIONS where ([]procname;proctype;w)~\:proc, table in subtabs,instruments~\:instrs, active;
   if[count s;
     .z.m.log[`info][`subscribe;"already subscribed to specified instruments from  ",(","sv string s`table)," on handle ",string proc`w];
     subtabs:subtabs except s`table];
@@ -136,19 +115,19 @@ replay:{[tabs;realsubs;schemalist;logfilelist]
     tabs:(schemalist where not nullschema)[;0];
     subtabs:tabs inter realsubs[`subtabs]];
   if[not (tabs;realsubs[`instrs])~(`;`);
-    .z.m.log[`info][`subscribe;"using the .sub.replayupd function as not replaying all tables or instruments"];
-    @[`.;`upd;:;.sub.replayupd[origupd;subtabs;realsubs[`instrs]]]];
+    .z.m.log[`info][`subscribe;"using the replayupd function as not replaying all tables or instruments"];
+    @[`.;`upd;:;replayupd[origupd;subtabs;realsubs[`instrs]]]];
   {[d] @[{.z.m.log[`info][`subscribe;"replaying log file ",.Q.s1 x]; -11!x;};d;{.z.m.log[`error][`subscribe;"could not replay the log file: ", x]}]}each logfilelist;
   @[`.;`upd;:;origupd];
   .z.m.log[`info][`subscribe;"finished log file replay"];
   @[realsubs;`subtabs;:;subtabs]
  }
 
-subscribe:{[tabs;instrs;setschema;replaylog;proc]
+.sub.subscribe:{[tabs;instrs;setschema;replaylog;proc]
   if[0=count proc;.z.m.log[`info][`subscribe;"no connections made"]; :()];
-  if[(not .sub.reconnectinit)&.sub.AUTORECONNECT;
+  if[(not reconnectinit)&autoreconnect;
     $[.servers.enabled;
-      [.servers.connectcustom:{x@y;.sub.autoreconnect[y]}[.servers.connectcustom]; .sub.reconnectinit:1b];
+      [.servers.connectcustom:{x@y;resubscribe[y]}[.servers.connectcustom]; .z.m.reconnectinit:1b];
       .z.m.log[`info][`subscribe;"autoreconnect was set to true but server functionality is disabled - unable to use autoreconnect"]];
    ];
   tptype:@[proc`w;({@[value;`tptype;`standard]};`);`];
@@ -192,15 +171,13 @@ replayupd:{[f;tabs;syms;t;x]
 checksubscriptions:{update active:0b from `.sub.SUBSCRIPTIONS where not w in key .z.W;}
 
 retrysubscription:{[row]
-  subscribe[row`table;$[((),`) ~ insts:row`instruments;`;insts];0b;0b;3#row];
+  .sub.subscribe[row`table;$[((),`) ~ insts:row`instruments;`;insts];0b;0b;3#row];
  }
 
-autoreconnect:{[rows]
-  s:select from SUBSCRIPTIONS where ([]procname;proctype)in (select procname, proctype from rows), not active;
+resubscribe:{[rows]
+  s:select from .sub.SUBSCRIPTIONS where ([]procname;proctype)in (select procname, proctype from rows), not active;
   s:s lj 2!select procname,proctype,w from rows;
-  if[count s;.sub.retrysubscription each s];
+  if[count s;retrysubscription each s];
  }
 
 pc:{[result;W] update active:0b from `.sub.SUBSCRIPTIONS where w=W;result}
-
-\d .

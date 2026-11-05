@@ -1,5 +1,4 @@
-/ di.torq.depcheck - dependency presence/version, core-contract, and .z.ts ownership auditing for kdb-x modules
-/ intended to run once, post-load, after a host process (di.torq) has `use`d every module it needs - see depcheck.md
+/ dependency, version, contract and .z.ts ownership auditing for loaded kdb-x modules
 
 \l ::depcheck.q
 

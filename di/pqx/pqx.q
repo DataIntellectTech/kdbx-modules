@@ -48,10 +48,7 @@ checkandconvertcols:{[t]
  };
 
 estimate:{[t;o;writeopt]
-  / for a partition of data, estimates the size of the tables to be saved to disk
-  / if calibrate flag is true in o, a test write is carried out
-  / returns a table of storage stats for all instruments and the compression ratio, which may have changed depending on calibration
-  / group by virtualcols as well as symcol, so a sym occurring under multiple virtualcols combinations gets its own row
+  / per-instrument storage stats (by virtualcols and symcol) and the compression ratio, calibrated if set
   gcols:distinct o[`virtualcols],o[`symcol];
   cnts:`rowcnt xasc 0!?[t;();gcols!gcols;enlist[`rowcnt]!enlist(count;o[`timecol])]; / select rowcnt:count time by gcols from t, using appropriate substitutions for time and sym/virtualcols
   medsym:cnts @ first where abs[cnt-med[cnt]]=min[abs[cnt-med[cnt:cnts`rowcnt]]];
@@ -69,8 +66,7 @@ estimate:{[t;o;writeopt]
  };
 
 calibrateratio:{[t;o;writeopt]
-  / writes a sample of data to disk and reads its size on disk
-  / calculates the compression ratio and returns if a new ratio was successfully calculated, otherwise old ratio is maintained
+  / test-write a sample to compute the compression ratio, keeping the old ratio on failure
 
   / remove leading : from outdir if it exists
   testloc:(":" ~ first string[o`outdir])_ string[o`outdir],"/testWrite.parquet";
@@ -107,18 +103,11 @@ calcsize:{[tbl;symcol;syms;seqno]
  };
 
 plan:{[t;o;maxsize]
-  / planning function to bucket instruments based on next-fit packing
-  / if one sym per file, just output individual buckets for each sym
-  / else
-  / if an instrument can be added to a bucket without that bucket exceeding the target size, it will be added to that bucket
-  / else a new bucket is created
-  / large instruments are also split into multiple files if splitoversized flag is true
+  / bucket instruments into files by next-fit packing to the target size, one per sym if onesymperfile,
+  / splitting oversized instruments if splitoversized
   symstats:t;
 
-  / virtualcols take precedence over everything else - one file per distinct combination.
-  / computed directly here (rather than through the shared bucket-then-recompute tail below) because
-  / symstats can carry multiple rows per sym once virtualcols grouping is active (see estimate), and the
-  / tail's calcsize call would double count a sym's bytes across its different virtualcols combinations
+  / virtualcols: one file per distinct combination
   if[count o`virtualcols;
     .z.m.loginfo[`pqx;"Enforcing one file per virtualcols combination"];
     grp:0!?[t;();(o`virtualcols)!o`virtualcols;`syms`estbytes!((o`symcol);(sum;`estbyt))];
@@ -169,9 +158,7 @@ plan:{[t;o;maxsize]
  };
 
 datalookup:{[t;symcol;syms;cnt;mask]
-  / get lists of indices by file
-  / a pass with multiple instruments is assumed to be one file only, hence the return is flattened into one list
-  / mask restricts to rows belonging to this file's virtualcols combination (all 1b when virtualcols is unset)
+  / row indices per file, flattened to one list for a multi-instrument file, restricted by mask
   $[1<count syms;
     :enlist[raze/[.z.m.datalookuponesym[t;symcol;;cnt;mask] each syms]];
     :.z.m.datalookuponesym[t;symcol;first[syms];cnt;mask]
@@ -189,23 +176,14 @@ writefile:{[t;o;writeopt;writedir;numfiles;map]
   
   syms:map`syms;
 
-  / if virtualcols are set, this file's combination becomes a Hive-style `col=value` subdirectory under writedir,
-  / and rows must be restricted to this combination - the same sym can occur under other combinations too.
-  / the subdirectory itself is created up front by extract, on the main thread - writefile runs under peach
-  / when parallel is on, and forking via system from a secondary thread is unsafe and throws 'sys
+  / virtualcols combination as a col=value subdirectory, restricting rows to it
   combo:o[`virtualcols]#map;
   segs:{string[x],"=",string y}'[key combo;value combo];
   writedir:writedir,$[count segs;("/" sv segs),"/";""];
   combomask:$[count segs;min each flip {[t;x;y] t[x]=y}[t]'[key combo;value combo];count[t]#1b];
   map:flip (`syms,o[`virtualcols]) _ map;
 
-  / row indices must be found before virtualcols columns are dropped - datalookup needs t[symcol], and symcol
-  / may itself be one of the virtualcols columns. virtualcols values are fixed for the whole file (per combomask
-  / above) and encoded in its path already, so t is stripped of them in place afterwards - once here, not
-  / duplicated into every row of the on-disk data, and not dropped later from an already row-indexed slice
-  / (which breaks the arrow write whenever a file holds more than one instrument). guarded on count: a
-  / functional delete of an EMPTY column list against a `p#-attributed symcol (set by presort, on by
-  / default) silently returns a zero-row table instead of being the no-op it should be
+  / row indices first, then drop the virtualcols columns (encoded in the path) if any
   idx:.z.m.datalookup[t;o`symcol;syms;count map;combomask];
   t:$[count o`virtualcols;![t;();0b;o`virtualcols];t];
 
@@ -240,10 +218,8 @@ writefile:{[t;o;writeopt;writedir;numfiles;map]
  };
 
 readfile:{[path;readopt]
-  / reads back a single file written by extract, reconstructing any values that were stripped from the
-  / on-disk data and encoded only in its path - the date partition and any virtualcols combination (see writefile).
-  / virtualcols values are reconstructed as symbols; the date segment is reconstructed as an actual date.
-  / path may be an hsym or a plain string, with or without a leading colon
+  / read back a file written by extract, restoring the date and virtualcols values from its path
+  / path: hsym or string
   p:$[-11h=type path;string path;path];
   p:$[":"=first p;1_p;p];
   parts:"/" vs p;
@@ -257,11 +233,8 @@ readfile:{[path;readopt]
  };
 
 buildvirtualtable:{[hdbdir;tname;levels]
-  / builds a queryable virtual table over parquet files scattered under hdbdir/tname, without reading any
-  / of their data - partition values (the hive-style path segments) are reconstructed from each file's
-  / path, mirroring how writefile strips those same columns from the on-disk data. levels is a
-  / colname!typechar dict, in on-disk path order, declaring how to reconstruct each partition segment -
-  / e.g. `date`sym!"DS" for a date/symbol partitioned table, or `sym`src!"SS" for one with no date level
+  / virtual table over parquet files under hdbdir/tname, partition columns restored from paths
+  / levels: colname!typechar in on-disk path order, e.g. `date`sym!"DS"
   names:key levels;
   types:value levels;
   checkvirtualtypes[types];
@@ -276,8 +249,7 @@ buildvirtualtable:{[hdbdir;tname;levels]
  };
 
 checkvirtualtypes:{[types]
-  / validates that every value in the caller-supplied levels dict is one of the uppercase kdb+
-  / parse-cast type chars (see castvirtuallevel)
+  / validate that every levels type char is an uppercase parse-cast char
   valid:"BGXHIJEFCSPMDZNUVT";
   bad:distinct types where not types in valid;
   if[count bad;
@@ -288,11 +260,7 @@ checkvirtualtypes:{[types]
  };
 
 checkvirtuallevels:{[levels;lv;splits]
-  / validates that the declared partition level names (levels) match, in both count and name, the
-  / hive-style key=value directory segments actually present under every discovered file's path - so
-  / a declared levels dict that doesn't match what's really on disk (e.g. a partition directory that
-  / exists but wasn't declared, a missing/extra level, or the wrong order) fails loudly here rather
-  / than silently mislabeling or dropping partition columns
+  / validate that levels match every file's key=value path segments in count, name and order
   depths:count each splits;
   if[1<count distinct depths;
     .z.m.logerr[`pqx;err:"di.pqx: inconsistent partition depth across files under this path"];
@@ -314,8 +282,7 @@ checkvirtuallevels:{[levels;lv;splits]
  };
 
 castvirtuallevel:{[typ;x;y]
-  / casts the xth hive-style path segment (a "key=value" string) of every row in y's split column by
-  / parsing it via the declared typ
+  / cast the xth key=value path segment of each row via typ
   :typ$last each "=" vs' y[;x]
  };
 
@@ -325,8 +292,7 @@ tryfn:{[f;x]
  };
 
 extract:{[t;tname;dt;o]
-  / main data extract function
-  / takes a kdb+ table of data, its name, the date and any option overrides and saves down to parquet format
+  / save a table partition to parquet files with a manifest, applying option overrides
 
   / check for bad input keys
   if[any not key[o] in key[default];
@@ -339,8 +305,6 @@ extract:{[t;tname;dt;o]
   opts:default,o;
 
   / if one sym per file requested, turn off splitoversized
-  / read from opts (always has the key, via default), not o - indexing a missing key on o throws
-  / or is spuriously truthy depending on the types of whatever other keys the caller did pass
   if[opts`onesymperfile;
     .z.m.loginfo[`pqx;"onesymperfile requested, turning off splitoversized"];
     opts[`splitoversized]:0b
@@ -404,8 +368,7 @@ extract:{[t;tname;dt;o]
   .z.m.loginfo[`pqx;"Creating plans for ",string[tname],"; date: ",string dt];
   plans:.z.m.plan[symstats;opts;maxsize];
 
-  / pre-create every virtualcols combination's output subdirectory here, on the main thread - writefile runs
-  / under peach when parallel is on, and forking via system from a secondary thread is unsafe (throws 'sys)
+  / create each virtualcols output subdirectory on the main thread
   if[count opts`virtualcols;
     {[writedir;combo]
       d:writedir,("/" sv {string[x],"=",string y}'[key combo;value combo]),"/";
@@ -447,9 +410,7 @@ getdefault:{[]
  };
 
 init:{[deps]
-  / wire the injected logger (required, no fallback). deps: a `log
-  / key holding a binary `info`warn`error dict of {[c;m]} loggers (di.util.log or hand-rolled; a monadic
-  / kx.log instance must be wrapped first). e.g. di.pqx.init[enlist[`log]!enlist logdep]
+  / wire the required `log dep (`info`warn`error dict of {[c;m]})
   if[99h<>type deps;
     '"di.pqx: deps must be a dict with a `log key"];
   if[not `log in key deps;

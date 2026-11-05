@@ -50,9 +50,8 @@ subfiltered:{[table;filters]
   };
 
 addfiltered:{[table;cond]
-  / subscribe to tables with custom conditions
-  / if either filters or columns parsing fails, subscription should not be logged as no half query should be created
-  filters:$[all null f:cond[table;`filts];();@[parse;"select from t where ",f;{'"incorrect filters for parsing"}][2]];
+  / subscribe to tables with custom conditions; nothing is recorded if filters or columns fail to parse
+  filters:$[all null f:cond[table;`filters];();@[parse;"select from t where ",f;{'"incorrect filters for parsing"}][2]];
   columns:$[all null c:cond[table;`columns];();@[parse;"select ",c," from t";{'"incorrect columns for parsing"}][4]];
   @[eval;(?;schemas table;filters;0b;columns);{'"incorrect query with filters-",.Q.s1[y],"  columns-",.Q.s1[z]," error-",x}[;filters;columns]];
   @[.z.M;`reqfilteredtbl;upsert;(table;.z.w;filters;columns)]
@@ -66,25 +65,22 @@ addsymsub:{[table;syms]
   };
 
 closesub:{[h]
-  / remove handles upon connection close. NOT bound to .z.pc here: a load-time .z.pc assignment from
-  / this module replaced whatever the process had already bound (e.g. the di.torq.handlers dispatcher
-  / carrying di.torq.servers' cleanup hook), so the consumer binds it - via its handlers dependency in
-  / a di.torq process, or .z.pc:pubsub.closesub in a bare one
+  / remove a closed handle's subscriptions; the caller binds this to .z.pc
   delhandle[;h]each key reqalldict;
   delete from .z.M.reqfilteredtbl where handle=h;
   };
 
-/ broadcast to all subscribers upon end of day, client needs to define endofday function
-callendofday:{[d](neg getallhandles[])@\:(`endofday;d)};
+/ broadcast end of day to all subscribers as .u.end[d]
+callendofday:{[d](neg getallhandles[])@\:(`.u.end;d)};
 
 / broadcast to all subscribers upon end of period, client needs to define endofperiod function
-callendofperiod:{(neg getallhandles[])@\:(`endofperiod;x)};
+callendofperiod:{[currp;nextp;data] (neg getallhandles[])@\:(`endofperiod;currp;nextp;data)};
 
 / get table schema
 extractschema:{[table]0#value table};
 
 subscribe:{[table;filters]
-  / single entry point for subscriptions: uses default list when no table name provided; routes to suball if filters null, otherwise subfiltered
+  / subscribe to a table (` for all), unfiltered if filters is `
   if[`~table;table:t];
   :$[`~filters;suball;subfiltered[;filters]]table;
   };
@@ -111,7 +107,7 @@ subscribestr:{[table;syms]
 
 subscribestrfilter:{[table;filters;columns]
   / allow non-kdb+ process to subscribe to tables with custom conditions
-  res:subscribe[`$table;1!enlist `table`filts`columns!(`$table;filters;columns)];
+  res:subscribe[`$table;1!enlist `table`filters`columns!(`$table;filters;columns)];
   :$[10h~type last res;'last res;res];
   };
 
@@ -131,94 +127,136 @@ init:{[deps]
   if[count tabcols;.z.m.initialized:1b];
   };
 
-/ .stpps, .u.sub, .ps
-\d .stpps
+/ root, for segmentedtp and chainedtp: the stp pub/sub tables and subscribers
+.stpps.t:`;
+.stpps.subrequestall:enlist[`]!enlist ();
+subrequestfiltered:([]tbl:`$();handle:`int$();filts:();columns:());
 
-t:`
-subrequestall:enlist[`]!enlist ()
-subrequestfiltered:([]tbl:`$();handle:`int$();filts:();columns:())
+.stpps.endp:{
+  (neg .stpps.allsubhandles[])@\:(`endofperiod;x;y;z);
+ };
 
-allsubhandles:{
-  distinct raze union/[value subrequestall;exec handle from .stpps.subrequestfiltered]
+.stpps.end:{
+  (neg .stpps.allsubhandles[])@\:(`endofday;x;y);
+ };
+
+.stpps.allsubhandles:{
+  distinct raze union/[value .stpps.subrequestall;exec handle from .z.m.subrequestfiltered]
   };
 
-suball:{
-  delhandle[x;.z.w];
-  add[x];
-  :(x;schemas[x]);
+stpsuball:{
+  stpdelhandle[x;.z.w];
+  stpadd[x];
+  :(x;.stpps.schemas[x]);
  };
 
-subfiltered:{[x;y]
-  delhandlef[x;.z.w];
-  val:![11 99h;(selfiltered;addfiltered)][type y] . (x;y);
-  $[all raze null val;(x;schemas[x]);val]
+stpsubfiltered:{[x;y]
+  stpdelhandlef[x;.z.w];
+  val:![11 99h;(selfiltered;stpaddfiltered)][type y] . (x;y);
+  $[all raze null val;(x;.stpps.schemas[x]);val]
  };
 
-add:{
-  if[not (count subrequestall x)>i:subrequestall[x]?.z.w;
-    subrequestall[x],:.z.w];
+stpadd:{
+  if[not (count .stpps.subrequestall x)>i:.stpps.subrequestall[x]?.z.w;
+    .stpps.subrequestall[x],:.z.w];
  };
 
 errparse:{.z.m.log[`error][`addfiltered;m:y," error: ",x];'m};
 
-addfiltered:{[x;y]
-  filters:$[all null f:y[x;`filters];();@[parse;"select from t where ",f;.stpps.errparse[;"Filter"]] 2];
-  columns:last $[all null c:y[x;`columns];();@[parse;"select ",c," from t";.stpps.errparse[;"Column"]]];
-  @[eval;(?;.stpps.schemas[x];filters;0b;columns);.stpps.errparse[;"Query"]];
-  `.stpps.subrequestfiltered upsert (x;.z.w;filters;columns);
+stpaddfiltered:{[x;y]
+  filters:$[all null f:y[x;`filters];();@[parse;"select from t where ",f;errparse[;"Filter"]] 2];
+  columns:last $[all null c:y[x;`columns];();@[parse;"select ",c," from t";errparse[;"Column"]]];
+  @[eval;(?;.stpps.schemas[x];filters;0b;columns);errparse[;"Query"]];
+  .z.m.subrequestfiltered:.z.m.subrequestfiltered upsert (x;.z.w;filters;columns);
  };
 
 selfiltered:{[x;y]
   filts:enlist enlist (in;`sym;enlist y);
-  @[eval;(?;.stpps.schemas[x];filts;0b;());.stpps.errparse[;"Query"]];
-  `.stpps.subrequestfiltered upsert (x;.z.w;filts;());
+  @[eval;(?;.stpps.schemas[x];filts;0b;());errparse[;"Query"]];
+  .z.m.subrequestfiltered:.z.m.subrequestfiltered upsert (x;.z.w;filts;());
  };
 
-pub:{[t;x]
+.stpps.pub:{[t;x]
   if[not count x;:()];
-  if[count h:subrequestall[t];-25!(h;(`upd;t;x))];
-  if[t in .stpps.subrequestfiltered`tbl;
+  if[count h:.stpps.subrequestall[t];-25!(h;(`upd;t;x))];
+  if[t in .z.m.subrequestfiltered`tbl;
     {[t;x;sels] data:eval(?;x;sels`filts;0b;sels`columns);
          if[count data;neg[sels`handle](`upd;t;data)]}[t;x;]
-           each select handle,filts,columns from .stpps.subrequestfiltered where tbl=t
+           each select handle,filts,columns from .z.m.subrequestfiltered where tbl=t
     ];
    };
 
-delhandle:{[t;h]
+.stpps.pubclear:{
+ .stpps.pub'[x;value each x,:()];
+ @[`.;x;:;schemasnoattributes[x]];
+ }
+
+stpdelhandle:{[t;h]
   @[`.stpps.subrequestall;t;except;h];
  };
 
-delhandlef:{[t;h]
-  delete from  `.stpps.subrequestfiltered where tbl=t,handle=h;
+stpdelhandlef:{[t;h]
+  .z.m.subrequestfiltered:delete from .z.m.subrequestfiltered where tbl=t,handle=h;
  };
 
-closesub:{[h]
-  delhandle[;h]each t;
-  delhandlef[;h]each t;
+.stpps.closesub:{[h]
+  stpdelhandle[;h]each .stpps.t;
+  stpdelhandlef[;h]each .stpps.t;
  };
 
-extractschema:{t:value x; $[.Q.qp t; t; 0#t]};
+stpextractschema:{t:value x; $[.Q.qp t; t; 0#t]};
 
-init:{[t]
+.stpps.attrstrip:{[t]
+  {@[x;cols x;`#]} each .stpps.t:t;
+  .z.m.schemasnoattributes:.stpps.t!stpextractschema each .stpps.t;
+ };
+
+.stpps.init:{[t]
   if[count b:t where not t in tables[];{.z.m.log[`error][`psinit;m:"Table ",string[x]," does not exist"];'m} each b];
   .stpps.t:t except b;
-  .stpps.schemas:.stpps.t!extractschema each .stpps.t;
+  .stpps.schemas:.stpps.t!stpextractschema each .stpps.t;
   .stpps.tabcols:.stpps.t!cols each .stpps.t;
  };
 
-\d .
-
+/ root: the subscribe/publish entry points
 .u.sub:{[x;y]
   if[x~`;:.z.s[;y] each .stpps.t];
   if[not x in .stpps.t;
     .z.m.log[`error][`sub;m:"Table ",string[x]," not in list of stp pub/sub tables"];
     :(x;m)
   ];
-  $[y~`;.stpps.suball[x];.stpps.subfiltered[x;y]]
+  $[y~`;stpsuball[x];stpsubfiltered[x;y]]
  };
+
+.u.pub:.stpps.pub
 
 .ps.loaded:1b;
 .ps.publish:.stpps.pub;
 .ps.subscribe:.u.sub;
 .ps.init:.stpps.init;
 .ps.initialise:{.ps.init[tables[]];.ps.initialised:1b};
+
+.ps.subtable:{[tab;syms]
+  .z.m.log[`info][`subtable;"Received a subscription to ",$[count tab;tab;"all tables"]," for ",$[count syms;syms;"all syms"]];
+  val:.u.sub[`$tab;$[count syms;::;first] `$csv vs syms];
+  $[10h~type last val;'last val;val]
+ };
+
+.ps.subtablefiltered:{[tab;filters;columns]
+  .z.m.log[`info][`subtablefiltered;"Received a subscription to ",$[count tab;tab;"all tables"]," for filters: ",filters," and columns: ",columns];
+  val:.u.sub[`$tab;1!enlist `tabname`filters`columns!(`$tab;filters;columns)];
+  $[10h~type last val;'last val;val]
+ };
+
+.ds.map:{[numseg;sym] sym!(sum each string sym)mod numseg};
+
+.ds.subreq:(`u#`$())!`int$();
+
+.ds.stripe:{[input;skey]
+  if[0=count input;:`boolean$()];
+  if[0N in val:.ds.subreq input;
+    .ds.subreq,:.ds.map[.ds.numseg;distinct input where null val];
+    val:.ds.subreq input;
+  ];
+  skey=val
+ };

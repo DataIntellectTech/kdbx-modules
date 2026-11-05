@@ -77,6 +77,15 @@ eodtime.getdailyadj[]
 / 0D01:00:00.000000000
 ```
 
+### `getrolltimezone[]` / `getdatatimezone[]` / `getrolltimeoffset[]`
+Return the settings `init` applied: the roll timezone, the data timezone and the roll offset. Legacy callers read
+these as `.eodtime.rolltimezone`, `.eodtime.datatimezone` and `.eodtime.rolltimeoffset` (e.g. TorQ's
+`dataaccessutils.q:11`, which fills them into its table properties).
+```q
+eodtime.getrolltimezone[]
+/ `Europe/London
+```
+
 ### `getdailyadjustment[]`
 **Recompute** the UTC offset for the data timezone at the current time. Call after an EOD roll to get a fresh offset - important when the data timezone observes DST.
 ```q

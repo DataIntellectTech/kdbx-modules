@@ -13,7 +13,7 @@ comment,,,,,,,init - wiring and idempotency
 run,0,0,q,svc.init[svrdeps[`otherproc`deadproc]],1,1,init with mock deps + config (dial otherproc and deadproc)
 true,0,0,q,"1=count select from handlercalls where event=`.z.pc,name=`servers",1,1,init registered its .z.pc observer via the handlers dep
 true,0,0,q,1=count select from timercalls where id=`serversretry,1,1,init scheduled the retry job via the timer dep
-true,0,0,q,300=first exec period from timercalls where id=`serversretry,1,1,retry period is 300s
+true,0,0,q,0D00:05=first exec period from timercalls where id=`serversretry,1,1,retry period is 5 minutes
 true,0,0,q,3 3~exec mode from timercalls where id in `serversretry`discoveryretry,1,1,both jobs use timer mode 3
 true,0,0,q,1=count select from timercalls where id=`discoveryretry,1,1,init scheduled the discoveryretry job
 true,0,0,q,.servers.enabled,1,1,enabled defaults to 1b
@@ -30,6 +30,11 @@ true,0,0,q,"warnlogged[""failed to open connection""]",1,1,the failed dial was l
 comment,,,,,,,gethandlebytype - a genuinely live remote handle
 run,0,0,q,h:svc.gethandlebytype[`otherproc;`any],1,1,get a handle to the peer
 true,0,0,q,"2=h ""1+1""",1,1,the handle is a live remote connection to a separate process
+comment,,,,,,,root .servers.gethpbytype over SERVERS
+true,0,0,q,".servers.gethpbytype[`otherproc;`any]~first exec hpup from .servers.SERVERS where proctype=`otherproc",1,1,gethpbytype returns the live otherproc row's hpup
+true,0,0,q,"(`symbol$())~.servers.gethpbytype[`deadproc;`any]",1,1,a proctype with no live server gives an empty list after the reopen attempt
+fail,0,0,q,".servers.gethpbytype[`otherproc;`nosuch]",1,1,an unknown selection signals
+true,0,0,q,".servers.gethandlebytype[`otherproc;`any]~first exec w from .servers.SERVERS where proctype=`otherproc",1,1,root gethandlebytype returns the live otherproc handle
 comment,,,,,,,cleanup + retry recover an ungraceful kill
 run,0,0,q,killpeer[],1,1,kill the peer ungracefully (handlers are mocked so no auto .z.pc fires)
 run,0,0,q,"@[{h ""1+1""};();{[e]e}]",1,1,touch the dead handle so kdb+ drops it from .z.W (protected - expected to error)
@@ -40,17 +45,26 @@ run,0,0,q,".servers.connectcustom:{[r] `ccrows set r}",1,1,record what retryrows
 run,0,0,q,firejob[`serversretry],1,1,fire retry again - should reconnect now a peer is listening
 true,0,0,q,1=count svc.getservers[`otherproc],1,1,retry reconnected to otherproc
 true,0,0,q,(enlist`otherinst)~exec procname from ccrows,1,1,retryrows passed the reconnected row to .servers.connectcustom
+comment,,,,,,,addh and the addprocscustom hook
+true,0,0,q,addhpeer[],1,1,addh opens a working handle to the peer and stores it in SERVERS
+fail,0,0,q,".servers.addh `$"":localhost:"",string DEADPORT",1,1,addh signals when nothing is listening
+true,0,0,q,addprocshook[],1,1,addprocs calls .servers.addprocscustom with the rows it added and the procs
 comment,,,,,,,waitfortype - connected vs timeout
 true,0,0,q,svc.waitfortype[`otherproc;2000;200],1,1,returns 1b immediately for an already-connected proctype
 true,0,0,q,0b~svc.waitfortype[`deadproc;700;200],1,1,returns 0b on timeout for a proctype that never comes up
 comment,,,,,,,root .servers functions
-true,0,0,q,"(enlist[`a]!enlist(1b;enlist 1))~.servers.attributematch[enlist[`a]!enlist 1;enlist[`a]!enlist 1 2]",1,1,attributematch reports a full match and the matched values
+true,0,0,q,"(enlist[`a]!enlist(1b;enlist 1))~.m.di.0torq.0servers.attributematch[enlist[`a]!enlist 1;enlist[`a]!enlist 1 2]",1,1,attributematch reports a full match and the matched values
 true,0,0,q,"(enlist`otherproc)~exec proctype from .servers.getservers[`proctype;`otherproc;()!();0b;0b]",1,1,5-arg getservers returns the live row
 true,0,0,q,"`attribmatch in cols .servers.getservers[`proctype;`otherproc;()!();0b;0b]",1,1,getservers adds attribmatch
 true,0,0,q,"0=count .servers.getservers[`proctype;`deadproc;()!();0b;0b]",1,1,getservers drops dead rows
 run,0,0,q,".servers.startupdepnamecycles[`otherinst;0;1]",1,1,startupdepnamecycles returns once otherinst is connected
 fail,0,0,q,".servers.startupdepnamecycles[`nosuchinst;0;0]",1,1,startupdepnamecycles signals after its cycles are used up
 true,0,0,q,`connectionreport in exec ctx from logrows where lvl=`error,1,1,the failure was logged as a connectionreport error
+run,0,0,q,".servers.startupdepcycles[`otherproc;0;1]",1,1,startupdepcycles returns once otherproc is connected
+fail,0,0,q,".servers.startupdepcycles[`deadproc;0;0]",1,1,startupdepcycles signals after its cycles are used up
+true,0,0,q,"any (exec msg from logrows where lvl=`error,ctx=`connectionreport) like ""*cannot connect to deadproc""",1,1,the error names the proctype it could not reach
+run,0,0,q,".servers.startupdependent[`otherproc;0]",1,1,startupdependent returns once otherproc is connected
+true,0,0,q,0W~last value .servers.startupdependent,1,1,startupdependent never gives up waiting (its cycle count is 0W)
 comment,,,,,,,waitfortype - discovery comes up after startup
 run,0,0,q,setupdisc[],1,1,add a discovery row to process.csv and write a discovery stub naming a tpproc peer
 run,0,0,q,"svc.init[svrdeps[`tpproc],`discoveryregister`connectionsfromdiscovery!11b]",1,1,re-init taking connections from discovery
@@ -58,6 +72,12 @@ run,0,0,q,svc.startup[svrdeps[`tpproc]],1,1,startup while discovery is down - th
 true,0,0,q,0=count svc.getservers[`discovery],1,1,discovery is not live after startup
 run,0,0,q,spawndisc[],1,1,bring up the tpproc peer then discovery
 true,0,0,q,svc.waitfortype[`tpproc;3000;200],1,1,waitfortype reaches discovery and connects to the tpproc it names
+true,0,0,q,refreshregisters[],1,1,refreshattributes sends one register to each live discovery service
+comment,,,,,,,retry periods from toml
+run,0,0,q,"svc.init[svrdeps[`otherproc],`retry`discoveryretry!(""0D00:00:10"";10)]",1,1,retry as a string and discoveryretry as seconds
+true,0,0,q,"(0D00:00:10;0D00:00:10)~(.servers.RETRY;.servers.DISCOVERYRETRY)",1,1,both become timespans
+run,0,0,q,"svc.init svrdeps enlist""otherproc""",1,1,connections as a list of strings
+true,0,0,q,(enlist`otherproc)~.servers.CONNECTIONS,1,1,become symbols
 comment,,,,,,,input validation + getapimeta
 fail,0,0,q,"svc.getservers[""nosuch""]",1,1,getservers rejects a non-symbol proctype
 fail,0,0,q,"svc.gethandlebytype[`hdb;""any""]",1,1,gethandlebytype rejects a non-symbol selection
@@ -66,4 +86,15 @@ fail,0,0,q,"svc.init[`log`timer`handlers`proctype`procname!(mocklog;mocktimer;mo
 true,0,0,q,(asc (key svc) except `init`getapimeta)~asc exec name from svc.getapimeta[],1,1,getapimeta documents exactly the callable exports (plumbing omitted)
 true,0,0,q,not any `init`getapimeta in exec name from svc.getapimeta[],1,1,getapimeta omits plumbing (init/getapimeta not registered)
 true,0,0,q,`name`public`descrip`params`return~cols svc.getapimeta[],1,1,getapimeta rows carry the registry columns
+comment,,,,,,,outbound credentials - withcreds attaches user:pass so a permissioned peer accepts us
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`enabled`userpass!(mocklog;mocktimer;mockhandlers;`rdb;`p;0b;`admin:secret)]",1,1,init with a userpass
+true,0,0,q,`:localhost:5304:admin:secret~wc`:localhost:5304,1,1,credentials are appended to a plain host:port target
+true,0,0,q,`:tcps://localhost:5304:admin:secret~wc`:tcps://localhost:5304,1,1,a tcps target allows the extra colon before appending
+true,0,0,q,`:localhost:5304:bob:pw~wc`:localhost:5304:bob:pw,1,1,a target that already carries credentials is left alone
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`enabled`userpass`passwords!(mocklog;mocktimer;mockhandlers;`rdb;`p;0b;`admin:secret;(enlist `:localhost:5304)!enlist `svc:other)]",1,1,init with a per-target override
+true,0,0,q,`:localhost:5304:svc:other~wc`:localhost:5304,1,1,a per-target PASSWORDS entry wins over userpass
+true,0,0,q,`:localhost:5300:admin:secret~wc`:localhost:5300,1,1,other targets still fall back to userpass
+run,0,0,q,"svc.init[`log`timer`handlers`proctype`procname`enabled!(mocklog;mocktimer;mockhandlers;`rdb;`p;0b)]",1,1,re-init with no credentials configured
+true,0,0,q,`:localhost:5304~wc`:localhost:5304,1,1,with no credentials the target is unchanged - the pre-auth default
+
 after,0,0,q,teardownfixture[],1,1,kill the peer and remove the fixture dir

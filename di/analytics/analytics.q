@@ -1,5 +1,5 @@
 ffill:{[arg]
-  / forward fills null values in specified columns (or all columns) with the last non-null value, optionally grouped by key columns. The function is the single point of entry for different input types: dictionary or table.
+  / forward fill nulls in a table, or per a dictionary of params, optionally grouped by key columns
   :$[.Q.qt arg;filltable[arg];
     99h=type arg;filldict[arg];
    '`$"Input parameter must be a dictionary with keys-(table, keycols, by), or a table to fill"];

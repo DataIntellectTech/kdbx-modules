@@ -102,6 +102,9 @@ srvsel.addserversfromtable[`rdb`hdb; .servers.SERVERS]
 | `gethandlebytype[ptype;sel]` | Convenience projection of `getserverbytype` returning `handle` |
 | `gethpbytype[ptype;sel]` | Convenience projection of `getserverbytype` returning `hpup` |
 
+These share their names with di.torq.servers' root `.servers.getserverbytype`/`.servers.gethpbytype` (TorQ's
+`trackservers.q`), but read a different registry: this module's server pool, not `.servers.SERVERS`.
+
 `getservers` returns a table including an `attribmatch` column — a dictionary of `attrname!(complete_match_bool;matched_values)` per attribute key in `req`. When `lookups` is not `` ` ``, `nameortype` must be `` `servertype `` or `` `procname ``; any other value throws (and logs) a `di.serverselect:` error rather than silently falling through to a `procname` lookup.
 
 All `di.serverselect:` error conditions — including the input-type checks on `addserverfull`/`setserveractive` and the connection-table column check on `addserversfromtable` — are logged via `.z.m.logerr` before being signalled.

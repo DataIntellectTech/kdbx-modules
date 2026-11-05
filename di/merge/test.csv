@@ -24,6 +24,9 @@ fail,0,0,q,merge.checkpartitiontype[`t;enlist`sym],1,1,checkpartitiontype reject
 fail,0,0,q,merge.checkenumerabletype[`t;enlist`sym],1,1,checkenumerabletype rejected before init
 fail,0,0,q,merge.getextrapartitions[`t;enlist`sym],1,1,getextrapartitions rejected before init
 fail,0,0,q,merge.getfirstcharpartitions[`t;enlist`sym],1,1,getfirstcharpartitions rejected before init
+fail,0,0,q,merge.getmergebybytelimit[],1,1,getmergebybytelimit rejected before init
+fail,0,0,q,merge.getpartlimit[],1,1,getpartlimit rejected before init
+fail,0,0,q,"merge.getextrapartitiontype[([]tabname:`$();column:`$();sort:`boolean$();att:`$());`t]",1,1,getextrapartitiontype rejected before init
 true,0,0,q,".[merge.trackpartition;(`:g1;1;1);{x}]~""di.merge: trackpartition: init must be called before any other function""",1,1,requireinit error message names the function and is precise
 
 comment,,,,,,,init - dependency injection validation (log is required with info and error keys)
@@ -36,6 +39,7 @@ fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`info]!enlist mylog`info)],1,1,
 fail,0,0,q,merge.init[enlist[`log]!enlist(enlist[`error]!enlist mylog`error)],1,1,init rejects a log dict missing the info level
 true,0,0,q,"(8#@[merge.init;(::);{x}])~""di.merge""",1,1,error message is prefixed di.merge
 run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,init with a valid minimal (info+error only) log dep
+true,0,0,q,(0b;1000)~(merge.getmergebybytelimit[];merge.getpartlimit[]),1,1,mergebybytelimit and partlimit default to 0b and 1000
 
 comment,,,,,,,version and getapimeta
 true,0,0,q,`version in key merge,1,1,version is still an export - di.depcheck reads it there
@@ -95,6 +99,7 @@ run,0,0,q,merge.trackpartition[`:b1;1;100],1,1,track b1 with a small row count b
 run,0,0,q,merge.trackpartition[`:b2;1;100],1,1,track b2
 run,0,0,q,merge.trackpartition[`:b3;1;100],1,1,track b3
 true,0,0,q,merge.getpartchunks[`:b1`:b2`:b3;250]~(`:b1`:b2;enlist`:b3),1,1,batching uses bytes not row count (row count alone would fit all three)
+true,0,0,q,merge.getmergebybytelimit[],1,1,getmergebybytelimit returns the configured value
 run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore row-count batching (default)
 
 comment,,,,,,,getpartchunks splits a batch that exceeds partlimit partitions
@@ -134,7 +139,7 @@ run,0,0,q,.test.mcdest:`:mergetesttmp/mcdest,1,1,destination partition directory
 run,0,0,q,.test.mcseg:`:mergetesttmp/mcseg,1,1,segment missing the sz column entirely
 run,0,0,q,.test.splay[.test.mcdest;([]px:enlist 1f;sz:enlist 10)],1,1,destination expects both px and sz
 run,0,0,q,.test.splay[.test.mcseg;([]px:enlist 2f)],1,1,segment only has px - sz is missing
-run,0,0,q,.test.mcerr:.[merge.mergebycol;((`quote;.test.cschema);.test.mcdest;.test.mcseg);{x}],1,1,call mergebycol once capturing the propagated error instead of letting it throw out of the test
+run,0,0,q,.test.mcerr:.[merge.mergebycol;((`quote;.test.cschema);.test.mcdest;.test.mcseg);{x}],1,1,call mergebycol capturing the propagated error
 true,0,0,q,10h=type .test.mcerr,1,1,mergebycol signalled rather than returning normally on the missing column
 true,0,0,q,"0<count .test.mcerr ss ""mcseg/sz""",1,1,the propagated error names the failing segment column path
 true,0,0,q,`error in exec fn from caplog,1,1,the failure is logged via logerr before it is re-signalled
@@ -161,30 +166,25 @@ run,0,0,q,.test.splay[.test.rseg2;([]grp:1 2;px:3 4f)],1,1,segment 2
 run,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.rdest;(.test.rseg1;.test.rseg2)],1,1,merge with grp as the parted column - joined data is not parted so must be re-sorted
 true,0,0,q,(get .test.rdest)~([]grp:1 1 2 2;px:1 3 2 4f),1,1,rows re-sorted by grp so the p attribute can be applied
 
-comment,,,,,,,mergebypart isolates one missing/corrupt segment from healthy batch-mates in the same batch
-run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
-run,0,0,q,caplog:0#caplog,1,1,reset the capture
+comment,,,,,,,mergebypart reads segments unprotected: a missing segment fails the batch before anything is upserted
 run,0,0,q,.test.midest:`:mergetesttmp/midest,1,1,destination partition directory
 run,0,0,q,.test.miseg1:`:mergetesttmp/miseg1,1,1,segment 1 (healthy)
 run,0,0,q,.test.miseg2:`:mergetesttmp/miseg2,1,1,segment 2 (never written - missing)
 run,0,0,q,.test.splay[.test.midest;([]grp:`long$();px:`float$())],1,1,empty destination
 run,0,0,q,.test.splay[.test.miseg1;([]grp:1 2;px:1 2f)],1,1,write only the healthy segment
-run,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.midest;(.test.miseg1;.test.miseg2)],1,1,batch the healthy segment together with a missing one
-true,0,0,q,(get .test.midest)~([]grp:1 2;px:1 2f),1,1,the healthy segment's data still lands in dest rather than the whole batch being lost
-true,0,0,q,`error in exec fn from caplog,1,1,the missing segment is error-logged
-true,0,0,q,"any {0<count x ss ""failed to read segment""} each caplog`msg",1,1,the log names the read failure
-run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
+fail,0,0,q,merge.mergebypart[enlist`grp;.test.slash .test.midest;(.test.miseg1;.test.miseg2)],1,1,batch the healthy segment together with a missing one - the read fails the batch
+true,0,0,q,0=count get .test.midest,1,1,nothing was upserted to the destination
 
-comment,,,,,,,mergebypart logs an upsert failure via the injected logger instead of throwing
+comment,,,,,,,mergebypart logs an upsert failure via the injected logger then signals it
 run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
 run,0,0,q,.test.edest:`:mergetesttmp/edest,1,1,destination partition directory with a deliberately mismatched column type
 run,0,0,q,.test.eseg:`:mergetesttmp/eseg,1,1,segment with a mismatched column type
 run,0,0,q,.test.splay[.test.edest;([]px:`int$())],1,1,destination column typed int
 run,0,0,q,.test.splay[.test.eseg;([]px:1 2)],1,1,segment column typed long - the upsert will type-mismatch
-run,0,0,q,merge.mergebypart[`$();.test.slash .test.edest;enlist .test.eseg],1,1,merge does not throw even though the underlying upsert fails
+fail,0,0,q,merge.mergebypart[`$();.test.slash .test.edest;enlist .test.eseg],1,1,the upsert failure is signalled to the caller
 true,0,0,q,`error in exec fn from caplog,1,1,the upsert failure is logged as an error
-true,0,0,q,"any {0<count x ss ""failed to merge to""} each caplog`msg",1,1,the logged message names the failure clearly rather than being corrupted by a double string conversion
+true,0,0,q,"any {0<count x ss ""failed to merge to""} each caplog`msg",1,1,the logged message names the failure
 run,0,0,q,merge.init[enlist[`log]!enlist mylog],1,1,restore the silent logger
 
 comment,,,,,,,mergehybrid merges under-limit partitions whole and over-limit ones column by column
@@ -203,7 +203,7 @@ run,0,0,q,merge.mergehybrid[`$();.test.htinfo;.test.hdest;(.test.h1;.test.h2);10
 true,0,0,q,(get .test.hdest)~([]px:10 11 20 21 22f;sz:1 2 3 4 5),1,1,h1 merged whole first then h2 merged column by column
 run,0,0,q,merge.clearpartsizes[],1,1,clear the store
 
-comment,,,,,,,mergehybrid resorts and attributes the whole destination once both merge paths have run
+comment,,,,,,,mergehybrid appends both merge paths to the destination as written - attributes are left to the caller
 run,0,0,q,.test.pattinfo:(`trade;([]grp:`long$();px:`float$())),1,1,tableinfo pair with grp as the parted column
 run,0,0,q,.test.pdest2:`:mergetesttmp/pdest2,1,1,destination partition directory
 run,0,0,q,.test.pg1:`:mergetesttmp/pg1,1,1,under-limit segment - takes the whole-partition path
@@ -215,8 +215,8 @@ run,0,0,q,merge.clearpartsizes[],1,1,reset the store
 run,0,0,q,merge.trackpartition[.test.pg1;2;0],1,1,pg1 is small (2 rows)
 run,0,0,q,merge.trackpartition[.test.pg2;3;0],1,1,pg2 is large (3 rows) - over the limit below
 run,0,0,q,merge.mergehybrid[enlist`grp;.test.pattinfo;.test.pdest2;(.test.pg1;.test.pg2);2],1,1,limit of 2: pg1 (whole-partition) written before pg2 (column-by-column) - lands out of grp order
-true,0,0,q,(get .test.pdest2)~([]grp:1 1 1 2 2;px:10 11 12 20 21f),1,1,mergehybrid resorts the full destination so grp ends up ascending despite the write order
-true,0,0,q,`p=first exec a from meta[.test.pdest2] where c=`grp,1,1,the parted attribute is applied to the whole destination, not left unset or scoped to one batch
+true,0,0,q,(get .test.pdest2)~([]grp:2 2 1 1 1;px:20 21 10 11 12f),1,1,rows stay in write order - the destination is not re-sorted
+true,0,0,q,null first exec a from meta[.test.pdest2] where c=`grp,1,1,no attribute is applied to the destination
 run,0,0,q,merge.clearpartsizes[],1,1,clear the store
 
 comment,,,,,,,mergehybrid takes only the whole-partition path when overlimit is empty (both partitions under the limit)
@@ -256,6 +256,22 @@ comment,,,,,,,getfirstcharpartitions groups partition values by first character 
 run,0,0,q,fctbl:([]sym:`aa`ab`ba`bb`ac;px:1 2 3 4 5),1,1,table with symbol values sharing first characters
 true,0,0,q,merge.getfirstcharpartitions[`fctbl;enlist`sym]~(`aa`ab`ac;`ba`bb),1,1,values grouped by first character not by full value
 
+comment,,,,,,,getextrapartitiontype reads the p# columns from the sort config passed in
+run,0,0,q,"sc:([]tabname:`trade`trade`default;column:`sym`time`sym;sort:101b;att:`p``p)",1,1,sort config: trade parted on sym; default parted on sym
+true,0,0,q,(enlist`sym)~merge.getextrapartitiontype[sc;`trade],1,1,the table's own p# column
+true,0,0,q,(enlist`sym)~merge.getextrapartitiontype[sc;`quote],1,1,a table not in the config falls back to the default
+run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
+run,0,0,q,caplog:0#caplog,1,1,reset the capture
+run,0,0,q,r:merge.getextrapartitiontype[delete from sc where tabname=`default;`quote],1,1,no table entry and no default
+true,0,0,q,"any (exec msg from caplog where fn=`error) like ""*default not defined*""",1,1,is error-logged
+true,0,0,q,()~r,1,1,and returns an empty list
+run,0,0,q,.test.ndest:`:mergetesttmp/ndest,1,1,destination partition directory
+run,0,0,q,.test.nseg:`:mergetesttmp/nseg,1,1,segment
+run,0,0,q,.test.splay[.test.ndest;([]grp:`long$();px:`float$())],1,1,empty destination
+run,0,0,q,.test.splay[.test.nseg;([]grp:2 1;px:1 2f)],1,1,write the segment
+run,0,0,q,merge.mergebypart[r;.test.slash .test.ndest;enlist .test.nseg],1,1,merge with the empty parted-column list
+true,0,0,q,2=count get .test.ndest,1,1,the segment is merged without a parted column
+
 comment,,,,,,,parted-column checks route through the injected logger and no longer reference sort.csv
 run,0,0,q,merge.init[enlist[`log]!enlist logcap],1,1,init with the capturing logger
 run,0,0,q,qtbl:([]a:1 2;b:3 4;f:1.0 2.0),1,1,table with long and float columns
@@ -269,7 +285,7 @@ run,0,0,q,merge.checkpartitiontype[`qtbl;enlist`a],1,1,check a parted column pre
 true,0,0,q,`info in exec fn from caplog,1,1,present parted column is info-logged
 true,0,0,q,"not any {0<count x ss ""sort.csv""} each caplog`msg",1,1,the info message no longer references sort.csv either
 run,0,0,q,caplog:0#caplog,1,1,reset the capture
-run,0,0,q,merge.checkenumerabletype[`qtbl;enlist`f],1,1,check a non-enumerable (float) parted column
+fail,0,0,q,merge.checkenumerabletype[`qtbl;enlist`f],1,1,a non-enumerable (float) parted column is signalled
 true,0,0,q,`error in exec fn from caplog,1,1,non-enumerable parted column is error-logged
 true,0,0,q,all 10h=type each exec msg from caplog,1,1,the error message is a flat string not a malformed nested list
 true,0,0,q,"any {0<count x ss ""not all columns f""} each caplog`msg",1,1,the error message names the offending column as flat text

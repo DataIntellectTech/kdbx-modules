@@ -1,78 +1,62 @@
-/ di.torq.proc.tickerplant - real-time capture root. Orchestrates three hard deps in their own
-/ init idioms (none use init[config;deps]): di.pubsub (sub/pub, kdbx-modules), di.tplogmgr
-/ (log lifecycle, TorqX), di.eodtime (roll timing, vendored). Injected deps: log, timer, handlers.
-/ Ported from the tick/log/EOD logic inline in TorQ/code/processes/tickerplant.q; the
-/ pure pubsub half is di.pubsub. Both publish modes supported: `immediate (publish each
-/ update straight away) and `batched (buffer per table, flush on a timer period).
+/ di.torq.proc.tickerplant - tickerplant built on di.pubsub, di.tplogmgr and di.eodtime; injected deps: log, timer, handlers
+/ publishes each update immediately, or in batched mode buffers per table and flushes on a timer
 
-/ base dirs: CODE/CONFIG lives under TORQXAPPHOME, runtime DATA under TORQXDATAHOME (falls
-/ back to TORQXAPPHOME when unset - fine for a sample app where they coincide).
-apphome:{getenv[`TORQXAPPHOME]}
-datahome:{$[count h:getenv[`TORQXDATAHOME];h;getenv[`TORQXAPPHOME]]}
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+apphome:cfg`apphome;
+datahome:cfg`datahome;
+resolvedir:cfg`resolvedir;
 
-/ resolve a possibly-relative dir setting to an absolute path STRING under `base` (for tplog /
-/ shell). handles symbol (.q settings) or string (.toml) input, and a leading handle colon.
-resolvedir:{[base;dir]
-  dir:$[10h=abs type dir;dir;string dir];
-  dir:$[(0<count dir) and ":"=first dir;1_dir;dir];
-  $[dir like "/*";dir;base,"/",dir]
-  }
-
-/ consumers coerce at point of use: config values may be symbols (.q) or strings (.toml)
-astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones, publishmode)
+/ config values may be symbols (.q) or strings (.toml)
+astz:{[x] $[11h=abs type x;x;`$x]}          / to symbol (timezones)
+/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
+totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
 / feed payloads may arrive as a table or as a list of columns; normalise to columns
 tocols:{[x] $[98h=type x;value flip x;x]}
 
-/ stamp columns x with a leading data-timezone-adjusted timestamp, unless the first
-/ column is already a timestamp (so log replay, which carries already-stamped data, is
-/ idempotent). Handles a single record (atom columns) and a batch (vector columns).
+/ prefix columns x with a data-timezone-adjusted timestamp unless the first column already is one
+/ handles a single record (atom columns) and a batch (vector columns)
 stamp:{[x]
   if[-12=type first first x;:x];
   a:.z.p+(.z.m.eod`getdailyadj)[];
   $[0>type first x;a,x;(enlist(count first x)#a),x]
   }
 
-/ feed entry point (published at root as `upd`/`.u.upd`, called by feeds over IPC).
-/ stamps, logs (unless replaying - logh is 0 during the replay inside tplog.open), then
-/ publishes immediately or buffers into the root table for the flush job.
+/ feed entry point, published at root as upd and .u.upd: stamps, logs (logh is 0 during replay),
+/ then publishes immediately or buffers into the root table for the flush job
 upd:{[t;x]
-  x:stamp tocols x;
-  if[.z.m.logh>0;(.z.m.tp`write)[.z.m.logh;(`upd;t;x)];.z.m.msgcount+:1];
-  $[.z.m.publishmode=`batched;
+  x:tocols x;
+  / roll the day first if past the roll: always when immediate, for unstamped data when batched
+  if[$[.z.m.batchms>0;not -12=type first first x;1b];eodcheck[]];
+  x:stamp x;
+  if[.z.m.logh>0;(.z.m.tp`write)[.z.m.logh;(`upd;t;x)];.u.i+:1];
+  if[count .z.m.tplogdir;.u.icounts[t]+:count first x];
+  $[.z.m.batchms>0;
     t insert x;
     (.z.m.ps`publish)[t;flip (cols value t)!$[0>type first x;enlist each x;x]]
     ];
   }
 
-/ subscriber entry point (published at root as `.u.sub`). syms=` -> all data for the
-/ table(s); a sym list -> a sym-filtered subscription. Delegates to di.pubsub, whose
-/ .z.w-based registration sees the calling subscriber's handle.
-sub:{[tabs;syms] (.z.m.ps`subscribe)[tabs;syms]}
+/ subscriber entry point, published at root as .u.sub: syms ` subscribes to all syms, a sym list filters
+sub:{[x;y]
+  if[x~`;:sub[;y] each .z.m.tables];
+  if[not x in .z.m.tables;'x];
+  / batched: flush first, so a replaying subscriber doesn't receive the buffer twice
+  if[.z.m.batchms>0;(.z.m.ps`pubclear)[.z.m.tables]];
+  r:(.z.m.ps`subscribe)[x;y];
+  (first r 0;first r 1)}
 
-/ subscription-details call (published at root as `.u.subdetails`) for a replaying
-/ subscriber - di.torq.proc.rdb via di.subscriptions. In ONE synchronous call it (a) registers the
-/ calling handle for live updates via di.pubsub (keyed on .z.w) and (b) returns everything
-/ needed to replay the pre-subscription history exactly once:
-/   tables   - the tables actually subscribed to
-/   schemas  - tablename!empty-schema dict, so the subscriber can define the tables
-/   logfile  - the current tp log file (` if logging disabled), for -11! replay
-/   rowcount - messages logged AT SUBSCRIPTION TIME. The subscriber replays exactly this
-/              many (di.tplogmgr.replayupto), so live messages arriving after subscription -
-/              which are ALSO delivered over the feed - are not double-processed. Captured
-/              in the same synchronous call as the subscribe, so no upd interleaves.
-/   date     - the log date
-/ This is the clean single-call analogue of the segmented TP's `subdetails`, deliberately
-/ NOT the classic standard-TP surface (.u.i/.u.L/.u.d global reads).
+/ subscription details, published at root as .u.subdetails: registers the caller via di.pubsub and returns
+/ tables, schemas (tablename!empty schema), logfile (` if logging is off), rowcount (messages logged at
+/ subscription time, for di.tplogmgr.replayupto) and date
 subdetails:{[tabs;syms]
-  / batched: flush FIRST, to the subscribers that already exist. rowcount counts every message logged, and upd logs
-  / before it buffers - so a subscriber registered while rows sat in the buffer would replay them from the log and
-  / then receive the same rows again in the next flush. flushed before it registers, it sees them exactly once
-  if[.z.m.publishmode=`batched;(.z.m.ps`pubclear)[.z.m.tables]];
+  / batched: flush to existing subscribers first so the caller does not get logged rows twice
+  if[.z.m.batchms>0;(.z.m.ps`pubclear)[.z.m.tables]];
   sub:(.z.m.ps`subscribe)[tabs;syms];
   d:(.z.m.eod`getd)[];
   lf:$[0<count .z.m.tplogdir;(.z.m.tp`logname)[.z.m.tplogdir;d];`];
-  `tables`schemas`logfile`rowcount`date!(sub 0;(sub 0)!sub 1;lf;.z.m.msgcount;d)
+  `tables`schemas`logfile`rowcount`date!(sub 0;(sub 0)!sub 1;lf;.u.i;d)
   }
 
 / batched-mode flush (timer job): publish every buffered table and clear it.
@@ -80,13 +64,13 @@ flush:{[] (.z.m.ps`pubclear)[.z.m.tables];}
 
 / EOD roll: flush any buffer, tell subscribers, roll the log, advance eodtime state.
 endofday:{[]
-  if[.z.m.publishmode=`batched;(.z.m.ps`pubclear)[.z.m.tables]];
+  if[.z.m.batchms>0;(.z.m.ps`pubclear)[.z.m.tables]];
   d:(.z.m.eod`getd)[];
-  / tell subscribers (e.g. di.torq.proc.rdb) to end the day for partition d - AFTER any final flush
-  / above, so they save exactly the day's data. Carries the date (vendored pubsub patch).
+  / tell subscribers to end the day for partition d
   (.z.m.ps`callendofday)[d];
-  if[.z.m.logh>0;r:(.z.m.tp`roll)[.z.m.logh;.z.m.tplogdir;d];.z.m.logh:r 0;.z.m.msgcount:r 1];
-  (.z.m.eod`setd)[d+1];
+  if[.z.m.logh>0;r:(.z.m.tp`roll)[.z.m.logh;.z.m.tplogdir;d];.z.m.logh:r 0;.u.i:r 1;.u.L:(.z.m.tp`logname)[.z.m.tplogdir;d+1]];
+  .u.icounts:(`symbol$())!0#0;
+  (.z.m.eod`setd)[.u.d:d+1];
   (.z.m.eod`setnextroll)[(.z.m.eod`getroll)[.z.p]];
   (.z.m.eod`setdailyadj)[(.z.m.eod`getdailyadjustment)[]];
   .z.m.log[`info][`tickerplant;"end of day complete, rolled ",(string d)," -> ",string d+1];
@@ -95,15 +79,16 @@ endofday:{[]
 / EOD check (timer job, ~1s): roll when the next-roll time has passed.
 eodcheck:{[] if[(.z.m.eod`getnextroll)[]<.z.p;endofday[]];}
 
-/ builds eodtime's merged init dict from the log dep + any tz config present, coercing
-/ timezone values to symbols. rolltimeoffset only passed if already a timespan (TOML has
-/ no timespan type, so a .toml settings file leaves it at eodtime's default).
+/ di.eodtime init dict: timezones as symbols, rolltimeoffset as a timespan
 eoddeps:{[config;logdep]
-  d:enlist[`log]!enlist logdep;
-  if[`rolltimezone in key config;d[`rolltimezone]:astz config`rolltimezone];
-  if[`datatimezone in key config;d[`datatimezone]:astz config`datatimezone];
-  if[(`rolltimeoffset in key config) and -16h=type config`rolltimeoffset;d[`rolltimeoffset]:config`rolltimeoffset];
-  d
+  d:()!();
+  if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist astz config`rolltimezone];
+  if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist astz config`datatimezone];
+  if[`rolltimeoffset in key config;
+    if[null o:totimespan config`rolltimeoffset;'"di.torq.proc.tickerplant: rolltimeoffset must be a timespan"];
+    d:d,enlist[`rolltimeoffset]!enlist o];
+  / log first, then the eodtime keys
+  (enlist[`log]!enlist logdep),d
   }
 
 init:{[config;deps]
@@ -114,17 +99,12 @@ init:{[config;deps]
   .z.m.timer:deps`timer;
   .z.m.handlers:deps`handlers;
   .z.m.cfg:config;
-  .z.m.publishmode:$[`publishmode in key config;astz config`publishmode;`immediate];
-  .z.m.pubperiod:$[`pubperiod in key config;"j"$config`pubperiod;1];
+  / batched every timerms ms (q's -t) when set, immediate otherwise
+  .z.m.batchms:$[`timerms in key config;0^config`timerms;0];
   .z.m.tplogdir:$[`tplogdir in key config;resolvedir[datahome[];config`tplogdir];""];
 
-  / schema: load the schema file at root; publishable tables are the UNKEYED ones with
-  / time,sym as their first two columns. Shape-filtering (rather than asserting every
-  / root table qualifies) keeps the TP robust to ambient root tables that aren't part of
-  / the schema - in a clean di.torq process root holds only the schema tables, but this
-  / avoids a sharp edge if anything else is defined at root. A schema that yields no
-  / publishable table is an error. Trade-off vs TorQ: a single malformed schema table is
-  / skipped rather than erroring - flagged in the docs.
+  / schema: load the schema file at root; publishable tables are the unkeyed ones with time,sym first
+  / other root tables are skipped; none publishable is an error
   schemafile:$[`schemafile in key config;resolvedir[apphome[];config`schemafile];apphome[],"/database.q"];
   system "l ",schemafile;
   allt:tables[];
@@ -133,10 +113,7 @@ init:{[config;deps]
   {@[x;`sym;`g#]} each tabs;
   .z.m.tables:tabs;
 
-  / pubsub: set the subscribable table list, then build its schema state from root tables.
-  / its subscriber cleanup (closesub) is bound to .z.pc through the handlers dep, as a simple
-  / event alongside di.torq.servers' hook - di.pubsub no longer assigns .z.pc itself at load,
-  / which used to replace the di.torq.handlers dispatcher installed moments earlier by di.torq
+  / pubsub: subscribable tables, schema state from root tables, closesub on .z.pc via the handlers dep
   .z.m.ps:use`di.pubsub;
   (.z.m.ps`setsubtables)[tabs];
   (.z.m.ps`init)[enlist[`log]!enlist .z.m.log];
@@ -149,11 +126,14 @@ init:{[config;deps]
   / tplog: prepared now; log opened after the root upd is published (replay needs it)
   .z.m.tp:use`di.tplogmgr;
   .z.m.logh:0;
-  .z.m.msgcount:0;
+  / table names only, read by .sub.subscribe; di.pubsub holds the subscribers
+  .u.w:tabs!(count tabs)#();
+  .u.i:0;
+  .u.icounts:(`symbol$())!0#0;
+  .u.L:`;
+  .u.d:(.z.m.eod`getd)[];
 
-  / publish the IPC surface at real root names (use mangles module code into a private
-  / namespace, so a remote/replayed `upd`/`.u.sub` must resolve at root). Done BEFORE
-  / opening the log so tplog.open's -11! replay finds `upd`.
+  / publish the IPC surface at root, before opening the log so its replay finds upd
   set[`upd;upd];
   set[`.u.upd;upd];
   set[`.u.sub;sub];
@@ -165,14 +145,15 @@ init:{[config;deps]
     system "mkdir -p ",.z.m.tplogdir;
     r:(.z.m.tp`open)[.z.m.tplogdir;(.z.m.eod`getd)[]];
     .z.m.logh:r 0;
-    .z.m.msgcount:r 1;
+    .u.i:r 1;
+    .u.L:(.z.m.tp`logname)[.z.m.tplogdir;.u.d];
     .z.m.log[`info][`tickerplant;"opened tp log, replayed ",(string r 1)," message(s)"];
     ];
 
-  / timer jobs: EOD roll check every second; batched flush every pubperiod seconds
-  (.z.m.timer`addjob)[`tpeodcheck;eodcheck;();1;1h;()!()];
-  if[.z.m.publishmode=`batched;
-    (.z.m.timer`addjob)[`tpflush;flush;();.z.m.pubperiod;1h;()!()]];
+  / timer jobs: EOD roll check every second; batched flush every -t ms
+  (.z.m.timer`addjob)[`tpeodcheck;eodcheck;();0D00:00:01;1h;()!()];
+  if[.z.m.batchms>0;
+    (.z.m.timer`addjob)[`tpflush;flush;();0D00:00:00.001*.z.m.batchms;1h;()!()]];
 
-  .z.m.log[`info][`tickerplant;"initialised, mode=",(string .z.m.publishmode),", tables=",", " sv string tabs];
+  .z.m.log[`info][`tickerplant;"initialised, mode=",$[.z.m.batchms>0;"batched every ",(string .z.m.batchms),"ms";"immediate"],", tables=",", " sv string tabs];
   }

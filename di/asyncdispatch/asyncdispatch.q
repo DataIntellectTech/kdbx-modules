@@ -1,9 +1,4 @@
-// di.asyncdispatch - async scatter-gather query coordinator
-// queues queries, dispatches to available backends, collects results per server,
-// applies a join function, and replies to the client
-// routing (which servers satisfy a query) is di.serverselect's responsibility
-// the log dependency is required - init errors immediately if absent or malformed
-// log functions are binary {[c;m]} where c is a symbol context and m is a string
+// async scatter-gather query coordinator: queue, dispatch to backends, join results, reply
 
 // ============================================================
 // module state and defaults
@@ -24,17 +19,17 @@ synccallsallowed:0b;
 // injectable clock - replaced in tests to control time without sleeping
 cp:{.z.p};
 
-// symbols backend servers call back via - stored as symbols so names survive IPC serialisation
+// symbols backend servers call back via
 resultcallback:`addserverresult;
 errorcallback:`addservererror;
 
-// reply formatting - sync errors must be signalled with ' so the client receives a trapped error
+// reply formatting; sync errors are signalled
 formatresponse:{[status;sync;result]$[not[status]and sync;'result;result]};
 
 // scheduling strategy - pick oldest FIFO-eligible query by default
 getnextqueryid:{
   avail:exec distinct servertype from availableservers 1b;
-  // 0! is required - select from a keyed table stays keyed in kdb-x, and runnextquery needs queryid via first
+  // unkeyed so runnextquery can take queryid via first
   runnable:0!select from .z.m.queryqueue where null returntime, not queryid in key .z.m.results, {all x in y}[;avail] each servertype;
   1 sublist select from runnable where time=min time
   };
@@ -71,8 +66,7 @@ queryid:0;
 
 sendclientreply:{[qid;result;status]
   // deliver result or error to the client, handling sync vs async send and postback wrapping
-  // local path invokes value tosend directly - formatresponse is not applied (it is a pass-through
-  // for async by default; consumers that override setformatresponse should not use local invocation)
+  // local replies skip formatresponse
   qd:queryqueue[qid];
   if[qd`error;:()];
   tosend:$[()~qd`postback;result;qd[`postback],enlist[qd`query],enlist result];
@@ -90,27 +84,20 @@ finishquery:{[qid;err]
   };
 
 serverexecute:{[rescb;errcb;qid;query]
-  // runs on the backend - traps errors so a crash posts an error reply rather than dropping the result.
-  // the result/error callback symbols are passed in as parameters (baked by sendquerytoserver on the
-  // dispatching side) rather than read as free variables here: read as free vars they would resolve in
-  // the BACKEND's namespace, forcing every caller to first push the callback vars onto each backend.
-  // baking them in keeps serverexecute fully self-contained, so backends need no cooperating code.
+  // runs on the backend: post the result, or the trapped error, back via the given callback symbols
   res:@[{(0b;value x)};query;{(1b;"server ",(string .z.h),":",(string system"p"),": ",x)}];
   @[neg .z.w;$[res 0;(errcb;qid;res 1);(rescb;qid;res 1)];
     {@[neg .z.w;(x;y;"failed to return result: ",z);()]}[errcb;qid]];
   };
 
 sendquerytoserver:{[qid;query;handles]
-  // fan the query out to all required handles and mark them in-use atomically.
-  // project the configured callback symbols into serverexecute so they ship to the backend as baked
-  // literals - no backend-side variable lookup required.
+  // send the query with the callback symbols to each required handle and mark them in use
   (neg handles,:())@\:(serverexecute[.z.m.resultcallback;.z.m.errorcallback];qid;query);
   update inuse:1b from .z.M.servers where handle in handles;
   };
 
 runnextquery:{[]
-  // pick the next dispatchable query and fan out to one idle server per required servertype
-  // called after any state change that may unblock work
+  // dispatch the next eligible query to one idle server per required servertype
   if[0=count torun:getnextqueryid[];:()];
   torun:first torun;
   avail:exec first handle by servertype from availableservers 1b;
@@ -119,13 +106,12 @@ runnextquery:{[]
   qid:torun`queryid;
   slots:types!count[types]#enlist(0Ni;(::);0b);
   slots[types;0]:handles;
-  // indexed assignment on bare results propagates through to .z.m in kdb-x (empirically verified)
   results[qid]:(torun`clienth;slots);
   sendquerytoserver[qid;torun`query;handles];
   };
 
 addqueryto:{[query;servertype;join;postback;timeout;sync;replyto;local]
-  // enqueue a query with an explicit reply target - used by execqueryto for local in-process routing
+  // enqueue a query with an explicit reply target
   .z.M.queryqueue upsert (queryid;.z.m.cp[];replyto;query;servertype;join;{$[11h=type x;enlist x;x]}postback;timeout;0Np;0b;sync;local);
   .z.m.queryid:queryid+1;
   };
@@ -136,18 +122,17 @@ addquery:{[query;servertype;join;postback;timeout;sync]
   };
 
 removequeries:{[age]
-  // prevent queryqueue growing unboundedly - purge completed queries older than age
+  // purge completed queries older than age
   delete from .z.M.queryqueue where not null returntime, .z.m.cp[]>returntime+age;
   };
 
 removeinactive:{[age]
-  // prune stale disconnected-server rows to stop the servers table growing forever
+  // purge disconnected servers older than age
   delete from .z.M.servers where not active, .z.m.cp[]>disconnecttime+age;
   };
 
 removeclients:{[age]
-  // prune stale client audit rows to stop the clients table growing forever
-  // clients are recorded on every connect by addclientdetails and never removed otherwise
+  // purge client rows older than age
   delete from .z.M.clients where .z.m.cp[]>time+age;
   };
 
@@ -191,16 +176,13 @@ setgetnextqueryid:{[f]
   };
 
 addserver:{[h;st]
-  // register a backend handle and servertype so it becomes eligible for dispatch.
-  // this is the default (built-in) server source; to dispatch against di.serverselect's view instead,
-  // inject it via setavailableservers - no registration and no di.serverselect dependency required
+  // register a backend handle and servertype for dispatch
   .z.m.loginfo[`asyncdispatch;"server registered: ",string[st]," handle ",string h];
   .z.M.servers upsert (h;st;0b;1b;0Np);
   };
 
 removeserverhandle:{[serverh]
-  // on backend disconnect, error in-flight queries using that handle and queued queries
-  // that can no longer be satisfied
+  // on backend disconnect, error its in-flight queries and queued queries that can no longer run
   if[null st:first exec servertype from .z.m.servers where handle=serverh;:()];
   err:errorprefix,"backend ",string[st]," server disconnected";
   .z.m.logwarn[`asyncdispatch;"backend disconnected: ",string st];
@@ -225,9 +207,7 @@ addclientdetails:{[h]
   };
 
 removeclienthandle:{[h]
-  // on client disconnect, mark their pending queries errored so result slots are not leaked
-  // free any servers in-flight for this client before removing result slots, then re-dispatch
-  // local queries store clienth:0Ni and are not matched here - the in-process caller owns cleanup for its own requests
+  // on client disconnect, error its pending queries, free its servers and re-dispatch
   .z.m.loginfo[`asyncdispatch;"client disconnected: handle ",string h];
   inflightqids:(exec queryid from .z.m.queryqueue where clienth=h, null returntime) inter key .z.m.results;
   if[count inflightqids;
@@ -239,12 +219,10 @@ removeclienthandle:{[h]
   };
 
 addserverresult:{[qid;data]
-  // fill one result slot - once all slots for a query are filled, run the join and reply
-  // bare indexed assignment on results propagates through to .z.m in kdb-x (empirically verified)
+  // fill one result slot; once all are filled, join and reply
   if[not qid in key results;:()];
   slots:results[qid;1];
-  // map the responding handle to its servertype from THIS query's own dispatch record, not a server
-  // registry - so any server source (built-in or an injected di.serverselect view) works unchanged
+  // servertype of the responding handle, from this query's dispatch record
   st:first where .z.w=slots[;0];
   slots[st]:(.z.w;data;1b);
   results[qid]:(results[qid;0];slots);
@@ -282,10 +260,7 @@ execquery:{[query;servertype;join;postback;timeout;sync]
   };
 
 execqueryto:{[replyto;query;servertype;join;postback;timeout;sync]
-  // in-process variant of execquery - replyto is 0Ni for local invocation via value
-  // postback must be non-empty when replyto is 0Ni - there is no handle to send a bare result to
-  // sync is not supported for local invocation
-  // mount-qualified postback symbols required for local invocation e.g. `da.shardresult not `shardresult
+  // in-process execquery: async only, with a required mount-qualified postback e.g. `da.shardresult
   if[0Ni~replyto;
     if[()~postback;'"di.asyncdispatch: local invocation requires a non-empty postback"];
     if[sync;'"di.asyncdispatch: local invocation does not support sync mode"]];
@@ -295,19 +270,7 @@ execqueryto:{[replyto;query;servertype;join;postback;timeout;sync]
   };
 
 init:{[deps]
-  // initialise the asyncdispatch module - validate deps and apply config overrides
-  // deps: dict containing `log (required) plus optional config keys:
-  //   `log               - required: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) binary loggers
-  //   `errorprefix       - optional: string prefix for client error messages. default: "error: "
-  //   `querykeeptime     - optional: timespan to keep completed queries. default: 0D00:30
-  //   `clearinactivetime - optional: timespan to keep disconnected servers. default: 0D01:00
-  //   `synccallsallowed  - optional: boolean, whether sync calls are permitted. default: 0b
-  // housekeeping (checktimeout; removequeries; removeinactive; removeclients) is the caller's
-  // responsibility - wire them into your timer after init; the exported defaults for age params are
-  // querykeeptime and clearinactivetime
-  // examples:
-  //   ad.init[enlist[`log]!enlist logdep]
-  //   ad.init[`log`querykeeptime!(logdep;0D01:00)]
+  // validate deps and apply config: `log (required), optional `errorprefix`querykeeptime`clearinactivetime`synccallsallowed
   if[99h<>type deps;
     '"di.asyncdispatch: deps must be a dict with `log key"];
   if[not `log in key deps;

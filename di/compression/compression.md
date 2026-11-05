@@ -15,6 +15,7 @@
 - Flexibility to compress different tables/columns with different compression parameters
 - Preview available before compression to display files to be compressed and how
 - Summary statistics for each file returned after compression/decompression complete
+- With worker threads (`-s` above 0) files compress in parallel; with worker processes (`-s` below 0) each worker compresses and verifies one table, as TorQ
 
 ---
 
@@ -69,6 +70,7 @@ depth, 10,default, 1, 17, 8
 |`compressmaxage`    | Compress files according to config up to the specified max age |
 |`docompression`     | Compress all files in hdb according to compressioncsv config   |
 |`getstatstab`       | get function to retrieve summary stats post compression        |
+|`compress`          | `[file;algo;blocksize;level;size]` compress (algo 0: decompress) one file to `file_kdbtempzip`, leaving the original in place |
 
 ---
 

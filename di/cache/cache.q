@@ -1,4 +1,4 @@
-/ Library to provide a mechanism for storing function results in a cache and returning them from the cache if they are available and non stale.
+/ cache function results and return them while they are fresh enough
 
 / the maximum size of the cache in MB
 maxsize:10;
@@ -35,7 +35,7 @@ getid:{:id+::1};
 
 / add to cache
 add:{[function;id;status]
-  / don't trap the error here - if it throws an error, we want it to be propagated out
+  / errors propagate to the caller
   res:value function;
   if[(maxindividual*MB)<=size:-22!res;
     / log it as an addfail - the result set is too big
@@ -64,9 +64,7 @@ drop:{[ids]
   results:: ids _ results;
  };
 
-/ evict some items from the cache - need to clear enough space for the new item
-/ evict the least recently accessed items which make up the total size
-/ feel free to write a more intelligent cache eviction policy !
+/ evict the least recently accessed items until reqsize is freed
 evict:{[reqsize;currenttime]
   r:select 
     from
@@ -83,10 +81,8 @@ trackperf:{[id;status;currenttime] .z.M.perf insert ((count id)#currenttime;id;(
 execute:{[func;age]
   / check for a value in the cache which we can use
   $[count r:select id,lastrun from cache where .z.M.funcs[id]~\:enlist func;
-    / There is a value in the cache.
+    / cached: return it if younger than age, else re-run
     [r:first r;
-    / we need to check the age - if the specified age is greater than the actual age, return it
-    / else delete it
     $[age > (now:.z.p) - r`lastrun;
       / update the cache stats, return the cached result
       [update lastaccess:now from .z.M.cache where id=r`id;

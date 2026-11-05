@@ -2,8 +2,8 @@
 
 TorQ's `.servers` (`code/handlers/trackservers.q`) as a kdb-x module. The parts the discovery
 protocol uses are ported line for line and published at root names (`.servers.*`,
-`.dotz.liveh*`); the registry and settings are root `.servers.*` globals. No
-password/access-list files, no FinSpace. `log`, `timer` and `handlers` are injected (all required).
+`.dotz.liveh*`); the registry and settings are root `.servers.*` globals. No access-list files,
+no FinSpace. `log`, `timer` and `handlers` are injected (all required).
 
 ## init and config
 
@@ -35,15 +35,17 @@ supplies the discovery process's values.
 | `discoveryregister` | `.servers.DISCOVERYREGISTER` | `1b` |
 | `connectionsfromdiscovery` | `.servers.CONNECTIONSFROMDISCOVERY` | `1b` |
 | `subscribetodiscovery` | `.servers.SUBSCRIBETODISCOVERY` | `1b` |
-| `discoveryretry` | `.servers.DISCOVERYRETRY` | `0D00:05` |
+| `discoveryretry` | `.servers.DISCOVERYRETRY` | `0D00:05`; string or seconds allowed |
 | `tracknontorqprocess` | `.servers.TRACKNONTORQPROCESS` | `0b` |
 | `hopentimeout` | `.servers.HOPENTIMEOUT` | `2000` |
-| `retry` | `.servers.RETRY` | `0D00:05` |
+| `retry` | `.servers.RETRY` | `0D00:05`; string or seconds allowed |
 | `retain` | `.servers.RETAIN` | `` `long$0D00:30 `` |
 | `autoclean` | `.servers.AUTOCLEAN` | `0b` |
 | `debug` | `.servers.DEBUG` | `1b` |
 | `startup` | `.servers.STARTUP` | `0b` — when set, di.torq runs `.servers.startup` after the process module loads (legacy torq.q l.673); `di/torq/settings/hdb.q` sets it, as legacy's hdb.q does |
 | `discovery` | `.servers.DISCOVERY` | `` enlist` `` |
+| `userpass` | `.servers.USERPASS` | `` ` `` — `user:pass` attached to every **outbound** connection. `di.torq` resolves it from a password file if the setting is absent (see below) |
+| `passwords` | `.servers.PASSWORDS` | empty dict — per-target override keyed on hpup, e.g. `` `:host:1234!`user:pass ``. Wins over `userpass` |
 
 ```q
 svc:use`di.torq.servers
@@ -83,10 +85,11 @@ Published at root by `init`, same bodies as legacy:
 | Name | trackservers.q |
 |---|---|
 | `.dotz.liveh` / `.dotz.livehn` / `.dotz.liveh0` | dotz.q l.8 |
-| `.servers.opencon` | l.50–59 (DEBUG logging; no passwords) |
+| `.servers.opencon` | l.50–59, plus `withcreds` for the password append |
 | `.servers.cleanup` | l.116–118 |
 | `.servers.addnthawc` | l.121–128 |
 | `.servers.getdetails` | l.137 |
+| `.servers.addh` | l.130–134 |
 | `.servers.addhw` / `.servers.addw` | l.139–150 |
 | `.servers.retry` | l.157 |
 | `.servers.retrydiscovery` | l.158–168 |
@@ -96,8 +99,10 @@ Published at root by `init`, same bodies as legacy:
 | `.servers.register` | l.207–211 |
 | `.servers.querydiscovery` | l.215–221 |
 | `.servers.registerfromdiscovery` | l.225–231 |
-| `.servers.addprocs` | l.233–244 |
+| `.servers.addprocs` | l.233–244 (calls `.servers.addprocscustom`) |
 | `.servers.procupdate` | l.251 |
+| `.servers.refreshattributes` | l.255–258 |
+| `.servers.getserverbytype` / `.servers.gethandlebytype` / `.servers.gethpbytype` | l.97–107, over `SERVERS` |
 | `.servers.domainsocketsenabled` | l.261–267 |
 | `.servers.formathp` | l.271–307 |
 | `.servers.formatprocs` | l.310–314 |
@@ -105,15 +110,21 @@ Published at root by `init`, same bodies as legacy:
 | `.servers.pc` | l.383, run on `.z.pc` |
 | timers `discoveryretry` / `serversretry` | l.387–389 |
 
-Defined directly at root in a `\d .servers` section, for legacy `.sub` and chainedtp:
+Also defined at root, for di.subscriptions' `.sub` and the tickerplants' startup waits:
+- `.servers.getservers` (5-arg; the exported 1-arg `getservers` is separate);
+- `.servers.connectcustom` (called by `retryrows`) and `.servers.addprocscustom` (called by `addprocs`), each kept if
+  already defined, as legacy;
+- `.servers.startupdepnamecycles`, `.servers.startupdepcycles` and `.servers.startupdependent`.
 
-| Name | trackservers.q |
-|---|---|
-| `.servers.attributematch` | l.64–68 |
-| `.servers.getservers` (legacy 5-arg; the exported 1-arg `getservers` is separate) | l.75–89 |
-| `.servers.connectcustom` (called by `retryrows`) | l.198 |
-| `.servers.reqprocsnotconn` / `.servers.reqprocnamesnotconn` | l.348–351, l.357 |
-| `.servers.startupdepcyclestypename` / `.servers.startupdepnamecycles` | l.360–373, l.379 |
+The root `.servers.gethandlebytype` is legacy's `getserverbytype[;`w;]`: it reopens dead handles first
+(`getservers[…;1b;1b]`). The exported `gethandlebytype` does not; it picks only from live rows.
+
+`.servers.getserverbytype`/`.servers.gethpbytype` share their names with di.serverselect's
+`getserverbytype`/`gethpbytype`, but read a different registry: these pick from `.servers.SERVERS` (this
+process's connections, by proctype), di.serverselect's from its own server pool (filled by `addserver*`).
+
+They are built on the module-private `attributematch`, `reqprocsnotconn`, `reqproctypesnotconn`,
+`reqprocnamesnotconn` and `startupdepcyclestypename`.
 
 The discovery process (`di.torq.proc.discovery`) calls `addw`, `removerows`, `cleanup`,
 `startup`, reads `SERVERS`/`nontorqprocesstab`, and pushes `procupdate`/`autodiscovery` to
@@ -122,7 +133,7 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 **Conversions** (legacy calls with no di equivalent):
 - `.lg.*` becomes the injected `log`.
 - `.dotz.set` on `.z.pc` becomes `handlers[`register]`.
-- `.timer.repeat` becomes `timer[`addjob]`, mode 3 (next run from finish), period in seconds.
+- `.timer.repeat` becomes `timer[`addjob]`, mode 3 (next run from finish), period as a timespan.
 - `.proc.cp[]` becomes `.z.p`.
 - `.proc.procname`/`proctype` in `getdetails` become init's identity.
 - `.proc.readprocs` becomes `readprocesscsv`.
@@ -133,14 +144,14 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
   live discovery rows.
 
 **Not ported** (discovery does not reach them):
-- passwords (`loadpassword`, `USERPASS`, `PASSWORDS`, `LOADPASSWORD`);
+- `loadpassword`/`LOADPASSWORD` — the credential **file read** lives in `di.torq` instead, so the
+  module reads no files (`USERPASS`/`PASSWORDS` themselves are ported — see "Outbound credentials");
 - `SOCKETTYPE`/FinSpace (so `formathp`'s ipctype is always `` `tcp `` from `formatprocs`/`addhw`,
   and `retryrows` dials `hpup`);
-- `getserverbytype`/`gethpbytype`;
-- `names`/`types`/`unregistered`/`checkw`/`reset`;
-- the `addprocscustom` hook;
-- `refreshattributes`;
-- `reqproctypesnotconn`/`startupdepcycles`/`startupdependent`.
+- `names`/`types`/`unregistered`/`checkw`/`reset`.
+
+**Residual:** `.servers.startup` is config-driven (`startup[config]`), so legacy's `.servers.startup[]` throws
+`'type`. Accepting an empty call would silently connect to nothing; no port code calls it that way.
 
 **Legacy behaviour that differs from di.torq.servers 0.3.0:**
 - `startup` no longer excludes this process's own row.
@@ -153,12 +164,15 @@ peers. Peers call discovery's root `register` (as `` `..register ``) and `getser
 
 ## Tests
 
-`test.q` + `test.csv` (54 checks) spawn real q peers. They cover:
+`test.q` + `test.csv` (71 checks) spawn real q peers. They cover:
 - init validation, wiring and idempotency;
 - `startup` against a live and a dead peer (discovery off);
 - `gethandlebytype`, and retry recovering an ungraceful kill;
+- `.servers.gethpbytype` (live, dead and unknown-selection) and the root `.servers.gethandlebytype`, `.servers.addh`, the `.servers.addprocscustom` hook called by `addprocs`, and `.servers.refreshattributes`
+  re-registering with a live discovery stub;
 - `waitfortype`, including a discovery stub that comes up after `startup`;
-- the root `.servers` functions (`attributematch`, 5-arg `getservers`, `startupdepnamecycles`);
+- `attributematch`, the root 5-arg `.servers.getservers`, `.servers.startupdepnamecycles`,
+  `.servers.startupdepcycles` and `.servers.startupdependent`;
 - input validation and `getapimeta`.
 
 The rest of the discovery protocol is covered by `di.torq.proc.discovery`'s suite. Run in a fresh
@@ -168,3 +182,39 @@ q session with `QHOME` set to a q install whose `bin/q` can be launched:
 k4unit:use`di.k4unit
 k4unit.moduletest`di.torq.servers
 ```
+
+---
+
+## Outbound credentials
+
+`opencon` attaches `user:pass` to the connection string before dialling, as TorQ's does:
+
+```q
+withcreds:{[hpup]
+  s:string hpup;
+  tcps:s like ":tcps:*";
+  up:.servers.USERPASS^.servers.PASSWORDS hpup;
+  $[null up;hpup;(2+tcps)>=sum ":"=s;`$s,":",string up;hpup]
+  };
+```
+
+- a per-target `PASSWORDS` entry wins over `USERPASS`;
+- a hpup that **already** carries credentials is left alone — that is what the colon count tests
+  (`:host:port` has two, `:tcps://host:port` three);
+- with neither set, the string is unchanged and the connection is anonymous, which is the
+  behaviour every release before this one had.
+
+**Why it matters.** A process that permissions its own message handlers (`di.permissions`) refuses
+an unauthenticated peer, so without credentials an otherwise healthy stack cannot connect to
+itself — the rdb cannot reach the tickerplant, the gateway cannot reach its backends, and
+discovery collapses. Connection management and access control have to agree on this, which is why
+the setting lives here rather than in `di.permissions`.
+
+**Where the credentials come from.** The module reads no files. `di.torq` resolves `userpass` from
+`$TORQXAPPCONFIG/passwords/{default|<proctype>|<procname>}.txt` — one line, `user:pass`, most
+specific file wins — and passes it in config, unless the settings cascade already named it. That
+mirrors TorQ's hierarchic `loadpassword`.
+
+The file is **plaintext on disk**, as TorQ's is, and TorQ's own comment says what to do about it:
+*"If required, change this method to something more secure!"* The credentialed connection string is
+never logged.

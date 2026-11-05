@@ -68,5 +68,7 @@ repairover:{[logfile;goodlogh;d]
   :@[d;`start`size;:;(ns;chunk)];       
  };
 
-export:([check;repair])
+version:first read0`:::VERSION
+
+export:([check;repair;version])
 

@@ -22,12 +22,15 @@ coexists with `di.torq.servers`' own `.z.pc` hook (see Notes).
 
 ## Config
 
+There is no publish-mode setting. As TorQ's `tickerplant.q`, q's `-t` decides: started with `-t <ms>`
+(di.torq stamps it into config as `timerms`) the tickerplant buffers updates and flushes them every `-t`
+ms; without `-t`, or with `-t 0`, it publishes each update immediately.
+
 ```toml
-publishmode = "immediate"   # "immediate" (publish each update) or "batched" (buffer, flush on a timer)
-pubperiod = 1               # batched only: flush period in SECONDS (di.timer granularity)
 tplogdir = "tplog"          # relative to TORQXDATAHOME, or absolute; empty/absent = no logging
 schemafile = "database.q"   # defaults to <TORQXAPPHOME>/database.q (schema is code, not data)
 # rolltimezone / datatimezone / rolltimeoffset -> passed to di.eodtime (default GMT/GMT/0)
+# rolltimeoffset = "0D17:00:00"  -> a timespan string or a number of seconds
 ```
 
 ## Behaviour
@@ -49,7 +52,8 @@ schemafile = "database.q"   # defaults to <TORQXAPPHOME>/database.q (schema is c
   and `upd` logs before it buffers, so a subscriber registered while rows sat unflushed would
   replay them from the log and then receive them again in the next flush.
 - **Timer jobs** (via injected `di.timer`): an EOD-roll check every second; plus, in
-  batched mode, a flush every `pubperiod` seconds (`di.pubsub.pubclear`).
+  batched mode, a flush every `-t` ms (`di.pubsub.pubclear`). In batched mode the EOD check stays this
+  separate 1s job, where TorQ runs it on every `.z.ts` tick.
 - **End of day** (`endofday`, published at root; fired by the roll-check job or via
   IPC): flush any buffer, `di.pubsub.callendofday`, roll the log
   (`di.tplogmgr.roll`), and advance di.eodtime's date / next-roll / daily-adjustment.
@@ -70,11 +74,8 @@ because `di.tplogmgr.open` replays via `-11!`, which executes the root-level `up
 - A single malformed schema table (missing `time`/`sym`) is silently skipped rather
   than erroring (shape-filtering trade-off vs TorQ's strict assertion, chosen for
   robustness against ambient root tables).
-- Batched flush granularity is whole seconds (di.timer's period unit); TorQ's `system"t"`
-  allows sub-second. Fine for v1.
-- `di.eodtime` is vendored from an unmerged PR and `rolltimeoffset` can't be expressed
-  in TOML (no timespan type) — GMT-midnight rolls need no offset; a non-default offset
-  needs a `.q` settings file for now.
+- `di.eodtime` is vendored from an unmerged PR. Timezone strings become symbols and
+  `rolltimeoffset` strings or seconds become a timespan; an unconvertible offset errors at init.
 
 ## Testing
 

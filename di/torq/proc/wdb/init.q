@@ -2,4 +2,4 @@
 
 version:first read0`:::VERSION
 
-export:([init;endofday;version])
+export:([init;endofday;endofdaysort;version])

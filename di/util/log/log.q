@@ -74,14 +74,11 @@ logline:{[level;ctx;msg]
   -1 (string .z.p)," [",level,"] [",string[ctx],"] ",msg;
   };
 
-/ instance counter and per-instance state; always accessed via .z.m so nested closures (e.g.
-/ createlog's returned methods) reliably resolve to this module's namespace. .z.M does not
-/ resolve correctly inside nested closures here and must not be used for this state.
+/ instance counter and per-instance state, accessed via .z.m
 i:0;
 inst:()!();
 
-/ factory helper: returns a {[ctx;msg]} log function for the given level and instance
-/ each entry in sink is a (handle;sender) pair; sender is called with the formatted text
+/ a {[ctx;msg]} log function for a level and instance, writing to each (handle;sender) sink
 makelevel:{[id;gv;lvl]
   {[id;gv;lvl;ctx;msg]
     if[(lvls?lvl)<lvls?gv`lvl;:()];
@@ -93,7 +90,6 @@ makelevel:{[id;gv;lvl]
   };
 
 / update field k with value v in instance id's state
-/ single indexed assignment on the shared global; avoids round-tripping through a local copy
 updinst:{[id;k;v]
   .z.m.inst[id;k]:v;
   };
@@ -110,7 +106,7 @@ createlog:{[]
   / increment instance counter and capture id
   .z.m.i+:1;
   id:i;
-  / initialise state for this instance; no separate handler dict needed
+  / initialise state for this instance
   snk:lvls!(count lvls)#enlist();
   prp:fmtprep["$";pattern;fmts`basic];
   .z.m.inst[id]:`sink`lvl`fmtname`fmts`prep!(snk;`info;`basic;fmts;prp);
@@ -127,7 +123,7 @@ createlog:{[]
     wv[`fmtname;name];
   }[gv;wv;];
 
-  / get the current format name; 1-arg (dummy ignored) so gv executes in module context
+  / get the current format name; argument ignored
   getfmt:{[gv;x] gv`fmtname}[gv;];
 
   / add a custom named format template string
@@ -141,11 +137,10 @@ createlog:{[]
     wv[`lvl;newlvl];
   }[gv;wv;];
 
-  / get the current minimum log level; 1-arg (dummy ignored) so gv executes in module context
+  / get the current minimum log level; argument ignored
   getlvl:{[gv;x] gv`lvl}[gv;];
 
   / add a sink (handle or (handle;fn) pair) for one or more log levels
-  / each sink entry is stored as (handle;sender) so mixed types never collide in a dict
   add:{[id;gv;h;sinklvls]
     handle:$[0h=type h;first h;h];
     sender:$[0h=type h;last h;h];
@@ -157,9 +152,7 @@ createlog:{[]
     handle
   }[id;gv;;];
 
-  / remove a handle from a log level's sink list, or from one or more levels if lvl is a list
-  / h may be a bare handle (removes every sink registered with that handle) or a
-  / (handle;fn) pair matching what was passed to add (removes only that exact sink)
+  / remove sinks for one or more levels; h: a handle (all its sinks) or a (handle;fn) pair
   remove:{[id;h;lvl]
     sl:(),lvl;
     if[count bad:sl where not sl in lvls;'`$"invalid level(s): ",", " sv string bad];
@@ -187,7 +180,5 @@ warn:{[ctx;msg] logline["WARN";ctx;msg];};
 error:{[ctx;msg] logline["ERROR";ctx;msg];};
 fatal:{[ctx;msg] logline["FATAL";ctx;msg];};
 
-/ pre-wrapped log dependency dict ready to pass straight into any di.* module's init
-/ includes all six levels (the contract only requires info/warn/error; the extras are free
-/ since createlog already computes them) e.g. email.init[mylog.logdict]
+/ log dependency dict with all six levels, ready to pass to a di.* module's init
 logdict:(enlist`log)!enlist(lvls!createlog[]lvls);

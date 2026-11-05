@@ -1,3 +1,3 @@
 \l ::compression.q
 
-export:([init;showcomp;getcompressioncsv;compressmaxage;docompression;getstatstab])
+export:([init;showcomp;getcompressioncsv;compressmaxage;docompression;getstatstab;compress])

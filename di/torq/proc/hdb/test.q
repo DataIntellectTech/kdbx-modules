@@ -1,7 +1,4 @@
-/ shared mock log dependency + fixture helpers for di.torq.proc.hdb's tests.
-/ Assumes q is started with the kdbx-modules repo root as the working directory.
-/ NOTE: this test calls setenv[`TORQXAPPHOME;...] - run di.torq.proc.hdb's tests in their own
-/ fresh q session, not interleaved with other modules' tests in one shared process.
+/ mock log dependency and fixture helpers, loaded from the repo root; sets TORQXAPPHOME so run in its own q session
 
 calls:([]lvl:`symbol$();ctx:`symbol$();msg:())
 
@@ -22,14 +19,9 @@ setupfixture:{[]
 
 teardownfixture:{[] system "rm -rf ",FIXTUREDIR; }
 
-/ config-dict builders - factored out so test.csv rows never need a raw "," (q string
-/ concatenation) inline, which gets misread as a CSV field separator unless the whole
-/ field is quoted-and-escaped. Simpler to just keep commas out of the CSV entirely.
+/ config-dict builders
 absdircfg:{[] (enlist`dir)!enlist `$":",FIXTUREDIR}
 reldircfg:{[] (enlist`dir)!enlist `:di_hdb_k4unit_fixture}
 
-/ same as absdircfg, but dir is a plain q STRING rather than a symbol - simulates a
-/ .toml-sourced settings value (di.util.toml has no symbol type, see di/config's TOML
-/ integration). resolvedir must normalize this itself; `string`/`1_string` throw
-/ 'type on an already-string input, which is exactly the bug this covers.
+/ as absdircfg but with dir as a string, as from .toml settings
 absdirstringcfg:{[] (enlist`dir)!enlist ":",FIXTUREDIR}

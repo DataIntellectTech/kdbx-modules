@@ -1,6 +1,4 @@
-/ library for logging external usage of a kdb+ session
-/ note that initialising this library will overwrite .z message
-/ handlers with usage-logging wrappers of their current definitions
+/ log external usage of a kdb+ session; init wraps the .z message handlers
 
 / table to store usage info
 querylog:([]
@@ -71,7 +69,7 @@ readlog:{[filename]
       {'"failed to read log file : ",x}];
   };
 
-/ get the memory info - we don't want to log the physical memory each time
+/ memory stats, excluding physical memory
 meminfo:{[] :5#system"w";};
 
 / format the message handler argument as a string
@@ -182,7 +180,7 @@ init:{[configs]
   / default configuration values and flags
   .z.m.logtodisk:0b;    / whether to log to disk
   .z.m.logtomemory:1b;  / whether to log to memory
-  .z.m.logdir:"";       / should be set before loading library to initialise on disk logging
+  .z.m.logdir:"";       / directory for on-disk logs
   .z.m.logname:"";      / log file will take the form "querylog_{logname}_{date/time}.log"
   .z.m.ignore:1b;       / whether to check the ignore list for function calls to not log
   .z.m.ignorelist:();   / list of function to not log usage of

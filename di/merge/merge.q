@@ -1,24 +1,11 @@
-/ merge module for kdb-x
-/ on-disk data-merging utilities for the write-down (wdb) flow: intraday data is
-/ written to disk in temporary partition segments, then merged into the final hdb
-/ partition - either whole-partition, column-by-column, or a hybrid of the two chosen
-/ per partition by a row-count / byte-size limit
-/ merging keeps memory flat - segments are read and upserted a batch at a time rather
-/ than held in memory and written once at end-of-day
-/ the parted (`p#) column(s) for a table are supplied by the caller as extrapartitiontype;
-/ the module never reads sort config itself, so it stays independent of di.sort
-/ config and the injected log dependency are passed to init in a single dictionary: config
-/ keys (see merge.md) are optional with defaults; log is required and init errors
-/ immediately if it is missing or does not provide info/error - see merge.md
-/ module-local state convention: mutable state and injected deps are held under .z.m and
-/ accessed via .z.m at every call site; nothing is read bare
+/ merge temporary on-disk partition segments into the final hdb partition, whole-partition,
+/ column-by-column, or a hybrid chosen per partition by a row-count or byte-size limit
 
 / ============================================================
 / module state and defaults
 / ============================================================
 
-/ schema template for the partition-size tracking table - the live copy is held in
-/ .z.m.partsizes, seeded fresh by init and reset by clearpartsizes
+/ partition-size tracking schema; the live copy is .z.m.partsizes
 partsizesschema:([ptdir:`symbol$()] rowcount:`long$(); bytes:`long$());
 
 / configuration defaults - overridden by the config keys in the dict passed to init
@@ -30,16 +17,12 @@ partlimitdefault:1000;        / maximum number of partitions merged together in 
 / ============================================================
 
 initialised:{[]
-  / has init run? .z.m.loginfo has no load-time default - only init ever sets it - so this
-  / probe can't be fooled by a same-named constant, unlike partsizes/mergebybytelimit/partlimit
-  / which all start with real, valid-looking defaults whether init has run or not
+  / has init run
   :@[{.z.m.loginfo;1b};::;{[e] :0b}];
   };
 
 requireinit:{[ctx]
-  / every exported function except init/getapimeta refuses to run before init has wired the
-  / deps - without this a pre-init call would fail on an unset .z.m.loginfo with a confusing
-  / raw error instead of a clear one
+  / signal unless init has run
   if[not initialised[];
     '"di.merge: ",string[ctx],": init must be called before any other function"];
   };
@@ -53,10 +36,7 @@ mergeonecol:{[dest;segment;col]
   / filepaths to the destination column and the matching column in the segment
   destcol:` sv dest,col;
   segcol:` sv segment,col;
-  / the read is deliberately NOT swallowed - a partial column failure must abort the whole
-  / mergebycol/mergehybrid call rather than leave dest half-updated across columns (see merge.md,
-  / "Two deliberate design decisions from adversarial testing") - but wrap it so the propagated
-  / error names the failing column and is logged, instead of a bare context-free read error
+  / a read failure is logged with the column name and aborts the whole merge
   destdata:.[get;enlist segcol;
     {[segcol;e] .z.m.logerr[`merge;"failed to read segment column ",(string segcol),
       ", aborting this merge - error is - ",e];
@@ -72,7 +52,6 @@ mergeonecol:{[dest;segment;col]
 
 / accumulate the row count and byte-size estimate for a freshly-written segment
 trackpartition:{[ptdir;rowcount;bytes]
-  / call each time data is written to a segment; keyed by partition directory
   requireinit[`trackpartition];
   .z.m.partsizes[ptdir]+:(rowcount;bytes);
   };
@@ -89,11 +68,20 @@ getpartsizes:{[]
   .z.m.partsizes
   };
 
+/ the configured mergebybytelimit and partlimit
+getmergebybytelimit:{[]
+  requireinit[`getmergebybytelimit];
+  .z.m.mergebybytelimit
+  };
+
+getpartlimit:{[]
+  requireinit[`getpartlimit];
+  .z.m.partlimit
+  };
+
 / upsert a partsizes-shaped table received from a peer process into local tracked state
 syncpartsizes:{[t]
-  / t: a table shaped like getpartsizes[] (ptdir/rowcount/bytes), typically received over IPC
-  / from a peer process's own getpartsizes[] call - upserts wholesale into local state, giving
-  / the receive side of the legacy raw-IPC partsizes fan-out a real function to go through
+  / t: a table shaped like getpartsizes[], e.g. from a peer process
   requireinit[`syncpartsizes];
   .z.m.partsizes:.z.m.partsizes upsert t;
   };
@@ -109,9 +97,7 @@ getpartchunks:{[partdirs;mergelimit]
   requireinit[`getpartchunks];
   / tracked sizes for just the partitions we are merging
   t:select from .z.m.partsizes where ptdir in partdirs;
-  / a requested partdir with no tracked size is silently absent from t above - log it so the gap
-  / is visible rather than something a caller has to notice missing from the merge batch. distinct
-  / on both sides so a duplicate partdir in the request doesn't skew the count
+  / log requested partitions with no tracked size
   if[0<n:count distinct[partdirs] except exec ptdir from t;
     .z.m.loginfo[`merge;"getpartchunks: ",string[n]," of ",string[count distinct partdirs],
       " requested partition(s) have no tracked size, dropped"]];
@@ -131,38 +117,21 @@ mergebypart:{[extrapartitiontype;dest;partchunks]
   / re-sorts the batch by the parted column(s) first if the p# attribute cannot otherwise be applied
   requireinit[`mergebypart];
   .z.m.loginfo[`merge;"reading partition/partitions ",", " sv string partchunks];
-  / read each segment separately and protected, so one missing/corrupt segment file does not take
-  / its batch-mates down with it - a bare get each/join here would fail the whole batch together
-  reads:{[p] @[get;p;{[p;e] .z.m.logerr[`merge;"failed to read segment ",(string p),
-    ", not merged this batch - error is - ",e];(::)}[p;]]} each partchunks;
-  ok:98h=type each reads;
-  if[not all ok;
-    .z.m.logerr[`merge;"skipping ",string[sum not ok]," of ",string[count partchunks],
-      " segment(s) in this batch that failed to read"]];
-  chunks:reads where ok;
-  if[0=count chunks;
-    .z.m.logerr[`merge;"no segments in this batch read successfully, nothing upserted to ",string dest];
-    :(::)];
+  / an unreadable segment fails the batch before anything is upserted, so the segments are kept
+  chunks:get each partchunks;
   / a single segment reads back as a table; multiple read back as a list of tables to join
   if[98<>type chunks;chunks:(,/)chunks];
   .z.m.loginfo[`resort;"checking that the contents of this subpartition conform"];
   / can the p# attribute be applied as-is? if not, the data must be re-sorted by the parted column
-  / applying p# here would not survive the upsert below - upsert appends raw values onto the
-  / on-disk column and does not persist an in-memory attribute, so this only orders the rows
-  / within this batch; mergehybrid applies the real, persisted attribute once across the whole
-  / destination after every batch (and any mergebycol columns) have been upserted
   pattrtest:@[{@[x;y;`p#];0b}[chunks;];extrapartitiontype;{1b}];
   if[pattrtest;
     .z.m.loginfo[`resort;"re-sorting contents of subpartition"];
     chunks:xasc[extrapartitiontype;chunks];
     ];
   .z.m.loginfo[`merge;"upserting ",(string count chunks)," rows to ",string dest];
-  / append the merged rows to permanent storage, logging (not throwing) on failure
-  / e arrives already a string from the protected-apply mechanism - do not re-stringify it: string
-  / of an already-string value maps over each char individually, corrupting the message and making
-  / this handler itself throw, which defeats the log-not-throw contract this line exists to provide
+  / append the merged rows to permanent storage; a failure is logged and signalled so the caller keeps the segments
   .[upsert;(dest;chunks);
-    {[e;d;p] .z.m.logerr[`merge;"failed to merge to ",string[d]," from segments ",(", " sv string p)," Error is - ",e]}[;dest;partchunks]];
+    {[e;d;p] .z.m.logerr[`merge;"failed to merge to ",string[d]," from segments ",(", " sv string p)," Error is - ",e];'e}[;dest;partchunks]];
   };
 
 / merge one segment into the destination partition a column at a time
@@ -181,8 +150,6 @@ mergehybrid:{[extrapartitiontype;tableinfo;dest;partdirs;mergelimit]
     exec ptdir from .z.m.partsizes where ptdir in partdirs,bytes>mergelimit;
     exec ptdir from .z.m.partsizes where ptdir in partdirs,rowcount>mergelimit];
   if[(count overlimit)<>count partdirs;
-    / a distinct name, not a reassignment of partdirs - partdirs keeps meaning "everything
-    / requested" for the rest of the function, in case a later addition needs the full list
     underlimit:partdirs except overlimit;
     .z.m.loginfo[`merge;"merging ",(", " sv string underlimit)," by whole partition"];
     mergebypart[extrapartitiontype;` sv dest,`]'[getpartchunks[underlimit;mergelimit]];
@@ -195,25 +162,6 @@ mergehybrid:{[extrapartitiontype;tableinfo;dest;partdirs;mergelimit]
       .z.m.loginfo[`merge;"creating file ",string ` sv dest,`.d];
       (` sv dest,`.d) set cols tableinfo[1];
       ];
-    ];
-  / mergebypart applies p# per batch and mergebycol applies none at all, so neither guarantees the
-  / full destination ends up grouped once multiple batches and/or both methods have all appended
-  / to it - re-sort and re-apply the attribute to the whole destination once, here, after every
-  / path above has finished, rather than leaving that guarantee split across per-batch calls
-  if[0<count extrapartitiontype;
-    .z.m.loginfo[`merge;"applying ",(", " sv string extrapartitiontype)," attribute to the full destination ",string dest];
-    / select from dest (not get dest) - a table read straight back from a splayed directory can
-    / still carry file-mapped internals that make xasc throw 'splay; a plain select materialises
-    / an ordinary in-memory table first, matching this file's existing style-guide preference for
-    / regular over functional q-sql
-    / f itself must stay unapplied here - currying both params in before handing it to . would
-    / execute it immediately and unprotected, and . would then misread the leftover pieces as an
-    / indexed-amend call rather than a protected apply
-    .[{[dest;extrapartitiontype] (` sv dest,`) set @[xasc[extrapartitiontype;select from dest];extrapartitiontype;`p#]};(dest;extrapartitiontype);
-      / a failure here can be a kdb+ built-in error (e.g. `splay, `type) rather than merge's own
-      / thrown strings - those arrive as symbols/other non-string values, not the plain string the
-      / rest of this file's handlers assume, so stringify defensively with .Q.s1 instead of ","
-      {[dest;e] .z.m.logerr[`merge;"failed to apply the parted attribute to ",(string dest)," - error is - ",.Q.s1 e]}[dest;]];
     ];
   };
 
@@ -233,10 +181,11 @@ checkpartitiontype:{[tablename;extrapartitiontype]
 / confirm every parted column has an enumerable type (h/i/j/s) so it can key a partition
 checkenumerabletype:{[tablename;extrapartitiontype]
   requireinit[`checkenumerabletype];
-  $[all extrapartitiontype in exec c from meta[tablename] where t in "hijs";
-    .z.m.loginfo[`checkenumerable;"all columns do have an enumerable type in ",(string tablename)," table"];
-    .z.m.logerr[`checkenumerable;"not all columns ",(", " sv string extrapartitiontype),
-      " do have an enumerable type in ",(string tablename)," table"]];
+  if[not all extrapartitiontype in exec c from meta[tablename] where t in "hijs";
+    .z.m.logerr[`checkenumerable;m:"not all columns ",(", " sv string extrapartitiontype),
+      " do have an enumerable type in ",(string tablename)," table"];
+    'm];
+  .z.m.loginfo[`checkenumerable;"all columns do have an enumerable type in ",(string tablename)," table"];
   };
 
 / distinct combinations of the parted column values - one per partition directory
@@ -253,15 +202,27 @@ getfirstcharpartitions:{[tablename;extrapartitiontype]
     group ?[tablename;();();({first each string x};(distinct;first extrapartitiontype))]
   };
 
+/ a table's p# columns from a sort config, else the default's
+getextrapartitiontype:{[sortconfig;tablename]
+  requireinit[`getextrapartitiontype];
+  tabparts:$[count tabparts:distinct exec column from sortconfig where tabname=tablename,sort=1,att=`p;
+    [.z.m.loginfo[`getextraparttype;"parted attribute p found in sort.csv for ",(string tablename)," table"];
+     tabparts];
+    count defaultparts:distinct exec column from sortconfig where tabname=`default,sort=1,att=`p;
+    [.z.m.loginfo[`getextraparttype;"parted attribute p not found in sort.csv for ",(string tablename)," table, using default instead"];
+     defaultparts];
+    [.z.m.logerr[`getextraparttype;"parted attribute p not found in sort.csv for ",(string tablename)," table and default not defined"];
+     ()]
+    ];
+  tabparts
+  };
+
 / ============================================================
 / initialisation
 / ============================================================
 
 init:{[deps]
-  / deps: dict - required `log (info, error only - merge.q never calls warn, confirmed
-  /              function-by-function against the legacy source);
-  /              optional `mergebybytelimit (default 0b), `partlimit (default 1000)
-  / example: merge.init[enlist[`log]!enlist logdep]
+  / deps: required `log (info and error used); optional `mergebybytelimit (default 0b), `partlimit (default 1000)
   if[99h<>type deps;
     '"di.merge: deps must be a dict with `log key"];
   if[not `log in key deps;
@@ -274,9 +235,7 @@ init:{[deps]
   .z.m.logerr:(deps`log)`error;
   .z.m.mergebybytelimit:$[`mergebybytelimit in key deps;deps`mergebybytelimit;mergebybytelimitdefault];
   .z.m.partlimit:$[`partlimit in key deps;deps`partlimit;partlimitdefault];
-  / preserve any partitions already tracked across a re-init (e.g. a live config reload) - partsizes
-  / is independent of the log/mergebybytelimit/partlimit deps a re-init is typically changing, and
-  / silently wiping tracked-but-unmerged segment sizes is a worse failure mode than leaving them be
+  / keep partitions already tracked across a re-init
   priorpartsizes:@[{.z.m.partsizes};::;{[e] 0#partsizesschema}];
   .z.m.partsizes:priorpartsizes;
   .z.m.loginfo[`merge;$[0<count priorpartsizes;
@@ -289,9 +248,7 @@ init:{[deps]
 / ============================================================
 
 getapimeta:{[]
-  / this module's api metadata, one row per callable api function, for di.torq to register with
-  / di.api. init/getapimeta are plumbing di.torq calls by convention and are not registered.
-  / names are bare - di.torq applies the process-wide qualification
+  / this module's api metadata, one row per callable function
   :flip `name`public`descrip`params`return!flip(
     (`checkpartitiontype;
       1b;"log any parted column supplied that is not a column on the table";
@@ -323,6 +280,11 @@ getapimeta:{[]
       "[symbol: ptdir; long: rowcount; long: bytes]";"null");
     (`clearpartsizes;1b;"drop all tracked segment sizes";"[]";"null");
     (`getpartsizes;  1b;"current tracked segment sizes";"[]";"table: ptdir/rowcount/bytes");
+    (`getmergebybytelimit;1b;"the configured mergebybytelimit";"[]";"boolean");
+    (`getpartlimit;1b;"the configured partlimit";"[]";"long");
+    (`getextrapartitiontype;
+      1b;"the parted column(s) for a table from a sort config, else the default's";
+      "[table: sortconfig; symbol: tablename]";"symbol list: parted columns");
     (`syncpartsizes;
       1b;"upsert a partsizes table received from a peer process into local tracked state";
       "[table: t]";"null");

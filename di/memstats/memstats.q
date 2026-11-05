@@ -53,7 +53,7 @@ objsize:{
 	/ complex = complex type in list, pointers + size of each objects
 	0h in t:sampling[type each;x];calcsize[count x;ptrsize;0]+"j"$scalesampling[{[f;x]sum f each x}[.z.s];x];
 	/ complex = if only 1 type and simple list, pointers + sum count each*first type
-	/ assume count>1000 has no attrbutes (i.e. table unlikely to have 1000 columns, list of strings unlikely to have attr for some objects only
+	/ attribute overhead ignored for lists of over 1000 items
 	(d[0] within 1 76h)&1=count d:distinct t;calcsize[count x;ptrsize;0]+"j"$scalesampling[{sum calcsize[count each x;typesize x 0;$[1000<count x;0;attrsize each x]]};x];
 	/ other complex, pointers + size of each objects
 	calcsize[count x;ptrsize;0]+"j"$scalesampling[{[f;x]sum f each x}[.z.s];x]]

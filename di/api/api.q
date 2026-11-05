@@ -1,15 +1,10 @@
-/ api - a registry of a process's callable functions: one entry per function holding its name,
-/ public flag, and description / params / return text. registry-only (no live namespace scan -
-/ module code is not in root namespaces). di.torq registers each module's metadata here via add;
-/ di.api depends on no other module. public api: add, getapi, find/f/p.
+/ registry of a process's callable functions: name, public flag, description, params, return
 
 / registry template (constant); .z.m.detail is the live copy
 detailschema:([name:`u#`symbol$()] public:`boolean$(); descrip:(); params:(); return:());
 
 init:{[deps]
-  / wire the injected logger (required, no fallback) and start with an empty registry. deps: a `log
-  / key holding a binary `info`warn`error dict of {[c;m]} loggers (di.util.log or hand-rolled; a monadic
-  / kx.log instance must be wrapped first). e.g. di.api.init[enlist[`log]!enlist logdep]
+  / wire the required `log dep (`info`warn`error dict of {[c;m]}) and start an empty registry
   if[99h<>type deps;
     '"di.api: deps must be a dict with a `log key"];
   if[not `log in key deps;
@@ -25,8 +20,7 @@ init:{[deps]
   };
 
 add:{[name;public;descrip;params;return]
-  / register (or overwrite) one entry, keyed on name (re-adding a name updates in place).
-  / called by di.torq at startup for each module's exported functions.
+  / register or overwrite one entry, keyed on name
   if[not -11h=type name;
     .z.m.logerr[`add;err:"di.api: name must be a symbol"];
     'err;
@@ -44,9 +38,7 @@ getapi:{[]
   };
 
 find:{[s;p]
-  / registry entries whose name matches s and whose public flag is in p. s: a symbol (` = all, else
-  / a *s* substring) or a string glob; p: public flags to include (1b public-only, 01b all).
-  / case-insensitive; returns an unkeyed table.
+  / entries whose name matches s (symbol substring, ` for all, or string glob) and public flag is in p
   if[-11h=type s;s:$[null s;"*";"*",string[s],"*"]];
   if[not 10h=abs type s:s,();
     .z.m.logerr[`find;err:"di.api: search pattern must be a symbol or string"];
@@ -61,9 +53,7 @@ f:find[;01b];
 p:find[;1b];
 
 getapimeta:{[]
-  / this module's api metadata, one row per exported function, for di.torq to collect and register
-  / with di.api. names are bare (the module's own); di.torq applies the process-wide qualification.
-  / one self-contained (name;public;descrip;params;return) row per line - flip cols!flip rows.
+  / this module's api metadata, one row per exported function
   :flip `name`public`descrip`params`return!flip(
     (`init;       0b; "wire the injected logger and start an empty registry";     "[dict: deps with a `log key]";                               "null");
     (`add;        0b; "register (or overwrite) one api entry, keyed on name";     "[symbol: name; boolean: public; descrip; params; return]";   "null");

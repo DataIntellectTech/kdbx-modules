@@ -2,8 +2,9 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 astimespan:cfg`astimespan;
-tosym:cfg`tosym;
+assym:cfg`assym;
 
 init:{[config;deps]
   if[not `log in key deps;'"di.torq.proc.chainedtp: log dependency is required - see di.util.log"];
@@ -17,13 +18,13 @@ init:{[config;deps]
   (use`di.pubsub)[`init][enlist[`log]!enlist deps`log];
   (deps[`handlers]`register)[`.z.pc;`;`stpps;0j;.stpps.closesub];
   (use`di.subscriptions)[`init][config;deps];
-  .z.m.tickerplantname:tosym config`tickerplantname;
-  .z.m.pubinterval:astimespan[`second;config`pubinterval];
+  .z.m.tickerplantname:assym config`tickerplantname;
+  .z.m.pubinterval:named[`pubinterval;astimespan[`second];config`pubinterval];
   .z.m.tpconnsleep:config`tpconnsleep;
   .z.m.createlogfile:config`createlogfile;
   .z.m.logdir:$[10h=type l:config`logdir;hsym`$l;l];
-  .z.m.subscribeto:tosym config`subscribeto;
-  .z.m.subscribesyms:tosym config`subscribesyms;
+  .z.m.subscribeto:assym config`subscribeto;
+  .z.m.subscribesyms:assym config`subscribesyms;
   .z.m.replay:config`replay;
   .z.m.schema:config`schema;
   .z.m.clearlogonsubscription:config`clearlogonsubscription;

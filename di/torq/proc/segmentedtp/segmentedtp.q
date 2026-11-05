@@ -2,15 +2,16 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 astimespan:cfg`astimespan;
-tosym:cfg`tosym;
+assym:cfg`assym;
 
 / di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
 eodconfig:{[s]
   d:()!();
-  if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist tosym s`rolltimezone];
-  if[`datatimezone in key s;d:d,enlist[`datatimezone]!enlist tosym s`datatimezone];
-  if[`rolltimeoffset in key s;d:d,enlist[`rolltimeoffset]!enlist astimespan[`second;s`rolltimeoffset]];
+  if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist assym s`rolltimezone];
+  if[`datatimezone in key s;d:d,enlist[`datatimezone]!enlist assym s`datatimezone];
+  if[`rolltimeoffset in key s;d:d,enlist[`rolltimeoffset]!enlist named[`rolltimeoffset;astimespan[`second];s`rolltimeoffset]];
   d
   };
 
@@ -38,21 +39,21 @@ init:{[config;deps]
   .z.m.os:use`di.os;
   .z.m.eod:use`di.eodtime;
   .z.m.eod.init[(enlist[`log]!enlist deps`log),eodconfig $[`eodtime in key config;config`eodtime;()!()]];
-  if[`stplgkdbtplog in key config;.stplg.kdbtplog:tosym config`stplgkdbtplog];
-  .stplg.multilog:tosym config`stplgmultilog;
+  if[`stplgkdbtplog in key config;.stplg.kdbtplog:assym config`stplgkdbtplog];
+  .stplg.multilog:assym config`stplgmultilog;
   .stplg.multilogperiod:config`stplgmultilogperiod;
   .stplg.errmode:config`stplgerrmode;
-  .stplg.batchmode:tosym config`stplgbatchmode;
-  .stplg.replayperiod:tosym config`stplgreplayperiod;
-  .stplg.customcsv:apppath tosym config`stplgcustomcsv;
-  .stplg.errorlogname:tosym config`stplgerrorlogname;
+  .stplg.batchmode:assym config`stplgbatchmode;
+  .stplg.replayperiod:assym config`stplgreplayperiod;
+  .stplg.customcsv:apppath assym config`stplgcustomcsv;
+  .stplg.errorlogname:assym config`stplgerrorlogname;
   .sctp.chainedtp:config`sctpchainedtp;
-  .sctp.loggingmode:tosym config`sctploggingmode;
-  .sctp.tickerplantname:tosym config`sctptickerplantname;
+  .sctp.loggingmode:assym config`sctploggingmode;
+  .sctp.tickerplantname:assym config`sctptickerplantname;
   .sctp.tpconnsleep:config`sctptpconnsleep;
   .sctp.tpcheckcycles:config`sctptpcheckcycles;
-  .sctp.subscribeto:tosym config`sctpsubscribeto;
-  .sctp.subscribesyms:tosym config`sctpsubscribesyms;
+  .sctp.subscribeto:assym config`sctpsubscribeto;
+  .sctp.subscribesyms:assym config`sctpsubscribesyms;
   .sctp.replay:config`sctpreplay;
   .sctp.schema:config`sctpschema;
   set[`createlogs;config`createlogs];

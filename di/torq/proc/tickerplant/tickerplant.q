@@ -3,6 +3,7 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
@@ -81,7 +82,7 @@ eoddeps:{[config;logdep]
   d:()!();
   if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist assym config`rolltimezone];
   if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist assym config`datatimezone];
-  if[`rolltimeoffset in key config;d:d,enlist[`rolltimeoffset]!enlist astimespan[`second;config`rolltimeoffset]];
+  if[`rolltimeoffset in key config;d:d,enlist[`rolltimeoffset]!enlist named[`rolltimeoffset;astimespan[`second];config`rolltimeoffset]];
   / log first, then the eodtime keys
   (enlist[`log]!enlist logdep),d
   }

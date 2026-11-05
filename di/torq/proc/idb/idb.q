@@ -3,6 +3,7 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 assym:cfg`assym;
 aslong:cfg`aslong;
 
@@ -59,7 +60,7 @@ clearrowcountcache:{[] set[`.Q.pn;.Q.pt!(count .Q.pt)#()]}
 / reads savedir, hdbdir, the current partition and the writedown mode from the wdb
 setparametersfromwdb:{[config]
   wt:$[`wdbtypes in key config;assym config`wdbtypes;`wdb];
-  t:$[`connecttimeoutms in key config;aslong config`connecttimeoutms;30000];
+  t:$[`connecttimeoutms in key config;named[`connecttimeoutms;aslong;config`connecttimeoutms];30000];
   (.z.m.svc`startup)[config,(enlist`connections)!enlist enlist wt];
   if[not (.z.m.svc`waitfortype)[wt;t;500];
     '"di.torq.proc.idb: no ",(string wt)," connection within ",(string t),"ms - cannot resolve savedir/hdbdir"];

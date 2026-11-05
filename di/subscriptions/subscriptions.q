@@ -3,6 +3,7 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 astimespan:cfg`astimespan;
 
 / registry of active subscriptions
@@ -20,7 +21,7 @@ init:{[config;deps]
   / all settings required
   if[count m:`autoreconnect`checksubscriptionperiod except key config;'"di.subscriptions: missing settings: ",", " sv string m];
   .z.m.autoreconnect:config`autoreconnect;
-  p:astimespan[`second;config`checksubscriptionperiod];
+  p:named[`checksubscriptionperiod;astimespan[`second];config`checksubscriptionperiod];
   .z.m.checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b])*p;
   if[not .z.m.registered;
     (deps[`handlers]`register)[`.z.pc;`;`sub;0j;pc[::;]];

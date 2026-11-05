@@ -59,9 +59,16 @@ fail,0,0,q,tsbad[],1,,unreadable text errors rather than becoming 0Nn
 fail,0,0,q,tsempty[],1,,and an empty string
 fail,0,0,q,tsnull[],1,,and a null
 fail,0,0,q,tsunit[],1,,an unknown unit errors
-
-true,0,0,q,`abc~(cfg`tosym)"abc",1,,text becomes a symbol
-true,0,0,q,`x~(cfg`tosym)`x,1,,a symbol passes through
+true,0,0,q,0Wn~tsinf[],1,,infinity stays infinite
+true,0,0,q,-0Wn~tsneginf[],1,,and negative infinity
+true,0,0,q,0Wn~tsintinf[],1,,and an int infinity
+true,0,0,q,0Wn~tsshortinf[],1,,and a short infinity
+true,0,0,q,0Wn~tsfloatinf[],1,,and a float infinity
+true,0,0,q,0Wn~tstextinf[],1,,and as text
+true,0,0,q,0Wn~tsspaninf[],1,,and a typed infinite timespan
+fail,0,0,q,tsover[],1,,a number too big for a timespan errors
+fail,0,0,q,tsfloatover[],1,,and a float
+true,0,0,q,tsbig[],1,,a large number that fits is exact
 
 true,0,0,q,(enlist 1)~(cfg`aslist)1,1,,an atom is enlisted
 true,0,0,q,1 2~(cfg`aslist)1 2,1,,a list is left alone
@@ -73,3 +80,7 @@ true,0,0,q,symlist[],1,,a list of strings becomes a symbol list
 true,0,0,q,toksplit[],1,,a space-separated string is split
 true,0,0,q,(enlist`a)~(cfg`astoklist)`a,1,,a symbol is enlisted
 true,0,0,q,`a`b~(cfg`astoklist)`a`b,1,,a symbol list is left alone
+
+true,0,0,q,namedok[],1,,named returns the coerced value
+true,0,0,q,namedspan[],1,,and takes a projection
+true,0,0,q,namedbad[],1,,an error names the setting and the value

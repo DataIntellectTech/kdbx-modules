@@ -18,9 +18,9 @@ permissions). One implementation now backs them all.
 `asbool[x]` | a boolean setting |
 `aslong[x]` | a long setting - errors if the value does not parse, rather than returning `0N` |
 `astimespan[unit;x]` | a timespan setting - a bare number counts in `unit` (`` `second ``, `` `minute `` or `` `hour ``) |
-`tosym[x]` | a symbol setting from text (TOML has no symbol type) |
 `aslist[x]` | wrap an atom as a one-element list, leave a list alone |
-`assym[x]` | a symbol or symbol list from text or symbols |
+`assym[x]` | a symbol or symbol list from text or symbols; TOML has no symbol type |
+`named[k;f;x]` | run coercion `f` on `x`, naming setting `k` if it fails |
 `astoklist[x]` | a symbol list from a space-separated string, a symbol or a symbol list |
 
 `resolvedir` accepts a `.q` settings symbol (`` `:x ``) or a colon-less `.toml` string
@@ -36,7 +36,9 @@ astimespan[`second;"0D00:05"]   / text with a D or : is read as a timespan
 ```
 
 A timespan passes through and a time, minute or second atom is cast. A fraction or negative
-number works. **Anything unreadable is an error**, not `0Nn`. This replaces three copies that
+number works. **Anything unreadable is an error**, not `0Nn`, and so is a number too big for a
+timespan. Infinity stays infinite in any type, as in TorQ: a `di.timer` job with period `0Wn` runs once
+and is then disabled. This replaces three copies that
 disagreed: one read `"30"` as 30 hours, one as 30 seconds, and housekeeping read a bare number as
 nanoseconds.
 

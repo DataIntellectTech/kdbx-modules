@@ -5,6 +5,7 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
@@ -613,29 +614,29 @@ setconfig:{[config]
     '"di.torq.proc.wdb: writedownmode must be default, partbyattr, partbyenum or partbyfirstchar, got ",string .z.m.writedownmode];
   .z.m.mergemode:$[`mergemode in key config;assym config`mergemode;`part];
   if[not .z.m.mergemode in `part`col`hybrid;'"di.torq.proc.wdb: mergemode must be part, col or hybrid, got ",string .z.m.mergemode];
-  .z.m.mergebybytelimit:$[`mergebybytelimit in key config;asbool config`mergebybytelimit;0b];
-  .z.m.mergenumbytes:$[`mergenumbytes in key config;aslong config`mergenumbytes;500000000];
-  .z.m.mergenumrows:$[`mergenumrows in key config;aslong config`mergenumrows;100000];
+  .z.m.mergebybytelimit:$[`mergebybytelimit in key config;named[`mergebybytelimit;asbool;config`mergebybytelimit];0b];
+  .z.m.mergenumbytes:$[`mergenumbytes in key config;named[`mergenumbytes;aslong;config`mergenumbytes];500000000];
+  .z.m.mergenumrows:$[`mergenumrows in key config;named[`mergenumrows;aslong;config`mergenumrows];100000];
   .z.m.mergenumtab:$[`mergenumtab in key config;config`mergenumtab;`quote`trade!10000 50000];
-  .z.m.numrows:$[`numrows in key config;aslong config`numrows;100000];
+  .z.m.numrows:$[`numrows in key config;named[`numrows;aslong;config`numrows];100000];
   .z.m.numtab:$[`numtab in key config;config`numtab;`quote`trade!10000 50000];
-  .z.m.replaynumrows:$[`replaynumrows in key config;aslong config`replaynumrows;.z.m.numrows];
+  .z.m.replaynumrows:$[`replaynumrows in key config;named[`replaynumrows;aslong;config`replaynumrows];.z.m.numrows];
   .z.m.replaynumtab:$[`replaynumtab in key config;config`replaynumtab;.z.m.numtab];
-  .z.m.immediate:$[`immediate in key config;asbool config`immediate;0b];
-  .z.m.gc:$[`gc in key config;asbool config`gc;1b];
+  .z.m.immediate:$[`immediate in key config;named[`immediate;asbool;config`immediate];0b];
+  .z.m.gc:$[`gc in key config;named[`gc;asbool;config`gc];1b];
   .z.m.partitiontype:$[`partitiontype in key config;assym config`partitiontype;`date];
   .z.m.getpartition:$[`getpartition in key config;config`getpartition;defaultgetpartition];
   .z.m.upd:$[`upd in key config;config`upd;insert];
   .z.m.reloadorder:$[`reloadorder in key config;astoklist config`reloadorder;`hdb`rdb`idb];
-  .z.m.permitreload:$[`permitreload in key config;asbool config`permitreload;1b];
-  .z.m.eodwaittime:$[`eodwaittime in key config;astimespan[`second;config`eodwaittime];0D00:00:10];
+  .z.m.permitreload:$[`permitreload in key config;named[`permitreload;asbool;config`permitreload];1b];
+  .z.m.eodwaittime:$[`eodwaittime in key config;named[`eodwaittime;astimespan[`second];config`eodwaittime];0D00:00:10];
   .z.m.hdbsettings:`compression`hdbdir!($[`compression in key config;config`compression;()];.z.m.hdbdir);
   .z.m.tabsizes:([tablename:`symbol$()] rowcount:`long$(); bytes:`long$());
-  .z.m.settimer:$[`settimer in key config;aslong config`settimer;10];
+  .z.m.settimer:$[`settimer in key config;named[`settimer;aslong;config`settimer];10];
   .z.m.subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   .z.m.subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
-  .z.m.replaylog:$[`replaylog in key config;asbool config`replaylog;1b];
-  .z.m.tpwaittimeout:$[`tpwaittimeout in key config;aslong config`tpwaittimeout;30000];
+  .z.m.replaylog:$[`replaylog in key config;named[`replaylog;asbool;config`replaylog];1b];
+  .z.m.tpwaittimeout:$[`tpwaittimeout in key config;named[`tpwaittimeout;aslong;config`tpwaittimeout];30000];
   .z.m.currentpartition:0N;
   }
 
@@ -681,13 +682,13 @@ init:{[config;deps]
   .z.m.svc:deps`servers;
   setconfig config;
   / workers setting N runs system "s -N"
-  if[0<w:$[`workers in key config;aslong config`workers;0];system "s -",string w];
+  if[0<w:$[`workers in key config;named[`workers;aslong;config`workers];0];system "s -",string w];
 
   .z.m.os:use`di.os;
   initdbwrite[config;deps];
   .z.m.mrg:use`di.merge;
   mrgdeps:`log`mergebybytelimit!(deps`log;.z.m.mergebybytelimit);
-  if[`partlimit in key config;mrgdeps[`partlimit]:aslong config`partlimit];
+  if[`partlimit in key config;mrgdeps[`partlimit]:named[`partlimit;aslong;config`partlimit]];
   (.z.m.mrg`init)[mrgdeps];
   checksortparams[];
 

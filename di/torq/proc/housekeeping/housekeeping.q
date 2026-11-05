@@ -14,12 +14,13 @@ requireinit:{[ctx]
 astimespans:{[x]
   r:{$[10h=abs type x;"N"$(),x;astimespan[`hour;x]]} each $[10h=type x;(" " vs x) except enlist "";0>type x;enlist x;x];
   if[((10h=type x) and not count r) or not all r within 0D 1D;
-    '"di.torq.proc.housekeeping: runtimes must be times of day from 0 to 24 hours, got ",-3!x];
+    '"di.torq.proc.housekeeping: must be times of day from 0 to 24 hours, got ",-3!x];
   `timespan$r
   }
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 apphome:cfg`apphome;
 resolvepath:cfg`resolvedir;
 astimespan:cfg`astimespan;
@@ -138,7 +139,8 @@ init:{[config;deps]
   if[not `jobcsv in key config;'"di.torq.proc.housekeeping: jobcsv is required - the path to the housekeeping job list (see housekeeping.md)"];
   .z.m.jobcsv:resolvepath[apphome[];config`jobcsv];
   / defaults match di/torq/settings/housekeeping.q
-  .z.m.runtimes:$[`runtimes in key config;astimespans config`runtimes;enlist 0D02:00:00];
+  .z.m.runtimes:$[`runtimes in key config;named[`runtimes;astimespans;config`runtimes];enlist 0D02:00:00];
+  if[not count .z.m.runtimes;.z.m.log[`error][`init;"no runtimes provided in config"]];
   / di.os for the rm action
   .z.m.os:use`di.os;
   / publish runjobs at root for IPC callers

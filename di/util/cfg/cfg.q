@@ -37,22 +37,30 @@ aslong:{[x]
 / what a bare number counts in, for astimespan
 spanunits:`second`minute`hour!0D00:00:01 0D00:01 0D01;
 
+/ a number scaled by unit: infinity stays infinite, null if too big for a timespan
+scale:{[u;x]
+  inf:$[-5h=t:type x;0Wh;-6h=t;0Wi;-7h=t;0W;0w];
+  if[inf=abs x;:$[x<0;-0Wn;0Wn]];
+  f:(`float$u)*`float$x;
+  if[9.2e18<abs f;:0Nn];
+  $[t in -8 -9h;`timespan$f;u*x]
+  }
+
 / a timespan setting - a bare number (or bare digits as text) counts in unit; anything unreadable errors
 astimespan:{[unit;x]
   if[null u:spanunits unit;'"di.util.cfg: astimespan unit must be one of ",", " sv string key spanunits];
   x:$[-11h=type x;string x;x];
   r:$[-16h=type x;x;
       (type x) in -17 -18 -19h;`timespan$x;
-      (type x) in -5 -6 -7h;u*x;
-      (type x) in -8 -9h;`timespan$u*`float$x;
-      10h=abs type x;$[any ((),x) in "D:";"N"$(),x;`timespan$u*"F"$(),x];
+      (type x) in -5 -6 -7 -8 -9h;scale[u;x];
+      10h=abs type x;$[any ((),x) in "D:";"N"$(),x;scale[u;"F"$(),x]];
       0Nn];
   if[null r;'"di.util.cfg: cannot read \"",$[10h=abs type x;(),x;-3!x],"\" as a timespan"];
   r
   }
 
-/ a symbol setting from text
-tosym:{[x] $[(type x) in 0 10 -10h;`$x;x]}
+/ run a coercion on a setting, naming the setting if it fails
+named:{[k;f;x] @[f;x;{[k;e] '"setting ",(string k),": ",e}[k]]}
 
 / an atom as a one-element list
 aslist:{[x] $[0>type x;enlist x;x]}

@@ -11,6 +11,7 @@ requireinit:{[ctx]
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 asbool:cfg`asbool;
 aslong:cfg`aslong;
 apphome:cfg`apphome;
@@ -61,8 +62,8 @@ init:{[config;deps]
   hp:hsym `$resolvedir[datahome[];$[`hdbpath in key config;config`hdbpath;"hdb"]];
   cp:resolvecsv config;
   / defaults - must match the shipped settings file
-  ma:$[`maxage in key config;aslong config`maxage;30];
-  eof:$[`exitonfinish in key config;asbool config`exitonfinish;1b];
+  ma:$[`maxage in key config;named[`maxage;aslong;config`maxage];30];
+  eof:$[`exitonfinish in key config;named[`exitonfinish;asbool;config`exitonfinish];1b];
   / refuse a missing hdb path
   if[not count key hp;lg[`error][`compression;e:"invalid hdb path ",string hp];'e];
   .z.m.errors:0;

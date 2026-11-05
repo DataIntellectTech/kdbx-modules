@@ -2,6 +2,7 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 astimespan:cfg`astimespan;
 
 / published heartbeats; sym is the proctype
@@ -100,8 +101,8 @@ init:{[config;deps]
   .z.m.enabled:config`heartbeatenabled;
   .z.m.subenabled:config`heartbeatsubscribeenabled;
   .z.m.debug:config`heartbeatdebug;
-  .z.m.publishinterval:astimespan[`second;config`heartbeatpublishinterval];
-  .z.m.checkinterval:astimespan[`second;config`heartbeatcheckinterval];
+  .z.m.publishinterval:named[`heartbeatpublishinterval;astimespan[`second];config`heartbeatpublishinterval];
+  .z.m.checkinterval:named[`heartbeatcheckinterval;astimespan[`second];config`heartbeatcheckinterval];
   .z.m.warningtolerance:config`heartbeatwarningtolerance;
   .z.m.errortolerance:config`heartbeaterrortolerance;
   .z.m.CONNECTIONS:$[11h=abs type c:config`heartbeatsubscribetypes;c;`$c];

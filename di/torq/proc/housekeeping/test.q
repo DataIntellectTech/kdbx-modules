@@ -166,3 +166,5 @@ rtovertext:{[] rt "30"}
 rtjunk:{[] rt "junk"}
 rtempty:{[] rt ""}
 rtnone:{[] 0=count rt `timespan$()}
+rtnonelogged:{[] resetcalls[]; rt `timespan$(); any (exec msg from calls where lvl=`error) like "*no runtimes*"}
+rtnamed:{[] @[rt;30;{x}] like "setting runtimes: *"}

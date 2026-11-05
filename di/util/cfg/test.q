@@ -52,8 +52,22 @@ tsbad:{[] (cfg`astimespan)[`second;"junk"]}
 tsempty:{[] (cfg`astimespan)[`second;""]}
 tsnull:{[] (cfg`astimespan)[`second;0N]}
 tsunit:{[] (cfg`astimespan)[`fortnight;1]}
+tsinf:{[] (cfg`astimespan)[`second;0W]}
+tsneginf:{[] (cfg`astimespan)[`second;-0W]}
+tsintinf:{[] (cfg`astimespan)[`second;0Wi]}
+tsshortinf:{[] (cfg`astimespan)[`second;0Wh]}
+tsfloatinf:{[] (cfg`astimespan)[`second;0w]}
+tstextinf:{[] (cfg`astimespan)[`second;"0W"]}
+tsspaninf:{[] (cfg`astimespan)[`second;0Wn]}
+tsover:{[] (cfg`astimespan)[`hour;3000000]}
+tsfloatover:{[] (cfg`astimespan)[`second;1e20]}
+tsbig:{[] 3650D~(cfg`astimespan)[`hour;87600]}
 
 symtext:{[] (`$"Europe/London")~(cfg`assym)"Europe/London"}
 symlist:{[] `ab`cd~(cfg`assym)("ab";"cd")}
 
 toksplit:{[] `a`b`c~(cfg`astoklist)"a b c"}
+
+namedok:{[] 1b~(cfg`named)[`gc;cfg`asbool;"true"]}
+namedspan:{[] 0D00:00:30~(cfg`named)[`retry;(cfg`astimespan)[`second];30]}
+namedbad:{[] e:@[(cfg`named)[`gc;cfg`asbool];"ture";{x}]; (e like "setting gc: *") and 0<count e ss "ture"}

@@ -439,6 +439,7 @@ true,0,0,q,"1b~email.senddefault`to`subject`body!(`;""subj"";enlist""b"")",1,1,a
 true,0,0,q,"1b~email.senddefault`to`subject!(`$""a@b.com"";""subj"")",1,1,a missing body is allowed
 run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist reclog]",1,1,disable sending
 true,0,0,q,"-1~email.senddefault`to`subject`body!(""a@b.com"";""subj"";enlist""b"")",1,1,the gate comes first so a bad message returns -1 when disabled
+true,0,0,q,"-1~email.senddefault""hello""",1,1,so does a message that is not a dictionary
 
 / Test 57: a log dict must have all three functions
 fail,0,0,q,"email.init[(::);enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,1,a log dict with only info throws

@@ -388,7 +388,7 @@ senddefault:{[msgdict]
   / signals if an enabled send has a missing field, or a to, cc, subject or attachments of the wrong type
   if[not enabled;
     .z.m.logerr[`email;"email sending is not enabled"];
-    if[historyenabled;.z.m.loghistory[msgdict`to;msgdict`subject;`disabled;-1]];
+    if[historyenabled and 99h=type msgdict;.z.m.loghistory[msgdict`to;msgdict`subject;`disabled;-1]];
     :-1;
   ];
   if[count err:msgerror msgdict;.z.m.logerr[`email;err:"di.email: ",err];'err];

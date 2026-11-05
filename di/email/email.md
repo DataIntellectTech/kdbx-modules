@@ -61,16 +61,16 @@ A successful send logs `exitcode=EX_OK`. If it fails, the log contains the SMTP 
 
 ```q
 email:use`di.email
-log:use`di.log
-log.init[logconfig]
-logdep:`info`warn`error!(log.info;log.warn;log.error)
+mylog:use`di.util.log
 
-email.init[
-  `mailfrom`enabled!("me@example.com";1b);
-  enlist[`log]!enlist logdep]
+email.init[`mailfrom`enabled!("me@example.com";1b);mylog.logdict]
 
 email.test[`$"me@example.com"]
 ```
+
+### 5. Check the relay accepts the From address
+
+`mailfrom` is both the `From:` header and the envelope sender (`sendmail -f`), so set it to an address your relay accepts. A relay can take a message from an unverified sender and drop it later, with no error reaching q.
 
 ## Configuration
 
@@ -93,7 +93,7 @@ Passed as the second dictionary to `init`.
 
 | Key | Required | Type | Description |
 |---|---|---|---|
-| `` `log `` | yes | dict | Logger with keys `` `info`warn`error ``, each `{[c;m]}`. Required — `init` throws if absent. See `di.log` for a default implementation. |
+| `` `log `` | yes | dict | Logger with keys `` `info`warn`error ``, each `{[c;m]}`. Required — `init` throws if absent. Must have all three keys. See `di.util.log` for a default implementation. |
 
 ## Core Structures
 
@@ -105,7 +105,7 @@ Passed as the second dictionary to `init`.
 ### `init`
 Parameters: `[config; deps]`
 
-Initialises the module. Pass `(::)` for config to use defaults (email disabled, sendmail transport). A `log` dependency is always required — `init` throws if it is absent.
+Initialises the module. Pass `(::)` for config to use defaults (email disabled, sendmail transport). A `log` dependency is always required — `init` throws if it is absent or missing any of `` `info`warn`error ``.
 
 Transport is selected automatically: curl SMTP when `smtpurl` is set in config, sendmail otherwise.
 
@@ -122,7 +122,18 @@ Sends an HTML email. `msgdict` keys:
   are added to the envelope recipients, so they receive the message
 - `attachments` — (optional) single hsym file path or a list of hsyms
 
-Returns `1b` on success, `0b` on send failure, `-1` if disabled. Every attempt is appended to `history` unless `historyenabled` is `0b`.
+Returns `1b` once the transport accepts the message, `0b` on send failure, `-1` if disabled. Every attempt is appended to `history` unless `historyenabled` is `0b`.
+
+`1b` and a `sent` row in `history` do not confirm delivery. They mean the local MTA (sendmail) or the SMTP server (curl) accepted the message, and a relay can still drop it afterwards.
+
+When email is enabled, a bad message logs an error and signals, and adds no `history` row. These are TorQ's checks, in the same order and with the same wording:
+
+- `msgdict` must be a dictionary
+- `to`, `cc` and `attachments` must each be a symbol or symbol list, if present
+- `subject` must be a char array, so a one-character subject must be a list (`enlist"s"`), if present
+- `to` must be present and not empty, and `subject` must be present
+
+When email is disabled, `senddefault` returns `-1` without checking the message.
 
 `to`, `cc` and `subject` reach the message headers, so a value containing CR or LF would start
 a header line of its own and let a crafted address inject, say, a `Bcc:`. Such a send is refused
@@ -385,11 +396,11 @@ Wire `clearhistory` into `di.timer` so it runs once a day, keeping memory bounde
 timer:use`di.timer
 email:use`di.email
 
-timer.init[timerconfig;enlist[`log]!enlist logdep]
+timer.init[enlist[`log]!enlist logdep]
 email.init[`mailfrom`enabled!("me@example.com";1b);enlist[`log]!enlist logdep]
 
 / clear history every 24 hours
-timer.addjob[`emailhistoryclear;email.clearhistory;();0D01:00:00:00;`repeat;()!()]
+timer.addjob.simple[`emailhistoryclear;email.clearhistory;1D]
 ```
 
 ### 8. Testing without real sends

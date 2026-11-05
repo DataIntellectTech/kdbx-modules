@@ -30,9 +30,9 @@ true,0,0,q,mocklog[`error]~.m.di.0email.logerr,1,1,injected error function store
 fail,0,0,q,email.init[(::);(::)],1,1,init without log dep throws an error
 fail,0,0,q,"email.init[(::);enlist[`log]!enlist(::)]",1,1,init with log set to (::) throws an error
 
-/ Test 4: init selects smtpsend_ transport when smtpurl is set
+/ Test 4: init selects smtpsend transport when smtpurl is set
 run,0,0,q,"email.init[enlist[`smtpurl]!enlist ""smtp://x:25"";enlist[`log]!enlist mocklog]",1,1,init with smtpurl set
-true,0,0,q,.m.di.0email.smtpsend_~.m.di.0email.send,1,1,smtpsend_ used when smtpurl set
+true,0,0,q,.m.di.0email.smtpsend~.m.di.0email.send,1,1,smtpsend used when smtpurl set
 
 / Test 5: init selects mailsend transport when no smtpurl
 run,0,0,q,"email.init[(::);enlist[`log]!enlist mocklog]",1,1,init with no smtpurl
@@ -144,7 +144,7 @@ true,0,0,q,"0<count(raze md)ss ""k1""",1,1,maildict renders key
 true,0,0,q,"0<count(raze md)ss ""v1""",1,1,maildict renders value
 
 / Test 23: template0 has blank separator between headers and html body
-run,0,0,q,"tmpl:.m.di.0email.template0[""f"";""t"";"""";""s"";enlist ""body""]",1,1,build template0
+run,0,0,q,"tmpl:.m.di.0email.template0[""f"";""t"";"""";""subj"";enlist ""body""]",1,1,build template0
 true,0,0,q,"any """"~/:tmpl",1,1,template0 has blank separator line
 true,0,0,q,"any ""<html>""~/:tmpl",1,1,template0 has html open tag
 true,0,0,q,"(first where """"~/:tmpl)<first where ""<html>""~/:tmpl",1,1,blank separator comes before html body
@@ -219,7 +219,7 @@ run,0,0,q,hdel mt_file,1,1,clean up temp file
 / Test 33: mailtemplate with attachment produces all-string element list (regression: content-type header was type 0h)
 run,0,0,q,mta_file:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create temp attachment for mailtemplate test
 run,0,0,q,mta_file 0: enlist "data",1,1,write content to attachment file
-run,0,0,q,"mta:.m.di.0email.mailtemplate[""f"";""t"";"""";""s"";enlist ""body"";enlist mta_file]",1,1,build multipart template with attachment
+run,0,0,q,"mta:.m.di.0email.mailtemplate[""f"";""t"";"""";""subj"";enlist ""body"";enlist mta_file]",1,1,build multipart template with attachment
 true,0,0,q,all 10h=type each mta,1,1,all mailtemplate elements are strings when attachment present
 true,0,0,q,"0<count(raze mta)ss ""multipart/mixed""",1,1,mailtemplate uses multipart/mixed content type with attachment
 true,0,0,q,"0<count(raze mta)ss ""Content-Transfer-Encoding: base64""",1,1,mailtemplate includes base64 transfer encoding header
@@ -283,10 +283,10 @@ true,0,0,q,all ()~/:key each lastatt,1,1,the temp files are removed after the se
 true,0,0,q,1=count email.getstatus[],1,1,senddata logs one history row
 
 / Test 42: senddata rejects attachment specifications it cannot write safely
-fail,0,0,q,"email.senddata `to`subject`body!(`$""a@b.com"";""s"";enlist""body text"")",1,1,senddata needs an attachments key
-fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";`:/tmp/x)",1,1,senddata rejects a non-dict attachments value
-fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(enlist `$""sub/dir/x.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a path separator in a filename
-fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(enlist `$""../escaped.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a parent directory reference
+fail,0,0,q,"email.senddata `to`subject`body!(`$""a@b.com"";""subj"";enlist""body text"")",1,1,senddata needs an attachments key
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";`:/tmp/x)",1,1,senddata rejects a non-dict attachments value
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";(enlist `$""sub/dir/x.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a path separator in a filename
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";(enlist `$""../escaped.csv"")!enlist ([]a:1 2))",1,1,senddata rejects a parent directory reference
 
 / Test 43: values interpolated into shell commands are quoted
 true,0,0,q,"""'abc'""~.m.di.0email.shquote ""abc""",1,1,a plain value is wrapped in single quotes
@@ -294,14 +294,14 @@ true,0,0,q,"""'a'\\''b'""~.m.di.0email.shquote ""a'b""",1,1,an embedded single q
 true,0,0,q,"""\""a\\\""b\""""~.m.di.0email.curlquote ""a\""b""",1,1,an embedded double quote is escaped for the curl config file
 
 / Test 44: attachments must be a dict, whatever non-dict shape is passed
-fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";`:/tmp/a`:/tmp/b)",1,1,senddata rejects a symbol list of paths
-fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";(""a"";""b""))",1,1,senddata rejects a list of strings
-fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""s"";enlist""body text"";42)",1,1,senddata rejects a non-dict atom
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";`:/tmp/a`:/tmp/b)",1,1,senddata rejects a symbol list of paths
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";(""a"";""b""))",1,1,senddata rejects a list of strings
+fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";42)",1,1,senddata rejects a non-dict atom
 
 / Test 45: a send that fails while building the message leaves no temp file behind
 run,0,0,q,tmpcount:{count key`:/tmp},1,1,helper to count entries in /tmp
 run,0,0,q,before:tmpcount[],1,1,record the temp file count
-fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";"""";""s"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
+fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";"""";""subj"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
 true,0,0,q,before=tmpcount[],1,1,mailsend left no temp file behind
 
 / Test 46: the singular `attachment key TorQ used is reported rather than silently ignored
@@ -385,28 +385,78 @@ run,0,0,q,"email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$(""b1@x.com"";"
 true,0,0,q,"""b1@x.com,b2@x.com""~lastcc",1,1,a cc list becomes a comma delimited string
 run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""body text"")",1,1,send with no cc key
 true,0,0,q,"""""~lastcc",1,1,no cc key gives an empty cc
-true,0,0,q,"any (.m.di.0email.template0[""f"";""t"";""boss@x.com"";""s"";enlist""body""]) like ""Cc: boss@x.com""",1,1,a simple message carries the Cc header
-true,0,0,q,"not any (.m.di.0email.template0[""f"";""t"";"""";""s"";enlist""body""]) like ""Cc:*""",1,1,no Cc header when nothing is copied
-true,0,0,q,"any (.m.di.0email.mailtemplate[""f"";""t"";""boss@x.com"";""s"";enlist""body"";""""]) like ""Cc: boss@x.com""",1,1,a multipart message carries it too
+true,0,0,q,"any (.m.di.0email.template0[""f"";""t"";""boss@x.com"";""subj"";enlist""body""]) like ""Cc: boss@x.com""",1,1,a simple message carries the Cc header
+true,0,0,q,"not any (.m.di.0email.template0[""f"";""t"";"""";""subj"";enlist""body""]) like ""Cc:*""",1,1,no Cc header when nothing is copied
+true,0,0,q,"any (.m.di.0email.mailtemplate[""f"";""t"";""boss@x.com"";""subj"";enlist""body"";""""]) like ""Cc: boss@x.com""",1,1,a multipart message carries it too
 true,0,0,q,"0=count select from emaillogs where lvl=`warn,msg like ""*cc*""",1,1,"cc is supported, so it is not warned about"
 
 / Test 54: a newline in any header value would inject a header, so the send is refused
 run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist reclog]",1,1,init with the capturing logger
 run,0,0,q,.m.di.0email.send:mockcc,1,1,capture whether the transport is reached
 run,0,0,q,"lastcc:""not reached""",1,1,a marker the transport would overwrite
-true,0,0,q,"0b~email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""b@x.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a newline in cc is refused
+true,0,0,q,"0b~email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""b@x.com\nBcc: evil@x.com"";""subj"";enlist""body text"")",1,1,a newline in cc is refused
 true,0,0,q,"""not reached""~lastcc",1,1,the transport was never called
-true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a newline in to is refused
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""subj"";enlist""body text"")",1,1,a newline in to is refused
 true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com"";""s\nBcc: evil@x.com"";enlist""body text"")",1,1,a newline in subject is refused
-true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\rBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a bare carriage return is refused too
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\rBcc: evil@x.com"";""subj"";enlist""body text"")",1,1,a bare carriage return is refused too
 run,0,0,q,delete from `emaillogs,1,1,clear the log
-true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,refuse once more to inspect the log
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""subj"";enlist""body text"")",1,1,refuse once more to inspect the log
 true,0,0,q,"0<count select from emaillogs where lvl=`error,msg like ""*inject*""",1,1,the refusal says why
 true,0,0,q,"1b~email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$""boss@x.com"";""normal subject"";enlist""body text"")",1,1,an ordinary send is unaffected
 
 / Test 55: the refusal message must not carry the payload newline into the log
 run,0,0,q,delete from `emaillogs,1,1,clear the log
-run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""s"";enlist""body text"")",1,1,a refused send
+run,0,0,q,"email.senddefault`to`subject`body!(`$""a@b.com\nBcc: evil@x.com"";""subj"";enlist""body text"")",1,1,a refused send
 true,0,0,q,"not any (raze exec msg from emaillogs where lvl=`error) in ""\r\n""",1,1,no real newline reaches the log
 true,0,0,q,"0<count select from emaillogs where lvl=`error,msg like ""*\\nBcc: evil@x.com*""",1,1,"the payload is still shown, escaped"
 true,0,0,q,1=count select from emaillogs where lvl=`error,1,1,"one log line, not two"
+
+/ Test 56: bad messages are handled as TorQ's emailSend handles them
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist reclog]",1,1,init with the capturing logger
+run,0,0,q,.m.di.0email.send:mockcc,1,1,capture whether the transport is reached
+run,0,0,q,"lastcc:""not reached""",1,1,a marker the transport would overwrite
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,"bad:{@[email.senddefault;x;{x}]}",1,1,returns the error text of a signalled send
+true,0,0,q,"""di.email: to field should be a symbol or symbol list""~bad`to`subject`body!(""a@b.com"";""subj"";enlist""b"")",1,1,a string to
+true,0,0,q,"""di.email: to field should be a symbol or symbol list""~@[email.test;""a@b.com"";{x}]",1,1,test with a string to
+true,0,0,q,"""di.email: cc field should be a symbol or symbol list""~bad`to`cc`subject`body!(`$""a@b.com"";""b@x.com"";""subj"";enlist""b"")",1,1,a string cc
+true,0,0,q,"""di.email: subject field should be a char array""~bad`to`subject`body!(`$""a@b.com"";`subj;enlist""b"")",1,1,a symbol subject
+true,0,0,q,"""di.email: subject field should be a char array""~bad`to`subject`body!(`$""a@b.com"";""s"";enlist""b"")",1,1,a char atom subject
+true,0,0,q,"""di.email: attachments field should be a symbol or symbol list""~bad`to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""b"";""/tmp/x"")",1,1,string attachments
+true,0,0,q,"""di.email: to field must be specified""~bad`to`subject`body!(`$();""subj"";enlist""b"")",1,1,an empty to
+true,0,0,q,"""di.email: to field must be specified""~bad`subject`body!(""subj"";enlist""b"")",1,1,a missing to
+true,0,0,q,"""di.email: to field must be specified""~bad`cc`subject`body!(`$""b@x.com"";""subj"";enlist""b"")",1,1,a missing to when the first value is a symbol
+true,0,0,q,"""di.email: subject field must be specified""~bad`to`body!(`$""a@b.com"";enlist""b"")",1,1,a missing subject
+true,0,0,q,"""di.email: to field should be a symbol or symbol list""~bad`to`subject`body!(""a@b.com"";`subj;enlist""b"")",1,1,the to type is checked before the subject type
+true,0,0,q,"""di.email: subject field should be a char array""~bad`subject`body!(`subj;enlist""b"")",1,1,types are checked before missing fields
+true,0,0,q,"""di.email: param should be""~25#bad""hello""",1,1,not a dictionary
+true,0,0,q,"""not reached""~lastcc",1,1,the transport was never called
+true,0,0,q,13=count select from emaillogs where lvl=`error,1,1,each one is logged before it signals
+true,0,0,q,"1b~email.senddefault`to`cc`subject`body!(`$(""a@b.com"";""c@d.com"");`$(""e@f.com"";""g@h.com"");""subj"";enlist""b"")",1,1,symbol lists are accepted
+true,0,0,q,"""e@f.com,g@h.com""~lastcc",1,1,the cc list reaches the transport joined
+true,0,0,q,"1b~email.senddefault`to`cc`subject`body!(`$""a@b.com"";`$();""subj"";enlist""b"")",1,1,an empty cc means none
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`;""subj"";enlist""b"")",1,1,a null to passes the checks as it does in TorQ
+true,0,0,q,"1b~email.senddefault`to`subject!(`$""a@b.com"";""subj"")",1,1,a missing body is allowed
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist reclog]",1,1,disable sending
+true,0,0,q,"-1~email.senddefault`to`subject`body!(""a@b.com"";""subj"";enlist""b"")",1,1,the gate comes first so a bad message returns -1 when disabled
+
+/ Test 57: a log dict must have all three functions
+fail,0,0,q,"email.init[(::);enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,1,a log dict with only info throws
+fail,0,0,q,"email.init[(::);enlist[`log]!enlist `info`warn!2#enlist {[c;m]}]",1,1,a log dict without error throws
+fail,0,0,q,"email.init[(::);enlist[`log]!enlist {[c;m]}]",1,1,a log value that is not a dict throws
+true,0,0,q,"@[email.init[(::);];enlist[`log]!enlist enlist[`info]!enlist {[c;m]};{x}] like ""*got: info""",1,1,the error says which keys it found
+
+/ Test 58: sendmail is told the envelope sender
+run,0,0,q,"stubdir:first system""mktemp -d /tmp/qmailstub.XXXXXXXXXX""",1,1,a directory for a stand-in sendmail
+run,0,0,q,"(hsym`$stubdir,""/sendmail"") 0: (""#!/bin/sh"";""echo \""$@\"" > \""$0.args\"""";""cat > /dev/null"")",1,1,a sendmail that records its arguments
+run,0,0,q,"system""chmod +x "",stubdir,""/sendmail""",1,1,make it executable
+run,0,0,q,oldpath:getenv`PATH,1,1,keep the real PATH
+run,0,0,q,"`PATH setenv stubdir,"":"",oldpath",1,1,find the stand-in first
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with the sendmail transport
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"")",1,1,send through the stand-in
+true,0,0,q,"""-t -f me@example.com""~first read0 hsym`$stubdir,""/sendmail.args""",1,1,the envelope sender is mailfrom
+run,0,0,q,"email.init[`mailfrom`enabled!(""o'neil@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,a mailfrom with a shell quote in it
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"")",1,1,send through the stand-in again
+true,0,0,q,"""-t -f o'neil@example.com""~first read0 hsym`$stubdir,""/sendmail.args""",1,1,the sender survives the shell intact
+run,0,0,q,`PATH setenv oldpath,1,1,restore PATH
+run,0,0,q,"system""rm -rf "",stubdir",1,1,remove the stand-in

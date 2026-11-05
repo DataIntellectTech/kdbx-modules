@@ -143,7 +143,7 @@ mailsend:{[frm;to;cc;sub;body;att]
   msg:mailtemplate[frm;to;cc;sub;body;att];
   fn:hsym`$first system"mktemp /tmp/qmail.XXXXXXXXXX";
   .[{[a;b]a 0: b};(fn;msg);{[fn;e]hdel fn;'"sendmail write error: ",e}[fn]];
-  @[system;"sendmail -t < ",(shquote 1_string fn);{[fn;e]hdel fn;'"sendmail error: ",e}[fn]];
+  @[system;"sendmail -t -f ",(shquote frm)," < ",(shquote 1_string fn);{[fn;e]hdel fn;'"sendmail error: ",e}[fn]];
   hdel fn;
   };
 
@@ -270,16 +270,16 @@ colorhuemap:(!). flip (
   (`turquoise;150);(`cyan;180);(`blue;240);(`purple;270);
   (`pink;300);(`violet;330));
 
-colorizemono:{[color;min_val;max_val;x]
-  s_values:colornormalize[min_val;max_val;x];
-  colorhsv2rgb[$[-11h=type color;colorhuemap[color];color];;1f]each s_values
+colorizemono:{[color;minval;maxval;x]
+  svalues:colornormalize[minval;maxval;x];
+  colorhsv2rgb[$[-11h=type color;colorhuemap[color];color];;1f]each svalues
   };
 
-colorizestereo:{[color_min;color_max;min_val;max_val;pivot_val;x]
-  low:x<pivot_val;
-  low_colors:colorizemono[color_min;pivot_val;min_val;x where low];
-  high_colors:colorizemono[color_max;pivot_val;max_val;x where not low];
-  @[;where not low;:;high_colors] @[;where low;:;low_colors] count[x]#enlist 0x000000
+colorizestereo:{[colormin;colormax;minval;maxval;pivotval;x]
+  low:x<pivotval;
+  lowcolors:colorizemono[colormin;pivotval;minval;x where low];
+  highcolors:colorizemono[colormax;pivotval;maxval;x where not low];
+  @[;where not low;:;highcolors] @[;where low;:;lowcolors] count[x]#enlist 0x000000
   };
 
 // ============================================================
@@ -303,7 +303,7 @@ send:mailsend;
 // image embedded at the foot of every message - overwritten by init, null for none
 img:`;
 
-// smtp config - set by init when smtpurl is provided; used by smtpsend_
+// smtp config - set by init when smtpurl is provided; used by smtpsend
 smtpurl:"";
 smtpuser:"";
 smtppassword:"";
@@ -319,7 +319,7 @@ cleansmtptmp:{[cf;fn]
   @[hdel;fn;::];
   };
 
-smtpsend_:{[frm;to;cc;sub;body;att]
+smtpsend:{[frm;to;cc;sub;body;att]
   // send via curl smtp transport using module smtp config (smtpurl/smtpuser/smtppassword/smtpssl)
   // signature matches mailsend: frm to cc sub body att
   if[0b~utilityexists "curl";'"curl not found on this system"];
@@ -358,6 +358,22 @@ cleantmpdir:{[dir]
   @[hdel;dir;::];
   };
 
+// whether x is a symbol or list of symbols
+issyms:{[x]type[x] in -11 11h};
+
+// the problem with a message, "" if none: the checks, order and wording of TorQ's emailSend
+msgerror:{[m]
+  if[not 99h=type m;:"param should be a dictionary with possible keys to, subject, cc, body, attachments"];
+  k:key m;
+  $[(`to in k) and not issyms m`to;"to field should be a symbol or symbol list";
+    (`cc in k) and not issyms m`cc;"cc field should be a symbol or symbol list";
+    (`subject in k) and not 10h=type m`subject;"subject field should be a char array";
+    (`attachments in k) and not issyms m`attachments;"attachments field should be a symbol or symbol list";
+    not (`to in k) and 0<count m`to;"to field must be specified";
+    not `subject in k;"subject field must be specified";
+    ""]
+  };
+
 // ============================================================
 // public api
 // ============================================================
@@ -368,12 +384,14 @@ senddefault:{[msgdict]
   //               optionally: cc (symbol or symbol list), attachments (hsym or list of hsyms)
   // body lines are html: a line starting with "<" is passed through, anything else is
   // escaped and wrapped in <p>. nested lists are flattened, non-strings become text
-  // returns 1b on success, 0b on send failure, -1 if disabled
+  // returns 1b once the transport accepts the message, 0b on send failure, -1 if disabled
+  // signals if an enabled send has a missing field, or a to, cc, subject or attachments of the wrong type
   if[not enabled;
     .z.m.logerr[`email;"email sending is not enabled"];
     if[historyenabled;.z.m.loghistory[msgdict`to;msgdict`subject;`disabled;-1]];
     :-1;
   ];
+  if[count err:msgerror msgdict;.z.m.logerr[`email;err:"di.email: ",err];'err];
   to:","sv string$[-11h=type msgdict`to;enlist msgdict`to;msgdict`to];
   cc:$[`cc in key msgdict;","sv string$[-11h=type msgdict`cc;enlist msgdict`cc;msgdict`cc];""];
   // every value that reaches a header has to be checked, not just the recipients
@@ -434,7 +452,7 @@ getstatus:{[]
 clearhistory:{[]
   // truncate the history table; schema is preserved
   // to clear on a schedule via di.timer:
-  //   timer.addjob[`emailhistoryclear;email.clearhistory;();0D01:00:00:00;`repeat;()!()]
+  //   timer.addjob.simple[`emailhistoryclear;email.clearhistory;1D]
   .z.m.history:0#.z.m.history;
   };
 
@@ -468,7 +486,9 @@ init:{[config;deps]
   .z.m.smtppassword:"";
   .z.m.smtpssl:1b;
   logdict:$[99h=type deps;$[(`log in key deps) and not (::)~deps`log;deps`log;()!()];()!()];
-  if[not count logdict;'"di.email: log dependency is required; pass (enlist`log)!enlist logdep - see di.log"];
+  if[not count logdict;'"di.email: log dependency is required; pass (enlist`log)!enlist logdep - see di.util.log"];
+  if[not 99h=type logdict;'"di.email: log value must be a dict of `info`warn`error functions"];
+  if[not all `info`warn`error in key logdict;'"di.email: log dict must have `info`warn`error keys; got: ",", " sv string key logdict];
   .z.m.loginfo:logdict`info;
   .z.m.logwarn:logdict`warn;
   .z.m.logerr:logdict`error;
@@ -488,5 +508,5 @@ init:{[config;deps]
         .z.m.logwarn[`email;"img ",(hsym2str .z.m.img)," is missing or empty - messages will carry a broken image"]]];
   ];
   // select transport: curl smtp if smtpurl is set, otherwise sendmail
-  .z.m.send:$[count smtpurl;smtpsend_;mailsend];
+  .z.m.send:$[count smtpurl;smtpsend;mailsend];
   };

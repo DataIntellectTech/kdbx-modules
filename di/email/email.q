@@ -1,20 +1,20 @@
-// module for sending html emails via the system sendmail utility
-// ported from torq code/common/email.q and code/processes/reporter.q
-// html construction and sendmail transport ported from qmail (github.com/BestiaPL/qmail)
-// no c library or smtp server required
+/ module for sending html emails via the system sendmail utility
+/ ported from torq code/common/email.q and code/processes/reporter.q
+/ html construction and sendmail transport ported from qmail (github.com/BestiaPL/qmail)
+/ no c library or smtp server required
 
-// ============================================================
-// sendmail utilities (ported from qmail)
-// ============================================================
+/ ============================================================
+/ sendmail utilities (ported from qmail)
+/ ============================================================
 
 utilityexists:{@[system;"which ",x," 2>/dev/null";0b]};
 
 hsym2str:{[x] $[":"=first s:string x;1_s;s]};
 
-// quote a string for use as a single shell argument
+/ quote a string for use as a single shell argument
 shquote:{[x]"'",(ssr[x;"'";"'\\''"]),"'"};
 
-// escape a value for a double-quoted entry in a curl --config file
+/ escape a value for a double-quoted entry in a curl --config file
 curlquote:{[x]"\"",(ssr[ssr[x;"\\";"\\\\"];"\"";"\\\""]),"\""};
 
 checkfile:{if[not x~key x:hsym x;'"file not found: ",hsym2str x]};
@@ -37,18 +37,18 @@ mailheader:{[]
 
 mailfooter:("</body>";"</html>");
 
-// a header value holding CR or LF would start a new header line, letting a crafted
-// address or subject inject headers of its own, so refuse one rather than sanitise it
+/ a header value holding CR or LF would start a new header line, letting a crafted
+/ address or subject inject headers of its own, so refuse one rather than sanitise it
 headersafe:{[nm;x]
-  // the offending value is echoed with its newlines made visible; pasting it in raw
-  // would let the same payload write its own line into the log
+  / the offending value is echoed with its newlines made visible; pasting it in raw
+  / would let the same payload write its own line into the log
   if[any x in "\r\n";
     '"di.email: ",(string nm)," contains a newline, which would inject a header: ",
       ssr[ssr[x;"\r";"\\r"];"\n";"\\n"]];
   x
   };
 
-// the Cc header, omitted entirely when nothing is copied
+/ the Cc header, omitted entirely when nothing is copied
 ccheader:{[cc] $[count cc;enlist["Cc: ",cc];()]};
 
 template0:{[frm;to;cc;sub;body]
@@ -64,7 +64,7 @@ template0:{[frm;to;cc;sub;body]
   mailfooter
   };
 
-// one part body, without the boundary line the caller emits before it
+/ one part body, without the boundary line the caller emits before it
 attachpart:{[a]
   fn:last "/"vs hsym2str a;
   enlist["Content-Transfer-Encoding: base64"],
@@ -74,7 +74,7 @@ attachpart:{[a]
   encodefile[a]
   };
 
-// the image, referenced from the html by its content id
+/ the image, referenced from the html by its content id
 imagepart:{[a;cid]
   fn:last "/"vs hsym2str a;
   enlist["Content-Transfer-Encoding: base64"],
@@ -85,8 +85,8 @@ imagepart:{[a;cid]
   encodefile[a]
   };
 
-// the html body; with an image it and the image go in a multipart/related together,
-// which is what makes a client resolve the cid rather than treat it as an attachment
+/ the html body; with an image it and the image go in a multipart/related together,
+/ which is what makes a client resolve the cid rather than treat it as an attachment
 htmlpart:{[body;cid;img]
   h:enlist["Content-Type: text/html; charset=UTF-8"],
     enlist[""],
@@ -108,12 +108,12 @@ htmlpart:{[body;cid;img]
   };
 
 mailtemplate:{[frm;to;cc;sub;body;att]
-  // an image makes the message multipart even with no attachments
+  / an image makes the message multipart even with no attachments
   img:.z.m.img;
   hasimg:not null img;
   if[(not count att where not null att,:()) and not hasimg;:template0[frm;to;cc;sub;body]];
   boundary:"====",string[rand 0Ng],"====";
-  // a content id is a message id, so it needs the addr-spec form with an @
+  / a content id is a message id, so it needs the addr-spec form with an @
   cid:$[hasimg;"img",(string rand 0Ng),"@kdbx.local";""];
   enlist["From: ",frm],
   enlist["To: ",to],
@@ -130,16 +130,16 @@ mailtemplate:{[frm;to;cc;sub;body;att]
   };
 
 mailsend:{[frm;to;cc;sub;body;att]
-  // send an html email via the system sendmail utility
-  // frm  - string from address
-  // to   - string, comma-delimited recipient addresses
-  // sub  - string subject
-  // body - list of strings (html content)
-  // cc   - "" for none, or a comma-delimited string of addresses (sendmail -t reads the header)
-  // att  - "" for no attachment, or list of hsym file paths
+  / send an html email via the system sendmail utility
+  / frm  - string from address
+  / to   - string, comma-delimited recipient addresses
+  / sub  - string subject
+  / body - list of strings (html content)
+  / cc   - "" for none, or a comma-delimited string of addresses (sendmail -t reads the header)
+  / att  - "" for no attachment, or list of hsym file paths
   if[0b~utilityexists "sendmail";'"sendmail not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
-  // build the message first so a bad attachment cannot orphan a temp file
+  / build the message first so a bad attachment cannot orphan a temp file
   msg:mailtemplate[frm;to;cc;sub;body;att];
   fn:hsym`$first system"mktemp /tmp/qmail.XXXXXXXXXX";
   .[{[a;b]a 0: b};(fn;msg);{[fn;e]hdel fn;'"sendmail write error: ",e}[fn]];
@@ -147,9 +147,9 @@ mailsend:{[frm;to;cc;sub;body;att]
   hdel fn;
   };
 
-// ============================================================
-// html construction helpers (ported from qmail)
-// ============================================================
+/ ============================================================
+/ html construction helpers (ported from qmail)
+/ ============================================================
 
 mailstring:{$[10h=abs type x;x;(type[x] in 0 98 99h) or (100h<type x) or 0h<type x;.Q.s1 x;string x]};
 
@@ -203,12 +203,12 @@ addstyle:{x," style=\"",(dict2css getstyle[y]),"\""};
 mailwrap:{"<",x,">",y,"</",(first " "vs (),x),">"};
 mailewrap:{enlist["<",x,">"],y,enlist"</",(first " "vs (),x),">"};
 
-// escape the characters that change meaning in html; & first or the others get double escaped
+/ escape the characters that change meaning in html; & first or the others get double escaped
 htmlescape:{[x] ssr[ssr[ssr[x;"&";"&amp;"];"<";"&lt;"];">";"&gt;"]};
 
-// turn one body element into zero or more lines
-// a nested list of strings arrives as a single element from TorQ's reporter, and
-// anything that is not a string has to become text or the message will not write
+/ turn one body element into zero or more lines
+/ a nested list of strings arrives as a single element from TorQ's reporter, and
+/ anything that is not a string has to become text or the message will not write
 bodylines:{[x]
   $[10h=abs type x;enlist $[10h=type x;x;enlist x];
     (0h=type x) and (0<count x) and all 10h=type each x;x;
@@ -282,53 +282,53 @@ colorizestereo:{[colormin;colormax;minval;maxval;pivotval;x]
   @[;where not low;:;highcolors] @[;where low;:;lowcolors] count[x]#enlist 0x000000
   };
 
-// ============================================================
-// module state and defaults
-// ============================================================
+/ ============================================================
+/ module state and defaults
+/ ============================================================
 
-// from address used in all outgoing emails - overwritten by init
+/ from address used in all outgoing emails - overwritten by init
 mailfrom:"kdbx@localhost";
 
-// email gate - overwritten by init
+/ email gate - overwritten by init
 enabled:0b;
 
-// controls whether senddefault appends rows to history - overwritten by init
+/ controls whether senddefault appends rows to history - overwritten by init
 historyenabled:1b;
 
-// append-only table recording every send attempt
+/ append-only table recording every send attempt
 history:([]time:`timestamp$();recipients:`symbol$();subject:();status:`symbol$();bytes:`long$());
 
 send:mailsend;
 
-// image embedded at the foot of every message - overwritten by init, null for none
+/ image embedded at the foot of every message - overwritten by init, null for none
 img:`;
 
-// smtp config - set by init when smtpurl is provided; used by smtpsend
+/ smtp config - set by init when smtpurl is provided; used by smtpsend
 smtpurl:"";
 smtpuser:"";
 smtppassword:"";
 smtpssl:1b;
 
-// ============================================================
-// internal helpers
-// ============================================================
+/ ============================================================
+/ internal helpers
+/ ============================================================
 
-// remove the smtp temp files, credentials first, tolerating one that has already gone
+/ remove the smtp temp files, credentials first, tolerating one that has already gone
 cleansmtptmp:{[cf;fn]
   @[hdel;cf;::];
   @[hdel;fn;::];
   };
 
 smtpsend:{[frm;to;cc;sub;body;att]
-  // send via curl smtp transport using module smtp config (smtpurl/smtpuser/smtppassword/smtpssl)
-  // signature matches mailsend: frm to cc sub body att
+  / send via curl smtp transport using module smtp config (smtpurl/smtpuser/smtppassword/smtpssl)
+  / signature matches mailsend: frm to cc sub body att
   if[0b~utilityexists "curl";'"curl not found on this system"];
   if[not att~"";if[10h=type att;att:enlist att]];
-  // build the message first so a bad attachment cannot orphan a temp file
+  / build the message first so a bad attachment cannot orphan a temp file
   msg:mailtemplate[frm;to;cc;sub;body;att];
-  // keep paths as plain strings to avoid type issues when building cmd
+  / keep paths as plain strings to avoid type issues when building cmd
   tmpfile:first system"mktemp /tmp/qmail.XXXXXXXXXX";
-  // mktemp creates the file 0600, so credentials written here never reach the command line
+  / mktemp creates the file 0600, so credentials written here never reach the command line
   cfgfile:first system"mktemp /tmp/qmail.XXXXXXXXXX";
   fn:hsym`$tmpfile;
   cf:hsym`$cfgfile;
@@ -343,8 +343,8 @@ smtpsend:{[frm;to;cc;sub;body;att]
   cleansmtptmp[cf;fn];
   };
 
-// render a q object as the lines of an attachment file
-// a table becomes csv, a string or list of strings is taken as text, anything else gets its text form
+/ render a q object as the lines of an attachment file
+/ a table becomes csv, a string or list of strings is taken as text, anything else gets its text form
 dataaslines:{[x]
   $[.Q.qt x;csv 0: x;
     10h=type x;enlist x;
@@ -352,16 +352,16 @@ dataaslines:{[x]
     enlist -3!x]
   };
 
-// remove a temp attachment directory and everything in it
+/ remove a temp attachment directory and everything in it
 cleantmpdir:{[dir]
   @[hdel;;::]each .Q.dd[dir]each key dir;
   @[hdel;dir;::];
   };
 
-// whether x is a symbol or list of symbols
+/ whether x is a symbol or list of symbols
 issyms:{[x]type[x] in -11 11h};
 
-// the problem with a message, "" if none: the checks, order and wording of TorQ's emailSend
+/ the problem with a message, "" if none: the checks, order and wording of TorQ's emailSend
 msgerror:{[m]
   if[not 99h=type m;:"param should be a dictionary with possible keys to, subject, cc, body, attachments"];
   k:key m;
@@ -374,18 +374,18 @@ msgerror:{[m]
     ""]
   };
 
-// ============================================================
-// public api
-// ============================================================
+/ ============================================================
+/ public api
+/ ============================================================
 
 senddefault:{[msgdict]
-  // send an html email via the system sendmail utility
-  // msgdict keys: to (symbol or symbol list), subject (string), body (list of strings)
-  //               optionally: cc (symbol or symbol list), attachments (hsym or list of hsyms)
-  // body lines are html: a line starting with "<" is passed through, anything else is
-  // escaped and wrapped in <p>. nested lists are flattened, non-strings become text
-  // returns 1b once the transport accepts the message, 0b on send failure, -1 if disabled
-  // signals if an enabled send has a missing field, or a to, cc, subject or attachments of the wrong type
+  / send an html email via the system sendmail utility
+  / msgdict keys: to (symbol or symbol list), subject (string), body (list of strings)
+  /               optionally: cc (symbol or symbol list), attachments (hsym or list of hsyms)
+  / body lines are html: a line starting with "<" is passed through, anything else is
+  / escaped and wrapped in <p>. nested lists are flattened, non-strings become text
+  / returns 1b once the transport accepts the message, 0b on send failure, -1 if disabled
+  / signals if an enabled send has a missing field, or a to, cc, subject or attachments of the wrong type
   if[not enabled;
     .z.m.logerr[`email;"email sending is not enabled"];
     if[historyenabled;.z.m.loghistory[msgdict`to;msgdict`subject;`disabled;-1]];
@@ -394,18 +394,18 @@ senddefault:{[msgdict]
   if[count err:msgerror msgdict;.z.m.logerr[`email;err:"di.email: ",err];'err];
   to:","sv string$[-11h=type msgdict`to;enlist msgdict`to;msgdict`to];
   cc:$[`cc in key msgdict;","sv string$[-11h=type msgdict`cc;enlist msgdict`cc;msgdict`cc];""];
-  // every value that reaches a header has to be checked, not just the recipients
+  / every value that reaches a header has to be checked, not just the recipients
   hdrs:.[{headersafe'[`to`cc`subject;(x;y;z)];1b};(to;cc;msgdict`subject);
     {[e].z.m.logerr[`email;"send refused: ",e];0b}];
   if[not hdrs;
     if[historyenabled;.z.m.loghistory[msgdict`to;msgdict`subject;`failed;-1]];
     :0b];
   lines:raze bodylines each msgdict[`body],enlist "email generated at ",(string .z.p);
-  // a line already starting with "<" is taken as pre-built html, everything else is escaped
+  / a line already starting with "<" is taken as pre-built html, everything else is escaped
   htmlbody:{$[count x;$["<"=first x;x;addtext htmlescape x];""]} each lines;
-  // TorQ's .email.senddefault took a singular `attachment; silently sending nothing and
-  // returning success is the worst failure shape available, so say so
-  // only when `attachments is absent: with both keys the plural is used and nothing is lost
+  / TorQ's .email.senddefault took a singular `attachment; silently sending nothing and
+  / returning success is the worst failure shape available, so say so
+  / only when `attachments is absent: with both keys the plural is used and nothing is lost
   if[(`attachment in key msgdict) and not `attachments in key msgdict;
     .z.m.logwarn[`email;"msgdict has an `attachment key - this module uses `attachments (plural), so nothing was attached"]];
   att:$[`attachments in key msgdict;$[-11h=type msgdict`attachments;enlist msgdict`attachments;msgdict`attachments];""];
@@ -419,15 +419,15 @@ senddefault:{[msgdict]
   };
 
 senddata:{[msgdict]
-  // send an html email whose attachments are q objects rather than files on disk
-  // msgdict is as senddefault, except attachments maps filename to a q object:
-  //   `attachments!enlist `trades.csv`notes.txt!(tradetable;"a line of text")
-  // a table is written as csv, a string or list of strings as text, anything else as its text form
-  // the objects are written to a private temp directory which is removed again after the send
+  / send an html email whose attachments are q objects rather than files on disk
+  / msgdict is as senddefault, except attachments maps filename to a q object:
+  /   `attachments!enlist `trades.csv`notes.txt!(tradetable;"a line of text")
+  / a table is written as csv, a string or list of strings as text, anything else as its text form
+  / the objects are written to a private temp directory which is removed again after the send
   if[not `attachments in key msgdict;'"di.email: senddata needs an attachments dict of filename!qobject"];
   data:msgdict`attachments;
   if[not 99h=type data;'"di.email: senddata attachments must be a dict of filename!qobject"];
-  // names become paths under the temp directory, so a separator could write outside it
+  / names become paths under the temp directory, so a separator could write outside it
   if[any "/" in/:string key data;'"di.email: senddata attachment names must be plain filenames"];
   dir:hsym`$first system"mktemp -d /tmp/qmail.XXXXXXXXXX";
   paths:.Q.dd[dir]each key data;
@@ -438,45 +438,45 @@ senddata:{[msgdict]
   };
 
 test:{[to]
-  // send a test email to verify sendmail connectivity
-  // to - symbol e.g. `$"user@example.com"
-  // returns 1b on success, 0b on failure
+  / send a test email to verify sendmail connectivity
+  / to - symbol e.g. `$"user@example.com"
+  / returns 1b on success, 0b on failure
   :senddefault`to`subject`body!(to;"test email";enlist"this is a test email to verify sendmail is configured correctly");
   };
 
 getstatus:{[]
-  // return the full send history table
+  / return the full send history table
   :history;
   };
 
 clearhistory:{[]
-  // truncate the history table; schema is preserved
-  // to clear on a schedule via di.timer:
-  //   timer.addjob.simple[`emailhistoryclear;email.clearhistory;1D]
+  / truncate the history table; schema is preserved
+  / to clear on a schedule via di.timer:
+  /   timer.addjob.simple[`emailhistoryclear;email.clearhistory;1D]
   .z.m.history:0#.z.m.history;
   };
 
 init:{[config;deps]
-  // initialise module with email config and injected log dependency
-  // config - dict with any of:
-  //   mailfrom        (string or symbol) - from address
-  //   enabled         (boolean)          - gate for sending
-  //   historyenabled  (boolean)          - whether to record sends in history table (default 1b)
-  //   smtpurl         (string or symbol) - e.g. "smtp://smtp.gmail.com:587"; when set, curl is used
-  //   smtpuser        (string or symbol) - smtp username
-  //   smtppassword    (string)           - smtp password
-  //   smtpssl         (boolean)          - require tls (default 1b)
-  //   img             (hsym or string)   - image embedded at the foot of every message
-  // pass (::) for config to use defaults (email disabled, sendmail transport)
-  // deps - (enlist`log)!enlist logdict
-  //   `log: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required; init throws if absent
+  / initialise module with email config and injected log dependency
+  / config - dict with any of:
+  /   mailfrom        (string or symbol) - from address
+  /   enabled         (boolean)          - gate for sending
+  /   historyenabled  (boolean)          - whether to record sends in history table (default 1b)
+  /   smtpurl         (string or symbol) - e.g. "smtp://smtp.gmail.com:587"; when set, curl is used
+  /   smtpuser        (string or symbol) - smtp username
+  /   smtppassword    (string)           - smtp password
+  /   smtpssl         (boolean)          - require tls (default 1b)
+  /   img             (hsym or string)   - image embedded at the foot of every message
+  / pass (::) for config to use defaults (email disabled, sendmail transport)
+  / deps - (enlist`log)!enlist logdict
+  /   `log: `info`warn`error!({[c;m]};{[c;m]};{[c;m]}) - required; init throws if absent
   .z.m.mailfrom:"kdbx@localhost";
   .z.m.enabled:0b;
   .z.m.historyenabled:1b;
-  // initialise history only once; subsequent init calls preserve existing rows
+  / initialise history only once; subsequent init calls preserve existing rows
   if[98h<>type@[{.z.m.history};::;{""}];
     .z.m.history:([]time:`timestamp$();recipients:`symbol$();subject:();status:`symbol$();bytes:`long$())];
-  // loghistory stored in .z.m so it executes with module context and can write to .z.m.history
+  / loghistory stored in .z.m so it executes with module context and can write to .z.m.history
   .z.m.loghistory:{[recipients;subject;status;bytes]
     .z.m.history:.z.m.history,enlist `time`recipients`subject`status`bytes!(.z.p;recipients;subject;status;`long$bytes);
     };
@@ -502,11 +502,11 @@ init:{[config;deps]
     if[`smtpssl in key config;.z.m.smtpssl:config`smtpssl];
     if[`img in key config;
       .z.m.img:$[-11h=type config`img;hsym config`img;hsym`$config`img];
-      // an unreadable or empty image yields a part with no content, which renders
-      // as a broken image rather than failing, so say so at init
+      / an unreadable or empty image yields a part with no content, which renders
+      / as a broken image rather than failing, so say so at init
       if[0=@[hcount;.z.m.img;0];
         .z.m.logwarn[`email;"img ",(hsym2str .z.m.img)," is missing or empty - messages will carry a broken image"]]];
   ];
-  // select transport: curl smtp if smtpurl is set, otherwise sendmail
+  / select transport: curl smtp if smtpurl is set, otherwise sendmail
   .z.m.send:$[count smtpurl;smtpsend;mailsend];
   };

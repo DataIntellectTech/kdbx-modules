@@ -141,9 +141,9 @@ runandschedule:{[id]
   r:upd.status[r]; / update status based on job status and configurable options
   @[.z.M.jobs;id;:;r];
   if[r[`status];upd.start[id]]; / update next start time after run
-  / disable a job whose next run falls after its maxtime
+  / disable a job whose next run falls outside its period
   r:.z.M.jobs id;
-  if[(not null r`maxtime)&r[`maxtime]<r`nextstart;disablejobs id];
+  if[not r[`nextstart] within (r[`created]&r[`created]^r`startattime;0Wp^r`maxtime);disablejobs id];
   / recompute the next scan time
   .z.m.nextruntime:exec min[nextstart] from jobs;
   };

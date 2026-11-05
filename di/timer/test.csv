@@ -209,6 +209,32 @@ run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,"timer.addjob.custom[`spast;.test.job;();0D00:00:10;1h;(enlist`startattime)!enlist .test.clk-0D00:00:25]",1,,start 25s in the past
 true,0,0,q,"(00:00:06 00:00:16 00:00:26)~.test.sim 30",1,,run times for a past start
 
+comment,,,,,,,a job whose next run falls outside its period is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`inf1;.test.job;();0Wn;1h;()!()]",1,,infinite period scheduled from the previous start
+true,0,0,q,"(enlist 00:00:01)~.test.sim 5",1,,runs once
+true,0,0,q,not .m.di.0timer.jobs[`inf1][`status],1,,and is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`inf2;.test.job;();0Wn;2h;()!()]",1,,infinite period scheduled from the actual start
+true,0,0,q,"(enlist 00:00:01)~.test.sim 5",1,,runs once
+true,0,0,q,not .m.di.0timer.jobs[`inf2][`status],1,,and is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`inf3;.test.job;();0Wn;3h;()!()]",1,,infinite period scheduled from the previous end
+true,0,0,q,"(enlist 00:00:01)~.test.sim 5",1,,runs once
+true,0,0,q,not .m.di.0timer.jobs[`inf3][`status],1,,and is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`fin3;.test.job;();0D00:00:02;3h;()!()]",1,,a finite period
+true,0,0,q,"(00:00:01 00:00:04)~.test.sim 5",1,,keeps running
+true,0,0,q,.m.di.0timer.jobs[`fin3][`status],1,,and stays enabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`past4;.test.job;();0D00:15;4h;(enlist`startattime)!enlist .test.clk-0D03]",1,,mode 4 with a start three hours ago
+true,0,0,q,"1=count .test.sim 1",1,,runs
+true,0,0,q,.m.di.0timer.jobs[`past4][`status],1,,stays enabled while its next run is before it was created
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`nomax;.test.job;();0D00:00:02;1h;(enlist`maxtime)!enlist 0Np]",1,,a null maxtime
+true,0,0,q,"2=count .test.sim 3",1,,means no end time
+true,0,0,q,.m.di.0timer.jobs[`nomax][`status],1,,and stays enabled
+
 comment,,,,,,,dupcheck on function plus parameters
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,".test.dupf:{x};timer.addjob.custom[`dup1;.test.dupf;enlist 1;0D00:00:10;1h;()!()]",1,,a job on .test.dupf with parameter 1

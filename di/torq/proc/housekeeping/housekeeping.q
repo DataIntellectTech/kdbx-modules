@@ -10,8 +10,13 @@ requireinit:{[ctx]
     '"di.torq.proc.housekeeping: ",string[ctx],": init must be called before any other function"];
   }
 
-/ runtimes config as a timespan list: a temporal atom or list (.q settings) or a space-separated string (.toml); a bare number is an hour
-astimespans:{[x] astimespan[`hour] each $[10h=type x;(" " vs x) except enlist "";0>type x;enlist x;x]}
+/ runtimes as a timespan list: text is a time of day (02:00 or 0200), a bare number is an hour; anything outside 0-24 hours errors
+astimespans:{[x]
+  r:{$[10h=abs type x;"N"$(),x;astimespan[`hour;x]]} each $[10h=type x;(" " vs x) except enlist "";0>type x;enlist x;x];
+  if[((10h=type x) and not count r) or not all r within 0D 1D;
+    '"di.torq.proc.housekeeping: runtimes must be times of day from 0 to 24 hours, got ",-3!x];
+  `timespan$r
+  }
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;

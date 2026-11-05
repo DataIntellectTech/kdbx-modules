@@ -7,7 +7,7 @@ apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
 astimespan:cfg`astimespan;
-astz:cfg`assym;
+assym:cfg`assym;
 
 / feed payloads may arrive as a table or as a list of columns; normalise to columns
 tocols:{[x] $[98h=type x;value flip x;x]}
@@ -79,8 +79,8 @@ eodcheck:{[] if[(.z.m.eod`getnextroll)[]<.z.p;endofday[]];}
 / di.eodtime init dict: timezones as symbols, rolltimeoffset as a timespan
 eoddeps:{[config;logdep]
   d:()!();
-  if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist astz config`rolltimezone];
-  if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist astz config`datatimezone];
+  if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist assym config`rolltimezone];
+  if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist assym config`datatimezone];
   if[`rolltimeoffset in key config;d:d,enlist[`rolltimeoffset]!enlist astimespan[`second;config`rolltimeoffset]];
   / log first, then the eodtime keys
   (enlist[`log]!enlist logdep),d

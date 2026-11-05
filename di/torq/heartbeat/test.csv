@@ -20,6 +20,8 @@ true,0,0,q,"((`publishheartbeat;0D00:00:30;3);(`checkheartbeat;0D00:00:10;3))~jo
 true,0,0,q,"(enlist(`.z.pc;`hbpubsub))~flip value flip regs",1,,.stpps.closesub bound to .z.pc
 run,0,0,q,hbinit `heartbeatpublishinterval`heartbeatcheckinterval!("0D00:00:05";2),1,,intervals given as a string and a number
 true,0,0,q,"(0D00:00:05;0D00:00:02)~jobs`period",1,,intervals converted to timespans
+run,0,0,q,hbinit `heartbeatpublishinterval`heartbeatcheckinterval!("30";15),1,,digits as text and a number
+true,0,0,q,"(0D00:00:30;0D00:00:15)~jobs`period",1,,both count as seconds
 run,0,0,q,hbinit enlist[`heartbeatenabled]!enlist 0b,1,,heartbeatenabled false
 true,0,0,q,0=count jobs,1,,no jobs when heartbeatenabled is false
 run,0,0,q,".proc.lowpowermode:1b;hbinit ()!();.proc.lowpowermode:0b",1,,lowpowermode

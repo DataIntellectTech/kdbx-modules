@@ -3,9 +3,8 @@
 
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
-astz:cfg`assym;
+assym:cfg`assym;
 aslong:cfg`aslong;
-
 
 / force loads sym file, recording its size only on success
 loadsym:{[]
@@ -59,7 +58,7 @@ clearrowcountcache:{[] set[`.Q.pn;.Q.pt!(count .Q.pt)#()]}
 
 / reads savedir, hdbdir, the current partition and the writedown mode from the wdb
 setparametersfromwdb:{[config]
-  wt:$[`wdbtypes in key config;astz config`wdbtypes;`wdb];
+  wt:$[`wdbtypes in key config;assym config`wdbtypes;`wdb];
   t:$[`connecttimeoutms in key config;aslong config`connecttimeoutms;30000];
   (.z.m.svc`startup)[config,(enlist`connections)!enlist enlist wt];
   if[not (.z.m.svc`waitfortype)[wt;t;500];

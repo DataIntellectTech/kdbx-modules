@@ -65,7 +65,7 @@ badhdbcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compre
 / values as a .toml settings file delivers them
 tomlcfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(FIXTUREDIR,"/appconfig/compressionconfig.csv";FIXTUREDIR,"/hdb";"365";"false")}
 
-/ a boolean setting that is neither true/false nor 1/0
+/ a boolean setting that is not a recognised word
 badboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";"ture")}
 
 / a boolean setting given as a symbol

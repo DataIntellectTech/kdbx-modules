@@ -1,11 +1,11 @@
 / subscribe to a tickerplant via .u.subdetails: define tables at root, replay the tp log up to
 / the subscription rowcount, then receive live updates through root `upd`
 
-/ registry of active subscriptions
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
 astimespan:cfg`astimespan;
 
+/ registry of active subscriptions
 SUBSCRIPTIONS:([]handle:`int$();tabs:();syms:();subtime:`timestamp$())
 
 / .sub .z.pc handler and check job are registered once
@@ -21,7 +21,6 @@ init:{[config;deps]
   if[count m:`autoreconnect`checksubscriptionperiod except key config;'"di.subscriptions: missing settings: ",", " sv string m];
   .z.m.autoreconnect:config`autoreconnect;
   p:astimespan[`second;config`checksubscriptionperiod];
-  if[null p;'"di.subscriptions: checksubscriptionperiod must be a timespan"];
   .z.m.checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b])*p;
   if[not .z.m.registered;
     (deps[`handlers]`register)[`.z.pc;`;`sub;0j;pc[::;]];

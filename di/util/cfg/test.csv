@@ -22,12 +22,12 @@ true,0,0,q,not boolfalse[],1,,text false
 true,0,0,q,boolone[],1,,the legacy 1 form still works
 true,0,0,q,not boolzero[],1,,and 0
 true,0,0,q,1b~(cfg`asbool)1,1,,a nonzero long is true
-true,0,0,q,1b~(cfg`asbool)1i,1,,an int 1 is true - it used to fall through the type guard and read as false
+true,0,0,q,1b~(cfg`asbool)1i,1,,an int 1 is true
 true,0,0,q,1b~(cfg`asbool)1h,1,,and a short
 true,0,0,q,0b~(cfg`asbool)0i,1,,an int 0 is false
 true,0,0,q,1b~(cfg`asbool)1.0,1,,a float
-true,0,0,q,1b~(cfg`asbool)1.0e,1,,and a real - excluded while float was accepted would be arbitrary
-true,0,0,q,1b~(cfg`asbool)0x01,1,,and a byte - the guard starts at -4h so the doc says byte through float
+true,0,0,q,1b~(cfg`asbool)1.0e,1,,and a real
+true,0,0,q,1b~(cfg`asbool)0x01,1,,and a byte
 true,0,0,q,0b~(cfg`asbool)0x00,1,,a zero byte is false
 true,0,0,q,boolyes[],1,,yes
 true,0,0,q,not boolno[],1,,no
@@ -48,7 +48,7 @@ true,0,0,q,tstext[],1,,text is parsed
 true,0,0,q,tssym[],1,,and a symbol
 true,0,0,q,tstime[],1,,a time atom is cast
 true,0,0,q,tssecs[],1,,a bare number counts in the unit
-true,0,0,q,tsdigits[],1,,bare digits as text count in the unit too - not hours
+true,0,0,q,tsdigits[],1,,bare digits as text count in the unit too
 true,0,0,q,tsfloat[],1,,a fraction of a unit
 true,0,0,q,tsreal[],1,,a real fraction - timespan times real rounds the real first
 true,0,0,q,tsrealhour[],1,,and in hours

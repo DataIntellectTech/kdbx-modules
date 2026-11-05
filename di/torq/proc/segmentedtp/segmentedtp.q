@@ -1,11 +1,11 @@
 / di.torq.proc.segmentedtp - segmented tickerplant
 
-/ di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
 astimespan:cfg`astimespan;
 tosym:cfg`tosym;
 
+/ di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
 eodconfig:{[s]
   d:()!();
   if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist tosym s`rolltimezone];

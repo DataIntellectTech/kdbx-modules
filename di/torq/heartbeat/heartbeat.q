@@ -1,5 +1,9 @@
 / publish heartbeats, and check that subscribed heartbeats arrive in time
 
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+astimespan:cfg`astimespan;
+
 / published heartbeats; sym is the proctype
 heartbeat:([]time:`timestamp$();sym:`symbol$();procname:`symbol$();counter:`long$();pid:`int$();host:`$();port:`int$());
 
@@ -15,9 +19,6 @@ subscribedhandles:0 0Ni;
 
 / timer jobs, wraps and .z.pc handlers are added once
 registered:0b;
-
-/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
 warningperiod:{[processtype] `timespan$warningtolerance*publishinterval};
 errorperiod:{[processtype] `timespan$errortolerance*publishinterval};
@@ -99,10 +100,8 @@ init:{[config;deps]
   .z.m.enabled:config`heartbeatenabled;
   .z.m.subenabled:config`heartbeatsubscribeenabled;
   .z.m.debug:config`heartbeatdebug;
-  .z.m.publishinterval:totimespan config`heartbeatpublishinterval;
-  if[null publishinterval;'"di.torq.heartbeat: heartbeatpublishinterval must be a timespan"];
-  .z.m.checkinterval:totimespan config`heartbeatcheckinterval;
-  if[null checkinterval;'"di.torq.heartbeat: heartbeatcheckinterval must be a timespan"];
+  .z.m.publishinterval:astimespan[`second;config`heartbeatpublishinterval];
+  .z.m.checkinterval:astimespan[`second;config`heartbeatcheckinterval];
   .z.m.warningtolerance:config`heartbeatwarningtolerance;
   .z.m.errortolerance:config`heartbeaterrortolerance;
   .z.m.CONNECTIONS:$[11h=abs type c:config`heartbeatsubscribetypes;c;`$c];

@@ -90,6 +90,8 @@ Under di.torq, `generateschemas` is queued with `.proc.addinitlist`, so it runs 
 - In `custom` mode a table missing from the csv is not logged.
 - Chained without `create`, `loghandles` becomes a dictionary of `::`, and `.z.exit` leaves the logs alone.
 - The `.z.exit` flush runs only in `memorybatch`.
+- In `memorybatch`, a roll writes buffered rows to the closing log before publishing them. An update that triggers a
+  roll goes to the new log.
 - `subdetails` and `.stplg.replaylog` take a list of tables.
 
 ## Testing
@@ -99,8 +101,9 @@ k4unit:use`di.k4unit
 k4unit.moduletest`di.torq.proc.segmentedtp
 ```
 
-`test.q`/`test.csv` start five peers: `defaultbatch` with `tabperiod`, `immediate` with `singular`, `memorybatch`
-with `tabular`, and two chained peers (`create`, `parent`) on the first. The test process subscribes through
+`test.q`/`test.csv` start seven peers: `defaultbatch` with `tabperiod`, `immediate` with `singular`, `memorybatch`
+with `tabular`, `memorybatch` with `tabperiod`, and three chained peers on the first (`create`, `parent`, and
+`memorybatch` with `create`). The test process subscribes through
 `.sub.subscribe`. The tests cover the settings, the handshake, each batch mode and log naming, error mode, sym and
-filtered subscriptions, both replay periods, end of period, end of day (including through the chained peer), the
-`.z.exit` flush and the chained exit when the upstream is lost.
+filtered subscriptions, both replay periods, end of period, end of day (including through the chained peer), `memorybatch`
+rolls through an update and through the chained peer, the `.z.exit` flush and the chained exit when the upstream is lost.

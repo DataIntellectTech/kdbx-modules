@@ -149,8 +149,12 @@ value"loghandles::exec tbl!handle from currlog";
 / process data sent at endofday/endofperiod
 .stplg.endofdaydata:@[value;`.stplg.endofdaydata;{ {`proctype`procname`tables!(.z.m.proctype;.z.m.procname;.stpps.t)} }];
 
+/ memorybatch: log and count buffered rows ahead of a roll
+.stplg.flushbatch:{if[.stplg.batchmode=`memorybatch;.stplg.zts.memorybatch[]];}
+
 / chained end of period: pass on to subscribers; roll logs in create mode
 .stplg.endofperiod:{[currentpd;nextpd;data]
+  .stplg.flushbatch[];
   .z.m.log[`info][`endofperiod;"flushing remaining data to subscribers and clearing tables"];
   .stpps.pubclear[.stplg.t];
   .z.m.log[`info][`endofperiod;"executing end of period for ",.Q.s1 `currentperiod`nextperiod!(currentpd;nextpd)];
@@ -161,6 +165,7 @@ value"loghandles::exec tbl!handle from currlog";
 
 / end of period: send to subscribers; roll logs unless end of day is due
 .stplg.stpeoperiod:{[currentpd;nextpd;data;rolllogs]
+  .stplg.flushbatch[];
   .z.m.log[`info][`endofperiod;"flushing remaining data to subscribers and clearing tables"];
   .stpps.pubclear[.stplg.t];
   .z.m.log[`info][`stpeoperiod;"passing on endofperiod message to subscribers"];
@@ -180,6 +185,7 @@ value"loghandles::exec tbl!handle from currlog";
 
 / end of day: send to subscribers and roll logs
 .stplg.endofday:{[date;data]
+  .stplg.flushbatch[];
   .z.m.log[`info][`endofday;"flushing remaining data to subscribers and clearing tables"];
   .stpps.pubclear[.stplg.t];
   .z.m.log[`info][`endofday;"executing end of day for ",.Q.s1 .z.m.eod.getd[]];

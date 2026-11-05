@@ -13,6 +13,9 @@ hopentimeout:2000                   / hopen timeout in milliseconds
 retry:0D00:05                       / how often to retry dead connections; 0D means never
 tracknontorqprocess:1b              / track and register processes outside the framework
 debug:0b                            / log each connection attempt
+startupdeps:`symbol$()              / proctypes to wait for before init finishes; empty means none
+startupdepsleep:1                   / seconds between checks for startupdeps
+startupdepcycles:60                 / checks before init fails; 0W waits forever
 
 / server records
 retain:`long$0D00:30                / how long to keep a closed server's record

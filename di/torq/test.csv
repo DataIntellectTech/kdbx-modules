@@ -113,4 +113,11 @@ true,0,0,q,1=(qlcompleted`pg)-n2,1,,re-init is guarded - still one row per query
 run,0,0,q,.m.di.0torq.flushquerylog[],1,,the flush job body runs cleanly
 true,0,0,q,0<qlcompleted`pg,1,,rows younger than flushtime survive a flush
 
+true,0,0,q,()~sdrun[1b;()!()],1,,startupdeps omitted: no wait
+true,0,0,q,()~sdrun[1b;enlist[`startupdeps]!enlist `symbol$()],1,,an empty startupdeps: no wait
+true,0,0,q,(`rdb`idb;1;60)~sdrun[1b;enlist[`startupdeps]!enlist`rdb`idb],1,,a symbol list waits with the default sleep and cycles
+true,0,0,q,sdtoml[],1,,a space-separated string and text sleep/cycles (toml or command line)
+true,0,0,q,()~sdrun[0b;enlist[`startupdeps]!enlist`rdb],1,,connection tracking off: no wait
+true,0,0,q,sdfail[],1,,a wait that runs out of cycles fails init
+
 after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file

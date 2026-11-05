@@ -146,6 +146,26 @@ state) and **before** the `.run` hook (so an app file may define/override `` .<p
 After `.ps.initialise[]` and connections, `init` runs any functions a process queued with
 `.proc.addinitlist[(func;arg)]` (`.proc.initlist`), then empties the list.
 
+### Waiting for peers at startup (optional)
+
+A process can wait for the proctypes it needs before it finishes init and starts serving. A gateway
+set up this way never takes a query while one of its backends is still starting:
+
+```toml
+startupdeps = "rdb hdb idb"    # or ["rdb","hdb","idb"]; .q: startupdeps:`rdb`hdb`idb
+startupdepsleep = 1            # seconds between checks
+startupdepcycles = 60          # checks before init fails; 0W waits forever
+```
+
+After connections are started, `init` passes these to `.servers.startupdepcycles` (TorQ's
+own mechanism), which retries the connections until every listed proctype is connected. If they
+are not all connected after `startupdepcycles` checks, init fails with `<procname> cannot connect to
+<proctype>` and the launcher exits 3. An empty `startupdeps`, the default, skips the wait, and so
+does connection tracking being off (`enabled = false`).
+
+The wait blocks q, so the process does not act on SIGTERM until it ends. `torqx.sh stop` sends only
+SIGTERM, which is why the default is a bounded 60 checks rather than `0W`.
+
 ### The `.run` post-init hook
 
 After starting the process type and loading app code, `init` calls `runhook[proctype;overrides]`:

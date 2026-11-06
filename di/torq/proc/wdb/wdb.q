@@ -3,25 +3,18 @@
 / at eod the on-disk data is sorted and attributes applied as specified in the sort.csv file
 / modes: saveandsort, save (the sort is handed to a sort process) and sort (proctypes sort and sortworker)
 
-/ config coercion: toml and command-line values arrive as strings, which must be parsed not cast
-assym:{[x] $[11h=abs type x;x;`$x]}
-aslist:{[x] $[0>type x;enlist x;x]}
-tolong:{[x]
-  r:$[10h=abs type x;"J"$(),x;"j"$x];
-  if[null r;'"di.torq.proc.wdb: could not parse \"",$[10h=abs type x;x;string x],"\" as a number"];
-  r
-  }
-tobool:{[x] $[-1h=type x;x;10h=abs type x;(lower (),x) in ("true";(),"1";(),"t";(),"y";"yes");`boolean$x]}
-astimespan:{[x] $[10h=abs type x;$[any ((),x) in "D:";"N"$(),x;`timespan$1000000000*"J"$(),x];-16h=type x;x;`timespan$1000000000*x]}
-
-/ a token-list config (e.g. reloadorder) as a symbol list
-astoklist:{[x] $[10h=type x;`$" " vs x;-11h=type x;enlist x;11h=type x;x;`$x]}
-
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
+named:cfg`named;
 apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
+aslist:cfg`aslist;
+assym:cfg`assym;
+astoklist:cfg`astoklist;
+asbool:cfg`asbool;
+aslong:cfg`aslong;
+astimespan:cfg`astimespan;
 
 partwritemodes:`partbyattr`partbyenum`partbyfirstchar
 
@@ -621,29 +614,29 @@ setconfig:{[config]
     '"di.torq.proc.wdb: writedownmode must be default, partbyattr, partbyenum or partbyfirstchar, got ",string .z.m.writedownmode];
   .z.m.mergemode:$[`mergemode in key config;assym config`mergemode;`part];
   if[not .z.m.mergemode in `part`col`hybrid;'"di.torq.proc.wdb: mergemode must be part, col or hybrid, got ",string .z.m.mergemode];
-  .z.m.mergebybytelimit:$[`mergebybytelimit in key config;tobool config`mergebybytelimit;0b];
-  .z.m.mergenumbytes:$[`mergenumbytes in key config;tolong config`mergenumbytes;500000000];
-  .z.m.mergenumrows:$[`mergenumrows in key config;tolong config`mergenumrows;100000];
+  .z.m.mergebybytelimit:$[`mergebybytelimit in key config;named[`mergebybytelimit;asbool;config`mergebybytelimit];0b];
+  .z.m.mergenumbytes:$[`mergenumbytes in key config;named[`mergenumbytes;aslong;config`mergenumbytes];500000000];
+  .z.m.mergenumrows:$[`mergenumrows in key config;named[`mergenumrows;aslong;config`mergenumrows];100000];
   .z.m.mergenumtab:$[`mergenumtab in key config;config`mergenumtab;`quote`trade!10000 50000];
-  .z.m.numrows:$[`numrows in key config;tolong config`numrows;100000];
+  .z.m.numrows:$[`numrows in key config;named[`numrows;aslong;config`numrows];100000];
   .z.m.numtab:$[`numtab in key config;config`numtab;`quote`trade!10000 50000];
-  .z.m.replaynumrows:$[`replaynumrows in key config;tolong config`replaynumrows;.z.m.numrows];
+  .z.m.replaynumrows:$[`replaynumrows in key config;named[`replaynumrows;aslong;config`replaynumrows];.z.m.numrows];
   .z.m.replaynumtab:$[`replaynumtab in key config;config`replaynumtab;.z.m.numtab];
-  .z.m.immediate:$[`immediate in key config;tobool config`immediate;0b];
-  .z.m.gc:$[`gc in key config;tobool config`gc;1b];
+  .z.m.immediate:$[`immediate in key config;named[`immediate;asbool;config`immediate];0b];
+  .z.m.gc:$[`gc in key config;named[`gc;asbool;config`gc];1b];
   .z.m.partitiontype:$[`partitiontype in key config;assym config`partitiontype;`date];
   .z.m.getpartition:$[`getpartition in key config;config`getpartition;defaultgetpartition];
   .z.m.upd:$[`upd in key config;config`upd;insert];
   .z.m.reloadorder:$[`reloadorder in key config;astoklist config`reloadorder;`hdb`rdb`idb];
-  .z.m.permitreload:$[`permitreload in key config;tobool config`permitreload;1b];
-  .z.m.eodwaittime:$[`eodwaittime in key config;astimespan config`eodwaittime;0D00:00:10];
+  .z.m.permitreload:$[`permitreload in key config;named[`permitreload;asbool;config`permitreload];1b];
+  .z.m.eodwaittime:$[`eodwaittime in key config;named[`eodwaittime;astimespan[`second];config`eodwaittime];0D00:00:10];
   .z.m.hdbsettings:`compression`hdbdir!($[`compression in key config;config`compression;()];.z.m.hdbdir);
   .z.m.tabsizes:([tablename:`symbol$()] rowcount:`long$(); bytes:`long$());
-  .z.m.settimer:$[`settimer in key config;tolong config`settimer;10];
+  .z.m.settimer:$[`settimer in key config;named[`settimer;aslong;config`settimer];10];
   .z.m.subscribeto:$[`subscribeto in key config;assym config`subscribeto;`];
   .z.m.subscribesyms:$[`subscribesyms in key config;assym config`subscribesyms;`];
-  .z.m.replaylog:$[`replaylog in key config;tobool config`replaylog;1b];
-  .z.m.tpwaittimeout:$[`tpwaittimeout in key config;tolong config`tpwaittimeout;30000];
+  .z.m.replaylog:$[`replaylog in key config;named[`replaylog;asbool;config`replaylog];1b];
+  .z.m.tpwaittimeout:$[`tpwaittimeout in key config;named[`tpwaittimeout;aslong;config`tpwaittimeout];30000];
   .z.m.currentpartition:0N;
   }
 
@@ -689,13 +682,13 @@ init:{[config;deps]
   .z.m.svc:deps`servers;
   setconfig config;
   / workers setting N runs system "s -N"
-  if[0<w:$[`workers in key config;tolong config`workers;0];system "s -",string w];
+  if[0<w:$[`workers in key config;named[`workers;aslong;config`workers];0];system "s -",string w];
 
   .z.m.os:use`di.os;
   initdbwrite[config;deps];
   .z.m.mrg:use`di.merge;
   mrgdeps:`log`mergebybytelimit!(deps`log;.z.m.mergebybytelimit);
-  if[`partlimit in key config;mrgdeps[`partlimit]:tolong config`partlimit];
+  if[`partlimit in key config;mrgdeps[`partlimit]:named[`partlimit;aslong;config`partlimit]];
   (.z.m.mrg`init)[mrgdeps];
   checksortparams[];
 

@@ -52,6 +52,16 @@ true,0,0,q,"500~(cfg.overrideconfig[basecfg;`enabled`rows!(enlist""1"";enlist""5
 true,0,0,q,"basecfg~cfg.overrideconfig[basecfg;()!()]",1,1,empty params returns the config unchanged
 true,0,0,q,"0b~(cfg.overrideconfig[basecfg;enlist[`enabled]!enlist ""bad""])`enabled",1,1,unparseable boolean is rejected - the value is left unchanged (not silently set to 0b via a null)
 true,0,0,q,"any (exec msg from logtab) like ""*did not parse*""",1,1,rejected boolean override is logged
+true,0,0,q,"0D00:05~(cfg.overrideconfig[enlist[`sp]!enlist 0D00:05;enlist[`sp]!enlist enlist""30""])`sp",1,1,bare digits on a timespan setting are rejected rather than read as 30 hours
+true,0,0,q,"any (exec msg from logtab) like ""*bare digits are ambiguous*""",1,1,the rejection is logged and names the setting
+true,0,0,q,"0D00:05~(cfg.overrideconfig[enlist[`sp]!enlist 0D00:05;enlist[`sp]!enlist enlist""1.5""])`sp",1,1,and a decimal
+true,0,0,q,"0D00:05~(cfg.overrideconfig[enlist[`sp]!enlist 0D00:05;enlist[`sp]!enlist enlist""-5""])`sp",1,1,and a negative
+true,0,0,q,"(0D00:01 0D00:02)~(cfg.overrideconfig[enlist[`sp]!enlist 0D00:01 0D00:02;enlist[`sp]!enlist (""30"";""40"")])`sp",1,1,and in a timespan list
+true,0,0,q,"0D00:00:30~(cfg.overrideconfig[enlist[`sp]!enlist 0D00:05;enlist[`sp]!enlist enlist""00:00:30""])`sp",1,1,hh:mm:ss text on a timespan setting is applied
+true,0,0,q,"0D00:00:30~(cfg.overrideconfig[enlist[`sp]!enlist 0D00:05;enlist[`sp]!enlist enlist""0D00:00:30""])`sp",1,1,and timespan text
+true,0,0,q,"0Wn~(cfg.overrideconfig[enlist[`sp]!enlist 0D00:05;enlist[`sp]!enlist enlist""0W""])`sp",1,1,and infinity
+true,0,0,q,"""30""~(cfg.overrideconfig[enlist[`sp]!enlist ""0D00:05"";enlist[`sp]!enlist enlist""30""])`sp",1,1,a string setting keeps the text for the module to read
+true,0,0,q,"02:00:00~(cfg.overrideconfig[enlist[`rt]!enlist 03:00:00;enlist[`rt]!enlist enlist""2""])`rt",1,1,bare digits still work for a time-of-day setting
 true,0,0,q,"0xff~(cfg.overrideconfig[basecfg;enlist[`byte]!enlist ""ff""])`byte",1,1,valid hex byte parsed and applied
 true,0,0,q,"0x01~(cfg.overrideconfig[basecfg;enlist[`byte]!enlist ""gg""])`byte",1,1,invalid hex byte is rejected (no null - must not slip through as 0x00)
 true,0,0,q,"`xx`yy~(cfg.overrideconfig[basecfg;enlist[`syms]!enlist (""xx"";""yy"")])`syms",1,1,symbol list parsed and set from strings

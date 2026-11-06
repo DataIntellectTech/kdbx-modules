@@ -40,7 +40,8 @@ shipping `runtimes:02:00:00` in settings and a dead `12:00` in its code guard
 
 `runtimes` accepts whatever the settings tier yields: a real time/second/minute list from a `.q`
 settings file (`02:00:00 14:30:00`), or a space-separated string from `.toml` (which has no time
-type). Each becomes one daily timer job.
+type). Text is a time of day (`"02:00"` or `"0200"`) and a bare number is an hour (`2` is `02:00`). Anything
+outside 0-24 hours is an error, as is an empty string. Each becomes one daily timer job.
 
 ### Setting `runnow`
 

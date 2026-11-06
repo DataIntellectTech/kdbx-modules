@@ -4,4 +4,4 @@
 / module version from the VERSION file, checked by di.torq.depcheck
 version:first read0`:::VERSION
 
-export:([apphome;datahome;resolvedir;asbool;aslong;version])
+export:([apphome;datahome;resolvedir;asbool;aslong;astimespan;named;aslist;assym;astoklist;version])

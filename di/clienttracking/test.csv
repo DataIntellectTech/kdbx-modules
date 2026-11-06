@@ -55,12 +55,12 @@ true,0,0,q,"(.z.i;.z.k;system""p"")~(mine[hd;""pid""];mine[hd;""k""];mine[hd;""p
 true,0,0,q,"(`long$0D00:00:01)~hd"".m.di.0clienttracking.maxidle""",1,,settings override the defaults
 
 comment,,,,,,,maxidle and retain
-run,0,0,q,"hd2:peer PORTS`d; system ""sleep 1.5""; hd3:peer PORTS`d",1,,leave two connections idle past MAXIDLE then connect again
+run,0,0,q,"hd2:peer PORTS`d; system ""sleep 3""; hd3:peer PORTS`d",1,,leave two connections idle past MAXIDLE then connect again
 true,0,0,q,"`closed~@[hd2;""1"";{`closed}]",1,,an idle connection is closed
 true,0,0,q,"1=hd3""count .clients.clients""",1,,closed idle connections and expired rows are dropped
 run,0,0,q,hclose hd3; hd4:peer PORTS`d,1,,close a connection normally
 true,0,0,q,"1=hd4""count select from .clients.clients where null w,not null endp""",1,,a closed row is kept within RETAIN
-run,0,0,q,"system ""sleep 1.5""; hd5:peer PORTS`d",1,,wait past RETAIN then connect again
+run,0,0,q,"system ""sleep 3""; hd5:peer PORTS`d",1,,wait past RETAIN then connect again
 true,0,0,q,"0=hd5""count select from .clients.clients where null w""",1,,closed rows are purged after RETAIN
 
 after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

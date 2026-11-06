@@ -65,8 +65,9 @@ badhdbcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compre
 / values as a .toml settings file delivers them
 tomlcfg:{[] `csvpath`hdbpath`maxage`exitonfinish!(FIXTUREDIR,"/appconfig/compressionconfig.csv";FIXTUREDIR,"/hdb";"365";"false")}
 
-/ a boolean setting that is neither true/false nor 1/0
-badboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";"yes")}
+/ a boolean setting that is not a recognised word
+badboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";"ture")}
+namedbadbool:{[] e:.[cmp`init;(badboolcfg[];mockdeps[]);{x}]; (e like "setting exitonfinish: *") and 0<count e ss "ture"}
 
 / a boolean setting given as a symbol
 symboolcfg:{[] `csvpath`hdbpath`exitonfinish!(`$":",FIXTUREDIR,"/appconfig/compressionconfig.csv";`$":",FIXTUREDIR,"/hdb";`true)}

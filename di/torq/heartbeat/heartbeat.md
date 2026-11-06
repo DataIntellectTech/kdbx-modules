@@ -45,7 +45,7 @@ Required in `config`, with `proctype` and `procname`; `di/torq/settings/default.
 | `heartbeaterrortolerance` | `2f` | error after this many publish intervals without a heartbeat |
 | `heartbeatsubscribetypes` | `()` | proctypes to subscribe to heartbeats from; `` `ALL `` for all |
 
-The intervals may be a timespan, string, symbol or number of seconds; init errors if one does not convert.
+The intervals may be a timespan, string, symbol or number of seconds, and digits as text count as seconds; init errors if one does not convert.
 `heartbeatsubscribetypes` may be symbols or strings.
 
 Optional, defaulting to `{[x]}`:

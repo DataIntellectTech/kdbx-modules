@@ -196,6 +196,10 @@ point of use (`` `$ `` is a no-op on an already-a-symbol value).
   silently corrupt config. `parsefailed` handles these two explicitly (boolean must be
   `"0"`/`"1"`; byte must be even-length hex); anything else is rejected and logged, never
   written.
+- **Bare digits are refused for a timespan setting.** `"N"$"30"` is 30 hours, which is never what
+  `-retry 30` means, so a number-only value on a timespan-typed setting is logged and skipped. Use
+  `00:00:30` or `0D00:00:30`. This deviates from TorQ, which accepts it as 30 hours. A string-typed
+  setting (from `.toml`) keeps the text for the module's `astimespan` to read as its own unit.
 - **String-typed (`10h`) settings are overridable — as text, no parse.** A char-string
   setting's override value *is* already a string, so `applyoverride` takes it as-is rather
   than casting it (any string is valid; there is no parse-failure case). This matters because

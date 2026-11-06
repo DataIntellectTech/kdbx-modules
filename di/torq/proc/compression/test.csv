@@ -32,8 +32,9 @@ run,0,0,q,setupfixture[],1,,
 run,0,0,q,cmp[`init][tomlcfg[];mockdeps[]],1,,init accepts the string values a .toml settings file delivers
 run,0,0,q,cmp[`compressnow][],1,,and compresses with them
 true,0,0,q,compressed[PARTS 0;`price],1,,the string-valued maxage was coerced and the pass ran
-fail,0,0,q,cmp[`init][badboolcfg[];mockdeps[]],1,,a boolean setting that is neither true/false nor 1/0 must error rather than silently read as false
-fail,0,0,q,cmp[`init][symboolcfg[];mockdeps[]],1,,a symbol must error too - it used to fall through the type guard and read as false
+fail,0,0,q,cmp[`init][badboolcfg[];mockdeps[]],1,,a boolean setting that is not a recognised word must error rather than silently read as false
+true,0,0,q,namedbadbool[],1,,the error names the setting
+fail,0,0,q,cmp[`init][symboolcfg[];mockdeps[]],1,,a symbol must error too
 fail,0,0,q,cmp[`init][badlongcfg[];mockdeps[]],1,,a maxage that does not parse must error - a 0N maxage compressed nothing and exited 0
 
 run,0,0,q,cmp[`init][nocsvcfg[];mockdeps[]],1,,an app with no compression csv falls back to the one the framework ships

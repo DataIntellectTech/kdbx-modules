@@ -86,6 +86,9 @@ parsefailed:{[t;raw;vals]
      any null vals];
   };
 
+/ text that is only a number, which "N"$ would read as hours for a timespan setting
+barenumber:{[x] (0<count x) and all x in .Q.n,".-"};
+
 applyoverride:{[name;cur;raw]
   / internal - parse raw into cur's type; returns (applied;newvalue)
   t:type cur;
@@ -104,6 +107,10 @@ applyoverride:{[name;cur;raw]
     vals:first raw;
     .z.m.loginfo[`overrideconfig;"setting ",(string name)," to ",-3!vals];
     :(1b;vals);
+  ];
+  if[(16h=abs t) and any barenumber each raw;
+    .z.m.logerr[`overrideconfig;"cannot override ",(string name),": bare digits are ambiguous for a timespan - use 00:00:30 or 0D00:00:30"];
+    :(0b;cur);
   ];
   vals:(upper .Q.t abs t)$'raw;
   if[parsefailed[t;raw;vals];

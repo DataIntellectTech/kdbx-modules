@@ -123,4 +123,19 @@ run,0,0,q,deletecsv[],1,,delete the job csv entirely
 run,0,0,q,.housekeeping.runjobs[],1,,a missing job csv must be logged and the run abandoned not thrown
 true,0,0,q,0<count select from calls where lvl=`error,1,,the missing csv was reported as an error
 
+
+true,0,0,q,rthhmm[],1,,runtimes as hhmm text
+true,0,0,q,rtcolon[],1,,runtimes as hh:mm text
+true,0,0,q,rtdigit[],1,,a single digit is an hour
+true,0,0,q,rtnumber[],1,,a bare number is an hour
+true,0,0,q,rtedges[],1,,0 is midnight
+true,0,0,q,rtnext[],1,,24 is the next midnight
+fail,0,0,q,rtover[],1,,a number above 24 errors
+fail,0,0,q,rtneg[],1,,a negative number errors
+fail,0,0,q,rtovertext[],1,,text above 24 hours errors
+fail,0,0,q,rtjunk[],1,,unreadable text errors
+fail,0,0,q,rtempty[],1,,an empty string errors
+true,0,0,q,rtnone[],1,,an empty list schedules nothing
+true,0,0,q,rtnonelogged[],1,,and logs an error
+true,0,0,q,rtnamed[],1,,a bad value names the setting
 after,0,0,q,teardownfixture[],1,,remove the temp fixture directory

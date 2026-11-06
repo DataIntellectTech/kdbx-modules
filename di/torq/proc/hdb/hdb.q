@@ -1,7 +1,10 @@
 / di.torq.proc.hdb - mounts an hdb directory and reloads it
 
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+datahome:cfg`datahome;
+
 / resolve dir (symbol or string) to an absolute file symbol; a relative dir joins TORQXDATAHOME, else TORQXAPPHOME
-datahome:{$[count h:getenv[`TORQXDATAHOME];h;getenv[`TORQXAPPHOME]]}
 resolvedir:{[dir]
   dir:$[11h=abs type dir;dir;`$dir];
   s:1_string dir;

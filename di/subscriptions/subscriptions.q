@@ -1,14 +1,16 @@
 / subscribe to a tickerplant via .u.subdetails: define tables at root, replay the tp log up to
 / the subscription rowcount, then receive live updates through root `upd`
 
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+named:cfg`named;
+astimespan:cfg`astimespan;
+
 / registry of active subscriptions
 SUBSCRIPTIONS:([]handle:`int$();tabs:();syms:();subtime:`timestamp$())
 
 / .sub .z.pc handler and check job are registered once
 registered:0b
-
-/ a timespan, string, symbol or number of seconds as a timespan; null if not convertible
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
 
 init:{[config;deps]
   if[not `log in key deps;'"di.subscriptions: log dependency is required - see di.util.log"];
@@ -19,8 +21,7 @@ init:{[config;deps]
   / all settings required
   if[count m:`autoreconnect`checksubscriptionperiod except key config;'"di.subscriptions: missing settings: ",", " sv string m];
   .z.m.autoreconnect:config`autoreconnect;
-  p:totimespan config`checksubscriptionperiod;
-  if[null p;'"di.subscriptions: checksubscriptionperiod must be a timespan"];
+  p:named[`checksubscriptionperiod;astimespan[`second];config`checksubscriptionperiod];
   .z.m.checksubscriptionperiod:(not @[value;`.proc.lowpowermode;0b])*p;
   if[not .z.m.registered;
     (deps[`handlers]`register)[`.z.pc;`;`sub;0j;pc[::;]];

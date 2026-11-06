@@ -1,8 +1,11 @@
 / di.torq.proc.idb - intraday database
 / mounts the wdb's working directory so today's data can be queried before it reaches the hdb
 
-astz:{[x] $[11h=abs type x;x;`$(),x]}
-tolong:{[x] $[10h=abs type x;"J"$(),x;"j"$x]}
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+named:cfg`named;
+assym:cfg`assym;
+aslong:cfg`aslong;
 
 / force loads sym file, recording its size only on success
 loadsym:{[]
@@ -56,8 +59,8 @@ clearrowcountcache:{[] set[`.Q.pn;.Q.pt!(count .Q.pt)#()]}
 
 / reads savedir, hdbdir, the current partition and the writedown mode from the wdb
 setparametersfromwdb:{[config]
-  wt:$[`wdbtypes in key config;astz config`wdbtypes;`wdb];
-  t:$[`connecttimeoutms in key config;tolong config`connecttimeoutms;30000];
+  wt:$[`wdbtypes in key config;assym config`wdbtypes;`wdb];
+  t:$[`connecttimeoutms in key config;named[`connecttimeoutms;aslong;config`connecttimeoutms];30000];
   (.z.m.svc`startup)[config,(enlist`connections)!enlist enlist wt];
   if[not (.z.m.svc`waitfortype)[wt;t;500];
     '"di.torq.proc.idb: no ",(string wt)," connection within ",(string t),"ms - cannot resolve savedir/hdbdir"];

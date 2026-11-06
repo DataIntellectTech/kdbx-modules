@@ -151,3 +151,20 @@ timelistcfg:{[] `jobcsv`runtimes`runnow!(`$":",FIXTUREDIR,"/appconfig/housekeepi
 
 / no jobcsv
 nojobcsvcfg:{[] (enlist`runtimes)!enlist 02:00:00}
+
+/ the runtimes init ends up with for a settings value
+rt:{[r] hk[`init][`jobcsv`runtimes`runnow!(`$":",FIXTUREDIR,"/appconfig/housekeeping.csv";r;0b);mockdeps[]]; .m.di.0torq.0proc.0housekeeping.runtimes}
+rthhmm:{[] 0D02 0D14:30~rt "0200 1430"}
+rtcolon:{[] 0D02 0D14:30~rt "02:00 14:30"}
+rtdigit:{[] (enlist 0D02)~rt "2"}
+rtnumber:{[] (enlist 0D02)~rt 2}
+rtedges:{[] (enlist 0D)~rt 0}
+rtnext:{[] (enlist 1D)~rt 24}
+rtover:{[] rt 30}
+rtneg:{[] rt -1}
+rtovertext:{[] rt "30"}
+rtjunk:{[] rt "junk"}
+rtempty:{[] rt ""}
+rtnone:{[] 0=count rt `timespan$()}
+rtnonelogged:{[] resetcalls[]; rt `timespan$(); any (exec msg from calls where lvl=`error) like "*no runtimes*"}
+rtnamed:{[] @[rt;30;{x}] like "setting runtimes: *"}

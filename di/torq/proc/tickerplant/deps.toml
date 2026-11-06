@@ -1,6 +1,6 @@
 # Peer modules di.torq.proc.tickerplant `use`s (see di/torq/depcheck/depcheck.md).
 [dependencies]
-"di.util.cfg" = "0.1.0"
+"di.util.cfg" = "0.2.0"
 "di.pubsub" = "0.4.0"
 "di.eodtime" = "0.1.0"
 "di.tplogmgr" = "0.1.0"

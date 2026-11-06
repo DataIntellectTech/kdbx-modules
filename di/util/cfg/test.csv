@@ -22,14 +22,19 @@ true,0,0,q,not boolfalse[],1,,text false
 true,0,0,q,boolone[],1,,the legacy 1 form still works
 true,0,0,q,not boolzero[],1,,and 0
 true,0,0,q,1b~(cfg`asbool)1,1,,a nonzero long is true
-true,0,0,q,1b~(cfg`asbool)1i,1,,an int 1 is true - it used to fall through the type guard and read as false
+true,0,0,q,1b~(cfg`asbool)1i,1,,an int 1 is true
 true,0,0,q,1b~(cfg`asbool)1h,1,,and a short
 true,0,0,q,0b~(cfg`asbool)0i,1,,an int 0 is false
 true,0,0,q,1b~(cfg`asbool)1.0,1,,a float
-true,0,0,q,1b~(cfg`asbool)1.0e,1,,and a real - excluded while float was accepted would be arbitrary
-true,0,0,q,1b~(cfg`asbool)0x01,1,,and a byte - the guard starts at -4h so the doc says byte through float
+true,0,0,q,1b~(cfg`asbool)1.0e,1,,and a real
+true,0,0,q,1b~(cfg`asbool)0x01,1,,and a byte
 true,0,0,q,0b~(cfg`asbool)0x00,1,,a zero byte is false
+true,0,0,q,boolyes[],1,,yes
+true,0,0,q,not boolno[],1,,no
+true,0,0,q,boolt[],1,,t
+true,0,0,q,not booln[],1,,n
 fail,0,0,q,boolbad[],1,,unrecognised text errors rather than silently reading as false
+fail,0,0,q,boolnulllong[],1,,a null number errors rather than reading as true
 fail,0,0,q,boolsym[],1,,a symbol errors rather than silently reading as false
 fail,0,0,q,boolnull[],1,,and a null
 
@@ -37,3 +42,45 @@ true,0,0,q,365~(cfg`aslong)365,1,,a typed long passes through
 true,0,0,q,longtext[],1,,text is parsed
 fail,0,0,q,longbad[],1,,text that does not parse errors rather than becoming 0N
 fail,0,0,q,longempty[],1,,and so does an empty string
+
+true,0,0,q,tsspan[],1,,a typed timespan passes through
+true,0,0,q,tstext[],1,,text is parsed
+true,0,0,q,tssym[],1,,and a symbol
+true,0,0,q,tstime[],1,,a time atom is cast
+true,0,0,q,tssecs[],1,,a bare number counts in the unit
+true,0,0,q,tsdigits[],1,,bare digits as text count in the unit too
+true,0,0,q,tsfloat[],1,,a fraction of a unit
+true,0,0,q,tsreal[],1,,a real fraction - timespan times real rounds the real first
+true,0,0,q,tsrealhour[],1,,and in hours
+true,0,0,q,tsneg[],1,,a negative offset
+true,0,0,q,tsminutes[],1,,minutes
+true,0,0,q,tshours[],1,,hours
+fail,0,0,q,tsbad[],1,,unreadable text errors rather than becoming 0Nn
+fail,0,0,q,tsempty[],1,,and an empty string
+fail,0,0,q,tsnull[],1,,and a null
+fail,0,0,q,tsunit[],1,,an unknown unit errors
+true,0,0,q,0Wn~tsinf[],1,,infinity stays infinite
+true,0,0,q,-0Wn~tsneginf[],1,,and negative infinity
+true,0,0,q,0Wn~tsintinf[],1,,and an int infinity
+true,0,0,q,0Wn~tsshortinf[],1,,and a short infinity
+true,0,0,q,0Wn~tsfloatinf[],1,,and a float infinity
+true,0,0,q,0Wn~tstextinf[],1,,and as text
+true,0,0,q,0Wn~tsspaninf[],1,,and a typed infinite timespan
+fail,0,0,q,tsover[],1,,a number too big for a timespan errors
+fail,0,0,q,tsfloatover[],1,,and a float
+true,0,0,q,tsbig[],1,,a large number that fits is exact
+
+true,0,0,q,(enlist 1)~(cfg`aslist)1,1,,an atom is enlisted
+true,0,0,q,1 2~(cfg`aslist)1 2,1,,a list is left alone
+
+true,0,0,q,`UTC~(cfg`assym)`UTC,1,,a symbol passes through
+true,0,0,q,symtext[],1,,text becomes a symbol
+true,0,0,q,symlist[],1,,a list of strings becomes a symbol list
+
+true,0,0,q,toksplit[],1,,a space-separated string is split
+true,0,0,q,(enlist`a)~(cfg`astoklist)`a,1,,a symbol is enlisted
+true,0,0,q,`a`b~(cfg`astoklist)`a`b,1,,a symbol list is left alone
+
+true,0,0,q,namedok[],1,,named returns the coerced value
+true,0,0,q,namedspan[],1,,and takes a projection
+true,0,0,q,namedbad[],1,,an error names the setting and the value

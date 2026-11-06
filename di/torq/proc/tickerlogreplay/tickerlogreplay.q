@@ -1,7 +1,8 @@
 / di.torq.proc.tickerlogreplay - replay tickerplant log files into an hdb
 
-/ a symbol, a string or a list of strings (TOML has no symbol type)
-tosym:{[x] $[type[x] in 0 10 -10h;`$x;x]};
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+assym:cfg`assym;
 
 / log the error and exit
 ex:{[id;message;code] .z.m.log[`error][id;message]; exit code}
@@ -33,12 +34,12 @@ init:{[config;deps]
   .z.m.messagechunks:config`messagechunks;
   .z.m.segmentedmode:config`segmentedmode;
   .z.m.autoreplay:config`autoreplay;
-  .z.m.schemafile:tosym config`schemafile;
-  .z.m.tablelist:tosym config`tablelist;
-  .z.m.hdbdir:tosym config`hdbdir;
-  .z.m.tplogfile:tosym config`tplogfile;
-  .z.m.tplogdir:tosym config`tplogdir;
-  .z.m.partitiontype:tosym config`partitiontype;
+  .z.m.schemafile:assym config`schemafile;
+  .z.m.tablelist:assym config`tablelist;
+  .z.m.hdbdir:assym config`hdbdir;
+  .z.m.tplogfile:assym config`tplogfile;
+  .z.m.tplogdir:assym config`tplogdir;
+  .z.m.partitiontype:assym config`partitiontype;
   .z.m.emptytables:config`emptytables;
   .z.m.sortafterreplay:config`sortafterreplay;
   .z.m.basicmode:config`basicmode;
@@ -46,14 +47,14 @@ init:{[config;deps]
   .z.m.checklogfiles:config`checklogfiles;
   .z.m.gc:config`gc;
   .z.m.clean:config`clean;
-  .z.m.sortcsv:tosym config`sortcsv;
+  .z.m.sortcsv:assym config`sortcsv;
   .z.m.compression:config`compression;
   .z.m.partandmerge:config`partandmerge;
-  .z.m.tempdir:tosym config`tempdir;
+  .z.m.tempdir:assym config`tempdir;
   .z.m.mergenumrows:config`mergenumrows;
   .z.m.mergenumtab:config`mergenumtab;
   .z.m.mergenumbytes:config`mergenumbytes;
-  .z.m.mergemethod:tosym config`mergemethod;
+  .z.m.mergemethod:assym config`mergemethod;
   .z.m.tablelist:(),tablelist;
   .z.m.merge:use`di.merge;
   .z.m.merge.init `log`mergebybytelimit`partlimit!(deps`log;config`mergebybytelimit;config`partlimit);

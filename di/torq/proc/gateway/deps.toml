@@ -3,6 +3,7 @@
 # manifest walk (di.torq.init) - see di/torq/depcheck/depcheck.md. Not the app's install manifest;
 # that is TORQXAPPHOME/deps.toml.
 [dependencies]
+"di.util.cfg" = "0.2.0"
 "di.torq.servers" = "0.3.0"       # requires the INJECTED-servers contract (deps`servers)
 "di.serverselect" = "0.1.0"
 "di.asyncdispatch" = "0.1.0"

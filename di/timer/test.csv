@@ -209,6 +209,57 @@ run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,"timer.addjob.custom[`spast;.test.job;();0D00:00:10;1h;(enlist`startattime)!enlist .test.clk-0D00:00:25]",1,,start 25s in the past
 true,0,0,q,"(00:00:06 00:00:16 00:00:26)~.test.sim 30",1,,run times for a past start
 
+comment,,,,,,,a job whose next run falls outside its period is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`inf1;.test.job;();0Wn;1h;()!()]",1,,infinite period scheduled from the previous start
+true,0,0,q,"(enlist 00:00:01)~.test.sim 5",1,,runs once
+true,0,0,q,not .m.di.0timer.jobs[`inf1][`status],1,,and is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`inf2;.test.job;();0Wn;2h;()!()]",1,,infinite period scheduled from the actual start
+true,0,0,q,"(enlist 00:00:01)~.test.sim 5",1,,runs once
+true,0,0,q,not .m.di.0timer.jobs[`inf2][`status],1,,and is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`inf3;.test.job;();0Wn;3h;()!()]",1,,infinite period scheduled from the previous end
+true,0,0,q,"(enlist 00:00:01)~.test.sim 5",1,,runs once
+true,0,0,q,not .m.di.0timer.jobs[`inf3][`status],1,,and is disabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`fin3;.test.job;();0D00:00:02;3h;()!()]",1,,a finite period
+true,0,0,q,"(00:00:01 00:00:04)~.test.sim 5",1,,keeps running
+true,0,0,q,.m.di.0timer.jobs[`fin3][`status],1,,and stays enabled
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`past4;.test.job;();0D00:15;4h;(enlist`startattime)!enlist .test.clk-0D03]",1,,mode 4 with a start three hours ago
+true,0,0,q,"1=count .test.sim 1",1,,runs
+true,0,0,q,.m.di.0timer.jobs[`past4][`status],1,,stays enabled while its next run is before it was created
+run,0,0,q,.test.fresh[],1,,fresh case
+run,0,0,q,"timer.addjob.custom[`nomax;.test.job;();0D00:00:02;1h;(enlist`maxtime)!enlist 0Np]",1,,a null maxtime
+true,0,0,q,"2=count .test.sim 3",1,,means no end time
+true,0,0,q,.m.di.0timer.jobs[`nomax][`status],1,,and stays enabled
+
+comment,,,,,,,mode 5 - on the hour and in x minute intervals
+run,0,0,q,".test.at:{.test.fresh[];.test.clk::x;.test.t0::x;}",1,,empty the table and set the clock
+run,0,0,q,".test.m5:{timer.addjob.custom[`m5;.test.job;();x;5h;()!()];.m.di.0timer.jobs[`m5][`nextstart]}",1,,add a mode 5 job and return its next run
+run,0,0,q,.test.at 2025.06.01D09:07:30,1,,between two intervals
+true,0,0,q,2025.06.01D09:15=.test.m5 0D00:15,1,,the next interval
+run,0,0,q,.test.at 2025.06.01D09:15,1,,on an interval
+true,0,0,q,2025.06.01D09:30=.test.m5 0D00:15,1,,the one after
+run,0,0,q,.test.at 2025.06.01D09:14:59,1,,a second before an interval
+true,0,0,q,2025.06.01D09:15=.test.m5 0D00:15,1,,that interval
+run,0,0,q,.test.at 2025.06.01D23:50,1,,the last interval of the day has passed
+true,0,0,q,2025.06.02D00=.test.m5 0D00:15,1,,the next day at midnight
+run,0,0,q,.test.at 2025.06.02D09:07:30,1,,an hourly job
+true,0,0,q,2025.06.02D10=.test.m5 0D01,1,,on the next hour
+run,0,0,q,.test.at 2025.06.03D09:59:30,1,,a two minute job added before the hour
+run,0,0,q,.test.m5 0D00:02,1,,first due at 10:00:00
+true,0,0,q,"00:00:31 00:02:31~.test.sim 200",1,,runs on the first tick after each interval
+true,0,0,q,.m.di.0timer.jobs[`m5][`status],1,,and stays enabled
+run,0,0,q,.test.at 2025.06.04D09:00,1,,a past start
+run,0,0,q,"timer.addjob.custom[`past5;.test.job;();0D00:15;5h;(enlist`startattime)!enlist .test.clk-0D03]",1,,three hours ago
+true,0,0,q,"1=count .test.sim 1",1,,runs
+true,0,0,q,.m.di.0timer.jobs[`past5][`status],1,,stays enabled while its next run is before it was created
+run,0,0,q,.test.at 2025.06.05D09:00,1,,under a minute
+fail,0,0,q,.test.m5 0D00:00:59,1,,is rejected
+true,0,0,q,"not `m5 in exec id from timer.getalljobs[]",1,,and not stored
+
 comment,,,,,,,dupcheck on function plus parameters
 run,0,0,q,.test.fresh[],1,,fresh case
 run,0,0,q,".test.dupf:{x};timer.addjob.custom[`dup1;.test.dupf;enlist 1;0D00:00:10;1h;()!()]",1,,a job on .test.dupf with parameter 1

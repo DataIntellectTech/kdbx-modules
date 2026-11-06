@@ -2,6 +2,11 @@
 
 / --- module-local state (initial values at load; read/written via .z.m at runtime) ---
 
+/ shared config helpers - see di.util.cfg
+cfg:use`di.util.cfg;
+named:cfg`named;
+astimespan:cfg`astimespan;
+
 self:`proctype`procname!``;
 
 / whether init has registered the .z.pc observer and timer jobs
@@ -37,9 +42,6 @@ raiseerror:{[ctx;msg]
   '"di.torq.servers: ",string[ctx],": ",msg;
   };
 
-/ a timespan, a "0D00:00:10" string or a number of seconds (TOML has no timespan type)
-totimespan:{[x] $[-16h=type x;x;10h=abs type x;"N"$(),x;-11h=type x;"N"$string x;type[x] in -5 -6 -7h;0D00:00:01*x;0Nn]};
-
 init:{[deps]
   / wire deps and config, publish root names, register .z.pc and retry timers once
   if[99h<>type deps;
@@ -69,8 +71,8 @@ init:{[deps]
   @[value;`.servers.SERVERS;{set[`.servers.SERVERS;([]procname:`symbol$();proctype:`symbol$();hpup:`symbol$();w:`int$();hits:`int$();startp:`timestamp$();lastp:`timestamp$();endp:`timestamp$();attributes:())]}];
   / config
   {[deps;k] set[first .z.m.settings k;$[k in key deps;deps k;last .z.m.settings k]]}[deps] each key .z.m.settings;
-  .servers.RETRY:totimespan .servers.RETRY;
-  .servers.DISCOVERYRETRY:totimespan .servers.DISCOVERYRETRY;
+  .servers.RETRY:named[`retry;astimespan[`second];.servers.RETRY];
+  .servers.DISCOVERYRETRY:named[`discoveryretry;astimespan[`second];.servers.DISCOVERYRETRY];
   / a string or a list of strings (TOML has no symbol type)
   .servers.CONNECTIONS:$[11h=abs type c:.servers.CONNECTIONS;c;`$c];
   set[`.servers.NONTORQPROCESSFILE;$[`nontorqprocessfile in key deps;hsym deps`nontorqprocessfile;hsym `$("/" sv -1_"/" vs .z.m.processcsv),"/nontorqprocess.csv"]];

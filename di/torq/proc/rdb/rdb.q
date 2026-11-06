@@ -2,15 +2,13 @@
 / data in root tables and at end of day saves them to the hdb (reloadenabled 0b) or snapshots row counts for
 / a wdb's later reload[date] (reloadenabled 1b). Root tables are written via @[`.;..]
 
-/ config coercion (values are symbols from .q settings or strings from .toml)
-assym:{[x] $[11h=abs type x;x;`$x]}
-aslist:{[x] $[0>type x;enlist x;x]}
-
 / shared config helpers - see di.util.cfg
 cfg:use`di.util.cfg;
 apphome:cfg`apphome;
 datahome:cfg`datahome;
 resolvedir:cfg`resolvedir;
+aslist:cfg`aslist;
+assym:cfg`assym;
 
 / upd: append to the root table t, from a table (live) or a list of columns (replay)
 updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]}

@@ -78,74 +78,6 @@ true,0,0,q,"""<p ""~3#t",1,1,addtext starts with <p tag
 true,0,0,q,"""</p>""~-4#t",1,1,addtext closes with </p>
 true,0,0,q,"0<count t ss ""hello""",1,1,addtext preserves text content
 
-/ Test 11: mailheading produces heading tags
-run,0,0,q,"h1:.m.di.0email.mailheading[""1"";""title""]",1,1,build h1 heading
-true,0,0,q,"""<h1 ""~4#h1",1,1,mailheading h1 opens with tag
-true,0,0,q,"""</h1>""~-5#h1",1,1,mailheading h1 closes
-true,0,0,q,"0<count h1 ss ""title""",1,1,mailheading contains heading text
-
-/ Test 12: mailbold and mailitalic produce inline tags
-run,0,0,q,"mbi:.m.di.0email.mailbold ""x""",1,1,build bold span
-true,0,0,q,"""<b ""~3#mbi",1,1,mailbold opens with <b tag
-true,0,0,q,"""</b>""~-4#mbi",1,1,mailbold closes with </b>
-run,0,0,q,"mii:.m.di.0email.mailitalic ""x""",1,1,build italic span
-true,0,0,q,"""<i ""~3#mii",1,1,mailitalic opens with <i tag
-true,0,0,q,"""</i>""~-4#mii",1,1,mailitalic closes with </i>
-
-/ Test 13: mailstring converts types to strings
-true,0,0,q,"""hello""~.m.di.0email.mailstring ""hello""",1,1,mailstring passes through string
-true,0,0,q,"""abc""~.m.di.0email.mailstring `abc",1,1,mailstring converts symbol to string
-
-/ Test 14: addcolor sets only color - no spurious font-size (mailcolors bug fix)
-run,0,0,q,"ac:.m.di.0email.addcolor[""red"";""text""]",1,1,build addcolor result
-true,0,0,q,"0<count ac ss ""color:red""",1,1,addcolor sets color property
-true,0,0,q,"0=count ac ss ""font-size:px""",1,1,addcolor does not produce invalid font-size:px
-
-/ Test 15: mailsize sets font-size with px suffix
-run,0,0,q,"ms:.m.di.0email.mailsize[""20"";""text""]",1,1,build mailsize result
-true,0,0,q,"0<count ms ss ""font-size:20px""",1,1,mailsize appends px to size value
-
-/ Test 16: mailbgcolor sets background-color
-run,0,0,q,"mbg:.m.di.0email.mailbgcolor[""#ffff00"";""text""]",1,1,build mailbgcolor result
-true,0,0,q,"0<count mbg ss ""background-color:#ffff00""",1,1,mailbgcolor sets background-color property
-
-/ Test 17: mailcolors sets all specified properties
-run,0,0,q,"mc:.m.di.0email.mailcolors[""blue"";""#ee"";""14"";""text""]",1,1,build mailcolors result
-true,0,0,q,"0<count mc ss ""color:blue""",1,1,mailcolors sets color
-true,0,0,q,"0<count mc ss ""font-size:14px""",1,1,mailcolors sets font-size
-true,0,0,q,"0<count mc ss ""display:inline""",1,1,mailcolors sets display
-
-/ Test 18: mailurl produces anchor tag with href
-run,0,0,q,"u:.m.di.0email.mailurl[""https://x.com"";""click""]",1,1,build mailurl
-true,0,0,q,"""<a ""~3#u",1,1,mailurl starts with <a tag
-true,0,0,q,"""</a>""~-4#u",1,1,mailurl closes with </a>
-true,0,0,q,"0<count u ss ""x.com""",1,1,mailurl embeds href url
-
-/ Test 19: setbookmark and getbookmark produce anchor elements
-run,0,0,q,"bm:.m.di.0email.setbookmark ""s1""",1,1,build anchor bookmark
-true,0,0,q,"0<count bm ss ""name=""",1,1,setbookmark has name attribute
-true,0,0,q,"0<count bm ss ""s1""",1,1,setbookmark embeds anchor id
-run,0,0,q,"gbm:.m.di.0email.getbookmark[""s1"";""go""]",1,1,build bookmark link
-true,0,0,q,"0<count gbm ss ""#s1""",1,1,getbookmark links to named anchor
-
-/ Test 20: mailtable produces html table with headers and data
-run,0,0,q,mt:.m.di.0email.mailtable[([]a:1 2;b:3 4)],1,1,build mailtable from kdb table
-true,0,0,q,0h=type mt,1,1,mailtable returns list of strings
-true,0,0,q,"""</table>""~last mt",1,1,mailtable closes with </table>
-true,0,0,q,"0<count(raze mt)ss ""<th """,1,1,mailtable has header cells
-true,0,0,q,"0<count(raze mt)ss ""<td """,1,1,mailtable has data cells
-true,0,0,q,"0=count(raze mt)ss ""#e6e6ff""",1,1,mailtable rows all same color no alternating
-
-/ Test 21: ztable produces alternating row colors
-run,0,0,q,zt:.m.di.0email.ztable[([]a:1 2 3 4;b:5 6 7 8)],1,1,build ztable
-true,0,0,q,"0<count(raze zt)ss ""#e6e6ff""",1,1,ztable has alternating odd row background
-
-/ Test 22: maildict renders key-value pairs as table rows
-run,0,0,q,"md:.m.di.0email.maildict[`k1`k2!(""v1"";""v2"")]",1,1,build maildict
-true,0,0,q,0h=type md,1,1,maildict returns list of strings
-true,0,0,q,"0<count(raze md)ss ""k1""",1,1,maildict renders key
-true,0,0,q,"0<count(raze md)ss ""v1""",1,1,maildict renders value
-
 / Test 23: template0 has blank separator between headers and html body
 run,0,0,q,"tmpl:.m.di.0email.template0[""f"";""t"";"""";""subj"";enlist ""body""]",1,1,build template0
 true,0,0,q,"any """"~/:tmpl",1,1,template0 has blank separator line
@@ -156,24 +88,6 @@ true,0,0,q,"(first where """"~/:tmpl)<first where ""<html>""~/:tmpl",1,1,blank s
 run,0,0,q,"css:.m.di.0email.dict2css[(`$""color"";`$""background-color"")!(""red"";""blue"")]",1,1,build css from two-key dict
 true,0,0,q,"0<count css ss ""color:red""",1,1,dict2css produces colon-separated key:val
 true,0,0,q,""";"" in css",1,1,dict2css separates properties with semicolon
-
-/ Test 25: getstyle returns correct css dict for each style key
-true,0,0,q,.m.di.0email.cssbody[]~.m.di.0email.getstyle[`body],1,1,getstyle body returns cssbody dict
-true,0,0,q,.m.di.0email.csstableall[]~.m.di.0email.getstyle[`table`all],1,1,getstyle table all
-true,0,0,q,.m.di.0email.csstableheader[]~.m.di.0email.getstyle[`table`header],1,1,getstyle table header
-
-/ Test 26: colornormalize scales and clamps values
-true,0,0,q,0.5~.m.di.0email.colornormalize[0f;10f;5f],1,1,colornormalize 5 on 0-10 scale is 0.5
-true,0,0,q,0f~.m.di.0email.colornormalize[0f;10f;-1f],1,1,colornormalize clamps below min to 0f
-true,0,0,q,1f~.m.di.0email.colornormalize[0f;10f;11f],1,1,colornormalize clamps above max to 1f
-
-/ Test 27: colorhsv2rgb converts hue-saturation-value to 3-byte rgb
-run,0,0,q,rgb:.m.di.0email.colorhsv2rgb[0f;1f;1f],1,1,convert pure red hsv to rgb
-true,0,0,q,3=count rgb,1,1,colorhsv2rgb returns 3 byte values
-true,0,0,q,rgb[0]=max rgb,1,1,colorhsv2rgb red hue has maximum red channel
-run,0,0,q,mono:.m.di.0email.colorizemono[`red;0f;100f;0 50 100f],1,1,colorize 3 values on red scale
-true,0,0,q,3=count mono,1,1,colorizemono returns one entry per input value
-true,0,0,q,all 3=count each mono,1,1,colorizemono each entry is 3 bytes
 
 / Test 28: senddefault with single attachment sends and logs success
 run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with mock log and enabled

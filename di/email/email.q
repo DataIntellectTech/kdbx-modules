@@ -144,10 +144,8 @@ mailsend:{[frm;to;cc;sub;body;att]
   };
 
 / ============================================================
-/ html construction helpers
+/ html body helpers
 / ============================================================
-
-mailstring:{$[10h=abs type x;x;(type[x] in 0 98 99h) or (100h<type x) or 0h<type x;.Q.s1 x;string x]};
 
 dict2css:{";"sv":"sv'flip(string@key@;value)@\:x};
 
@@ -155,49 +153,9 @@ cssbody:{(!) . flip 2 cut(
   `$"font-family";"Verdana, Geneva, Sans-Serif";
   `$"color";"#2f4a5c")};
 
-csstableall:{cssbody[],(!) . flip 2 cut(
-  `$"font-family";"Verdana, Geneva, Sans-Serif";
-  `$"font-size";"15px";
-  `margin;"0 ";
-  `padding;"3px";
-  `$"line-height";"100%";
-  `$"text-align";"left";
-  `color;"#069";
-  `$"border-width";"2px";
-  `$"border-collapse";"collapse";
-  `$"background-color";"#ffffff";
-  `$"border-color";"#ffffff")};
-
-csstableheader:{csstableall[],(!) . flip 2 cut(
-  `$"border-style";"solid";
-  `$"background-color";"#5473bf";
-  `color;"#ffffff";
-  `$"border-color";"#ffffff";
-  `$"border-width";"2px")};
-
-csstablerowall:{csstableall[],(!) . flip 2 cut(
-  `$"border-style";"solid";
-  `$"border-width";"2px";
-  `$"border-color";"#ffffff")};
-
-csstablerowodd:{csstablerowall[],enlist[`$"background-color"]!enlist "#e6e6ff"};
-
-csstableroweven:{csstablerowall[],enlist[`$"background-color"]!enlist "#ffffff"};
-
-getstyle:{[x]
-  k:(),x;
-  $[k~enlist `body; cssbody[];
-    k~`table`all; csstableall[];
-    k~`table`header; csstableheader[];
-    k~`table`row`all; csstablerowall[];
-    k~`table`row`odd; csstablerowodd[];
-    csstableroweven[]]
-  };
-
-addstyle:{x," style=\"",(dict2css getstyle[y]),"\""};
+addstyle:{x," style=\"",(dict2css cssbody[]),"\""};
 
 mailwrap:{"<",x,">",y,"</",(first " "vs (),x),">"};
-mailewrap:{enlist["<",x,">"],y,enlist"</",(first " "vs (),x),">"};
 
 / escape html special characters, & first
 htmlescape:{[x] ssr[ssr[ssr[x;"&";"&amp;"];"<";"&lt;"];">";"&gt;"]};
@@ -210,71 +168,7 @@ bodylines:{[x]
     enlist .Q.s1 x]
   };
 
-addtext:{mailwrap[addstyle["p";`body];x]};
-mailheading:{mailwrap[addstyle["h",x;`body];y]};
-mailbold:{mailwrap[addstyle["b";`body];mailstring x]};
-mailitalic:{mailwrap[addstyle["i";`body];mailstring x]};
-
-mailcolors:{[color;bg;sz;text]
-  styledict:(`$("color";"background-color";"font-size";"display"))!(color;bg;$[count sz;sz,"px";""];"inline");
-  styledict:#[;styledict]where not ""~/:styledict;
-  mailwrap["p style=\"",(dict2css cssbody[],styledict),"\"";mailstring[text]]};
-
-addcolor:{mailcolors[x;"";"";y]};
-mailsize:{mailcolors["";"";x;y]};
-mailbgcolor:{mailcolors["";x;"";y]};
-
-mailurl:{[u;txt]mailwrap[addstyle["a href=\"",u,"\"";`body];txt]};
-setbookmark:{[id]"<a name=\"",id,"\"></a>"};
-getbookmark:{[id;txt]mailurl["#",id;txt]};
-
-mailrow:{mailewrap["tr";mailwrap[x]each mailstring each y]};
-
-table0:{[t;alt]
-  h:mailrow[addstyle["th";`table`header];cols t];
-  b:raze mailrow'[addstyle["td"] each`table`row,/:$[alt;?[1=til[count t]mod 2;`odd;`even];count[t]#`even];flip value flip 0!t];
-  mailewrap[addstyle["table";`table`all];h,b]
-  };
-
-mailtable:{table0[x;0b]};
-ztable:{table0[x;1b]};
-
-dict0:{[d;alt]
-  b:raze mailrow'[addstyle["td"] each`table`row,/:$[alt;?[1=til[count d]mod 2;`odd;`even];count[d]#`even];flip(key;value)@\:d];
-  mailewrap["table";b]
-  };
-
-maildict:{dict0[x;0b]};
-zdict:{dict0[x;1b]};
-
-colornormalize:{[low;high;x]0f | 1f & (x - low)%(high - low)};
-colorhex2html:{"#",raze string x};
-
-colorhsv2rgb:{[h;s;v]
-  c:v*s;
-  sector:(h mod 360f)%60f;
-  x2:c * 1 - abs -1f + sector mod 2;
-  m:v-c;
-  tbl:`s#0 1 2 3 4 5 6f!(1 2 0;2 1 0;0 1 2;0 2 1;2 0 1;1 0 2;0 0 0);
-  `byte$255*m + (0f;c;x2)tbl sector
-  };
-
-colorhuemap:(!). flip (
-  (`red;0);(`orange;30);(`yellow;60);(`lime;90);(`green;120);
-  (`turquoise;150);(`cyan;180);(`blue;240);(`purple;270);
-  (`pink;300);(`violet;330));
-
-colorizemono:{[color;minval;maxval;x]
-  svalues:colornormalize[minval;maxval;x];
-  colorhsv2rgb[$[-11h=type color;colorhuemap[color];color];;1f]each svalues
-  };
-
-colorizestereo:{[colormin;colormax;minval;maxval;pivotval;x]
-  low:x<pivotval;
-  lowcolors:colorizemono[colormin;pivotval;minval;x where low];
-  highcolors:colorizemono[colormax;pivotval;maxval;x where not low];
-  @[;where not low;:;highcolors] @[;where low;:;lowcolors] count[x]#enlist 0x000000
-  };
+addtext:{mailwrap[addstyle "p";x]};
 
 / ============================================================
 / module state and defaults

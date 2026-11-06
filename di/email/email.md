@@ -1,6 +1,6 @@
 # Email
 
-`email.q` provides a self-contained HTML email module. It supports two transports: the system `sendmail` utility, or SMTP via `curl`. HTML construction utilities are ported from [qmail](https://github.com/BestiaPL/qmail).
+`email.q` provides a self-contained HTML email module. It supports two transports: the system `sendmail` utility, or SMTP via `curl`. The HTML template and sendmail transport are ported from [qmail](https://github.com/BestiaPL/qmail).
 
 ## Requirements
 
@@ -266,27 +266,9 @@ Rendering of `cid:` images is up to the receiving client. The suite asserts the 
 one `Content-ID`, an inline disposition, and a body reference whose cid matches the part — but
 whether a given client displays it inline can only be confirmed by sending a real message.
 
-## HTML Helpers
-
-These are **internal** to the module — they are not in the `export` dictionary and cannot be called through the `use` binding. They are listed here because they shape how bodies are rendered.
+## HTML Bodies
 
 To send rich content, either build the HTML yourself (`body` passes any string beginning with `<` through unchanged — see [example 3](#3-send-an-html-table)) or attach the data with `senddata` (see [example 5](#5-attach-a-q-table-without-writing-a-file-first)).
-
-| Function | Parameters | Description |
-|---|---|---|
-| `addtext` | `[text]` | Wrap a string in a styled `<p>` tag |
-| `mailheading` | `[level; text]` | Heading `<h1>`–`<h4>` |
-| `mailbold` | `[text]` | Bold text |
-| `mailitalic` | `[text]` | Italic text |
-| `mailtable` | `[t]` | Render a q table as an HTML table |
-| `ztable` | `[t]` | Table with alternating row colours |
-| `maildict` | `[d]` | Render a q dict as an HTML table |
-| `zdict` | `[d]` | Dict table with alternating row colours |
-| `addcolor` | `[color; text]` | Apply font colour |
-| `mailbgcolor` | `[hex; text]` | Apply background colour |
-| `mailsize` | `[px; text]` | Set font size in pixels |
-| `mailcolors` | `[color; bg; size; text]` | Combined colour/background/size |
-| `mailurl` | `[url; text]` | Hyperlink |
 
 ## Usage Examples
 

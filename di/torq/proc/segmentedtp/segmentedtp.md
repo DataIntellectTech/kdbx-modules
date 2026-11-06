@@ -90,8 +90,9 @@ Under di.torq, `generateschemas` is queued with `.proc.addinitlist`, so it runs 
 - In `custom` mode a table missing from the csv is not logged.
 - Chained without `create`, `loghandles` becomes a dictionary of `::`, and `.z.exit` leaves the logs alone.
 - The `.z.exit` flush runs only in `memorybatch`.
-- In `memorybatch`, a roll writes buffered rows to the closing log before publishing them. An update that triggers a
-  roll goes to the new log.
+- A roll runs the batch mode's timer step first, so buffered rows are logged and counted before they are published. An
+  update that triggers a roll goes to the new log. TorQ's STP differs: its roll publishes these rows without the timer
+  step.
 - `subdetails` and `.stplg.replaylog` take a list of tables.
 
 ## Testing
@@ -106,4 +107,5 @@ with `tabular`, `memorybatch` with `tabperiod`, and three chained peers on the f
 `memorybatch` with `create`). The test process subscribes through
 `.sub.subscribe`. The tests cover the settings, the handshake, each batch mode and log naming, error mode, sym and
 filtered subscriptions, both replay periods, end of period, end of day (including through the chained peer), `memorybatch`
-rolls through an update and through the chained peer, the `.z.exit` flush and the chained exit when the upstream is lost.
+rolls through an update and through the chained peer, `defaultbatch` rolls through an update, the `.z.exit` flush and the
+chained exit when the upstream is lost.

@@ -129,6 +129,21 @@ true,0,0,q,"waitfor {(.z.d+1)=hs""(use`di.eodtime)[`getd][]""}",1,,chained passe
 true,0,0,q,"waitfor {(.z.d+1)=hz""(use`di.eodtime)[`getd][]""}",1,,chained memorybatch rolls the day
 true,0,0,q,"(`e`f;1)~(logsyms zd;metacount[zn] zd)",1,,the closed day's log holds the buffered rows and its count
 
+comment,,,,,,,defaultbatch roll through an update
+run,0,0,q,"got:(); pl:ha""currlog[`trade;`logname]""; pm:`$(string ha"".stplg.dldir""),""/stpmeta""; ha(`.u.upd;`trade;trd enlist`a); ha(`.u.upd;`trade;trd enlist`b)",1,,log two trades without publishing them
+run,0,0,q,"ha"".stplg.nextperiod:.z.p-0D00:00:10; .stplg.getnextendUTC[]""; ha(`.u.upd;`trade;trd enlist`c)",1,,an update past the period end rolls the logs
+true,0,0,q,"(2;2)~(logcount pl;metacount[pm] pl)",1,,stpmeta count matches the closed log
+true,0,0,q,"`a`b~gotsyms`trade",1,,buffered rows published once
+run,0,0,q,"pn:ha""currlog[`trade;`logname]""; ha""tick[]""",1,,timer
+true,0,0,q,"(0b;1;1;3)~(pn~pl;logcount pn;ha"".stplg.msgcount`trade"";ha"".stplg.rowcount`trade"")",1,,msgcount matches the new log and rowcount holds the day's rows
+run,0,0,q,"ha(`.u.upd;`trade;trd enlist`d); ha(`.u.upd;`trade;trd enlist`e)",1,,log two more trades without publishing them
+true,0,0,q,"(enlist`c)~{raze {x[2]1} each x[0] sublist get x 1} first ha"".stplg.replayperiod:`period; r:.stplg.replaylog enlist`trade; .stplg.replayperiod:`day; r""",1,,replay returns only published rows
+run,0,0,q,"el:ha""currlog[`trade;`logname]""; em:`$(string ha"".stplg.dldir""),""/stpmeta""; ha(`.u.upd;`trade;trd enlist`f); ha""(use`di.eodtime)[`setnextroll] .z.p-0D00:00:10; .stplg.getnextendUTC[]""; ha(`.u.upd;`trade;trd enlist`g)",1,,an update past the roll rolls the day
+true,0,0,q,"(4;4;.z.d+2)~(logcount el;metacount[em] el;ha""(use`di.eodtime)[`getd][]"")",1,,stpmeta count matches the closed day's log
+true,0,0,q,"`a`b`c`d`e`f~gotsyms`trade",1,,buffered rows published once at the day roll
+run,0,0,q,"en:ha""currlog[`trade;`logname]""; ha""tick[]""",1,,timer
+true,0,0,q,"(0b;1;1;1)~(en~el;logcount en;ha"".stplg.msgcount`trade"";ha"".stplg.rowcount`trade"")",1,,counts match the new day's log
+
 comment,,,,,,,exit
 run,0,0,q,"hc(`.u.upd;`trade;trd`x`y); cm:`$(string hc"".stplg.dldir""),""/stpmeta""; cl:hc""currlog[`trade;`logname]""; @[{neg[x]""exit 0"";neg[x][]};hc;()]",1,,send trades then exit cleanly
 true,0,0,q,"waitfor {not alive PORTS`c}",1,,process exited

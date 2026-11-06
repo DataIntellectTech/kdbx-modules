@@ -149,8 +149,8 @@ value"loghandles::exec tbl!handle from currlog";
 / process data sent at endofday/endofperiod
 .stplg.endofdaydata:@[value;`.stplg.endofdaydata;{ {`proctype`procname`tables!(.z.m.proctype;.z.m.procname;.stpps.t)} }];
 
-/ memorybatch: log and count buffered rows ahead of a roll
-.stplg.flushbatch:{if[.stplg.batchmode=`memorybatch;.stplg.zts.memorybatch[]];}
+/ run the batch mode's timer step ahead of a roll
+.stplg.flushbatch:{.stplg.ts[];}
 
 / chained end of period: pass on to subscribers; roll logs in create mode
 .stplg.endofperiod:{[currentpd;nextpd;data]

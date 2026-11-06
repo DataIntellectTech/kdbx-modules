@@ -1,5 +1,8 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,email:use`di.email,1,1,load module into session
+before,0,0,q,origtmp:getenv`TMPDIR,1,1,keep the real TMPDIR
+before,0,0,q,"tmpdir:first system""mktemp -d""",1,1,a private temp directory for this suite
+before,0,0,q,`TMPDIR setenv tmpdir,1,1,point the module's temp files at it
 before,0,0,q,mocklog:`info`warn`error!({[c;m]};{[c;m]};{[c;m]}),1,1,define no-op mock logger
 before,0,0,q,"mocksend:{[frm;to;cc;sub;body;att]}",1,1,define no-op mock send for direct state injection
 before,0,0,q,mockcapture:{[frm;to;cc;sub;body;att]lastatt::att;lastfiles::read0 each att;1b},1,1,define capturing mock send for senddata tests
@@ -194,7 +197,7 @@ run,0,0,q,"res:email.senddefault[`to`subject`body`attachments!(`$""a@b.com"";""s
 true,0,0,q,1b~res,1,1,returns 1b on success
 true,0,0,q,1=(count email.getstatus[])-before,1,1,one row appended to history
 true,0,0,q,`sent~last exec status from email.getstatus[],1,1,status is sent
-run,0,0,q,hdel each att1,att2,1,1,clean up temp files
+run,0,0,q,"hdel each att1,att2",1,1,clean up temp files
 
 / Test 30: encodefile returns list of strings for a valid file
 run,0,0,q,ef_file:hsym`$first system"mktemp /tmp/emailtest.XXXXXXXXXX",1,1,create temp file for encodefile test
@@ -299,7 +302,7 @@ fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";
 fail,0,0,q,"email.senddata `to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""body text"";42)",1,1,senddata rejects a non-dict atom
 
 / Test 45: a send that fails while building the message leaves no temp file behind
-run,0,0,q,tmpcount:{count key`:/tmp},1,1,helper to count entries in /tmp
+run,0,0,q,tmpcount:{count key hsym`$tmpdir},1,1,helper to count entries in the suite temp directory
 run,0,0,q,before:tmpcount[],1,1,record the temp file count
 fail,0,0,q,".m.di.0email.mailsend[""a@b.com"";""a@b.com"";"""";""subj"";enlist""body text"";hsym`$""/tmp/nosuchfile.csv""]",1,1,mailsend throws on a missing attachment
 true,0,0,q,before=tmpcount[],1,1,mailsend left no temp file behind
@@ -461,3 +464,86 @@ true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist"
 true,0,0,q,"""-t -f o'neil@example.com""~first read0 hsym`$stubdir,""/sendmail.args""",1,1,the sender survives the shell intact
 run,0,0,q,`PATH setenv oldpath,1,1,restore PATH
 run,0,0,q,"system""rm -rf "",stubdir",1,1,remove the stand-in
+
+/ Test 59: a body given as one string is one line
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init with the mock logger
+run,0,0,q,.m.di.0email.send:mockbody,1,1,capture the rendered body
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";""hello"")",1,1,a string body sends
+true,0,0,q,2=count lastbody,1,1,the string and the footer are two lines
+true,0,0,q,"lastbody[0] like ""*>hello<*""",1,1,the string is not split
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";""h"")",1,1,a char atom body sends
+true,0,0,q,2=count lastbody,1,1,the char and the footer are two lines
+
+/ Test 60: history recipients stay a symbol column
+run,0,0,q,email.clearhistory[],1,1,start from an empty history
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"")",1,1,one recipient
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$(""a@b.com"";""c@d.com"");""subj"";enlist""b"")",1,1,two recipients
+true,0,0,q,11h=type email.getstatus[]`recipients,1,1,the column is still symbol
+true,0,0,q,"(`$""a@b.com,c@d.com"")~last email.getstatus[]`recipients",1,1,several recipients are comma separated
+true,0,0,q,"1=count {select from x where recipients=`$""a@b.com""}email.getstatus[]",1,1,the column can be filtered
+run,0,0,q,email.clearhistory[],1,1,clear it
+true,0,0,q,11h=type email.getstatus[]`recipients,1,1,the empty column is still symbol
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist mocklog]",1,1,disable sending
+true,0,0,q,"-1~email.senddefault`to`subject`body!(""a@b.com"";""subj"";enlist""b"")",1,1,a string to while disabled
+true,0,0,q,"(`$""a@b.com"")~last email.getstatus[]`recipients",1,1,is stored as a symbol
+true,0,0,q,11h=type email.getstatus[]`recipients,1,1,and the column is still symbol
+
+/ Test 61: curl gets credentials only when there is a user and reports its own errors
+run,0,0,q,"curldir:first system""mktemp -d""",1,1,a directory for a stand-in curl
+run,0,0,q,"(hsym`$curldir,""/curl"") 0: (""#!/bin/sh"";""echo \""$@\"" > \""$0.args\"""";""cp \""$2\"" \""$0.cfg\"""";""[ -z \""$CURLFAIL\"" ] || { echo \""curl: (67) Login denied\"" >&2; exit 67; }"")",1,1,a curl that records its arguments and config
+run,0,0,q,"system""chmod +x "",curldir,""/curl""",1,1,make it executable
+run,0,0,q,curlpath:getenv`PATH,1,1,keep the real PATH
+run,0,0,q,"`PATH setenv curldir,"":"",curlpath",1,1,find the stand-in first
+run,0,0,q,"email.init[`mailfrom`enabled`smtpurl`smtpssl!(""me@example.com"";1b;""smtp://x:25"";0b);enlist[`log]!enlist reclog]",1,1,init with no smtp user
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"")",1,1,send with no user
+true,0,0,q,"0=count read0 hsym`$curldir,""/curl.cfg""",1,1,the curl config holds no credentials
+true,0,0,q,"(first read0 hsym`$curldir,""/curl.args"") like ""* -sS *""",1,1,curl runs without its progress meter
+run,0,0,q,"email.init[`mailfrom`enabled`smtpurl`smtpuser`smtppassword`smtpssl!(""me@example.com"";1b;""smtp://x:25"";""usr"";""pw"";0b);enlist[`log]!enlist reclog]",1,1,init with an smtp user
+true,0,0,q,"1b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"")",1,1,send with a user
+true,0,0,q,"(enlist""user = \""usr:pw\"""")~read0 hsym`$curldir,""/curl.cfg""",1,1,the curl config holds the credentials
+run,0,0,q,before:tmpcount[],1,1,record the temp file count
+run,0,0,q,`CURLFAIL setenv enlist"1",1,1,make the stand-in fail
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+true,0,0,q,"0b~email.senddefault`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"")",1,1,a curl failure returns 0b
+true,0,0,q,"0<count select from emaillogs where lvl=`error,msg like ""*Login denied*""",1,1,curl's own error text is logged
+true,0,0,q,before=tmpcount[],1,1,a failed send leaves no temp file
+run,0,0,q,`CURLFAIL setenv "",1,1,stop failing
+run,0,0,q,`PATH setenv curlpath,1,1,restore PATH
+run,0,0,q,"system""rm -rf "",curldir",1,1,remove the stand-in
+
+/ Test 62: senddata logs what it rejects and leaves nothing behind
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";1b);enlist[`log]!enlist reclog]",1,1,init with the capturing logger
+run,0,0,q,.m.di.0email.send:mockcapture,1,1,capture the attachments
+run,0,0,q,delete from `emaillogs,1,1,clear the log
+run,0,0,q,before:tmpcount[],1,1,record the temp file count
+run,0,0,q,"baddata:{@[email.senddata;`to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""b"";x);{x}]}",1,1,returns the error text of a signalled senddata
+true,0,0,q,"""di.email: senddata attachment names must be symbols""~baddata(enlist""a.txt"")!enlist""t""",1,1,a string filename
+true,0,0,q,"""di.email: senddata attachment names must be plain filenames""~baddata(enlist`$""a\"".txt"")!enlist""t""",1,1,a quote in a filename
+true,0,0,q,"""di.email: senddata attachment names must be plain filenames""~baddata(enlist`$""a\nb.txt"")!enlist""t""",1,1,a newline in a filename
+true,0,0,q,"""di.email: senddata attachment names must be plain filenames""~baddata(enlist`$""a\rb.txt"")!enlist""t""",1,1,a carriage return in a filename
+true,0,0,q,"""di.email: senddata attachments must be a dict of filename!qobject""~baddata 42",1,1,not a dict
+true,0,0,q,"""di.email: senddata needs a dictionary""~@[email.senddata;""hello"";{x}]",1,1,a message that is not a dictionary
+true,0,0,q,"""di.email: senddata needs an attachments dict of filename!qobject""~@[email.senddata;`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"");{x}]",1,1,no attachments
+true,0,0,q,7=count select from emaillogs where lvl=`error,1,1,each one is logged
+true,0,0,q,before=tmpcount[],1,1,rejected calls leave no temp directory
+true,0,0,q,"1b~email.senddata`to`subject`body`attachments!(`$""a@b.com"";""subj"";enlist""b"";(enlist`a.txt)!enlist""t"")",1,1,a plain filename still sends
+true,0,0,q,before=tmpcount[],1,1,and leaves no temp directory
+run,0,0,q,"email.init[`mailfrom`enabled!(""me@example.com"";0b);enlist[`log]!enlist reclog]",1,1,disable sending
+true,0,0,q,"-1~email.senddata`to`subject`body!(`$""a@b.com"";""subj"";enlist""b"")",1,1,disabled returns -1 with no attachments
+true,0,0,q,"-1~email.senddata""hello""",1,1,disabled returns -1 for a non-dictionary
+
+/ Test 63: a failed init leaves the module as it was
+run,0,0,q,"email.init[`mailfrom`enabled!(""kept@example.com"";1b);enlist[`log]!enlist mocklog]",1,1,init normally
+fail,0,0,q,"email.init[`mailfrom`enabled!(""new@example.com"";0b);enlist[`log]!enlist enlist[`info]!enlist {[c;m]}]",1,1,a bad log dict throws
+true,0,0,q,"""kept@example.com""~.m.di.0email.mailfrom",1,1,mailfrom is unchanged
+true,0,0,q,.m.di.0email.enabled,1,1,enabled is unchanged
+true,0,0,q,mocklog[`info]~.m.di.0email.loginfo,1,1,the logger is unchanged
+
+/ Test 64: temp files honour TMPDIR
+run,0,0,q,"tp:.m.di.0email.tmppath""""",1,1,make a temp file
+true,0,0,q,"tmpdir~count[tmpdir]#tp",1,1,it is under TMPDIR
+run,0,0,q,hdel hsym`$tp,1,1,remove it
+
+/ remove the suite temp directory
+run,0,0,q,"system""rm -rf "",tmpdir",1,1,remove the private temp directory
+run,0,0,q,`TMPDIR setenv origtmp,1,1,restore TMPDIR

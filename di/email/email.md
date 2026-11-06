@@ -82,7 +82,7 @@ Passed as the first dictionary to `init`. All keys are optional.
 | `enabled` | boolean | `0b` | Set `1b` to allow emails to be sent |
 | `historyenabled` | boolean | `1b` | Set `0b` to disable send history recording |
 | `smtpurl` | string or symbol | `""` | SMTP server URL e.g. `"smtp://smtp.gmail.com:587"`. When set, curl is used instead of sendmail |
-| `smtpuser` | string or symbol | `""` | SMTP username |
+| `smtpuser` | string or symbol | `""` | SMTP username. When empty, curl sends no credentials |
 | `smtppassword` | string | `""` | SMTP password. Written to a temporary `0600` file read by `curl --config`, so it never appears in the command line or in `ps` output |
 | `smtpssl` | boolean | `1b` | Require TLS (`--ssl-reqd`). Set `0b` to disable |
 | `img` | hsym or string | `` ` `` (none) | Image embedded inline at the foot of **every** message. TorQ defaulted to its own logo; here there is no image unless you set one |
@@ -98,7 +98,7 @@ Passed as the second dictionary to `init`.
 ## Core Structures
 
 - **`history`** (table, `.z.m`) — Append-only log of every send attempt, from `senddefault`, `senddata` or `test`. Preserved across `init` calls; cleared only by `clearhistory`.
-  - `time` (timestamp), `recipients` (symbol), `subject` (any), `status` (symbol: `` `sent `` / `` `failed `` / `` `disabled ``), `bytes` (long: `0j` on success, `-1j` on failure or disabled)
+  - `time` (timestamp), `recipients` (symbol, comma-separated when there are several), `subject` (any), `status` (symbol: `` `sent `` / `` `failed `` / `` `disabled ``), `bytes` (long: `0j` on success, `-1j` on failure or disabled)
 
 ## Main Functions
 
@@ -117,7 +117,7 @@ Parameters: `[msgdict]`
 Sends an HTML email. `msgdict` keys:
 - `to` — symbol or symbol list of recipients
 - `subject` — string
-- `body` — list of strings (plain strings are wrapped in a styled `<p>` tag; pre-built HTML strings are passed through as-is; a timestamp footer is appended automatically)
+- `body` — a string or list of strings (plain strings are wrapped in a styled `<p>` tag; pre-built HTML strings are passed through as-is; a timestamp footer is appended automatically)
 - `cc` — (optional) symbol or symbol list of addresses to copy. They get a `Cc:` header and
   are added to the envelope recipients, so they receive the message
 - `attachments` — (optional) single hsym file path or a list of hsyms
@@ -126,12 +126,14 @@ Returns `1b` once the transport accepts the message, `0b` on send failure, `-1` 
 
 `1b` and a `sent` row in `history` do not confirm delivery. They mean the local MTA (sendmail) or the SMTP server (curl) accepted the message, and a relay can still drop it afterwards.
 
-When email is enabled, a bad message logs an error and signals, and adds no `history` row. These are TorQ's checks, in the same order and with the same wording:
+When email is enabled, a bad message logs an error and signals, and adds no `history` row. The checks and messages for `to`, `cc` and `subject` follow TorQ's. Unlike TorQ, `attachments` replaces `attachment`, there is no `bodyType` or `image` key, and `body` accepts anything, rendering what is not a string as text:
 
 - `msgdict` must be a dictionary
 - `to`, `cc` and `attachments` must each be a symbol or symbol list, if present
 - `subject` must be a char array, so a one-character subject must be a list (`enlist"s"`), if present
-- `to` must be present and not empty, and `subject` must be present
+- `to` must be present and not an empty list, and `subject` must be present
+
+A null `to` passes these checks, as it does in TorQ. What happens next is up to the transport: `msmtp` refuses it for having no recipients, so `senddefault` returns `0b`.
 
 When email is disabled, `senddefault` returns `-1` without checking the message.
 
@@ -150,7 +152,7 @@ Sends an HTML email whose attachments are q objects rather than files already on
 
 Each object is rendered by type — a table or keyed table becomes CSV, a string or list of strings is written as text, anything else is written as its text representation (`-3!`). The objects are written to a private temporary directory, attached, and the directory is removed again once the send completes or fails.
 
-Attachment names must be plain filenames; a name containing `/` is rejected, since the names become paths underneath the temporary directory.
+Attachment names must be symbols and plain filenames; a name containing `/`, `"`, CR or LF is rejected, since the names become paths under the temporary directory and go into the part headers. A rejected call logs an error and signals. When email is disabled, `senddata` returns `-1` without checking the attachments.
 
 Returns whatever `senddefault` returns: `1b` on success, `0b` on send failure, `-1` if disabled.
 
@@ -204,7 +206,7 @@ nothing, and the send still reports success — so `senddefault` logs a warning 
   `-1j` failed or disabled), not the size — the message size is not recorded anywhere.
 - **Unix only.** TorQ ran on 32-bit Windows and disabled email only on 64-bit Windows. This
   module shells out to `which`, `mktemp`, `base64`, `file` and `sendmail` or `curl`, and writes
-  to `/tmp`, so it needs a Unix-like host. This is narrower than TorQ, not wider.
+  temp files under `TMPDIR` or `/tmp`, so it needs a Unix-like host. This is narrower than TorQ, not wider.
 - **Footer:** TorQ's `defaultfooter` carried proctype, procname, host and local/GMT. This module
   appends only `"email generated at <timestamp>"`, since it has no `.proc` coupling.
 

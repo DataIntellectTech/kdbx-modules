@@ -2,7 +2,7 @@ action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,seg:use`di.torq.proc.segmentedtp,1,,load module
 before,0,0,q,"system ""l di/torq/proc/segmentedtp/test.q""",1,,load fixture helpers
 before,0,0,q,setupfixture[],1,,start the tickerplant peers
-before,0,0,q,"`ha`hb`hc`hs`hp set' peer each PORTS`a`b`c`s`p",1,,connect to the peers
+before,0,0,q,"`ha`hb`hc`hs`hp`hm`hz set' peer each PORTS`a`b`c`s`p`m`z",1,,connect to the peers
 
 comment,,,,,,,init and settings
 fail,0,0,q,"seg.init[()!();()!()]",1,,init without log must error
@@ -75,6 +75,24 @@ run,0,0,q,"hc""tick[]""",1,,timer
 true,0,0,q,"(0;1;1;2)~(hc""count trade"";logcount hc""currlog[`trade;`logname]"";hc"".stplg.msgcount`trade"";hc"".stplg.rowcount`trade"")",1,,logged and counted on the timer
 true,0,0,q,"(string hc""currlog[`trade;`logname]"") like ""*/stp3_trade2*""",1,,tabular log name
 
+comment,,,,,,,memorybatch roll through an update
+run,0,0,q,"got:(); r3:subto[hm;`stp4;`;`]; hm(`.u.upd;`trade;trd`a`b); hm(`.u.upd;`quote;(`q`r;1 2f))",1,,buffer trades and quotes
+run,0,0,q,"mt:hm""currlog[`trade;`logname]""; mq:hm""currlog[`quote;`logname]""; mm:`$(string hm"".stplg.dldir""),""/stpmeta""",1,,note the open logs and stpmeta
+true,0,0,q,"(2;2;0;0)~(hm""count trade"";hm""count quote"";logcount mt;logcount mq)",1,,rows are buffered and not logged
+run,0,0,q,"hm"".stplg.nextperiod:.z.p-0D00:00:10; .stplg.getnextendUTC[]""; hm(`.u.upd;`trade;trd enlist`c)",1,,an update past the period end rolls the logs
+true,0,0,q,"(`a`b;`q`r)~(logsyms mt;logsyms mq)",1,,the closed logs hold every buffered row and not the trigger
+true,0,0,q,"(1;1)~(metacount[mm] mt;metacount[mm] mq)",1,,stpmeta counts match the closed logs
+true,0,0,q,"(`a`b;`q`r)~(gotsyms`trade;gotsyms`quote)",1,,buffered rows published once
+true,0,0,q,"(1;0;2)~hm""(count trade;.stplg.msgcount`trade;.stplg.rowcount`trade)""",1,,the trigger is buffered and the buffered rows are counted
+run,0,0,q,"mn:hm""currlog[`trade;`logname]""; hm""tick[]""",1,,timer
+true,0,0,q,"(0b;enlist`c;`a`b;3)~(mn~mt;logsyms mn;logsyms mt;hm"".stplg.rowcount`trade"")",1,,the trigger lands in the new log only
+run,0,0,q,"hm(`.u.upd;`trade;trd`d`e); md:hm""currlog[`trade;`logname]""; dm:`$(string hm"".stplg.dldir""),""/stpmeta""",1,,buffer trades for the day roll
+run,0,0,q,"hm""(use`di.eodtime)[`setnextroll] .z.p-0D00:00:10; .stplg.getnextendUTC[]""; hm(`.u.upd;`trade;trd enlist`f)",1,,an update past the roll rolls the day
+true,0,0,q,"(`c`d`e;2;(.z.d+1))~(logsyms md;metacount[dm] md;hm""(use`di.eodtime)[`getd][]"")",1,,the closed day's log holds the earlier trigger and every buffered row and its count
+true,0,0,q,"`a`b`c`d`e~gotsyms`trade",1,,buffered rows published once at the day roll
+run,0,0,q,"hm""tick[]""",1,,timer
+true,0,0,q,"(enlist`f;1b)~(logsyms hm""currlog[`trade;`logname]"";(string hm""currlog[`trade;`logname]"") like ""*/stp4_"",(string .z.d+1),""/*"")",1,,the trigger lands in the new day's log
+
 comment,,,,,,,chained
 true,0,0,q,"(`quote`trade;1)~hs""(.stpps.t;count select from .sub.SUBSCRIPTIONS where table=`trade,active)""",1,,subscribed to the upstream
 true,0,0,q,"waitfor {2=hs""count trade""}",1,,upstream publish arrives
@@ -82,6 +100,8 @@ true,0,0,q,"1 2~hs""(.stplg.updtab`trade)[1 2;3]""",1,,chained upd adds no time
 run,0,0,q,"hs""tick[]""",1,,timer
 true,0,0,q,"(0;1;1)~hs""(count trade;.stplg.msgcount`trade;logcount:{-11!(-2;x)} currlog[`trade;`logname])""",1,,published and logged in create mode
 true,0,0,q,"(string hs""currlog[`trade;`logname]"") like ""*/sctp1_"",(string .z.d),""/sctp1_trade2*""",1,,own log in create mode
+true,0,0,q,"waitfor {2=hz""count trade""}",1,,chained memorybatch buffers the upstream publish
+run,0,0,q,"zl:hz""currlog[`trade;`logname]""; zm:`$(string hz"".stplg.dldir""),""/stpmeta""",1,,note its open log and stpmeta
 true,0,0,q,"(`parent;`stp1;`)~hp"".sctp`loggingmode`tickerplantname`subscribeto""",1,,toml-style sctp strings become symbols
 true,0,0,q,"(ha"".stplg.replaylog`trade"")~hp"".stplg.replaylog`trade""",1,,parent mode replays the upstream logs
 true,0,0,q,"hp""all (::)~/:value loghandles""",1,,parent mode writes no logs
@@ -94,19 +114,41 @@ true,0,0,q,"(1;4;0)~ha""(.stplg.i;count .stpm.metatable;.stplg.msgcount`trade)""
 true,0,0,q,"(0W;2)~ha""(first first r;count r:.stplg.replaylog`trade)""",1,,day replay lists the closed log as 0W
 true,0,0,q,"1=count ha"".stplg.replayperiod:`period; r:.stplg.replaylog enlist`trade; .stplg.replayperiod:`day; r""",1,,period replay lists the current log only
 true,0,0,q,"waitfor {1=hs"".stplg.i""}",1,,chained create mode rolls its logs
+true,0,0,q,"waitfor {1=hz"".stplg.i""}",1,,chained memorybatch rolls its logs
+true,0,0,q,"(`a`b;1;0)~(logsyms zl;metacount[zm] zl;hz""count trade"")",1,,the closed log holds the buffered rows and its count
 
 comment,,,,,,,end of day
+run,0,0,q,"ha(`.u.upd;`trade;trd`e`f); ha""tick[]""",1,,upstream publishes before the day end
+true,0,0,q,"waitfor {2=hz""count trade""}",1,,chained memorybatch buffers them
+run,0,0,q,"zd:hz""currlog[`trade;`logname]""; zn:`$(string hz"".stplg.dldir""),""/stpmeta""",1,,note its open log and stpmeta
 run,0,0,q,"eods:(); ha""(use`di.eodtime)[`setnextroll] .z.p-0D00:00:01; .stplg.getnextendUTC[]; tick[]""",1,,force the day end
 true,0,0,q,"(1;.z.d;`stp1)~(count eods;first first eods;(last first eods)`procname)",1,,endofday sent with date and process data
 true,0,0,q,"(.z.d+1;`$"":"",FIXDIR,""/a/stp1_"",string .z.d+1;2)~ha""((use`di.eodtime)[`getd][];.stplg.dldir;count .stpm.metatable)""",1,,date advanced and logs reopened
 true,0,0,q,"ha"".z.p<(use`di.eodtime)[`getnextroll][]""",1,,next roll is in the future
 true,0,0,q,"waitfor {(.z.d+1)=hs""(use`di.eodtime)[`getd][]""}",1,,chained passes end of day through
+true,0,0,q,"waitfor {(.z.d+1)=hz""(use`di.eodtime)[`getd][]""}",1,,chained memorybatch rolls the day
+true,0,0,q,"(`e`f;1)~(logsyms zd;metacount[zn] zd)",1,,the closed day's log holds the buffered rows and its count
+
+comment,,,,,,,defaultbatch roll through an update
+run,0,0,q,"got:(); pl:ha""currlog[`trade;`logname]""; pm:`$(string ha"".stplg.dldir""),""/stpmeta""; ha(`.u.upd;`trade;trd enlist`a); ha(`.u.upd;`trade;trd enlist`b)",1,,log two trades without publishing them
+run,0,0,q,"ha"".stplg.nextperiod:.z.p-0D00:00:10; .stplg.getnextendUTC[]""; ha(`.u.upd;`trade;trd enlist`c)",1,,an update past the period end rolls the logs
+true,0,0,q,"(2;2)~(logcount pl;metacount[pm] pl)",1,,stpmeta count matches the closed log
+true,0,0,q,"`a`b~gotsyms`trade",1,,buffered rows published once
+run,0,0,q,"pn:ha""currlog[`trade;`logname]""; ha""tick[]""",1,,timer
+true,0,0,q,"(0b;1;1;3)~(pn~pl;logcount pn;ha"".stplg.msgcount`trade"";ha"".stplg.rowcount`trade"")",1,,msgcount matches the new log and rowcount holds the day's rows
+run,0,0,q,"ha(`.u.upd;`trade;trd enlist`d); ha(`.u.upd;`trade;trd enlist`e)",1,,log two more trades without publishing them
+true,0,0,q,"(enlist`c)~{raze {x[2]1} each x[0] sublist get x 1} first ha"".stplg.replayperiod:`period; r:.stplg.replaylog enlist`trade; .stplg.replayperiod:`day; r""",1,,replay returns only published rows
+run,0,0,q,"el:ha""currlog[`trade;`logname]""; em:`$(string ha"".stplg.dldir""),""/stpmeta""; ha(`.u.upd;`trade;trd enlist`f); ha""(use`di.eodtime)[`setnextroll] .z.p-0D00:00:10; .stplg.getnextendUTC[]""; ha(`.u.upd;`trade;trd enlist`g)",1,,an update past the roll rolls the day
+true,0,0,q,"(4;4;.z.d+2)~(logcount el;metacount[em] el;ha""(use`di.eodtime)[`getd][]"")",1,,stpmeta count matches the closed day's log
+true,0,0,q,"`a`b`c`d`e`f~gotsyms`trade",1,,buffered rows published once at the day roll
+run,0,0,q,"en:ha""currlog[`trade;`logname]""; ha""tick[]""",1,,timer
+true,0,0,q,"(0b;1;1;1)~(en~el;logcount en;ha"".stplg.msgcount`trade"";ha"".stplg.rowcount`trade"")",1,,counts match the new day's log
 
 comment,,,,,,,exit
 run,0,0,q,"hc(`.u.upd;`trade;trd`x`y); cm:`$(string hc"".stplg.dldir""),""/stpmeta""; cl:hc""currlog[`trade;`logname]""; @[{neg[x]""exit 0"";neg[x][]};hc;()]",1,,send trades then exit cleanly
 true,0,0,q,"waitfor {not alive PORTS`c}",1,,process exited
 true,0,0,q,"(2;1b)~(logcount cl;all not null exec end from get cm)",1,,memorybatch flushed and logs closed on exit
 run,0,0,q,"@[{neg[x]""exit 0"";neg[x][]};ha;()]",1,,upstream exits
-true,0,0,q,"waitfor {not any alive each PORTS`s`p}",1,,chained processes exit when the upstream is lost
+true,0,0,q,"waitfor {not any alive each PORTS`s`p`z}",1,,chained processes exit when the upstream is lost
 
 after,0,0,q,teardownfixture[],1,,stop the peers and remove the fixture dir

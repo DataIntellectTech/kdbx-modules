@@ -1,0 +1,33 @@
+entity,tbl,columns,filter
+# research: an external analyst, or an LLM answering their questions. Prints and top of book for
+# the four technology names, with no account, trader, venue or order behind them - and nothing
+# from the two most recent days
+research,trades,date sym time price size side,"sym in `AAPL`MSFT`NVDA`META, qsp.aged[date;2D]"
+research,quotes,date sym time bid ask,"sym in `AAPL`MSFT`NVDA`META, qsp.aged[date;2D]"
+# quant: all the market data, every name and venue, and the depth of book. No client or trader
+quant,trades,date sym time src price size side notional,
+quant,quotes,*,
+quant,depth,*,
+# sales: the flow of the clients in their region, and who those clients are. The accounts are
+# looked up per user, from the coverage table, on every query. No trader and no market data
+sales,trades,date sym time price size side account notional orderID,account in coveredaccounts qsp.USER
+sales,orders,date sym orderID side qty limitPx account time state algo filledQty avgPx,account in coveredaccounts qsp.USER
+sales,accounts,*,account in coveredaccounts qsp.USER
+# desk heads: their own desk's orders, and its traders' fills. An account is a code to them -
+# who the client is stays with sales
+desk,orders,*,desk in deskof qsp.USER
+desk,trades,*,trader in desktraders qsp.USER
+desk,traders,*,desk in deskof qsp.USER
+# reference data, for every group that sits in refdata (see members.csv)
+refdata,instruments,*,
+refdata,venues,*,
+# compliance: everything, and qsp's own decision log
+compliance,trades,*,
+compliance,quotes,*,
+compliance,orders,*,
+compliance,depth,*,
+compliance,accounts,*,
+compliance,instruments,*,
+compliance,traders,*,
+compliance,venues,*,
+compliance,auditlog,*,

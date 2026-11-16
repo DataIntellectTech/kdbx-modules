@@ -1,0 +1,10 @@
+tbl,partition
+accounts,
+depth,date
+instruments,
+orders,date
+quotes,date
+traders,
+trades,date
+venues,
+auditlog,

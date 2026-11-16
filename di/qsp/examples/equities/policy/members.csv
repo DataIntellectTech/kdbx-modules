@@ -1,0 +1,13 @@
+user,entity
+llm1,research
+quant1,quant
+sales_na,sales
+sales_emea,sales
+cash_head,desk
+etf_head,desk
+compliance1,compliance
+# groups in a group: every role but compliance also gets what refdata gets
+research,refdata
+quant,refdata
+sales,refdata
+desk,refdata

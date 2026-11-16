@@ -7,23 +7,28 @@
 #
 # What it does:
 #   1. Builds a fresh copy of the 5-day equities HDB in a temp directory.
-#   2. Computes ground-truth expected results in an unpoliced q process, by hand
-#      from the policy spec (never loading di.qsp).
+#   2. Computes ground-truth expected results in an unpoliced q process (never
+#      loading di.qsp): each user's view of each table is written by hand from the
+#      policy spec, and each case's query is run unchanged over those views.
 #   3. Starts a policed HDB server (with harmless canaries planted) and a second
 #      server with -T 1 for query-timeout testing.
 #   4. Runs five client suites over IPC/HTTP (permissions, logins_transport,
 #      limits, audit, attacks), recording every pass and failure.
 #   5. Writes results.csv and report.md, and shuts the servers down on exit.
 #
+# Exits 0 only if every check passed: 1 if any failed, and non-zero if a step
+# could not run at all - so it can gate CI after bin/test.q.
+#
 # The q programs it runs are separate files under bin/harden/, each taking its
 # inputs as -key value args:
-#   harden/mkexpected.q  ground-truth expectations (never loads di.qsp)
+#   harden/cases.q       the queries checked against a value, each written once
+#   harden/mkexpected.q  ground-truth expectations from a hand-written model of
+#                        the policy (never loads di.qsp)
 #   harden/server.q      the policed HDB server, with canaries
 #   harden/runner.q      the five suites and the report generator
 #
-# NOTE: the root-cause "notes" recorded in harden/runner.q are from the original
-# automated pass and some are inaccurate - see docs/security-review.md for which
-# findings actually reproduce.
+# Each check's note in the report says what the check exercises. Why a finding
+# happened, and what changed, is in docs/security-review.md.
 # ==============================================================================
 
 set -euo pipefail
@@ -63,7 +68,7 @@ trap cleanup EXIT INT TERM
 echo "== [1/5] Building fresh example HDB in $RUN_DIR/hdb =="
 q "$MOD_DIR/examples/equities/mkhdb.q" -db "$RUN_DIR/hdb" -days 5 -q
 
-echo "== [2/5] Computing hand-written expected results straight from HDB =="
+echo "== [2/5] Computing expected results from the hand-written policy model =="
 q "$QDIR/mkexpected.q" -db "$RUN_DIR/hdb" -out "$RUN_DIR/expected.bin" -q
 
 # Pick two free ports (RANDOM so small-PID containers never collide on TIME_WAIT)
@@ -88,6 +93,7 @@ q "$QDIR/server.q" \
 TIMEOUT_PID=$!
 
 echo "== [4/5] Running client verification and attack suites =="
+RC=0
 q "$QDIR/runner.q" \
   -port1 "$PORT1" \
   -port2 "$PORT2" \
@@ -95,6 +101,7 @@ q "$QDIR/runner.q" \
   -outdir "$OUT_DIR" \
   -modroot "$REPO_ROOT" \
   -poldir "$MOD_DIR/examples/equities/policy" \
-  -q
+  -q || RC=$?
 
-echo "== [5/5] Done. Shutting down background processes via trap =="
+echo "== [5/5] Done: report in $OUT_DIR/report.md. Shutting down background processes via trap =="
+exit "$RC"

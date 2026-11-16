@@ -3,7 +3,8 @@
 A qsp **policy** answers one question: *who can see which rows and columns of
 which tables?* Every query is checked against it and rewritten to show only
 what the user may see. This page explains the parts of that answer, and how
-qsp combines them for one user.
+qsp combines them for one user. The exact rules, settings and calls are in the
+reference, [../qsp.md](../qsp.md), and this page links to them.
 
 - [The terms](#the-terms)
 - [Nothing is allowed until it is granted](#nothing-is-allowed-until-it-is-granted)
@@ -57,14 +58,11 @@ name no entity, and don't load until someone fills one in.
 
 ## Users and groups
 
-A **user** is whoever a query runs as:
-
-| the query arrives | it runs as |
-|---|---|
-| over IPC, to a process running `qsp.serve` | the login, `.z.u`, which must be a user of the policy |
-| from a gateway login, as `` (`.qsp.execas;query;user) `` | `user`, as the gateway names them |
-| through `qsp.run[p;user;query]` in your own code | `user` |
-| typed at the process's own console | nobody: the console is not policed |
+A **user** is whoever a query runs as: the name a client logged in as, or the
+user a gateway names. Typed at the process's own console, a query runs as
+nobody, unchecked. [Who a query runs as](../qsp.md#who-a-query-runs-as) lists
+every entry point. Whichever way it arrives, a query runs only as a user the
+policy names: a name it doesn't know, or a group's name, is refused.
 
 A **group** is any name used as an entity in `members.csv` or `grants.csv`.
 `members.csv` puts users in groups:
@@ -128,27 +126,15 @@ q)hopen `:localhost:5100:sales:x         / a group's name: it would get the grou
 q)hopen `:localhost:5100:sales_na:x      / a user: connects
 ```
 
-Over HTTP the same check answers `401 Unauthorized`. A gateway is held to the
-same rule for the users it names: `` (`.qsp.execas;query;`sales) `` is refused
-with `qsp: not a user of this policy: `sales`, and recorded in the audit log.
+A gateway is held to the same rule for the users it names.
 
 **qsp checks names, not passwords.** The example accepts any password, so
 anyone who knows a user's name can still be them. In a real process, add
-authentication in front:
-
-| use | how it fits with qsp |
-|---|---|
-| `-U passwordfile` on the command line | q checks the password first; qsp's check runs only for logins that pass |
-| your own `.z.pw` (LDAP, Kerberos, SSO) | define it before calling `qsp.serve`. qsp keeps it and calls it after its own name check |
-| a gateway that authenticates users | list its login in `gateways.csv`; it names the user on each query |
-
-The served policy decides who can log in, so swapping in a new policy with
-`serve` changes it at once. A user removed from the policy can't open a new
-connection, and a connection that's already open is refused on its next query.
-
-One edge: a name that has grants but no members counts as a user. qsp can't
-tell a person granted directly from a group nobody has joined yet. Give every
-group at least one member, or a name no one could log in as.
+authentication in front: `-U`, a `.z.pw` of your own (LDAP, Kerberos, SSO), or
+a gateway that authenticates its users. [Logins](../qsp.md#logins) says how
+each combines with qsp's check, what happens when the served policy changes,
+and the one edge: a name with grants but no members counts as a user, so give
+every group a member.
 
 ## Grants: columns and rows
 
@@ -174,15 +160,11 @@ conditions, put both in one filter (`or`, or a comma for and).
 
 ## How a user's access is worked out
 
-On every query, for each table it reads, qsp works out the user's access:
-
-1. **Entities.** The user, every group they are in, and every group those
-   groups are in.
-2. **Columns.** The **union** of the columns those entities are granted.
-3. **Rows.** Each grant's filter, joined with **OR**. One grant with no
-   filter means every row.
-4. **Markers.** `qsp.USER`, `qsp.NOW` and `qsp.aged` are replaced with their
-   values.
+On every query, for each table it reads, qsp takes the user and every group
+they are in, at any depth. The user gets the **union** of the columns those
+grants give, and the **OR** of their filters, so one grant with no filter means
+every row. [What the user can see](../qsp.md#what-the-user-can-see) has the
+exact steps.
 
 The query is then rewritten so it reads only those columns, with the filter
 added to its where clause. For `sales_na`:
@@ -236,7 +218,7 @@ A filter is parsed, never evaluated, when the policy loads. It can be:
 |---|---|---|
 | fixed | `` sym in `AAPL`MSFT, size>100 `` | every query, as written |
 | per user, through a lookup | `account in coveredaccounts qsp.USER` | every query: `coveredaccounts` is called with the user |
-| per user, in q | `fn:deskfilter` | every query: `deskfilter` is called with the user and returns constraints. Use it when a where clause can't say it |
+| per user, in q | `fn:deskfilter` | every query: `deskfilter` is called with the user and returns the constraints. Use it when a where clause can't say it |
 | time-based | `qsp.aged[date;2D]`, `time > qsp.NOW - 1D` | every query, against the policy clock. See [time.md](time.md) |
 
 `qsp.USER` is the user the query runs as, even when a gateway sent it. Never
@@ -247,9 +229,10 @@ A lookup is ordinary q over ordinary tables. In the example,
 region is one row change. Their next query sees it, with no reload. The
 lookup's own tables aren't granted to anyone, so no user can read them.
 
-A lookup that fails, or a `fn:` filter that signals or returns something that
-isn't a list of constraints, refuses the query. It never falls back to "no
-filter".
+A lookup or a `fn:` filter that fails refuses the query. It never falls back
+to "no filter". What a `fn:` filter may return, and why an empty result
+refuses rather than opening the table, is under
+[Row filters](../qsp.md#row-filters).
 
 ## Gateways: running a query as someone else
 
@@ -264,41 +247,29 @@ g(`.qsp.execas;"select from accounts";`sales_emea)
 ```
 
 Only logins listed in `gateways.csv` may do this. The same message from any
-other login is an ordinary query, and is refused. The user it names must be a
-user of the policy, not a group. A gateway can claim to be any user, so list
-only a service you trust as much as the policy itself.
-`` `.qsp.execasx `` does the same and also returns what ran.
+other login is an ordinary query, and is refused. A gateway can claim to be
+any user, so list only a service you trust as much as the policy itself.
+[Serving it](../qsp.md#serving-it) has the messages a gateway can send.
 
 ## Functions
 
 A query may only call functions on the **whitelist**. The default whitelist
 covers ordinary analytics, from `sum`, `avg`, `wavg` and `xbar` to `fby` and the joins. A
 **never** list (`value`, `system`, `hopen`, `set`, `get`, file access and the
-rest) can't be added whatever the policy says. `functions.csv` adjusts the
-whitelist:
-
-| action | does |
-|---|---|
-| `allow` | add a q function |
-| `deny` | remove one |
-| `call` | let a function of yours be called by name. qsp checks the call, not what the function does, so this is trust |
-| `joincall` | also let it stand where a table would, like a join |
+rest) can't be added whatever the policy says. `functions.csv` adds q
+functions or removes them, and can let a function of yours be called by name.
+That is trust: qsp checks the call, not what the function does.
+[Building a policy](../qsp.md#building-a-policy) lists each.
 
 ## Settings
 
-`config.csv` holds settings for the whole policy. The ones that matter most:
-
-| setting | default | |
-|---|---|---|
-| `requirepartition` | `0b` | refuse a query that would read every partition. Turn it on for anything an LLM talks to |
-| `maxrows`, `maxsize` | `0W`, 200MB | refuse a result bigger than this |
-| `strictcolumns` | `1b` | a where clause may name only visible columns. Off, a user could filter on a hidden column and so learn its values |
-| `rowindex` | `0b` | allow the row index `i`. It shows where hidden rows are, so it is off |
-| `clock` | `{[] .z.p}` | "now", for time-based filters. See [time.md](time.md#the-clock) |
-
-The full list is under Configuration in [../qsp.md](../qsp.md#configuration).
-Two limits can't be set from inside a process: start it with `-T` (a time
-limit per query) and `-w` (a memory cap).
+`config.csv` holds settings for the whole policy. Most decide how much work a
+permitted query may do (`requirepartition`, `maxpartitions`, the result caps)
+or how strict the checks are (`strictcolumns`, `rowindex`). The defaults are
+safe, except that the work limits are off: turn them on for anything an LLM
+talks to. [Configuration](../qsp.md#configuration) lists every setting. Two
+limits can't be set from inside a process: start it with `-T` (a time limit
+per query) and `-w` (a memory cap).
 
 ## Files and code: the same policy two ways
 
@@ -320,6 +291,18 @@ problem listed, if anything is wrong. `bin/policy.q` checks a directory and
 shows who can read what, or what a change changes, for CI and review. See
 [../setup.md](../setup.md).
 
+Beside the files, `tests.csv` holds the policy's tests: what it must mean, a
+query at a time. "`llm1` is refused the `account` column", "`sales_na` sees
+exactly A1 A3 A5 A7". The files say what is granted; the tests say what that
+must add up to, so a change that keeps the files valid but changes what a user
+sees fails the build. `qsp.tests` reads them, `qsp.runtests` runs them, and
+`bin/policy.q -test` runs them in CI. See
+[Testing a policy](../qsp.md#testing-a-policy).
+
+The admin UI (`qsp.adminui`local`) works on the same directory in a browser:
+it creates one, edits it with a preview of what each change does, runs the
+tests, and shows what the policy means for each user. See [ui.md](ui.md).
+
 ## What a policy does not do
 
 - **It doesn't check passwords.** It admits only names the policy knows. Proving
@@ -330,12 +313,13 @@ shows who can read what, or what a change changes, for CI and review. See
   was written, by a person, a notebook or an LLM. It checks what the query
   does.
 - **It doesn't bound work by itself.** A permitted query can still be
-  expensive. `requirepartition`, `maxrows` and `maxsize` help, and `-T` and
-  `-w` are the real limits.
+  expensive. The settings help, and `-T` and `-w` are the real limits. See
+  [Limits](../qsp.md#limits).
 - **It doesn't police the console.** The process's own console runs
   unchecked, so it is where you run `qsp.explain` and read the audit log.
 - **It doesn't check that answers are right.** It decides what a query may
-  read, not whether the query answers the question asked.
+  read, not whether the query answers the question asked. A policy's own tests
+  check what it lets each user read, not what any query means.
 
 See also: [time.md](time.md) for embargoes and the clock;
 [../qsp.md](../qsp.md) for how a query is checked step by step, and the full

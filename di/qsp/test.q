@@ -7,6 +7,7 @@
 qt:use`di.qsp.tree;
 qp:use`di.qsp.policy;
 qf:use`di.qsp.files;
+qa:use`di.qsp.api;
 
 / ------------------------------------------------------------------ fixtures
 / the same data and policy are policed in process and, by testserver.q, over IPC
@@ -122,6 +123,24 @@ LLMC:`date`sym`account`size`price;
   };
 
 .t.problems:{[fs] :qsp.check .t.pol["p";fs];};
+/ the tests in a directory n holding only a tests.csv of lines ls (its header is added)
+.t.suitedir:{[n;ls]
+  d:"/tmp/qspsuite",string[.z.i],"/",n;
+  system"rm -rf ",d;
+  system"mkdir -p ",d;
+  (hsym`$d,"/tests.csv") 0: (enlist "user,query,expect,value,note"),ls;
+  :d;
+  };
+.t.suite:{[n;ls] :qsp.tests .t.suitedir[n;ls];};
+/ a call to the admin UI's JSON API, through its own handler: (ok; data or error), from JSON
+.t.post:{[c;a] :.j.k last "\r\n\r\n" vs .z.pp enlist "api ",.j.j `call`args!(c;a);};
+/ evaluating f signals, and the message contains each of strings ps
+.t.errhas:{[f;ps]
+  r:@[{(0b;value x)};f;{(1b;x)}];
+  if[not r 0;-1"  ran and returned: ",.Q.s1 r 1;:0b];
+  if[not all b:{0<count ss[x;y]}[r 1] each ps;-1"  message: ",r 1;-1"  lacks: ",.Q.s1 ps where not b;:0b];
+  :1b;
+  };
 .t.load:{[fs] :qsp.fromfiles .t.pol["p";fs];};
 / lines -> the bytes of a file with Windows line endings
 .t.crlf:{"x"$raze x,\:"\r\n"};

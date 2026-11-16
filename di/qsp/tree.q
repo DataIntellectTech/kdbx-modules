@@ -54,7 +54,15 @@ lit:{[x] :$[(0h=type x)|11h=abs type x;enlist x;x];};
 
 isfn:{[x] :(type x) within 100 112;};
 isquery:{[x] :$[0h<>type x;0b;5>count x;0b;(first[x]~selop)|first[x]~updop];};
-hasquery:{[x] :$[isquery x;1b;0h=type x;any .z.s each x;0b];};
+
+/ the items of a node to look inside. A select's by and select slots are dictionaries - name to
+/ expression - so a search that stopped at a general list would miss a select written as a
+/ column, select x:(count select from t) from u. A table literal's columns are searched too
+items:{[x] :$[0h=type x;x;99h=type x;(key x;value x);98h=type x;value flip x;()];};
+/ the expressions only: a dictionary's keys are names it gives, not names it reads
+exprs:{[x] :$[99h=type x;value x;items x];};
+
+hasquery:{[x] :$[isquery x;1b;(type x) in 0 98 99h;any .z.s each exprs x;0b];};
 
 / a join may stand in the table slot of a select. Parse trees hold the join's value, so
 / membership is by identity
@@ -70,6 +78,7 @@ namerefs:{[x]
   :$[-11h=type x;enlist x;
     (11h=type x)&1<count x;x;
     (0h=type x)&1<count x;raze .z.s each x;
+    99h=type x;raze .z.s each value x;
     `symbol$()];
   };
 
@@ -78,8 +87,19 @@ basequeries:{[x]
   / query performs. Both sides of a join appear; a select over a select, or an update wrapping
   / one, adds none of its own
   :$[isquery x;$[-11h=type x 1;enlist x;()],raze .z.s each x;
-    0h=type x;raze .z.s each x;
+    (type x) in 0 98 99h;raze .z.s each exprs x;
     ()];
+  };
+
+mapbase:{[f;x]
+  / x with f applied to each of its base queries, outermost first. Only the path down to a base
+  / query is rebuilt, so no list elsewhere is reassembled - q would collapse a general list of
+  / symbols into a symbol vector, which evaluates differently
+  if[0=count basequeries x;:x];
+  if[isquery x;if[-11h=type x 1;x:f x]];
+  if[0h=type x;:.z.s[f] each x];
+  if[99h=type x;:(key x)!.z.s[f] each value x];
+  :x;
   };
 basetables:{[x] :distinct `symbol$({x 1} each basequeries x);};
 
@@ -88,7 +108,7 @@ basetables:{[x] :distinct `symbol$({x 1} each basequeries x);};
 / primitive requires one - including hdel, which is the same primitive as not (see fns.q)
 
 isfilehandle:{[s] :$[0=count c:string s;0b;":"=first c];};
-hasfilehandle:{[x] :$[11h=abs type x;any isfilehandle each (),x;0h=type x;any .z.s each x;0b];};
+hasfilehandle:{[x] :$[11h=abs type x;any isfilehandle each (),x;(type x) in 0 98 99h;any .z.s each items x;0b];};
 
 / ------------------------------------------------------------------ policy markers
 / placeholders a policy filter may contain, resolved to plain literals when a query is rewritten
@@ -102,5 +122,5 @@ usermark:`$"\001qsp.user";
 / the policy clock, as a timestamp
 nowmark:`$"\001qsp.now";
 
-export:([chk;prefix;fault;isfault;clean;described;selop;updop;ascop;descop;getc;setc;lit;isfn;isquery;
-  hasquery;joins;isjoin;namerefs;basequeries;basetables;hasfilehandle;agedmark;usermark;nowmark]);
+export:([chk;prefix;fault;isfault;clean;described;selop;updop;ascop;descop;cnested;getc;setc;lit;isfn;isquery;
+  hasquery;joins;isjoin;namerefs;basequeries;mapbase;basetables;hasfilehandle;items;agedmark;usermark;nowmark]);

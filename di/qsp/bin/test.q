@@ -8,4 +8,6 @@ k4unit.verbose 1;
 k4unit.moduletest`di.qsp;
 r:k4unit.getresults[];
 -1"\npassed: ",string[sum r`ok],"  failed: ",string sum not r`ok;
+/ no results is a failure too: a test.csv that did not load, or held nothing
+if[0=count r;-2"no tests ran";exit 1];
 exit `long$not all r`ok;

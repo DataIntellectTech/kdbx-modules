@@ -40,8 +40,22 @@ textsym:{[u;x]
   :string x;
   };
 
+/ data as q text that parses back: k's one-item form, ,x, is not q
+qlit:{[u;x]
+  if[11h=type x;
+    / the user, when one is named, is a symbol like the rest
+    if[not null u;x:@[x;where x=tree.usermark;:;u]];
+    if[not any x in (tree.usermark;tree.nowmark);:$[1=count x;"enlist ",-3!first x;-3!x]];
+    s:{[u;y] $[y in (tree.usermark;tree.nowmark);textsym[u;y];-3!y]}[u] each x;
+    :$[1=count s;"enlist ",first s;"(",(";"sv s),")"]];
+  if[-11h=type x;:$[x in (tree.usermark;tree.nowmark);textsym[u;x];-3!x]];
+  if[0h=type x;:$[1=count x;"enlist ",.z.s[u;first x];"(",(";"sv .z.s[u] each x),")"]];
+  if[(0<type x)and 1=count x;:"enlist ",lit first x];
+  :lit x;
+  };
+
 / a symbol constant; or names side by side - a call
-textsyms:{[p;u;x] :$[1=count x;-3!first x;string[first x],"[",(";"sv text[p;u] each 1_x),"]"];};
+textsyms:{[p;u;x] :$[1=count x;qlit[u;first x];string[first x],"[",(";"sv text[p;u] each 1_x),"]"];};
 
 / an argument of an infix or prefix operator, parenthesised if it is itself an application
 argtext:{[p;u;y] s:text[p;u;y]; :$[(0h=type y)and 1<count y;"(",s,")";s];};
@@ -56,12 +70,12 @@ text:{[p;u;x]
   if[11h=type x;:textsyms[p;u;x]];
   if[0h<>type x;:lit x];
   if[0=count x;:"()"];
-  / a symbol vector constant
-  if[(1=count x)and 11h=type first x;:-3!first x];
+  / a constant: parse quotes one in a one-item list
+  if[1=count x;:qlit[u;first x]];
   if[isaged x;:"qsp.aged[",string[x[2;1]],";",(lit x[2;2]),"]"];
   h:first x;
   a:1_x;
-  if[h~enlist;:-3!$[1=count a;first a;a]];
+  if[h~enlist;:$[1=count a;"enlist ",argtext[p;u;a 0];"(",(";"sv text[p;u] each a),")"]];
   if[(0h=type h)and count i:where ctrees~\:h;h:composed first i];
   if[0h=type h;:"(",text[p;u;h],")[",(";"sv text[p;u] each a),"]"];
   n:$[-11h=type h;h;fname[p;h]];
@@ -78,6 +92,8 @@ clause:{[p;u;f] :$[0=count f;"all rows";", "sv text[p;u] each f];};
 / everyone a policy names who is not a group: users in groups, and entities granted something
 / directly
 users:{[p] :asc (distinct p[`members;`user],p[`grants;`entity]) except p[`members;`entity];};
+/ is u one of them: a single name, not a group?
+isuser:{[p;u] :$[-11h=type u;u in users p;0b];};
 
 / user u's row filter on t, as a where clause
 rowstext:{[p;u;t] :clause[p;u] pol.rawfilter[p;u;t];};
@@ -159,4 +175,4 @@ diff:{[a;b]
   :diffwide[a;b],raze diffuser[a;b;ts] each us;
   };
 
-export:([access;diff;users;text;clause]);
+export:([access;diff;users;isuser;text;clause]);

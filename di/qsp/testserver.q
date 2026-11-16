@@ -6,6 +6,12 @@
 qsp:use`di.qsp;
 system"l ",.Q.m.mp[`di.qsp],"/test.q";
 
+/ what was on the handlers before serve must still see every policed query: a wrapper that
+/ keeps each message in a table the fixtures' user may read
+seen:([]h:`symbol$();m:());
+.z.pg:{[x] `seen upsert `h`m!(`pg;x); value x};
+.z.ps:{[x] `seen upsert `h`m!(`ps;x); value x};
+P:qsp.grant[qsp.table[P;`seen;::];`llm;`seen;qsp.ALL;()];
 qsp.serve P;
 / .z.pc also fires for handle 0 when stdin closes, so only a client counts
 .z.pc:{if[(x>0)&0=count .z.W;exit 0];};

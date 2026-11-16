@@ -1,6 +1,7 @@
 setting,value
 # an HDB: a query on a partitioned table must say which dates, and a result is bounded
 requirepartition,1b
+maxpartitions,31
 maxrows,100000
 # the example's data is fixed, so its clock is too (see defs.q). Delete this in your own policy
 clock,fn:exampleclock

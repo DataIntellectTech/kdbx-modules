@@ -62,11 +62,17 @@ headsym:{[c;scope;h]
 / a registered table's name is refused as data too. parse enlist-wraps a symbol literal, and
 / xasc, xdesc, xcol and xcols all mutate the table whose name they are handed: `sym xasc `trade
 / sorts the real table in place
-hastable:{[c;x] :$[11h=abs type x;any x in key c[`p;`tabs];0h=type x;any hastable[c] each x;0b];};
+hastable:{[c;x] :$[11h=abs type x;any x in key c[`p;`tabs];(type x) in 0 98 99h;any hastable[c] each tree.items x;0b];};
+
+/ a function inside literal data. eval hands back the item of a one-item list unevaluated -
+/ that is how a tree quotes a value - so (each;enlist value;...) would apply value without its
+/ ever being walked as a function. parse never quotes a function, so any is refused
+hasfn:{[x] :$[tree.isfn x;1b;0h=type x;any .z.s each x;98h=type x;.z.s value flip x;99h=type x;.z.s[key x]|.z.s value x;0b];};
 
 literal:{[c;n]
   / literal data, projecting nothing
   tree.chk[not hastable[c;n];"a table name cannot be used as data, only as the table of a select"];
+  tree.chk[not hasfn n;"a function cannot be written as data - apply it, or pass it where it is applied"];
   :(n;nocols);
   };
 
@@ -79,7 +85,8 @@ literal:{[c;n]
 / refused in the table slot rather than guessed at
 
 tryresolve:{[n] :@[fns.resolve;n;(::)];};
-preserve:{x where not (::)~/:x} tryresolve each `xasc`xdesc`xcols`asc`desc`reverse`distinct`ungroup`sublist,`$enlist"!";
+/ ! is not among them: `a`b!t is a dictionary of t's rows, not a table (see keyedcols)
+preserve:{x where not (::)~/:x} tryresolve each `xasc`xdesc`xcols`asc`desc`reverse`distinct`ungroup`sublist;
 if[9>count preserve;'"qsp: cannot resolve q's own sort and key primitives - refusing to load"];
 takeop:@[fns.resolve;`$"#";{gone}];
 dropop:@[fns.resolve;`$"_";{gone}];
@@ -94,11 +101,22 @@ nonsymlit:{[x] :(0h<>type x)and not 11h=abs type x;};
 takecols:{[a;cs] :$[count s:takelit a;cs inter s;nonsymlit a;cs;nocols];};
 dropcols:{[a;cs] :$[count s:takelit a;cs except s;nonsymlit a;cs;nocols];};
 
+/ x!y is a keyed table when x is a count of key columns - 1!t - or a table of keys - k!v - and
+/ then carries the columns of its table arguments. With anything else on the left, `a`b!t say,
+/ it is a dictionary, and a name looked up in it would resolve globally
+keyedcols:{[a;cs]
+  if[2<>count a;:nocols];
+  if[all 0<count each cs;:distinct raze cs];
+  if[(type first a) in -5 -6 -7h;:cs 1];
+  :nocols;
+  };
+
 / is h a call the policy says carries its arguments' columns?
 isjoincall:{[c;h] :$[-11h=type h;h in c[`p;`joincalls];0b];};
 
 exprcols:{[c;h;a;cs]
   / the columns head h applied to arguments a projects, given the columns cs each argument does
+  if[h~dictop;:keyedcols[a;cs]];
   cs:distinct raze cs;
   if[any h~/:tree.joins;:cs];
   if[isjoincall[c;h];:cs];
@@ -191,7 +209,9 @@ walklist:{[c;scope;depth;n]
 / refused if it is a literal symbol where one would be resolved, and otherwise wrapped in a check
 / that runs on the value as it is produced
 
-issymlit:{[x] :(11h=type x)&1=count x;};
+/ a quoted symbol: what parse writes, (enlist `a), or a general list holding one, which a
+/ hand-built tree can
+issymlit:{[x] :$[11h=type x;1=count x;(0h=type x)&1=count x;-11h=type first x;0b];};
 
 inert:{[x]
   / is x certainly not a symbol atom once evaluated? A function, a name the walker has already
@@ -200,7 +220,8 @@ inert:{[x]
   if[tree.isfn x;:1b];
   if[-11h=type x;:1b];
   if[tree.isquery x;:not ()~x 3];
-  if[0h=type x;:1=count x];
+  / a one-item list is its item, verbatim, and literal has refused a function in it
+  if[0h=type x;:$[1=count x;not -11h=type first x;0b]];
   :not 11h=type x;
   };
 
@@ -213,10 +234,26 @@ guard:{[c;rule;f;x]
   if[rule=`wjagg;:$[wjstatic[c;f;x];x;(fns.wjagg;x)]];
   chk:checks rule;
   if[issymlit x;@[chk;first x;{[f;e] 'e," (passed to ",f,")"}fnstr[c;f]];:x];
-  if[(rule=`fn)&tree.isfn x;
+  if[rule=`fn;:fnguard[c;f;x]];
+  :$[inert x;x;(chk;x)];
+  };
+
+/ literal data in a tree: an atom or vector other than a symbol one, or anything quoted in a
+/ one-item list. Its value is known as the tree is walked
+isliteral:{[x] :$[0h=type x;2>count x;not (11h=abs type x)|tree.isfn x];};
+litvalue:{[x] :$[0h<>type x;x;1=count x;first x;x];};
+
+fnguard:{[c;f;x]
+  / an argument q applies. "Not a symbol" is not enough here: 0 each enlist "text" applies handle
+  / 0, which evaluates the text, and (each;count) indexed at depth applies each. A function and
+  / literal data are checked as the tree is walked; a call the policy trusts is left alone; a
+  / column, or anything computed, is checked as it runs
+  if[tree.isfn x;
     tree.chk[fns.ispure x;fnstr[c;x]," cannot be applied by ",fnstr[c;f]," - only q's simple functions can"];
     :x];
-  :$[inert x;x;(chk;x)];
+  if[isliteral x;@[fns.fnarg;litvalue x;{[f;e] 'e," (passed to ",f,")"}fnstr[c;f]];:x];
+  if[$[-11h=type x;x in c[`p;`calls];0b];:x];
+  :(fns.fnarg;x);
   };
 
 / a literal (function;column) pair, as parse leaves (max;size): (enlist;max;`size)
@@ -242,8 +279,9 @@ guarded:{[c;h;h2;a]
   if[tree.isfn h;
     if[(h~fns.findop)&2=count a;:(fns.findsafe;a)];
     :(h2;guard[c;;h;]'[fns.rules[h;count a];a])];
-  / a column, indexed by the arguments, or a call the policy trusts
-  if[-11h=type h;:(h2;a)];
+  / a call the policy trusts; or a column, indexed by the arguments - and checked as it runs, as
+  / a column of functions applies the one it reaches: f[0;g;y] over select f:(each;count)
+  if[-11h=type h;:$[h in c[`p;`calls];(h2;a);((fns.fnarg;h2);a)]];
   / an expression in the head: what q applies is only known when it runs
   tree.chk[not issymlit h2;"`",string[first h2]," cannot be applied - q would call the global it names"];
   if[isderived h2;:(h2;$[3=count h2;a;guard[c;`data;first h2;] each a])];
@@ -263,6 +301,17 @@ walkall:{[c;scope;depth;l]
 
 / ------------------------------------------------------------------ queries
 
+/ a functional form written as text - ?[t;enlist(=;`a;1);0b;()] - parses with its clauses as code
+/ that builds them as the query runs: (enlist;(enlist;=;,`a;1)), where select text gives the
+/ clause itself, ,,(=;`a;1). The walker checks a clause as written, and q would run what the code
+/ builds - ?[t;();0b;(enlist`x)!enlist(distinct;`hidden)] read a column the caller was not
+/ granted. So each clause must have the shape parse gives select text. A functional form whose
+/ arguments are plain data, ?[t;();0b;()], parses to exactly that shape, and runs
+funcform:"write the query as select, exec, update or delete - a functional form's clauses must be data, not code that builds them";
+
+/ where: () or, as parse writes it, a one-item list holding the list of constraints
+iswhere:{[s] :$[s~();1b;0h<>type s;0b;tree.cnested;(1=count s)&0h=type first s;1b];};
+
 / the table slot: a table name, or an expression - a nested select, a join of nested selects, a
 / sort or unkey of one. Each returns ([base;tn;vcols;slot]): whether it is a table name, the name,
 / the columns visible through it, and the rewritten slot
@@ -276,6 +325,10 @@ basetable:{[c;isupd;tn]
   / a registered table, read through the caller's grants
   tree.chk[not isupd and c[`cfg;`selectonly];"update/delete must wrap a select statement, not a table"];
   tree.chk[istable[c;tn];"unknown or non-permissioned table: ",string tn];
+  / q signals 'par for an update or delete on a partitioned table, and over the select it would
+  / wrap here, its where clause could not prune: every partition would be read
+  tree.chk[not isupd and not null c[`p;`tabs;tn];
+    "update/delete on a partitioned table must wrap a select - update ... from select from ",string[tn]," where ..."];
   tree.chk[0<count vcols:cols4[c;tn];"no column access granted on table: ",string tn];
   :([base:1b;tn:tn;vcols:vcols;slot:tn]);
   };
@@ -305,10 +358,14 @@ byclause:{[c;outscope;depth;b]
   / by name and left in the form it was written
   names:(0h=type b)and(0<count b)and all -11h=type each b;
   if[names;walkall[c;outscope;depth;b];:(b;`symbol$b;1b)];
-  if[99h=type b;:((key b)!first walkall[c;outscope;depth;value b];key b;0b)];
-  tree.chk[(b~0b)|(b~1b)|b~();"unsupported by clause"];
+  if[99h=type b;tree.chk[names4 key b;funcform];:((key b)!first walkall[c;outscope;depth;value b];key b;0b)];
+  tree.chk[(b~0b)|(b~1b)|b~();$[0h=type b;funcform;"unsupported by clause"]];
   :(b;nocols;0b);
   };
+
+/ the names a by or select dictionary gives its columns: one or more symbols, none null. q reads
+/ an empty one as "every column", which select * pins and this would not
+names4:{[k] :(11h=type k)and(0<count k)and not any null k;};
 
 / the select slot -> (rewritten slot; columns it outputs). s holds what the other slots
 / established: isupd, base, vcols, a (the select slot), byslot, bycols, names and istab (not an exec
@@ -318,20 +375,27 @@ selectclause:{[c;outscope;depth;s]
   a:s`a;
   if[99h=type a;:selectdict[c;outscope;depth;s]];
   if[a~();:selectstar s];
-  / delete rows
-  if[11h=type a;tree.chk[0=count a;"unsupported delete expression"];:(a;s`vcols)];
-  / delete columns
-  if[(0h=type a)&(1=count a)&11h=type first a;:(a;(s`vcols) except first a)];
-  if[0h=type a;:execlist[c;outscope;depth;s]];
+  / delete rows: q reads an empty symbol list as every column, so only a delete may have one
+  if[11h=type a;tree.chk[(s`isupd)and(0=count a)and 0b~s`byslot;funcform];:(a;s`vcols)];
+  / delete columns. In an exec the same shape is a call, `f`col, walked as one below
+  if[(s`isupd)and(0h=type a)and(1=count a)and 11h=type first a;
+    tree.chk[0b~s`byslot;funcform];
+    walksym[c;s`vcols] each first a;
+    :(a;(s`vcols) except first a)];
+  / an exec's expression, quoted in a one-item list
+  if[0h=type a;tree.chk[1=count a;funcform];:execlist[c;outscope;depth;s]];
   tree.chk[0b;"unsupported select/update/delete expression"];
   };
 
 selectdict:{[c;outscope;depth;s]
-  / named columns. An update keeps its input's columns and adds the assigned ones
+  / named columns. An update keeps its input's columns and adds the assigned ones. A select is
+  / a table, keyed by its by; an exec only with a named by - exec a:x by s:sym - and with a bare
+  / one, exec a:x by sym, it is a dictionary keyed by sym's values
+  tree.chk[names4 key s`a;funcform];
   a:(key s`a)!first walkall[c;outscope;depth;value s`a];
   vcols:s`vcols;
   bycols:s`bycols;
-  :(a;$[s`isupd;vcols,(key a) except vcols;s`istab;bycols,(key a) except bycols;nocols]);
+  :(a;$[s`isupd;vcols,(key a) except vcols;(s`istab)and not s`names;bycols,(key a) except bycols;nocols]);
   };
 
 / the last of each of columns vc, as a by-select * takes them
@@ -344,6 +408,10 @@ selectstar:{[s]
   vcols:s`vcols;
   bycols:s`bycols;
   keyed:99h=type s`byslot;
+  / grouped by every column there is nothing left to take the last of, and q itself signals rank
+  / (select by a,b from ([]a;b)). Say so, rather than pass on a bare rank
+  if[s[`base]and keyed;tree.chk[count vcols except bycols;
+    "select * grouped by every column you can see returns no columns, which q refuses - aggregate a column (select n:count c by ...) or use select distinct"]];
   a:$[not s`base;();keyed;lastof vcols except bycols;vcols!vcols];
   :(a;$[keyed;bycols,vcols except bycols;vcols]);
   };
@@ -352,7 +420,9 @@ execlist:{[c;outscope;depth;s]
   / an exec expression list
   pv:pivotcols s`a;
   a:first walkall[c;outscope;depth;s`a];
-  :(a;$[not s`istab;nocols;count pv;(s`bycols),pv except s`bycols;s`vcols]);
+  / a table only when it pivots, by a named by, into columns the tree names: any other exec
+  / gives a list or a dictionary
+  :(a;$[(s`istab)and(not s`names)and 0<count pv;(s`bycols),pv except s`bycols;nocols]);
   };
 
 / select[n;<c]: parse adds a limit slot, and a sort slot (enlist (grade;expression)). q evaluates
@@ -389,14 +459,18 @@ query:{[c;scope;depth;q]
   / a select/exec/update/delete: the table slot pinned to the caller's grants, the policy's row
   / filter placed into the where clause, and "select *" made explicit
   isupd:q[0]~tree.updop;
+  tree.chk[iswhere q 2;funcform];
   ts:tableslot[c;depth;isupd;q 1];
   base:ts`base;
   vcols:ts`vcols;
   / where may see every real column if strictcolumns is off; by and select produce output and are
   / always limited to the granted columns
-  refcols:$[base and not c[`cfg;`strictcolumns];pol.columnsof[c`p;ts`tn];vcols];
+  / ...but not an update or delete's: it runs over the pinned select, which holds only the
+  / granted columns, and a name it lacks resolves to a global
+  refcols:$[base and (not isupd) and not c[`cfg;`strictcolumns];pol.columnsof[c`p;ts`tn];vcols];
   outscope:vcols,$[c[`cfg;`rowindex];enlist`i;nocols];
   w:first walkall[c;refcols;depth;tree.getc q 2];
+  if[base;w:ord.guardvalues[pol.info[c`p;ts`tn];w]];
   bc:byclause[c;outscope;depth;q 3];
   s:([isupd;base;vcols;a:q 4;byslot:bc 0;bycols:bc 1;names:bc 2;istab:not (q 3)~()]);
   sc:selectclause[c;outscope;depth;s];

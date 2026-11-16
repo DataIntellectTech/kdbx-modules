@@ -74,8 +74,9 @@ It is turned into a cutoff on **every query**:
 The cutoff reaches the query as a plain value. As a result:
 - `explain` and the audit log show the exact cutoff a query ran with, which is
   what you need when someone asks why a row was missing;
-- it is ordered like any other constraint, so a date cutoff leads the where
-  clause and prunes partitions;
+- it is ordered like any other constraint: a date cutoff goes to the front of
+  the where clause with the other date constraints, just behind one that
+  bounds the date;
 - the embargo moves forward by itself as time passes, and nobody edits the
   policy each day.
 
@@ -83,11 +84,13 @@ With the example's clock fixed at `2026.10.10D00:00`:
 
 ```q
 q)qsp.explain[p;`llm1;"select from trades where date=2026.10.07"]
-"(?;`trades;,((<;`date;2026.10.08);(=;`date;2026.10.07);(in;`sym;,`AAPL`MSFT`NVDA`META));0b;...)"
+"(?;`trades;,((=;`date;2026.10.07);(<;`date;2026.10.08);(in;`sym;,`AAPL`MSFT`NVDA`META));0b;...)"
 ```
 
-`qsp.aged[date;2D]` became `date<2026.10.08`. It is placed first, ahead of the
-user's own `date=2026.10.07`, because both are on the partition column.
+`qsp.aged[date;2D]` became `date<2026.10.08`. It is placed second, just behind
+the user's own `date=2026.10.07`. Both are on the partition column, and q
+narrows the partitions it reads by the first constraint only: this way it reads
+one partition, not every partition before the cutoff.
 
 ## Which column to age
 
@@ -107,8 +110,9 @@ falls in, or after, is held back completely. With the clock at
 | `qsp.aged[date;2D]` | `date<2026.10.08` | 2026-10-07 |
 
 Use it for day-level rules: nothing from today, T+1, a week's delay. On a
-date-partitioned table it also **prunes**: the held-back partitions are never
-read.
+date-partitioned table it is an upper bound on the partitions read, not a
+complete one: with `requirepartition` on, the user still names their dates
+(see [Things to know](#things-to-know)).
 
 It works in whole days, rounding towards hiding more. `qsp.aged[date;2D]` at
 midday on the 10th hides the 8th, 9th and 10th: two days and a half, not
@@ -315,12 +319,14 @@ embargo. Put the embargo on every grant the user holds on that table, or keep
 embargoed users out of groups that grant the same table more widely.
 `qsp.access` shows the combined filter, so check it there.
 
-**An embargo on the partition column satisfies `requirepartition`.**
-`date<2026.10.08` is a constraint on the partition column, so a research
-query with no date of its own is not refused as a full scan. It reads every
-partition before the cutoff. `maxrows`, `maxsize`, `-T` and `-w` still bound
-it. If you want users to name their dates anyway, say so in the guidance you
-give them. qsp can't tell the user's constraint apart from the policy's.
+**An embargo doesn't satisfy `requirepartition`.** `date<2026.10.08` is a
+constraint on the partition column, but only an upper bound: on its own it
+reads every partition before the cutoff, which on a database of years is all
+of them. So an embargoed user still has to bound their dates, with `date=d`,
+`date in ds` or `date within d0 d1`, just as a user with no embargo does. qsp
+puts the user's bounded constraint ahead of the embargo, because q narrows the
+partitions it reads by the first constraint only, so `where date=d` reads one
+partition. The embargo then removes that day if it is held back.
 
 **The audit log keeps wall-clock time.** Its `time` column is `.z.p` when the
 decision was taken, whatever the policy clock says. Its `rewritten` column
@@ -363,8 +369,19 @@ q)qsp.explain[qsp.active[];`llm1;"select from trades where date=2026.10.07"]
 ```
 
 To prove an embargo, fix the clock and check the edges: the newest row a user
-can see, and the oldest they can't. `examples/equities/hdb.q` does this: as `llm1`, the
-same query returns rows for 2026-10-07 and nothing for 2026-10-09.
+can see, and the oldest they can't. Write them as tests in `tests.csv`, as the
+example does for `llm1`:
+
+```
+user,query,expect,value,note
+llm1,select vwap:size wavg price by sym from trades where date=2026.10.07,rows,,the last day outside the embargo
+llm1,select vwap:size wavg price by sym from trades where date=2026.10.09,empty,,the last two days are embargoed
+```
+
+`bin/policy.q -test` runs them in CI ([Testing a policy](../qsp.md#testing-a-policy)).
+Fix the clock in the policy that CI tests, or the edges move every day. In the
+admin UI ([ui.md](ui.md)), the Lens shows the embargo on a table's real rows:
+pick an embargoed user and a day inside it, and every row fades.
 
 ## Reference
 

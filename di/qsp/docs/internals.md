@@ -19,25 +19,36 @@ same behaviour from the user's side. This page names the functions behind it.
 | `walk.q` | The walker. Checks every node of a parse tree and rewrites each select so it reads only what the user may see. |
 | `order.q` | Where the row filter goes in a where clause. A pure function of the table's info and the constraints. |
 | `f.q` | The row-filter builders exported as `qsp.f` (`isin`, `eq`, `aged`, ...). Each returns one constraint as a parse tree. |
-| `files.q` | A policy kept as a directory of CSVs: `fromfiles`, `check`, `scaffold`. Reads the CSVs by hand and applies each row through the `policy.q` builders. |
+| `files.q` | A policy kept as a directory of CSVs: `fromfiles`, `check`, `scaffold`, `schemadrift`. Reads the CSVs by hand and applies each row through the `policy.q` builders. A loaded table is registered from its live meta, and `schemadrift` reports where `schema.csv` disagrees. |
+| `suite.q` | A policy's own tests, `tests.csv`: reads and checks it (an `equals` value is parsed and evaluated only if it is plain data), and gives a test's verdict from what running it returned. `init.q` runs them (`runtests`), with the audit log off. |
+| `admin.q` | The admin UI (`qsp.adminui`): its JSON API over `.z.pp` and the page from `ui/` over `.z.ph`, the state of the policy it is editing (none, does not load, loads), and opening, creating (scaffold), previewing and saving one. It runs queries only through the functions `init.q` lends it. |
+| `ui/` | The admin UI's page: `index.html`, `style.css`, `app.js` (routing and state), `model.js` (the policy as the page reasons about it), `drawer.js`, `lib.js`, and a module per view in `views/`. Plain ES modules, no build. |
 | `review.q` | What a policy means: `access` (who can read what), `diff` (what a change changes), and `text`, which writes a constraint back as q. |
+| `api.q` | What a gateway or a query generator asks a policed process: `limits`, `memstats`, `users`, `functions`, `rules` (for an LLM agent: each rule with its reason, examples either way, and the text of its refusal), `access`, `describe` (one user's view of the policy, with the rules). Each takes a format last, `` `q `` or `` `json ``, which changes the encoding and never the content. `init.q` adds `version`, `validate` and `explain`, exports the lot as `qsp.api`, and serves the same calls over IPC as `` (`.qsp.api;name;...) ``. |
 | `VERSION` | The module version (semver), read into `qsp.version`. |
+| `CHANGELOG.md` | What changed in each version. A change to what a policy permits is marked **behaviour**. |
 | `qsp.md` | The module's documentation: install, example, API, how it works, limits. |
 | `setup.md` | The walkthrough for a team setting up a policy kept as files. |
 | `docs/README.md` | Index of the documentation. |
 | `docs/concepts.md` | What a policy is made of, and how one user's access is worked out. |
 | `docs/time.md` | Embargoes, delayed data and the policy clock. |
+| `docs/ui.md` | The admin UI's guide: each view, common jobs, its JSON API. Screenshots in `docs/img/`. |
+| `docs/testing.md` | qsp's own tests: the unit tests and the hardening campaign, what each covers, and how to add to them. |
+| `docs/history.md` | What changed from the original qsp, and how the module did against its suites. |
+| `docs/security-review.md` | The three security reviews: each finding, its verdict, root cause and fix. |
 | `docs/internals.md` | This page. |
 | `test.csv` | The k4unit tests. `k4unit.moduletest`di.qsp` runs them. |
 | `test.q` | The tests' fixtures (`trade`, `quote`, the policy `P`, ...) and `.t.*` helpers: assertions (`.t.allow`, `.t.deny`), partitioned test databases, connecting to `testserver.q`, policy directories written from strings, and running `bin/policy.q`. Loaded by `test.csv` and `testserver.q`. |
 | `testserver.q` | A process that serves `P` over IPC, for the serving tests. It exits when its last client disconnects, or after a minute. |
 | `bin/test.q` | Runs the tests and exits 1 if any fail, for CI. |
-| `bin/policy.q` | Checks a policy directory and prints `access`, and optionally a `diff` against an older one. Exits 1 if the policy would not load. For CI and pull requests. |
+| `bin/policy.q` | Checks a policy directory and its `tests.csv`, and prints `access`, and optionally a `diff` against an older one. With `-test`, runs the tests against the data `-init` loads. Exits 1 if the policy would not load or a test fails. For CI and pull requests. |
 | `examples/equities/README.md` | The example: its roles, how to run it and load its policy, and queries that surprise people. |
 | `examples/equities/mkhdb.q` | Builds the example equities HDB: four date-partitioned tables, four splayed reference tables, fixed data. |
-| `examples/equities/policy/*.csv` | The example's policy, as files: `config`, `gateways`, `grants`, `members`, `schema`, `tables`. |
+| `examples/equities/policy/*.csv` | The example's policy, as files: `config`, `gateways`, `grants`, `members`, `schema`, `tables`, and its tests, `tests.csv`. |
 | `examples/equities/policy/defs.q` | The q the example policy names: the lookup functions its filters call, and its fixed clock. Kept with the CSVs so it is reviewed with them. `fromfiles` doesn't load it. |
-| `examples/equities/hdb.q` | Builds and loads the example HDB and policy, then runs each role's example queries, checking that each returns rows, returns nothing, or is refused as expected. Exits 1 if any doesn't. With `-p`, it then serves the policy. |
+| `examples/equities/setup.q` | What `hdb.q` and `demo.q` share: builds the HDB if `-db` doesn't exist, loads it, `defs.q` and the policy (`-policy DIR`, or `policy/`). |
+| `examples/equities/hdb.q` | Loads the example (`setup.q`), then walks through `policy/tests.csv`, showing what each query returns and checking each test passes, and the agent rules' examples. Exits 1 if any doesn't. With `-p`, it then serves the policy. |
+| `examples/equities/demo.q` | Loads the example (`setup.q`) and opens `qsp.adminui` on it. With `-check`, calls each of the admin UI's endpoints and exits 1 if one answers wrongly. |
 
 ## How the source files fit together
 
@@ -46,7 +57,10 @@ Each `.q` file other than `init.q` is a submodule. `init.q` loads them with
 directory can be moved as a unit. Nothing loads a file by path.
 
 ```
-init.q ──► tree  policy  order  walk  f  files  review
+init.q ──► tree  policy  order  walk  f  files  review  api  suite  admin
+admin.q ─► tree  fns  policy  files  review  api  suite
+api.q ───► tree  policy  review
+suite.q ─► tree  files
 walk.q ──► tree  fns  policy  order
 files.q ─► tree  fns  policy  f
 review.q ► tree  fns  policy
@@ -58,7 +72,10 @@ tree.q     (nothing)
 ```
 
 There are no cycles. `tree.q` is the leaf, so anything about how q represents
-a query goes there.
+a query goes there. The pipeline (`run`, `runx`, `rewrite`, `runtests`) lives
+in `init.q`, which `admin.q` cannot load without a cycle. So `adminui` lends
+those functions to `admin.start` as a dictionary when it is called, and the
+admin UI runs every query through them.
 
 ### What runs at load
 
@@ -72,6 +89,7 @@ queries. It never misreads a tree.
 | `fns.q` | `defaults`: every whitelisted name resolved to its function value. `neverfns`: the never-allow list as values, plus the amend and assign operators read from parse. `compose`: the iterator q puts in the head of `a<>b`. |
 | `order.q` | `negations`: how `<>`, `<=` and `>=` appear in a parse tree (as `not` composed with `=`, `>` and `<`), so each can be ranked as the operator it stands for. |
 | `walk.q` | `preserve`, the heads that keep their input's columns. Loading fails if fewer than nine resolve. Also `takeop`, `dropop` and `dictop` (`#`, `_` and `!`). |
+| `admin.q` | `uidir`, the `ui/` directory beside it. It is read from the file a function of `admin.q` was defined in (`value`, third from last): while a module loads, `.z.f` is the script that loaded it, and a `:::` path built at run time does not resolve. |
 
 ### Module state
 
@@ -82,7 +100,11 @@ A policy is a value, passed in. The only globals the module keeps are:
 | `logname`, and the table it names | `init.q` | the audit log. `auditto` moves it to a root name |
 | `served` | `init.q` | the policy the message handlers use |
 | `installed` | `init.q` | whether `serve` has installed the handlers yet |
-| `priorpw` | `init.q` | the `.z.pw` that was defined before the first `serve`, called after the name check |
+| `before` | `init.q` | each message handler as it was before the first `serve`. A query is evaluated through the `.z.pg` or `.z.ps` that was there, and `.z.pw` is called after the name check. `unserve` puts them all back |
+| `Q` | `admin.q` | the pipeline functions `adminui` lent it |
+| `dir`, `P`, `P0`, `PR`, `edited` | `admin.q` | the admin UI's policy: its directory, the policy (`(::)` while it does not load, with `PR` the problems), the policy as the files have it, and whether an edit has been applied to the session |
+| `T`, `TP` | `admin.q` | the policy's tests, and the problems with `tests.csv` |
+| `access`, `running`, `opened`, `before` | `admin.q` | whether the page answers `` `local `` or `` `public ``, whether its handlers are installed, whether it opened the port, and `.z.ph` and `.z.pp` as they were before, for `` adminui`stop `` |
 
 Nothing is set per query. The walker passes its state down as arguments.
 
@@ -188,7 +210,7 @@ checks `depth` against `maxdepth`, then picks the first rule that fits:
 | a symbol vector of 2+ | `walkcall` | a call by name: the first item must be in `calls`. Each argument is walked |
 | a dictionary | refused | |
 | a general list | `walklist` | under two items, it is literal data. Otherwise it is an application: `walkhead` checks the head, and each argument is walked at `depth+1`. Then `guarded` checks every symbol q could resolve as a global: by `fns.rules` for a function head, refusing a literal symbol now and wrapping a computed argument in a run-time check. An expression head is wrapped in `fns.fnarg`. Pure functions, and column-name arguments, are left alone |
-| anything else | `literal` | data, which projects nothing. It may not contain a registered table's name |
+| anything else | `literal` | data, which projects nothing. It may not contain a registered table's name, or a function at any depth (`hasfn`): `eval` hands back a one-item list's item unevaluated, so `(each;enlist value;...)` would hand `each` a function the walker never checked |
 
 `walkhead` accepts a function value (through `walkfn`), a symbol (through
 `headsym`: a name in `calls`, or a column in scope, since `price where size>1`
@@ -240,6 +262,14 @@ refcols:  `date`sym`account`size`price   / where may use these. All 7 columns if
 outscope: `date`sym`account`size`price   / by and select may use these, plus `i if rowindex is on
 ```
 
+Before any of this, `query` checks the where slot is `()` or, as parse
+writes it, a one-item list holding the constraints (`iswhere`). `byclause`
+and `selectclause` refuse an application where a clause belongs, and an
+exec's slot must be one item. A functional form written as text parses with
+its clauses as code that builds them (`(enlist;(enlist;=;,`a;1))`), which q
+runs before `?` sees the result, so the walker would check something other
+than what runs. Those shapes are refused with `funcform`.
+
 **d. Where.** `walkall[c;refcols;depth;tree.getc q 2]` walks each user
 constraint. `(>;`size;15)` goes to `walklist`: the head `>` is a whitelisted
 function value, `` `size `` is in scope, and `15` is literal. Nothing changes.
@@ -257,7 +287,7 @@ else is refused. Here it returns the slot unchanged and `` bycols:,`sym ``.
 | `()` | `selectstar` | for a table: `vcols!vcols`, or `last` of each with a by. This is where `select *` becomes an explicit projection |
 | empty symbol vector | inline | `delete from t where ...`: delete rows |
 | one-item list holding a symbol vector | inline | `delete a b from t`: delete columns |
-| other general list | `execlist` | an exec's expressions, walked. `pivotcols` reads the output keys of `exec k!v by x` |
+| one-item general list | `execlist` | an exec's expression, walked. `pivotcols` reads the output keys of `exec k!v by x`. Any other general list is code building the clause (a functional form), refused |
 
 Here `(sum;`size)` is walked, `sum` is whitelisted, and the select outputs
 `` `sym`size ``.
@@ -296,19 +326,31 @@ filter is merged into the user's constraints using the table's info
    order written, after them.
 
 A constraint is **movable** if it is `(op;column;value)`, `op` is a plain
-comparison (`= ~ in < <= > >= within <> like`), and `value` names no column
-of the table, holds no nested select, and doesn't use `i`. Its result for a
-row then doesn't depend on any other row, so moving it can't change the
-answer.
+comparison (`= in < <= > >= within <> like`), and `value` names no column
+of the table, holds no nested select, and doesn't use `i`; or if it is `&`,
+`|` or `not` over movable constraints (`iscompound`). Its result for a row
+then doesn't depend on any other row, so moving it can't change the answer.
+Two comparisons that look plain are not movable:
+
+- `~` is not on the list. It matches the whole column and returns one
+  boolean, so it aggregates.
+- a literal list on the right of `= < <= > >= <>`, more than two values for
+  `within`, or anything but one string for `like` (`literal`, `oneshape`). q
+  compares row by row against a list, and signals `'length` unless the list
+  is as long as the rows in front of it: moved ahead of the row filter, that
+  counts the hidden rows. A value the user computes can't be shaped here, so
+  `ord.guardvalues` (called from `query`, before placement) wraps it in
+  `fns.scalar`, `fns.pair` or `fns.pattern`, which refuse a list as it runs.
 
 The sort key (`crank`, `sort`) is, lowest first: rank, then policy before
-user, then position. The ranks are:
+user, then position, as a table sort so no count of constraints spills one
+key into the next. The ranks are:
 
 | rank | constraint |
 |---|---|
 | 0 | on the partition column |
-| 1, 2, ... | on a column with an attribute from `attributerank`, using an operator its index can serve (`p` `u` `g`: `= ~ in`; `s`: those plus ranges) |
-| 50 | any other movable constraint |
+| 1, 2, ... | on a column with an attribute from `attributerank`, using an operator its index can serve (`p` `u` `g`: `= in`; `s`: those plus ranges) |
+| 50 | any other movable constraint, including every `&`, `\|` and `not` |
 | 900 | not movable. Never sorted, since the prefix stops before one |
 
 Here `trade` has no partition or attributes, so both constraints rank 50 and
@@ -350,12 +392,25 @@ This is the only check that limits the work before anything runs, and it
 applies only when `requirepartition` is on. `scanned` lists each select over a
 base table in the *rewritten* tree (`tree.basequeries`) whose constraints
 don't prune its partition column (`ord.prunes`: the *leading* constraint is a
-movable one that narrows that column, with `=`, `~`, `in`, `<`, `<=`, `>`, `>=`
-or `within`). q narrows the partitions it reads only by the constraint that
-leads, so `where size=max size, date=d` and even `where sym=`a, date=d` read
-every partition. `date<>d` is movable but reads all partitions but one. Each such table is refused, naming the column it needs:
-`full table scan: trade needs a constraint on `date`. It is recorded as
-`denied`.
+movable one that bounds that column on both sides, with `=`, `in` or
+`within`). q narrows the partitions it reads only by the constraint that leads,
+so `where size=max size, date=d` and even `where sym=`a, date=d` read every
+partition, and `where date>=a, date<=b` reads every partition from `a`. A
+one-sided range, an embargo's `date<cutoff` included, is open-ended, and
+`date<>d` reads all partitions but one. To make the bounding constraint lead,
+`order.crank` ranks it ahead of any other constraint on the partition column. Each such table is refused, naming the column it needs:
+`full table scan: trade needs a constraint on `date - date=d, date in ds or date within d0 d1`. It is recorded as
+`denied`. When the query does bound the column but not first (`buried`), only
+the policy filter can have put something ahead of it - `placement` `` `first ``,
+or a filter that could aggregate - and the refusal says that instead: no query
+can prune that table for that user.
+
+`partitionlimit` applies `maxpartitions` next, whether or not
+`requirepartition` is on. For each base query, `partsread` counts the
+partitions it would read: all of `.Q.pv` if it doesn't prune, or else the
+leading constraint evaluated with the partition column bound to `.Q.pv`.
+`date within 0001.01.01 9999.12.31` bounds the column, so it passes
+`requirepartition`, and is caught here.
 
 ### 8. Evaluate
 
@@ -503,6 +558,11 @@ Keep these true when you change anything:
 
 ## Making common changes
 
+A change to what qsp does is documented in [../qsp.md](../qsp.md), the
+reference, where each rule is stated once. This page, `concepts.md` and
+`setup.md` link to it rather than restating the rule; update them only where
+they explain or walk through the change.
+
 | change | where | also |
 |---|---|---|
 | whitelist a function by default | the `catalog` call that builds `defaults` in `fns.q` | `catalog` refuses anything on the never list. Add attack tests for anything it can reach |
@@ -514,8 +574,13 @@ Keep these true when you change anything:
 | a new filter builder | `f.q` | `review.text` must write it back as something `files.filter` reads back. The `access` round-trip test checks this |
 | a new policy file | `files` and `applyfiles` in `files.q`, with a `...row` function | `scaffold` should write it. Add it to the file table in qsp.md and setup.md |
 | a new message handler | `install` in `init.q` | refuse anything you don't police |
+| a new kind of test expectation | `expects`, `rowproblem` and `verdict` in `suite.q` | the `expect` table in qsp.md's [Testing a policy](../qsp.md#testing-a-policy), and `EXPECTS` in `ui/views/tests.js` |
+| a new admin UI call | a function taking the page's `args` dictionary, added to `calls` in `admin.q` | if it runs a query, run it through `Q` (``Q[`runx]``, ...), never by evaluating text. Add it to the API table in [ui.md](ui.md#the-json-api), and test it through `.z.pp` (`.t.post` in `test.q`) |
+| a new admin UI view | a module in `ui/views/` exporting `render(el, ctx)`, returning a cleanup function if it starts timers or listeners, and an entry in `VIEWS` in `ui/app.js` (`always: true` if it works without a policy) | describe it in [ui.md](ui.md) |
+| a policy file the admin UI edits | `csvfiles` in `admin.q`, and `FILES`, `HEADERS` and `ABOUT` in `ui/views/edit.js` | |
 
-Every change needs tests in `test.csv`, in the section for its area. The
+Every change needs tests in `test.csv`, in the section for its area
+([testing.md](testing.md) says what each covers). The
 sections are marked by `comment` rows. Fixtures and helpers go in `test.q`.
 Run the tests with:
 
@@ -537,6 +602,20 @@ qo.place[qp.info[P;`trade];P`config;qt.getc (parse q) 2;qp.filterfor[P;`llmu;`tr
 qsp.explain[P;`llmu;q]                        / the whole rewrite, as text
 qsp.validate[P;`llmu;q]                       / (allowed;reason), with nothing run
 ```
+
+The admin UI's handlers can be called in the process, which is how the tests
+drive them. `.t.post` in `test.q` does this:
+
+```q
+qsp.adminui ([access:`local;port:0;dir:"/path/to/policy"])   / port 0: install the handlers, open no port
+.j.k last "\r\n\r\n" vs .z.pp enlist "api ",.j.j `call`args!(`run;`user`query!("llm1";"select from venues"))
+.z.ph enlist "views/map.js"                                  / a file of the page, as HTTP
+```
+
+In the browser, the developer tools' console shows a view's errors, and the
+network tab every `/api` call with its JSON. The page's files are read from
+`ui/` on every request, so an edit to one shows on reload, without restarting
+q.
 
 `-3!` and `.Q.s1` cut their output to the console width (`\c`). `render` in
 `init.q` widens it for the audit log and `explain`. Do the same, or use

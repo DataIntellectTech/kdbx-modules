@@ -1,0 +1,46 @@
+user,query,expect,value,note
+# what this policy must mean, run by bin/policy.q -test, by hdb.q, and in the explorer (demo.q).
+# expect: rows, empty, runs (either), refused (value: text the refusal contains), equals (value: a
+# q literal the result must match exactly). Each test stands alone: none relies on another
+# having run. The data's last day is 2026.10.09
+#
+# research: an external analyst, or an LLM. Prints and quotes for four names, two days late
+llm1,select vwap:size wavg price by sym from trades where date=2026.10.07,rows,,every name is asked for; only the four granted come back
+llm1,asc exec distinct sym from select sym from trades where date=2026.10.07,equals,`AAPL`META`MSFT`NVDA,exactly the four technology names
+llm1,select vwap:size wavg price by sym from trades where date=2026.10.09,empty,,the last two days are embargoed (qsp.aged[date;2D]): the same query finds nothing
+llm1,select from venues,rows,,"reference data, which every role gets through the refdata group"
+llm1,"select from quotes where date=2026.10.07, sym=`JPM",empty,,a name outside the row filter is not an error - there is just nothing there
+llm1,select sum size by account from trades where date=2026.10.07,refused,not-permitted column: account,"account is not granted, so it does not exist for this user"
+llm1,select n:count sym by date from trades where sym=`AAPL,refused,full table scan,"no date: the embargo is only an upper bound, so this would read every day before it"
+llm1,"select n:count sym by date from trades where date within 2026.10.05 2026.10.09, sym=`AAPL",rows,,a bounded range of dates: the embargo still holds back the last two
+llm1,select from accounts,refused,no column access,no grant on accounts at all
+llm1,"select from trades where date=2026.10.07, 0<count system ""ls""",refused,not permitted: system,"system is never allowed, whatever the policy says"
+llm1,select from auditlog,refused,no column access,only compliance reads qsp's own log
+#
+# quant: all the market data, with no client or trader
+quant1,select from trades where sym=`AAPL,refused,full table scan,"no date: that would read every partition, and requirepartition refuses it"
+quant1,select n:count i by sym from quotes where date=2026.10.09,refused,not-permitted column: i,"i, the row index, would show where hidden rows are; it is off unless the policy sets rowindex"
+quant1,"select spread:avg ask-bid, n:count sym by sym from quotes where date=2026.10.09",rows,,count a column instead - and every name is here
+quant1,"select time,bid1,bid2,bid3,ask1,ask2,ask3 from depth where date=2026.10.09, sym=`VOD",rows,,"the depth of book, which no one but quant and compliance sees"
+quant1,select notional:sum notional by account from trades where date=2026.10.09,refused,not-permitted column: account,"the prints, but not whose they are"
+quant1,"(0+0)""1+1""",refused,cannot be applied,"q applies an int as a handle, and handle 0 would evaluate the text"
+#
+# sales: their region's clients, looked up per user on every query
+sales_na,select notional:sum notional by account from trades where date=2026.10.09,rows,,"the same query as quant's - and here it works, for the North American accounts only"
+sales_na,asc exec distinct account from select account from trades where date=2026.10.09,equals,`A1`A3`A5`A7,exactly the accounts in North America
+sales_emea,asc exec distinct account from select account from trades where date=2026.10.09,equals,`A2`A4`A6`A8,"exactly EMEA's accounts, and APAC's, which EMEA also covers"
+sales_na,select from accounts,rows,,"the clients behind those accounts, and no others"
+sales_na,"select notional:sum notional by clientType from ej[`account;select from trades where date=2026.10.09;select account,clientType from accounts]",rows,,a join: both sides are filtered before they meet
+sales_na,select n:count sym by trader from trades where date=2026.10.09,refused,not-permitted column: trader,who executed it stays with the desk
+#
+# desk heads: their own desk's orders, and its traders' fills
+cash_head,"select orders:count orderID, filled:sum filledQty by trader from orders where date=2026.10.09",rows,,the CASH desk's traders
+cash_head,asc exec distinct trader from select trader from orders where date=2026.10.09,equals,`T01`T05`T09,exactly the CASH desk's three traders
+etf_head,asc exec distinct trader from select trader from orders where date=2026.10.09,equals,`T03`T07`T11,"the same text, as the ETF desk head"
+cash_head,"select from orders where date=2026.10.09, desk=`ETF",empty,,asking for another desk's orders finds none
+cash_head,select from accounts,refused,no column access,an account is a code here; who the client is stays with sales
+#
+# compliance: everything, and qsp's own log
+compliance1,select trades:count sym by date from trades where date within 2026.10.05 2026.10.09,rows,,every row of every partition
+compliance1,count select from trades where date=2026.10.09,equals,1500,"all of a day's trades, unfiltered"
+compliance1,count select from accounts,equals,8,"every client, in every region"

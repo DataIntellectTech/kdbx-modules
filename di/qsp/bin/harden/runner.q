@@ -9,15 +9,15 @@ OUT:first o`outdir;
 REPO:first o`modroot;
 POLDIR:first o`poldir;
 
+/ the queries checked against a value, each written once, and their expected results (mkexpected.q).
+/ cases.q also defines the dates D and E the other suites use
+system"l ",{$[count i:where x="/";(1+last i)#x;"./"]}[string .z.f],"cases.q";
 exp_data:-9!read1 hsym`$RUN,"/expected.bin";
 sym:get hsym`$RUN,"/hdb/sym";
 
 canary_called:hsym`$RUN,"/canary_called";
 canary_created:hsym`$RUN,"/canary_created_file";
 canary_keep:hsym`$RUN,"/canary_keep_file";
-
-D:"2026.10.09";
-E:"2026.10.07";
 
 results:([]id:`long$();suite:`symbol$();user:`symbol$();description:();query:();expected:();actual:();passed:`boolean$();notes:());
 
@@ -82,6 +82,22 @@ check_val:{[suite;u;title;q;expected;note]
   add_result[suite;u;title;q;"match (count=",string[count expected],")";act;ok;note];
   };
 
+expected:{[id;u]
+  / case id's expected result for user u
+  k:`$string[id],"/",string u;
+  if[not k in key exp_data;'"no expected result for ",string[id]," as ",string u];
+  :exp_data k;
+  };
+
+/ case id (cases.q), run as u
+check_case:{[suite;id;u] c:cases id; check_val[suite;u;c`title;c`q;expected[id;u];c`note];};
+
+/ case id, forwarded by the gateway login to run as u
+check_gw:{[id;u]
+  c:cases id;
+  check_val[`logins_transport;`gateway;"gateway execas ",string[u],": ",c`title;(`.qsp.execas;c`q;u);expected[id;u];c`note];
+  };
+
 check_refused:{[suite;u;title;q;pattern;note]
   r:exec_as[u;q];
   if[r 0;
@@ -123,30 +139,17 @@ check_attack:{[u;title;q;note]
 -1"== Running suite: permissions ==";
 
 / Reference data for all users
-{[u]
-  check_val[`permissions;u;"read instruments";
-    "select from instruments";exp_data`instruments_all;""];
-  check_val[`permissions;u;"read venues";
-    "select from venues";exp_data`venues_all;""];
- } each `llm1`quant1`sales_na`sales_emea`cash_head`etf_head`compliance1;
+{[id] check_case[`permissions;id] each cases[id;`users]} each `instruments`venues;
 
 / --- llm1 (research) ---
-check_val[`permissions;`llm1;"trades on allowed date E";
-  "select from trades where date=",E;exp_data`llm1_trades_E;""];
-check_val[`permissions;`llm1;"trades on embargoed date D returns empty";
-  "select from trades where date=",D;exp_data`llm1_trades_D;""];
-check_val[`permissions;`llm1;"trades on embargo boundary 2026.10.08 returns empty";
-  "select from trades where date=2026.10.08";exp_data`llm1_trades_D8;""];
-check_val[`permissions;`llm1;"trades for non-tech sym JPM returns empty";
-  "select from trades where date=",E,", sym=`JPM";exp_data`llm1_trades_jpm;""];
-check_val[`permissions;`llm1;"vwap by sym on date E";
-  "select vwap:size wavg price by sym from trades where date=",E;exp_data`llm1_vwap_E;""];
-check_val[`permissions;`llm1;"count by date for AAPL (pruned by embargo filter)";
-  "select n:count sym by date from trades where sym=`AAPL";exp_data`llm1_aapl_by_d;""];
-check_val[`permissions;`llm1;"quotes on allowed date E";
-  "select from quotes where date=",E;exp_data`llm1_quotes_E;""];
-check_val[`permissions;`llm1;"quotes on embargoed date D returns empty";
-  "select from quotes where date=",D;exp_data`llm1_quotes_D;""];
+check_case[`permissions;`llm1_trades_E;`llm1];
+check_case[`permissions;`llm1_trades_D;`llm1];
+check_case[`permissions;`llm1_trades_D8;`llm1];
+check_case[`permissions;`llm1_trades_jpm;`llm1];
+check_case[`permissions;`llm1_vwap_E;`llm1];
+check_case[`permissions;`llm1_aapl_by_d;`llm1];
+check_case[`permissions;`llm1_quotes_E;`llm1];
+check_case[`permissions;`llm1_quotes_D;`llm1];
 
 / llm1 hidden columns on trades: src, account, trader, notional, orderID
 {[c]
@@ -169,14 +172,10 @@ check_val[`permissions;`llm1;"quotes on embargoed date D returns empty";
  } each `orders`depth`accounts`traders`auditlog;
 
 / --- quant1 (quant) ---
-check_val[`permissions;`quant1;"trades on date D";
-  "select from trades where date=",D;exp_data`quant1_trades_D;""];
-check_val[`permissions;`quant1;"quotes on date D";
-  "select from quotes where date=",D;exp_data`quant1_quotes_D;""];
-check_val[`permissions;`quant1;"depth on date D";
-  "select from depth where date=",D;exp_data`quant1_depth_D;""];
-check_val[`permissions;`quant1;"spread by sym on date D";
-  "select spread:avg ask-bid, n:count sym by sym from quotes where date=",D;exp_data`quant1_spread_D;""];
+check_case[`permissions;`trades_D;`quant1];
+check_case[`permissions;`quotes_D;`quant1];
+check_case[`permissions;`depth_D;`quant1];
+check_case[`permissions;`quant1_spread_D;`quant1];
 
 / quant1 hidden columns on trades: account, trader, orderID
 {[c]
@@ -191,25 +190,15 @@ check_val[`permissions;`quant1;"spread by sym on date D";
  } each `orders`accounts`traders`auditlog;
 
 / --- sales_na & sales_emea (sales) ---
-check_val[`permissions;`sales_na;"accounts for NA";
-  "select from accounts";exp_data`sales_na_accounts;""];
-check_val[`permissions;`sales_emea;"accounts for EMEA/APAC";
-  "select from accounts";exp_data`sales_emea_accounts;""];
-check_val[`permissions;`sales_na;"trades on date D for NA";
-  "select from trades where date=",D;exp_data`sales_na_trades_D;""];
-check_val[`permissions;`sales_emea;"trades on date D for EMEA/APAC";
-  "select from trades where date=",D;exp_data`sales_emea_trades_D;""];
-check_val[`permissions;`sales_na;"orders on date D for NA";
-  "select from orders where date=",D;exp_data`sales_na_orders_D;""];
-check_val[`permissions;`sales_emea;"orders on date D for EMEA/APAC";
-  "select from orders where date=",D;exp_data`sales_emea_orders_D;""];
-check_val[`permissions;`sales_na;"notional by account on date D for NA";
-  "select notional:sum notional by account from trades where date=",D;exp_data`sales_na_notional_D;""];
-check_val[`permissions;`sales_emea;"notional by account on date D for EMEA/APAC";
-  "select notional:sum notional by account from trades where date=",D;exp_data`sales_emea_notional_D;""];
-check_val[`permissions;`sales_na;"join trades and accounts on date D";
-  "select notional:sum notional by clientType from ej[`account;select from trades where date=",D,";select account,clientType from accounts]";
-  exp_data`sales_na_join_D;""];
+check_case[`permissions;`accounts;`sales_na];
+check_case[`permissions;`accounts;`sales_emea];
+check_case[`permissions;`trades_D;`sales_na];
+check_case[`permissions;`trades_D;`sales_emea];
+check_case[`permissions;`orders_D;`sales_na];
+check_case[`permissions;`orders_D;`sales_emea];
+check_case[`permissions;`notional_D;`sales_na];
+check_case[`permissions;`notional_D;`sales_emea];
+check_case[`permissions;`sales_join_D;`sales_na];
 
 / sales hidden columns on trades: src, trader
 {[u]
@@ -230,20 +219,13 @@ check_val[`permissions;`sales_na;"join trades and accounts on date D";
  } each `sales_na`sales_emea;
 
 / --- cash_head & etf_head (desk) ---
-check_val[`permissions;`cash_head;"traders for CASH desk";
-  "select from traders";exp_data`cash_traders_tbl;""];
-check_val[`permissions;`etf_head;"traders for ETF desk";
-  "select from traders";exp_data`etf_traders_tbl;""];
-check_val[`permissions;`cash_head;"orders on date D for CASH desk";
-  "select from orders where date=",D;exp_data`cash_orders_D;""];
-check_val[`permissions;`etf_head;"orders on date D for ETF desk";
-  "select from orders where date=",D;exp_data`etf_orders_D;""];
-check_val[`permissions;`cash_head;"orders for ETF desk as cash_head returns empty";
-  "select from orders where date=",D,", desk=`ETF";exp_data`cash_orders_etf;""];
-check_val[`permissions;`cash_head;"trades on date D for CASH traders";
-  "select from trades where date=",D;exp_data`cash_trades_D;""];
-check_val[`permissions;`etf_head;"trades on date D for ETF traders";
-  "select from trades where date=",D;exp_data`etf_trades_D;""];
+check_case[`permissions;`traders;`cash_head];
+check_case[`permissions;`traders;`etf_head];
+check_case[`permissions;`orders_D;`cash_head];
+check_case[`permissions;`orders_D;`etf_head];
+check_case[`permissions;`cash_orders_etf;`cash_head];
+check_case[`permissions;`trades_D;`cash_head];
+check_case[`permissions;`trades_D;`etf_head];
 
 / desk ungranted tables: quotes, depth, accounts, auditlog
 {[u]
@@ -254,21 +236,13 @@ check_val[`permissions;`etf_head;"trades on date D for ETF traders";
  } each `cash_head`etf_head;
 
 / --- compliance1 (compliance) ---
-check_val[`permissions;`compliance1;"all accounts";
-  "select from accounts";exp_data`comp_accounts;""];
-check_val[`permissions;`compliance1;"all traders";
-  "select from traders";exp_data`comp_traders;""];
-check_val[`permissions;`compliance1;"all trades on date D";
-  "select from trades where date=",D;exp_data`comp_trades_D;""];
-check_val[`permissions;`compliance1;"all quotes on date D";
-  "select from quotes where date=",D;exp_data`comp_quotes_D;""];
-check_val[`permissions;`compliance1;"all orders on date D";
-  "select from orders where date=",D;exp_data`comp_orders_D;""];
-check_val[`permissions;`compliance1;"all depth on date D";
-  "select from depth where date=",D;exp_data`comp_depth_D;""];
-check_val[`permissions;`compliance1;"5-day trade summary";
-  "select trades:count sym, notional:sum notional by date from trades where date within 2026.10.05 2026.10.09";
-  exp_data`comp_5d_summary;""];
+check_case[`permissions;`accounts;`compliance1];
+check_case[`permissions;`traders;`compliance1];
+check_case[`permissions;`trades_D;`compliance1];
+check_case[`permissions;`quotes_D;`compliance1];
+check_case[`permissions;`orders_D;`compliance1];
+check_case[`permissions;`depth_D;`compliance1];
+check_case[`permissions;`comp_5d_summary;`compliance1];
 
 
 / ==============================================================================
@@ -294,16 +268,13 @@ check_refused[`logins_transport;`gateway;"gateway cannot query tables directly";
   "select from venues";"qsp: *";""];
 
 / Gateway execas forwarding works for real users
-check_val[`logins_transport;`gateway;"gateway execas sales_na accounts";
-  (`.qsp.execas;"select from accounts";`sales_na);exp_data`sales_na_accounts;""];
-check_val[`logins_transport;`gateway;"gateway execas sales_emea accounts";
-  (`.qsp.execas;"select from accounts";`sales_emea);exp_data`sales_emea_accounts;""];
-check_val[`logins_transport;`gateway;"gateway execas llm1 vwap";
-  (`.qsp.execas;"select vwap:size wavg price by sym from trades where date=",E;`llm1);exp_data`llm1_vwap_E;""];
+check_gw[`accounts;`sales_na];
+check_gw[`accounts;`sales_emea];
+check_gw[`llm1_vwap_E;`llm1];
 
 / Gateway execasx returns (result; rewritten_text)
-rx:exec_as[`gateway;(`.qsp.execasx;"select from accounts";`sales_na)];
-rx_ok:(rx 0) and (2=count rx 1) and ((first rx 1)~exp_data`sales_na_accounts) and (10h=type last rx 1);
+rx:exec_as[`gateway;(`.qsp.execasx;cases[`accounts;`q];`sales_na)];
+rx_ok:(rx 0) and (2=count rx 1) and ((first rx 1)~expected[`accounts;`sales_na]) and (10h=type last rx 1);
 add_result[`logins_transport;`gateway;"gateway execasx returns (result;rewritten)";
   "(`.qsp.execasx;\"select from accounts\";`sales_na)";"(table;rewritten string)";
   $[rx_ok;"ok";.Q.s1 rx];rx_ok;""];
@@ -327,6 +298,36 @@ check_refused[`logins_transport;`llm1;"non-gateway cannot use .qsp.execas";
   (`.qsp.execas;"select from accounts";`compliance1);"qsp: *";""];
 check_refused[`logins_transport;`llm1;"non-gateway cannot use .qsp.execasx";
   (`.qsp.execasx;"select from accounts";`compliance1);"qsp: *";""];
+
+/ A gateway may ask what the process will bear; nobody else may
+lim:exec_as[`gateway;`.qsp.limits];
+limkeys:`memory_cap_bytes`physical_memory_bytes`heap_in_use_bytes`timeout_s`maxrows`maxsize_bytes;
+limok:$[lim 0;(limkeys~key lim 1)and 100000=lim[1]`maxrows;0b];
+add_result[`logins_transport;`gateway;"gateway reads .qsp.limits";"`.qsp.limits";
+  "the six limits, maxrows 100000";$[lim 0;.Q.s1 lim 1;"ERROR: ",fmt lim 1];limok;""];
+check_refused[`logins_transport;`llm1;"non-gateway cannot read .qsp.limits";`.qsp.limits;"qsp: *";""];
+
+/ The api: (`.qsp.api;name;...). A gateway names the user and may make every call; a user's own
+/ login may ask about itself
+apiok:{[u;title;m;test;want]
+  r:exec_as[u;m];
+  ok:$[r 0;test r 1;0b];
+  add_result[`logins_transport;u;title;m;want;$[r 0;120 sublist .Q.s1 r 1;"ERROR: ",fmt r 1];ok;""];
+  };
+apiok[`gateway;"api version";(`.qsp.api;`version);{10h=type x};"the module version"];
+apiok[`gateway;"api memstats";(`.qsp.api;`memstats);{all `used`heap`wmax in key x};"q's memory statistics"];
+apiok[`gateway;"api users";(`.qsp.api;`users);{(`llm1 in x`users)and `gateway in x`gateways};"users and gateways"];
+apiok[`gateway;"api functions";(`.qsp.api;`functions);{`sum in x`functions};"the whitelist"];
+apiok[`gateway;"api access for sales_na";(`.qsp.api;`access;`sales_na);{`trades in exec tbl from x};"the user's access rows"];
+apiok[`gateway;"api describe for llm1";(`.qsp.api;`describe;`llm1);
+  {(`date`sym`time`price`size`side~first exec columns from x[`tabs] where tbl=`trades)and 0<count x`rules};"llm1's view of trades, and the rules"];
+apiok[`gateway;"api validate refuses a hidden column";(`.qsp.api;`validate;`llm1;"select account from trades where date=",D);{not x`allowed};"([allowed:0b;reason])"];
+apiok[`gateway;"api explain shows the rewrite";(`.qsp.api;`explain;`llm1;"select from trades where date=",D);{0<count ss[x;"AAPL"]};"the row filter in the where clause"];
+apiok[`llm1;"api describe about oneself";(`.qsp.api;`describe);{`llm1=x`user};"llm1's own description"];
+check_refused[`logins_transport;`llm1;"api describe about another user";(`.qsp.api;`describe;`sales_na);"qsp: api call describe takes 0 arguments*";"a user cannot name a user"];
+check_refused[`logins_transport;`llm1;"api memstats is gateway only";(`.qsp.api;`memstats);"qsp: api call memstats is for gateway logins only";""];
+check_refused[`logins_transport;`gateway;"api unknown call";(`.qsp.api;`nosuch);"qsp: unknown api call*";""];
+check_refused[`logins_transport;`gateway;"api describe for an unknown user";(`.qsp.api;`describe;`nobody);"qsp: not a user of this policy*";""];
 
 / Async (neg h) is policed and audited
 reset_canaries[];
@@ -365,6 +366,14 @@ add_result[`logins_transport;`llm1;"HTTP POST refused";
   "curl POST http://localhost:port1/";"*HTTP access is not permitted* / HTTP refused";http_post;
   (http_post like "*qsp: HTTP access is not permitted*") or (http_post like "*not allowed for HTTP*");""];
 
+/ every other HTTP method: .z.pm is refused too, so nothing a module installed before serve
+/ answers them unpoliced
+{[m]
+  r:raze @[system;"curl -s -i -m 2 -u llm1:x -X ",m," -d 'canaryfn 1' 'http://localhost:",string[port1],"/' 2>/dev/null";{enlist""}];
+  ok:not any r like/:("*HTTP/1.1 200*";"*42*");
+  add_result[`logins_transport;`llm1;"HTTP ",m," refused";"curl -X ",m;"not 200, nothing evaluated";120 sublist r;ok;""];
+  } each ("PUT";"DELETE";"OPTIONS";"PATCH");
+
 ws_resp:raze @[system;"curl -s -i -m 2 -u llm1:x -H 'Upgrade: websocket' -H 'Connection: Upgrade' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' 'http://localhost:",string[port1],"/' 2>/dev/null";{enlist""}];
 ws_ok:(ws_resp like "*qsp: *") or (ws_resp like "*400*") or (not ws_resp like "*101 Switching Protocols*");
 add_result[`logins_transport;`llm1;"WebSocket upgrade refused";
@@ -379,17 +388,25 @@ add_result[`logins_transport;`llm1;"WebSocket upgrade refused";
 
 / requirepartition refuses unconstrained partition scans
 check_refused[`limits;`quant1;"requirepartition refuses unconstrained trades scan";
-  "select from trades";"qsp: full table scan: trades needs a constraint on `date";""];
+  "select from trades";"qsp: full table scan: trades needs a constraint on `date*";""];
 check_refused[`limits;`quant1;"requirepartition refuses sym-only trades scan";
-  "select from trades where sym=`AAPL";"qsp: full table scan: trades needs a constraint on `date";""];
+  "select from trades where sym=`AAPL";"qsp: full table scan: trades needs a constraint on `date*";""];
 check_refused[`limits;`quant1;"requirepartition refuses date=max date scan";
-  "select from trades where date=max date";"qsp: full table scan: trades needs a constraint on `date";""];
+  "select from trades where date=max date";"qsp: full table scan: trades needs a constraint on `date*";""];
 check_refused[`limits;`quant1;"requirepartition refuses nested unconstrained scan";
-  "select from (select from quotes) where date=",D;"qsp: full table scan: quotes needs a constraint on `date";""];
+  "select from (select from quotes) where date=",D;"qsp: full table scan: quotes needs a constraint on `date*";""];
 check_refused[`limits;`quant1;"requirepartition refuses non-leading date after aggregate";
   "select from quotes where bsize=max bsize, date=",D;"qsp: full table scan*";"non-leading date constraint after aggregate"];
 check_refused[`limits;`quant1;"requirepartition refuses date<>literal full scan";
   "select count sym from quotes where date<>1900.01.01";"qsp: full table scan*";"date<>literal full scan"];
+check_refused[`limits;`quant1;"requirepartition refuses a one-sided date range";
+  "select count sym from quotes where date>1900.01.01";"qsp: full table scan*";"date>literal reads every partition after it"];
+check_refused[`limits;`quant1;"requirepartition refuses a date range split over two constraints";
+  "select count sym from quotes where date>=2026.10.07, date<=2026.10.08";"qsp: full table scan*";"q prunes by the first constraint only"];
+check_val[`limits;`quant1;"requirepartition allows date within";
+  "select count sym from quotes where date within 2026.10.07 2026.10.08";([]sym:enlist 8000);""];
+check_refused[`limits;`llm1;"requirepartition refuses an embargoed user with no date";
+  "select n:count sym by date from trades where sym=`AAPL";"qsp: full table scan*";"the embargo is an upper bound only"];
 
 / maxrows enforced (maxrows is 100000)
 check_refused[`limits;`quant1;"maxrows refuses table > 100000 rows";
@@ -509,6 +526,40 @@ check_attack[`quant1;"inline lambda in query";"select {canaryfn x} each size fro
 check_attack[`quant1;"bare inline lambda";"{canaryfn x}[1]";"bare lambda application"];
 check_attack[`quant1;"IPC parse-tree lambda";({canaryfn x};1);"lambda value in IPC tree"];
 check_attack[`quant1;"IPC one-item lambda list";(+;1;enlist ({canaryfn x};1));"one-item list wrapping lambda call"];
+check_attack[`quant1;"IPC one-item list quoting value, applied by each";(each;enlist value;(enlist;"canaryfn 1"));"eval hands back a one-item list's item unevaluated"];
+check_refused[`attacks;`sales_na;"functional form: a column clause built by code reads a hidden column";
+  "?[trades;();0b;(enlist`x)!enlist(distinct;`trader)]";"qsp: write the query as select*";"the walker checked the code, q ran what it built"];
+check_refused[`attacks;`sales_na;"functional form: the same, sent as a tree";
+  (?;`trades;();0b;(!;(enlist;enlist`x);(enlist;(enlist;distinct;enlist`trader))));"qsp: write the query as select*";""];
+check_refused[`attacks;`sales_na;"functional form: a where clause built by code";
+  "?[trades;enlist(=;`date;",D,");0b;()]";"qsp: write the query as select*";""];
+check_attack[`quant1;"IPC one-item list quoting a lambda, applied by each";(each;enlist {canaryfn x};(enlist;1));"a quoted function never walked as one"];
+
+/ 5.3b Values q applies (third review): an int is a handle - 0 evaluates text - and a list, dictionary
+/ or column holding a function applies it when indexed at depth
+check_attack[`quant1;"handle 0 computed in the head";"(0+0i)[\"canaryfn 1\"]";"q applies an int as a handle"];
+check_attack[`quant1;"handle 0 handed to each";"0 each enlist \"canaryfn 1\"";"a literal handle in the applied slot"];
+check_attack[`quant1;"handle 0 composed";"'[first;0i][\"canaryfn 1\"]";"a handle inside a composition"];
+check_attack[`quant1;"a list holding each, indexed at depth";"(each;count)[0;`canaryfn;1 2]";"indexing at depth applies each"];
+check_attack[`quant1;"a list holding ?, indexed at depth";"(?;count)[0;`secret_table;();0b;()]";"indexing at depth reads a table"];
+check_attack[`quant1;"a column holding each";"exec f[0;`canaryfn;1 2] from select f:(each;count) from trades where date=",D;"a column of functions"];
+check_attack[`quant1;"wj with a symbol pair";
+  "wj[(-00:01+exec time from select time from trades where date=",D,";00:01+exec time from select time from trades where date=",D,");`sym`time;select sym,time,price from trades where date=",D,";(select sym,time,bid from quotes where date=",D,";`canaryfn`bid)]";
+  "wj applies the first symbol of an aggregation pair"];
+apiok[`quant1;"wj with a written-out pair still runs";
+  "wj[(-00:01+exec time from select time from trades where date=",D,";00:01+exec time from select time from trades where date=",D,");`sym`time;select sym,time,price from trades where date=",D,";(select sym,time,bid from quotes where date=",D,";(max;`bid))]";
+  {(98h=type x)and `bid in cols x};"the control for the symbol pair above"];
+check_attack[`quant1;"exec as a tree: a symbol-vector call in the exec slot";
+  (?;`trades;enlist enlist(=;`date;"D"$D);();enlist `canaryfn`sym);"read as a delete's column list, it was never walked"];
+check_refused[`attacks;`sales_na;"select as a tree: an empty symbol list, which q reads as every column";
+  (?;`accounts;();0b;`symbol$());"qsp: write the query as select*";"a hand-built tree"];
+check_refused[`attacks;`sales_na;"select as a tree: an empty dictionary, read the same way";
+  (?;`accounts;();0b;(`symbol$())!());"qsp: write the query as select*";""];
+check_refused[`attacks;`llm1;"an exec that is not a table names the global enum domain";
+  "exec enlist sym from (exec (distinct `a`b)!1 2 by date:date from select date from trades where date=2026.10.07)";
+  "qsp: sym is not in scope here*";"sym would resolve to the HDB's enum domain"];
+check_refused[`attacks;`quant1;"a select written as a column scans every partition";
+  "select x:(count select from quotes) from venues";"qsp: full table scan*";"requirepartition finds a read inside a select clause"];
 
 / 5.4 In-place update / delete and table mutation
 check_attack[`quant1;"in-place update by symbol";"update price:0f from `trades where date=",D;"in-place update"];
@@ -563,9 +614,7 @@ check_refused[`attacks;`quant1;"cols on internal policy table coverage";
   "cols `coverage";"qsp: *";"internal policy table in cols"];
 
 / 5.11 Row-filter ordering inference channel for sales_na
-check_val[`attacks;`sales_na;"row-filter ordering: compound constraint cannot leak hidden min time";
-  "select from trades where date=",D,", sym=(sym where time=min time)[0]";
-  exp_data`sales_na_mintime_D;"compound head in where clause ordering"];
+check_case[`attacks;`sales_na_mintime_D;`sales_na];
 
 
 / ==============================================================================
@@ -626,4 +675,5 @@ md,:enlist "Total: ",string[tot_all]," checks — ",string[tot_pass]," passed, "
 -1"\nTotal: ",string[tot_all]," checks — ",string[tot_pass]," passed, ",string[tot_fail]," failed.";
 
 {[h] if[not null h;@[hclose;h;::]]} each value handles;
-exit 0;
+/ any failed check fails the campaign, so CI notices
+exit `long$0<tot_fail;

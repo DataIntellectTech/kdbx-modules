@@ -11,31 +11,8 @@
 / this directory, absolute - loading the database moves the working directory into it
 here:{[f] :$[count i:where f="/";(1+last i)#f;"./"];} string .z.f;
 if["/"<>first here;here:system["cd"],"/",here];
-.Q.m.SP:(enlist here,"../../../../"),.Q.m.SP;
-qsp:use`di.qsp;
-system"l ",here,"mkhdb.q";
+system"l ",here,"setup.q";
 \c 40 200
-
-/ ------------------------------------------------------------------ the database
-
-o:.Q.opt .z.x;
-db:$[`db in key o;first o`db;$[count t:getenv`TMPDIR;t;"/tmp"],"/qsp-example-db"];
-if["/"<>first db;db:system["cd"],"/",db];
-if[()~key hsym`$db;-1"building the example database in ",db;mkhdb[db;5]];
-system"l ",db;
-
-/ ------------------------------------------------------------------ what the policy names
-/ the lookups its filters call and its clock. They live with the policy, so a change to them is
-/ reviewed with the grants that call them, and CI loads the same file to check the policy
-
-system"l ",here,"policy/defs.q";
-
-/ qsp's decision log, under the name the policy grants to compliance
-qsp.auditto`auditlog;
-
-/ ------------------------------------------------------------------ the policy
-
-p:qsp.fromfiles here,"policy";
 
 / who can read what, user by user: each table, its rows, and its columns
 -1"\n== who can read what (qsp.access[p;`] has it as a table)";
@@ -49,78 +26,40 @@ showaccess:{[a]
 showaccess qsp.access[p;`];
 
 / ------------------------------------------------------------------ the walkthrough
-
-/ run query q as user u, show what came back, and check it is what the step expects:
-/ `rows - a non-empty result, `empty - an empty one, `refused - a qsp refusal
-step:{[u;e;q;why]
-  -1"\n",string[u],"> ",q;
-  -1"  ",why;
-  r:@[{(1b;qsp.run[p;x;y])}[u];q;{(0b;x)}];
-  got:$[not r 0;$[r[1] like "qsp: *";`refused;`error];0=count r 1;`empty;`rows];
-  $[r 0;[show 8 sublist r 1;if[8<count r 1;-1"  ... ",string[count r 1]," rows"]];-1"  refused: ",r 1];
-  if[not got~e;-1"  ** expected ",string[e],", got ",string got;failed,:enlist q];
-  };
-failed:();
+/ policy/tests.csv says what this policy must mean, a query at a time: qsp.tests reads it, and
+/ qsp.runtests judges each - the same verdict bin/policy.q -test gives CI and the admin UI shows.
+/ Here each is also run with qsp.run, to show what came back and fill the audit log
 
 D:"2026.10.09";   / the last day
-E:"2026.10.07";   / the last day research can see
+failed:();
+T:qsp.tests pdir;
+R:qsp.runtests[p;T];
+show1:{[was;r]
+  if[not r[`user]~was;-1"\n== ",string[r`user]," (",(", "sv string exec distinct entity from p[`members] where user=r`user),")"];
+  -1"\n",string[r`user],"> ",r`query;
+  if[count r`note;-1"  ",r`note];
+  v:@[{(1b;qsp.run[p;x;y])}[r`user];r`query;{(0b;x)}];
+  $[v 0;[show 8 sublist v 1;if[8<count v 1;-1"  ... ",string[count v 1]," rows"]];-1"  refused: ",v 1];
+  if[not r`pass;-1"  ** expected ",string[r`expect],$[count r`value;" ",r`value;""],", got ",r`got;failed,:enlist r`query];
+  :r`user;
+  };
+show1/[`;R];
+-1"\n",string[sum R`pass]," of ",string[count R]," tests in policy/tests.csv passed";
 
-
--1"\n== research: an external analyst, or an LLM. Prints and quotes for four names, two days late";
-step[`llm1;`rows;"select vwap:size wavg price by sym from trades where date=",E;
-  "every name is asked for; only the four granted come back"];
-step[`llm1;`empty;"select vwap:size wavg price by sym from trades where date=",D;
-  "the last two days are embargoed (qsp.aged[date;2D]): the same query finds nothing"];
-step[`llm1;`rows;"select from venues";"reference data, which every role gets through the refdata group"];
-step[`llm1;`empty;"select from quotes where date=",E,", sym=`JPM";
-  "a name outside the row filter is not an error - there is just nothing there"];
-step[`llm1;`refused;"select sum size by account from trades where date=",E;
-  "account is not granted, so it does not exist for this user"];
-step[`llm1;`rows;"select n:count sym by date from trades where sym=`AAPL";
-  "no date in the query, but the embargo is a date constraint, so only the days before it are read"];
-step[`llm1;`refused;"select from accounts";"no grant on accounts at all"];
-step[`llm1;`refused;"select from trades where date=",E,", 0<count system\"ls\"";
-  "system is never allowed, whatever the policy says"];
-
--1"\n== quant: all the market data, with no client or trader";
-step[`quant1;`refused;"select from trades where sym=`AAPL";
-  "no date: that would read every partition, and requirepartition refuses it"];
-step[`quant1;`refused;"select n:count i by sym from quotes where date=",D;
-  "i, the row index, would show where hidden rows are; it is off unless the policy sets rowindex"];
-step[`quant1;`rows;"select spread:avg ask-bid, n:count sym by sym from quotes where date=",D;
-  "count a column instead - and every name is here"];
-step[`quant1;`rows;"select time,bid1,bid2,bid3,ask1,ask2,ask3 from depth where date=",D,", sym=`VOD";
-  "the depth of book, which no one but quant and compliance sees"];
-step[`quant1;`refused;"select notional:sum notional by account from trades where date=",D;
-  "the prints, but not whose they are"];
-
--1"\n== sales: their region's clients, looked up per user on every query";
-step[`sales_na;`rows;"select notional:sum notional by account from trades where date=",D;
-  "the same query as quant's - and here it works, for the North American accounts only"];
-step[`sales_emea;`rows;"select notional:sum notional by account from trades where date=",D;
-  "the same text again, as the EMEA salesperson (who also covers APAC)"];
-step[`sales_na;`rows;"select from accounts";"the clients behind those accounts, and no others"];
-step[`sales_na;`rows;"select notional:sum notional by clientType from ",
-  "ej[`account;select from trades where date=",D,";select account,clientType from accounts]";
-  "a join: both sides are filtered before they meet"];
-step[`sales_na;`refused;"select n:count sym by trader from trades where date=",D;
-  "who executed it stays with the desk"];
-
--1"\n== desk heads: their own desk's orders, and its traders' fills";
-step[`cash_head;`rows;"select orders:count orderID, filled:sum filledQty by trader from orders where date=",D;
-  "the CASH desk's traders"];
-step[`etf_head;`rows;"select orders:count orderID, filled:sum filledQty by trader from orders where date=",D;
-  "the same text, as the ETF desk head"];
-step[`cash_head;`empty;"select from orders where date=",D,", desk=`ETF";
-  "asking for another desk's orders finds none"];
-step[`cash_head;`refused;"select from accounts";"an account is a code here; who the client is stays with sales"];
-
--1"\n== compliance: everything, and qsp's own log";
-step[`compliance1;`rows;"select trades:count sym, notional:sum notional by date from trades where date within 2026.10.05 2026.10.09";
-  "every row of every partition"];
-step[`compliance1;`rows;"select user,query,reason from auditlog where decision<>`allowed";
-  "every refusal above, with who asked and why it was refused"];
-step[`llm1;`refused;"select from auditlog";"and no one else reads it"];
+-1"\n== the rules an LLM agent is given (qsp.api.rules[p;`json]), checked: every query a rule gives";
+-1"   as good runs, and every one it gives as bad is refused with the refusal it names";
+/ the rules' examples are over trades and quotes, which quant1 reads in full
+rulecheck:{[r]
+  {[id;q] e:@[{qsp.run[p;`quant1;x];""};q;{x}];
+    if[count e;-1"  ** rule ",string[id],": ",q," was refused: ",e;failed,:enlist q]}[r`id] each r`good;
+  if[0=count r`refusal;:()];
+  {[id;rf;q] e:@[{qsp.run[p;`quant1;x];""};q;{x}];
+    ok:$[count e;any e like/: {"*",x,"*"} each rf;0b];
+    if[not ok;-1"  ** rule ",string[id],": ",q,$[count e;" was refused for another reason: ",e;" ran"];failed,:enlist q]}[r`id;r`refusal] each r`bad;
+  };
+rulecheck each qsp.api.rules[p;`q];
+-1"  ",string[count qsp.api.rules[p;`q]]," rules, every example as it says";
+-1"  for llm1, describe as JSON starts: ",80#qsp.api.describe[p;`llm1;`json];
 
 -1"\n== what actually runs (qsp.explain): sales_na's query, with the row filter and the columns pinned\n";
 -1 qsp.explain[p;`sales_na;"select notional:sum notional by account from trades where date=",D];

@@ -1,0 +1,5 @@
+# kept in the module, so a copy of di/qsp - into kdbx-modules, say - ignores the same things
+# a database built inside the example while trying it out (hdb.q builds in $TMPDIR by default)
+examples/**/*db/
+# written by bin/harden.sh
+harden-output/

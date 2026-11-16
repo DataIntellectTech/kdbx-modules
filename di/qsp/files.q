@@ -9,6 +9,8 @@
 /   functions.csv  action,name                    action: allow deny call joincall
 /   config.csv     setting,value
 /   schema.csv     tbl,col,typ,att                tables not loaded in this process
+/ and beside them, not part of the policy:
+/   tests.csv      user,query,expect,value,note   what the policy must do (suite.q)
 / lines that are blank or start with # are ignored. Every row is checked, and every problem in
 / every file is reported at once with its file and line, so a broken policy is fixed in one pass
 / rather than one error at a time. A policy with any problem does not load: there is no
@@ -27,6 +29,11 @@ files:`config`functions`schema`tables`grants`members`gateways!(
   `setting`value;`action`name;`tbl`col`typ`att;`tbl`partition;
   `entity`tbl`columns`filter;`user`entity;enlist`login);
 required:`tables`grants;
+/ files a policy directory holds that are not the policy, and how many of their fields a row must
+/ have: the rest may be left off
+others:(enlist`tests)!enlist `user`query`expect`value`note;
+least:(enlist`tests)!enlist 3;
+headers:files,others;
 
 / ------------------------------------------------------------------ paths
 
@@ -70,13 +77,15 @@ fields:{[l]
 / trailing empty fields - a spreadsheet pads every row to its widest
 untrail:{[v] :v where not reverse mins reverse 0=count each v;};
 
-readrow:{[h;x]
-  / one data line -> (1b;fields) or (0b;why not), for a file with header h
+readrow:{[h;m;x]
+  / one data line -> (1b;fields) or (0b;why not), for a file with header h whose rows need at
+  / least m fields
   r:@[{(1b;fields x)};x;{(0b;x)}];
   if[not r 0;:r];
   v:r 1;
   n:count h;
   if[n<count v;if[0=count untrail n _v;v:n#v]];
+  if[(m<=count v)and n>count v;v:n#v,n#enlist""];
   if[not n=count v;:(0b;"expected ",string[n]," fields (",(","sv string h),"), found ",string count v)];
   :(1b;v);
   };
@@ -87,7 +96,8 @@ header:{[l] :@[{`$untrail fields x};l;{`}];};
 readfile:{[d;n]
   / one file -> (rows; problems; fatal). rows is a table of strings with the line each came
   / from. fatal: the file as a whole cannot be used
-  h:files n;
+  h:headers n;
+  m:$[n in key least;least n;count h];
   nm:`$string[n],".csv";
   empty:([]line:`long$()),flip h!(count h)#enlist ();
   if[()~key p:path[d;n];
@@ -103,7 +113,7 @@ readfile:{[d;n]
     :(empty;problem[nm;1+first i;"header must be ",(","sv string h),
       " - found ",$[11h=type got;","sv string got;"an unreadable line"]];1b)];
   j:1_i;
-  rs:readrow[h] each l j;
+  rs:readrow[h;m] each l j;
   ok:rs[;0];
   e:noerrors,raze problem[nm]'[1+j where not ok;rs[where not ok;1]];
   t:$[any ok;([]line:1+j where ok),'flip h!flip rs[where ok;1];empty];
@@ -307,7 +317,7 @@ step:{[n;fn;s;r]
   :(s 0;s[1],([]file:enlist `$string[n],".csv";line:enlist r`line;error:enlist $["qsp: "~5#m;5_m;m]));
   };
 
-unknownfile:{[n] :problem[n;0;"unknown file - a policy directory holds only ",", "sv string[key files],\:".csv"];};
+unknownfile:{[n] :problem[n;0;"unknown file - a policy directory holds only ",", "sv string[key headers],\:".csv"];};
 
 build:{[d]
   / (policy; errors) for a directory
@@ -316,7 +326,7 @@ build:{[d]
   if[0h=type k;:(pol.new[];problem[`;0;"no policy directory at ",dn])];
   if[-11h=type k;:(pol.new[];problem[`;0;dn," is a file, not a policy directory"])];
   / a misspelt file name would otherwise be skipped as an absent optional file
-  e:noerrors,raze unknownfile each k where (k like "*.csv")and not k in `$(string key files),\:".csv";
+  e:noerrors,raze unknownfile each k where (k like "*.csv")and not k in `$(string key headers),\:".csv";
   rd:readfile[d] each key files;
   fs:(key files)!rd[;0];
   e,:raze rd[;1];
@@ -342,6 +352,41 @@ applyfiles:{[fs;s]
 / every problem with the policy in directory d - empty when it would load
 check:{[d] :last build d;};
 
+/ ------------------------------------------------------------------ drift
+/ a table loaded in this process is registered from its live meta, and schema.csv is read only for
+/ a table that is not loaded. So the policy CI checks against schema.csv and the policy a running
+/ process enforces can differ, and nothing would say so
+
+/ where schema.csv rows s and loaded table tn disagree, in words
+tabledrift:{[tn;s]
+  m:0!meta tn;
+  lc:m`c;
+  sc:sym each s`col;
+  pre:string[tn],": column ";
+  r:(pre,/:string[sc except lc],\:" is in schema.csv but not the loaded table"),
+    pre,/:string[lc except sc],\:" is in the loaded table but not schema.csv";
+  both:sc inter lc;
+  st:(sc!{$[count x;first x;" "]} each trim each s`typ) both;
+  lt:(lc!m`t) both;
+  k:where (st<>" ")&st<>lt;
+  r,:{[tn;c;a;b] string[tn],".",string[c],": type ",a," in schema.csv, ",b," loaded"}[tn]'[both k;enlist each st k;enlist each lt k];
+  sa:(sc!sym each s`att) both;
+  la:(lc!m`a) both;
+  k:where sa<>la;
+  r,:{[tn;c;a;b] string[tn],".",string[c],": attribute ",$[null a;"none";string a]," in schema.csv, ",$[null b;"none";string b]," loaded"}[tn]'[both k;sa k;la k];
+  :r;
+  };
+
+/ every difference between schema.csv in policy directory d and the tables loaded in this process
+schemadrift:{[d]
+  rf:readfile[d;`schema];
+  if[rf 2;:()];
+  s:rf 0;
+  ts:distinct sym each s`tbl;
+  ts:ts where loaded each ts;
+  :raze {[s;t] tabledrift[t;s where (sym each s`tbl)=t]}[s] each ts;
+  };
+
 / one problem, as a line of a refusal
 problemline:{[x] :"  ",string[x`file],$[x`line;":",string x`line;""],": ",x`error;};
 
@@ -351,6 +396,8 @@ fromfiles:{[d]
   if[count e:r 1;
     '"qsp: policy in ",dirname[d]," has ",string[count e]," problem",$[1=count e;"";"s"],":\n",
       "\n" sv problemline each e];
+  / the loaded tables win, so a stale schema.csv is a warning, not a refusal
+  {-2"qsp: warning: ",x," - the loaded table is enforced; update schema.csv";} each schemadrift d;
   :r 0;
   };
 
@@ -411,4 +458,7 @@ scaffold:{[d;ts]
   :path[d] each key files;
   };
 
-export:([fromfiles;check;scaffold;files]);
+/ tests.csv in directory d -> (its rows, as strings with the line each is on; the problems)
+testfile:{[d] r:readfile[d;`tests]; :(r 0;r 1);};
+
+export:([fromfiles;check;scaffold;files;schemadrift;testfile;problem;problemline;dirname]);

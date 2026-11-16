@@ -24,25 +24,36 @@ qsp.serve p                                                  / police every IPC 
 ```
 
 A team setting up permissions keeps the policy as CSV files instead. They
-edit it in a spreadsheet, review it in a pull request, and check it in CI.
-**[setup.md](setup.md)** walks through it from an empty process.
+edit it in a spreadsheet, review it in a pull request, and check it in CI,
+with tests of what it must mean. **[setup.md](setup.md)** walks through it
+from an empty process. The **admin UI** (`qsp.adminui`local`) does the same
+in a browser, and shows what a policy means: the rows each user gets, what a
+change changes for whom, which tests it breaks
+([docs/ui.md](docs/ui.md)).
 
+This page is the **reference**: every rule, setting and call is stated here,
+once. The other pages explain and walk through, and link here for the rules.
 More documentation is in [docs/](docs/README.md):
 - **[docs/concepts.md](docs/concepts.md)**: what a policy is made of (users,
   groups, grants, filters, gateways) and how one user's access is worked out.
 - **[docs/time.md](docs/time.md)**: embargoes, delayed data and the policy
   clock.
+- **[docs/ui.md](docs/ui.md)**: the admin UI, view by view, and the jobs it
+  does: setting a policy up, reviewing a change, building its tests.
 - **[docs/internals.md](docs/internals.md)**: for developers changing qsp.
   What every file does, and one query traced step by step through the code.
+  [docs/testing.md](docs/testing.md) covers qsp's own tests, and
+  [docs/history.md](docs/history.md) what changed from the original qsp.
 
 ## Try it
 
 [examples/equities/](examples/equities/README.md) builds a small equities
-HDB, loads a filled-in policy for it, and walks through what each role can and
-can't read:
+HDB, loads a filled-in policy for it with its tests, and shows what each role
+can and can't read:
 
 ```sh
-q di/qsp/examples/equities/hdb.q            # walk through, then exit
+q di/qsp/examples/equities/demo.q           # the admin UI on it: open the address it prints
+q di/qsp/examples/equities/hdb.q            # walk through its tests, then exit
 q di/qsp/examples/equities/hdb.q -p 5100    # ...then serve it
 ```
 
@@ -91,7 +102,7 @@ Three more things belong to the running module, not to a policy:
 | Object | Read with | Controls |
 |---|---|---|
 | the served policy | `qsp.active[]` | The policy every IPC query is checked against. `qsp.serve p` replaces it in one assignment. |
-| the message handlers | `.z.pw` `.z.pg` `.z.ps` `.z.pi` `.z.ph` `.z.pp` `.z.ws` | Set by the first `serve`. Only the served policy's users and gateway logins can connect. Sync and async messages go through `run`. HTTP and websockets are refused. The local console is not policed. |
+| the message handlers | `.z.pw` `.z.pg` `.z.ps` `.z.pi` `.z.ph` `.z.pp` `.z.pm` `.z.ws` | Set by the first `serve`, which keeps what was there and runs it; `unserve` puts it back. See [Serving it](#serving-it). |
 | the audit log | `qsp.audit[]`, `qsp.audittable[]` | Every decision `run` took, kept in a global table. `auditto` names that global. |
 
 ### Who a query runs as
@@ -104,8 +115,12 @@ Three more things belong to the running module, not to a policy:
 | the process's own console (`.z.w=0`) | nobody: it is evaluated unchecked |
 
 A gateway message from a login not listed in `gateways` is treated as an
-ordinary query, and refused. A gateway may only name a user of the policy (see
-[Logins](#logins)).
+ordinary query, and refused. Whichever way it arrives, a query runs only as a
+**user of the policy**: a name in `members` or `grants` that isn't a group
+(see [Logins](#logins)). `qsp.run[p;`nobody;"1+1"]` is refused with
+`qsp: not a user of this policy: `nobody`, though it reads no table. So is a
+group's name, a list of names (their grants would union) and anything that
+isn't one symbol. The refusal is recorded as `denied`.
 
 qsp takes the login name as given. It **authorises** (given who you are, what
 you may see) but does not **authenticate** (prove who you are). See
@@ -123,7 +138,7 @@ it stops it, records the decision in the audit log, and signals `'qsp: ...`:
 | 2. parse | A string is parsed with `parse`, never `value`. Text that is not q stops here, with q's error. | `error` |
 | 3. file handles | A symbol starting with `:` anywhere in the tree is refused. Every filesystem primitive needs one. | `denied` |
 | 4. walk and rewrite | Every node of the tree is checked against the policy and the user's grants, and each select is rewritten to read only what the user may see. See below. | `denied`, or `error` for a fault |
-| 5. partition check | With `requirepartition` on, a query that would read every partition of a table is refused, naming the table and column. | `denied` |
+| 5. partition checks | With `requirepartition` on, a query that would read every partition of a table is refused, naming the table and column. With `maxpartitions` set, so is one that would read more partitions than that. | `denied` |
 | 6. evaluate | Only the rewritten tree is evaluated. If q signals, this is where. | `error` |
 | 7. bound the result | The result is checked against `maxsize` (serialised bytes) and `maxrows`. | `denied` |
 | 8. record | `allowed`, with the rewritten tree. | |
@@ -135,7 +150,7 @@ with the parse tree at each stage.
 The other entry points stop part way. `rewrite` and `explain` run steps 1 to
 4 and return the rewritten tree, or its text. `validate` runs 1 to 4 and
 returns `(allowed;reason)`. Neither evaluates nor records anything, so neither
-applies the partition check or the result limits: use `fullscans` for the
+applies the partition checks or the result limits: use `fullscans` for the
 first. `runx` runs every step, and also returns what ran, as text.
 
 A **fault** is a step-4 refusal that withholds nothing. The user holds the
@@ -152,10 +167,10 @@ The grants are resolved per user, per table, every time a query is rewritten:
    groups are in. A cycle is harmless.
 2. **Columns.** The union of every column the entities are granted on the
    table, in schema order. `qsp.ALL` is every column in `schema`.
-3. **Rows.** Each grant's filter is a list of constraints, ANDed. A lambda
-   filter is called with the user here. The grants' filters are then ORed, and
-   one grant with no filter means all rows. A lambda that signals, or returns
-   something that is not a constraint list, refuses the query. It never
+3. **Rows.** Each grant's filter is a list of constraints, ANDed, or a
+   function, called with the user here (see [Row filters](#row-filters) for
+   what it may return). The grants' filters are then ORed, and one grant with
+   no filter means all rows. A filter that fails refuses the query. It never
    falls back to no filter.
 4. **Markers.** `qsp.USER` becomes the user as a symbol literal. `qsp.NOW`
    becomes the clock's timestamp, and `f.aged` becomes a cutoff cast to its
@@ -184,6 +199,21 @@ For a select over a table expression, the "granted columns" are the columns
 that expression projects. Every expression in every slot is also walked by
 the node rules below, so `not` is guarded wherever it appears.
 
+**Functional forms.** Each clause must have the shape `parse` gives select
+text. A functional form whose arguments are plain data parses to exactly that,
+and runs: `?[trade;();0b;()]` is `select from trade`. One whose arguments are
+code that builds a clause is refused:
+
+```
+q)qsp.run[p;`llmu;"?[trade;();0b;(enlist`x)!enlist(sum;`pnl)]"]
+'qsp: write the query as select, exec, update or delete - a functional form's clauses must be data, not code that builds them
+```
+
+`parse` leaves those arguments as code, `(!;(enlist;,`x);...)`, which q runs
+before `?` sees the result. The walker checks clauses as written, so it would
+check the code and q would run whatever the code built. Write the query as
+select text.
+
 The other nodes are checked like this:
 
 | Node | Rule |
@@ -192,7 +222,7 @@ The other nodes are checked like this:
 | symbol atom | a **name**: it must be a column in scope here. A table name is refused anywhere but a table slot |
 | symbol vector of 2+ | q evaluates `` `f`a`b `` as a call, so it must be in `calls`, and its arguments are walked |
 | general list | an application: the head must be permitted, and the arguments are walked. A symbol q could resolve as a global is checked (see [Symbols computed at run time](#symbols-computed-at-run-time)) |
-| `()` or a one-item list | literal data, which q does not evaluate. It may not hold a table name |
+| `()` or a one-item list | literal data: `eval` hands back a one-item list's item unevaluated. It may not hold a table name or a function, which q could then apply unchecked |
 | lambda, projection, dictionary | refused |
 | anything else | literal data |
 
@@ -229,8 +259,23 @@ filter, `where size=max size` would be computed over hidden rows, and an empty
 answer would reveal that the largest trade is hidden. If the partition
 constraint does not lead, every partition is read. qsp moves only constraints
 that **cannot aggregate**: a plain comparison of a column with something that
-names no column of the table. It ranks them partition column first, then
-indexed columns (by attribute and operator), then the policy filter, then the
+names no column of the table, or an and, or or `not` of such comparisons
+(`qsp.f.notin`, `f.both`, `f.either`, and the OR of a user's two filtered
+groups). Two comparisons depend on other rows after all, and stay put:
+
+- `~` matches the whole column and returns one boolean. Run before the row
+  filter, `where s~`a`b`zz` would say whether a hidden row's `s` is `` `zz ``.
+- a comparison with a list (`where s=`a`b`a`) compares row by row, and
+  signals `'length` unless the list is as long as the rows in front of it.
+  Run before the row filter, that counts the hidden rows. So `=`, `<`, `>` and
+  their negations move only with one value on the right, `within` with two
+  and `like` with one pattern; a value the user computes is checked as it
+  runs, and refused if it is a list: `qsp: a comparison in a where clause
+  takes one value - use in for a list`.
+
+It ranks the movable constraints partition column first (a
+constraint that bounds it, such as `date=d` or `date within ...`, ahead of a
+one-sided range such as an embargo), then indexed columns (by attribute and operator), then the policy filter, then the
 rest. Anything that could aggregate keeps its place, after the policy filter.
 A policy filter that could itself aggregate goes before everything the user
 wrote.
@@ -243,6 +288,12 @@ select sum size by sym from trade where size>50, sym=`600, date=2010.01.05
 `placement` overrides this. `` `first `` puts the policy filter first and
 leaves the user's order alone, and `` `last `` puts it last. `` `last `` is the
 fastest, and it permits exactly the inference described above.
+
+When the policy filter has to lead - `` `first ``, or a filter that could
+aggregate - q reads every partition whatever the user writes, because it
+prunes by the first constraint only. With `requirepartition` on, such a table
+cannot be queried at all, and the refusal says so rather than asking for a
+date the query already has.
 
 ### What is never allowed
 
@@ -284,10 +335,19 @@ function, including anything added with `allowfunction`:
   domain. `x?y` refuses a symbol on the left, and from an atom on the left, a
   symbol on the right.
 - a function that `each`, `over`, `scan`, `prior`, `peach`, `fby`, `wj` or an
-  iterator applies must be pure. `` cols each `t`u `` is refused.
-- an expression in the head of an application, like `` (sym where x)[0] ``, may
-  index data or apply a pure function. A symbol or any other function is
-  refused.
+  iterator applies must be pure. `` cols each `t`u `` is refused, and so is
+  a pair written as symbols, `` `f`c ``, to `fby` or `wj`: q applies its first
+  symbol as readily as a function.
+- an expression in the head of an application, like `` (sym where x)[0] ``,
+  and a column indexed by arguments, like `price[0]`, may index data or
+  apply a pure function. A symbol or any other function is refused, and so is
+  any atom: q applies an int as a **handle**, so `` (0+0)"text" `` would
+  evaluate the text unpoliced and `` (-2+0)"text" `` write to stderr. The
+  same holds for whatever `each` and the other iterators apply.
+- data applied that way may hold no function but the pure ones, at any depth.
+  q indexes a list, dictionary or table at depth, and applies an item it
+  reaches to the arguments left over: `` (each;count)[0;`f;x] `` is
+  `` each[`f;x] ``, and `` (?;count)[0;`t;();0b;()] `` reads `t`.
 
 A refusal by one of these run-time checks is recorded as `denied`.
 - The grades of `select[<c]` and `select[>c]` are the primitives behind
@@ -344,7 +404,8 @@ exactly one group.
 |---|---|
 | `scaffold[dir;tables]` | write a starting policy for `tables` (`` ` `` for all) into `dir`: every table, partition column and column, and one grant row per table with **no entity**, so nothing is granted until someone decides. Never overwrites, and refuses to write into a database or a partition of one, since q would load the policy directory as a table and the database would fail to load |
 | `check[dir]` | every problem with the policy in `dir`, as `([]file;line;error)`. Empty means it loads |
-| `fromfiles[dir]` | the policy in `dir`, the same value the builders return. Refuses, listing every problem, if there are any |
+| `fromfiles[dir]` | the policy in `dir`, the same value the builders return. Refuses, listing every problem, if there are any. Warns on stderr for each `schemadrift` difference |
+| `schemadrift[dir]` | where `schema.csv` and the tables loaded in this process disagree, as lines of text. A loaded table is registered from its live meta, so this is what CI's check of `schema.csv` did not see |
 
 ```
 tables.csv     tbl,partition                  required
@@ -383,11 +444,55 @@ alice trade `date`sym`size               "sym in `aaa`bbb"            desk
 carol trade `date`sym`size               "sym in allowedsyms[`carol]" call
 ```
 
+### Testing a policy
+
+A policy's files say what is granted. Its tests say what that must mean:
+"`llm1` never sees an account", "`sales_na` sees exactly A1 A3 A5 A7",
+"`quant1` cannot scan every partition". They live in `tests.csv` beside the
+policy and are reviewed with it. A change that keeps the files valid but breaks
+one of these intentions fails the build.
+
+```
+user,query,expect,value,note
+sales_na,asc exec distinct account from select account from trades where date=2026.10.09,equals,`A1`A3`A5`A7,exactly the NA accounts
+llm1,select account from trades where date=2026.10.07,refused,not-permitted column: account,account is not granted
+quant1,select from trades where sym=`AAPL,refused,full table scan,no date: every partition
+llm1,select vwap:size wavg price by sym from trades where date=2026.10.09,empty,,the embargo
+```
+
+| `expect` | passes when the query, run as `user` | `value` |
+|---|---|---|
+| `rows` | returns at least one row | |
+| `empty` | returns no rows | |
+| `runs` | returns anything | |
+| `refused` | is refused | text the refusal contains (optional) |
+| `equals` | returns exactly `value` | a q literal: `` `a`b ``, `12`, `("x";"y")`, `` `a`b!1 2 `` |
+
+`value` and `note` may be left off a row. A query with a comma is quoted, as a
+spreadsheet writes it. An `equals` value is parsed, never evaluated as code:
+only data, `enlist` and `!`. Results are compared as plain values, so
+enumerated symbols match symbols, and a column mapped from disk matches a list.
+
+| Call | Returns |
+|---|---|
+| `tests[dir]` | the tests in `dir`'s `tests.csv`, or none. Signals if the file is malformed, naming the first problem |
+| `checktests[dir]` | every problem with it, as `([]file;line;error)`. Never signals |
+| `runtests[p;t]` | tests `t` run under policy `p`, each as its user: `t` with `pass`, `got` and `ms`. Nothing is recorded in the audit log |
+
+Running a test needs the data. `bin/policy.q` always checks `tests.csv`, and
+with `-test` runs it, exiting 1 if a test fails:
+
+```sh
+q di/qsp/bin/policy.q -dir policy -init /path/to/hdb policy/defs.q -test
+```
+
 ### Row filters
 
 `rows` is `()` (no restriction), a list of constraints (ANDed), or a unary
-lambda taking the user and returning either, called on every query. Build
-constraints with `qsp.f`:
+lambda taking the user, called on every query. The lambda returns a list of
+constraints, or `qsp.ALL` for every row. An **empty result refuses the
+query**: a lookup that does not know the user returns nothing, and that must
+not open the table. Build constraints with `qsp.f`:
 
 | | |
 |---|---|
@@ -411,9 +516,9 @@ A static filter is validated when the grant is made: every name it reads must
 be a column or defined in the process, and it may use nothing on the never
 list.
 
-Aging the partition column turns an embargo into partition pruning:
-`qsp.f.aged[`date;0D]` means nothing from today, and today's partition is never
-read. It works in whole days. `qsp.f.aged[`time;0D00:15]` on a timestamp column
+Aging the partition column gives a day-level embargo: `qsp.f.aged[`date;0D]`
+means nothing from today. It is an upper bound only, so with
+`requirepartition` on, the user still names their dates. It works in whole days. `qsp.f.aged[`time;0D00:15]` on a timestamp column
 is an exact 15-minute delay. Paired with the date rule it adds nothing, as
 every earlier row is more than 15 minutes old. On a time-of-day column it
 applies to every day the table holds. [docs/time.md](docs/time.md) covers which
@@ -426,7 +531,7 @@ not quietly open a policy up.
 
 | Setting | Default | |
 |---|---|---|
-| `selectonly` | `1b` | the innermost table access must be a select. Off, an update or delete straight onto a table runs over a pinned select, and still writes nothing |
+| `selectonly` | `1b` | the innermost table access must be a select. Off, an update or delete straight onto a table runs over a pinned select, and still writes nothing. Not on a partitioned table, which q cannot update in place: wrap a select there |
 | `strictcolumns` | `1b` | where clauses may only use visible columns. Off, they may filter on hidden ones, which lets a caller probe their values |
 | `placement` | `` `auto `` | where the row filter goes: `` `auto `` ranks constraints, `` `first `` / `` `last `` override |
 | `attributerank` | `` `p`u`g`s `` | index attributes, best first |
@@ -435,7 +540,8 @@ not quietly open a policy up.
 | `maxdepth` | `24` | parse tree nesting limit |
 | `maxsize` | `200000000` | max result bytes (checked after evaluation) |
 | `maxrows` | `0W` | max result rows (checked after evaluation): a table's rows, a list's items, the longest column of a dictionary |
-| `requirepartition` | `0b` | refuse a query that would scan every partition: one whose leading constraint, as rewritten, does not narrow the partition column with `=`, `in`, `<`, `within` and the like. **Turn this on for anything an LLM talks to.** |
+| `requirepartition` | `0b` | refuse a query that would scan every partition: one whose leading constraint, as rewritten, does not bound the partition column with `=`, `in` or `within`. A one-sided range (`date>d`, or an embargo's `date<cutoff`) is not enough. **Turn this on for anything an LLM talks to.** |
+| `maxpartitions` | `0W` | refuse a query that would read more partitions than this. The leading constraint is evaluated against `.Q.pv` before the query runs, so `date within 0001.01.01 9999.12.31`, which satisfies `requirepartition`, is caught here. Ignored where no partitioned database is loaded |
 | `audit` | `1b` | record every decision |
 | `auditmax` | `10000` | rows kept in the audit log |
 
@@ -443,13 +549,16 @@ not quietly open a policy up.
 
 | Call | Returns |
 |---|---|
-| `run[p;u;q]` | the result of `q` as user `u`. Signals `'qsp: ...` on refusal. `q` is a string or a parse tree. |
+| `run[p;u;q]` | the result of `q` as user `u`. Signals `'qsp: ...` on refusal. `q` is a string or a parse tree. A functional form must be written with plain-data clauses (see [What the rewrite does to a select](#what-the-rewrite-does-to-a-select)) |
 | `runx[p;u;q]` | `(result; what ran, as text)`, for a caller that must show its user what the query became |
 | `rewrite[p;u;q]` | the safe parse tree. Evaluates nothing. |
 | `explain[p;u;q]` | the same, as text |
-| `validate[p;u;q]` | `(allowed;reason)`. Evaluates and records nothing, and so does not apply `requirepartition`, `maxrows` or `maxsize` |
+| `validate[p;u;q]` | `(allowed;reason)`. Evaluates and records nothing, and so does not apply `requirepartition`, `maxpartitions`, `maxrows` or `maxsize` |
 | `fullscans[p;u;q]` | the tables `q` would read every partition of |
 | `columnsfor[p;u;t]` / `filterfor[p;u;t]` | what a policy resolves to for one user |
+
+Each of these refuses a `u` that isn't a user of the policy (see
+[Who a query runs as](#who-a-query-runs-as)).
 
 Every refusal is a signal starting `qsp: `. None is a return value, so a
 caller that forgets to check can't run past one. The message names what was
@@ -462,15 +571,26 @@ query generator can repair its query.
 qsp.serve p             / installs the message handlers; refuses HTTP and websockets
 qsp.serve p2            / swap the policy, atomically
 qsp.active[]            / the policy being served
+qsp.unserve[]           / put every handler back as it was before the first serve
 ```
 
 | Handler | Does |
 |---|---|
-| `.z.pw` | logins: admits only the served policy's users and gateway logins (see [Logins](#logins)) |
-| `.z.pg`, `.z.ps` | sync and async messages: `run` under the served policy, as `.z.u` or as the user a gateway names |
-| `.z.pi` | console input: evaluated unchecked, as the console is not policed |
-| `.z.ph`, `.z.pp` | HTTP GET and POST: refused |
+| `.z.pw` | logins: admits only the served policy's users and gateway logins (see [Logins](#logins)), then runs the `.z.pw` that was there before |
+| `.z.pg`, `.z.ps` | sync and async messages: `run` under the served policy, as `.z.u` or as the user a gateway names. The rewritten query is evaluated by the `.z.pg` or `.z.ps` that was there before, as `(eval; the tree)` |
+| `.z.pi` | a line of console input. From a remote handle (qcon) it is policed like a sync message; the process's own console is not |
+| `.z.ph`, `.z.pp`, `.z.pm` | HTTP: GET, POST and every other method, refused |
 | `.z.ws` | websockets: refused |
+
+`serve` keeps whatever each handler was and runs it, so a module loaded
+before it that wraps `.z.pg` - a query log, client tracking - still sees every
+policed query, and a `.z.pw` that checks passwords still checks them. Where a
+handler was q's own, the evaluation is q's own `value`. HTTP and websockets
+are refused outright rather than passed on: q's own handlers for them
+evaluate what they are sent, unpoliced, and so would anything wrapping them.
+A module loaded **after** `serve` wraps qsp's handlers instead, and works
+too. `unserve` restores every handler, including q's own where that is what
+was there.
 
 The local console (`.z.w=0`) is **not** policed. Whoever holds the console
 holds the data.
@@ -483,13 +603,85 @@ h (`.qsp.execas;"select from trade";`alice)      / or qsp.gatewaywrap[q;u]
 h (`.qsp.execasx;"select from trade";`alice)     / (result; what ran)
 ```
 
-This is honoured only for logins named with `qsp.gateway`. From any other login
-it is an ordinary call, and is refused. The leading symbol is matched, never
+Both forms are honoured only for logins named with `qsp.gateway`. From any other login
+each is an ordinary call, and is refused. The leading symbol is matched, never
 resolved, so the wire format needs no global to exist and is unchanged from the
 original qsp. A gateway's own login holds no grants unless you give it some.
 The user it names must be a user of the policy. A name the policy doesn't know,
 or a group's name, is refused and recorded as `denied`:
 `qsp: not a user of this policy: `sales`.
+
+### The api
+
+A client can also ask about the process, and about the policy as it applies
+to one user, by name. The message is `` (`.qsp.api;name;...) ``: a gateway
+names the user, and may make every call; a user's own login may make the
+calls about itself, with no user named.
+
+```q
+g (`.qsp.api;`describe;`alice)                     / everything a query writer needs, for alice
+g (`.qsp.api;`describe;`alice;`json)               / the same, as one JSON string
+g (`.qsp.api;`validate;`alice;"select from trade") / ([allowed;reason]), evaluating nothing
+h (`.qsp.api;`describe)                            / alice's own, from alice's own login
+h (`.qsp.api;`rules;`json)                         / the rules, for an agent's prompt
+```
+
+| Call | Returns | Who |
+|---|---|---|
+| `version` | the module version | anyone |
+| `limits` | `memory_cap_bytes` (`-w`), `physical_memory_bytes`, `heap_in_use_bytes`, `timeout_s` (`-T`, 0 for none), `maxrows`, `maxsize_bytes` | gateways |
+| `memstats` | `.Q.w[]` | gateways |
+| `users` | the policy's users and gateway logins | gateways |
+| `functions` | the whitelist, `calls` and `joincalls` | anyone |
+| `rules` | the rules of writing a query qsp will run, one per row (below) | anyone |
+| `access` | `qsp.access` for the user | a gateway, naming the user; a user, about itself |
+| `describe` | `user`; `tabs`: the tables the user may read, with the granted columns, their types by name (`` `date``, `` `symbol``, `` `char[]`` for a string column), the partition column and the row filter as a where clause; `functions` and `calls`; `limits` from the config; `rules` | the same |
+| `validate` | `([allowed;reason])` for a query, evaluating nothing | the same, with the query |
+| `explain` | what the query becomes, as text | the same, with the query |
+
+**Formats.** Every call takes a format, `` `q `` or `` `json ``. Over IPC it
+is optional and follows the arguments; it is `` `q `` when left out. It is
+told apart by where it is, never by its value alone: from a user's own login
+`` (`.qsp.api;`describe;`json) `` is a format, because `describe` names no
+user there, and from a gateway the same message names a user called `json`.
+The format changes the encoding, never the content: `` `json `` is the `` `q ``
+value as one JSON string, every key in the same place. A table is a list of
+objects. A limit of `0W`, meaning none, is `null`, as is a null symbol (q's own
+`.j.j` would write an infinite float as `inf`, which isn't JSON).
+
+**The rules** are written for an LLM agent, or whoever writes the agent's
+prompt: what to do, and why, with examples either way. Each row has
+
+| Column | |
+|---|---|
+| `id` | the rule's name: `language`, `precedence`, `tables`, `columns`, `rows`, `partition`, `maxpartitions`, `comparisons`, ... |
+| `rule` | what to do, in one sentence |
+| `detail` | why, and the cases that trip writers up |
+| `good` | queries the rule accepts |
+| `bad` | queries it refuses, or for `precedence`, that run and give the wrong answer |
+| `refusal` | text a refusal under the rule contains, so an agent can match a refusal to the rule that explains it |
+
+They follow the policy's config. `partition` is there only with
+`requirepartition`, and `rowindex` only while `i` is off, for example. The
+examples are over two tables, `trades` and `quotes`, that the first rule
+describes. `examples/equities/hdb.q` runs every one against the example HDB,
+so they stay true: each `good` runs and each `bad` is refused with its
+`refusal`.
+
+A bare `` `.qsp.limits `` is `` (`.qsp.api;`limits) ``, as the original qsp
+answered it. A call a login may not make, an unknown call, a wrong number of
+arguments, an unknown format, or a user the policy does not know is refused
+with a `qsp:` signal and recorded as `denied`. The same calls are made at the
+console on a policy value, with the format last:
+
+```q
+qsp.api.version`q
+qsp.api.limits[p;`q]        qsp.api.memstats`q         qsp.api.users[p;`q]
+qsp.api.functions[p;`q]     qsp.api.rules[p;`json]     qsp.api.access[p;`alice;`q]
+qsp.api.describe[p;`alice;`json]
+qsp.api.validate[p;`alice;"select from trade";`q]
+qsp.api.explain[p;`alice;"select from trade";`q]
+```
 
 ### Logins
 
@@ -520,6 +712,64 @@ the process, and composes with it:
 A name that is granted directly but has no members row counts as a user. qsp
 can't tell it from a group nobody is in yet, so give each group at least one
 member, or name it so it can't be a login.
+
+## The admin UI
+
+```q
+qsp:use`di.qsp
+qsp.adminui`local                                  / prints http://localhost:8080/
+qsp.adminui ([access:`local;port:8080;dir:"/path/to/policy"])
+qsp.adminui`stop
+```
+
+A web page for writing, testing and exploring a policy, served by any process
+with data loaded: an HDB, an RDB, a database you have just built. With no
+policy yet it sets one up, creating it from the loaded tables or opening a
+policy directory. A policy that does not load shows its problems by line until
+it does; the views that need a working policy wait for it.
+[docs/ui.md](docs/ui.md) is the guide: each view, how to use it for common
+jobs, and the page's own JSON API.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/ui-lens.webp" alt="The Lens: a table's real rows with sales_na's view laid over them"><br><sub><b>Lens</b>: the rows and columns qsp hides from one user, on the table's real data.</sub></td>
+<td width="50%"><img src="docs/img/ui-edit.webp" alt="Edit: a change previewed, with the tests it breaks"><br><sub><b>Edit</b>: a change to <code>members.csv</code> previewed: what it gives <code>llm1</code>, and the three tests it breaks.</sub></td>
+</tr>
+</table>
+
+| `adminui` takes | |
+|---|---|
+| `` `local `` | answer this machine only (`127.0.0.1`), on the process's port, or 8080 (or the next free one) if it has none |
+| `` `public `` | answer any machine that reaches the port |
+| `` `stop `` | put `.z.ph` and `.z.pp` back as they were, and close the port if `adminui` opened it |
+| a dictionary | `access` (as above), `port`, and `dir`, the policy directory to open |
+
+| view | what it shows |
+|---|---|
+| Setup | where the policy is and whether it loads, and the tables loaded in the process. Open a policy directory, or create one from those tables (`qsp.scaffold`) |
+| Map | users, the groups they inherit from, and the tables those groups are granted. Hover traces a chain; click a table to fan out its columns |
+| Matrix | every user against every table: the share of its columns, and which rows. Pick a table for users against columns |
+| Lens | a table's real rows with one user's view laid over them: struck columns and faded rows are what qsp hides. Play steps through the users |
+| Lab | run q as one user or several side by side. It is checked as you type, and shows what ran, with the policy's row filter marked. A refusal links to the rule that explains it |
+| Tests | the policy's `tests.csv`, run live with the verdict CI gives. "+ test" on a Lab result, a probe or a Compare row collects a new test; review it here, then save it to `tests.csv` |
+| Probes | queries generated from the policy for one user, each with what qsp has to do: return rows, return none, or refuse, including the attacks it must stop. Run all, or every user |
+| Compare | one query as every user, and a fingerprint: every table read by every user |
+| Files | the CSVs and `defs.q`, with the lines behind the selection lit. Click a line to select what it defines |
+| Edit | every file of the policy as text, with forms that write a grant (pick the columns, write the filter) or a membership line. Preview is `qsp.check`, `qsp.diff` and the tests, on a copy: problems by line, who gains or loses what, which tests break. Apply tries it in this session; Save writes the files |
+| Audit | qsp's decision log, live |
+
+
+Select anything, in any view, and a drawer shows it in full, with the lines of
+the policy files that define it. The page is plain HTML and JavaScript in
+`ui/`, read from disk on each request: no build step, nothing fetched from the
+internet. Every query runs through qsp: `runx`, `rewrite`, `access`, the api,
+`runtests`.
+
+It is an admin tool, not a policed process. Whoever reaches the page can query
+as any user, see the rows the policy hides (the Lens), and write the policy's
+files. So it answers this machine only unless `` `public ``, it refuses to
+start in a process serving a policy (`qsp.serve`), and it writes only when the
+page saves, after asking. Run it on a copy of the data, not beside production.
 
 ## The audit log
 
@@ -552,147 +802,48 @@ p:qsp.grant[p;`audit;`auditlog;qsp.ALL;()]
 
 ## Limits
 
-- **qsp bounds the result, not the work.** `requirepartition` is the one check
-  that runs before evaluation. Run policed processes with `-T` (timeout) and
-  `-w` (memory cap): those are the real resource controls.
+- **qsp bounds the result, not the work.** `requirepartition` and
+  `maxpartitions` are the only checks that run before evaluation. Run policed
+  processes with `-T` (timeout) and `-w` (memory cap): those are the real
+  resource controls.
 - **qsp doesn't authenticate.** It checks that a login is a user of the
   policy, not that the client is who it claims. Use `-U` or your own `.z.pw`
   (see [Logins](#logins)).
 - **`allowcall` is trust, not validation.** qsp checks the call site, not the
   body of the function you expose.
-- **Grants union.** See above.
+- **Grants union.** See [Building a policy](#building-a-policy), and
+  [why it matters](docs/concepts.md#why-union-and-or-matter).
+- **It doesn't defend against prompt injection, and doesn't check answers.**
+  It checks what a query reads, however the query was written, not whether it
+  answers the question asked.
+- **The console isn't policed.** Whoever holds the process's own console holds
+  the data. It is where you run `explain` and read the audit log.
 - **`strictcolumns` off and `rowindex` on each leak something by design.** The
   first lets a caller filter on a column they cannot read. The second shows
   the positions of rows they cannot see.
 
 ## Layout
 
-[docs/internals.md](docs/internals.md#every-file) describes every file in
-full, and how the source files depend on each other.
+```
+di/qsp/*.q          the module: init.q loads the rest
+di/qsp/ui/          the admin UI's page (qsp.adminui): HTML, CSS and JavaScript, no build
+di/qsp/VERSION      the module version (qsp.version), and CHANGELOG.md, what changed in each
+di/qsp/qsp.md       this reference; setup.md, the walkthrough for a team; docs/, the rest
+                    (docs/ui.md, the admin UI's guide, with screenshots in docs/img/;
+                    testing.md, qsp's own tests; history.md, the port from qsp)
+di/qsp/test.csv     the unit tests, with test.q (fixtures) and testserver.q (the IPC server)
+di/qsp/bin/         policy.q (check and review a policy directory, for CI), test.q (run the
+                    unit tests), harden.sh and harden/ (the hardening campaign)
+di/qsp/examples/    equities/: an example HDB, its policy and tests, a walkthrough of each
+                    role (hdb.q), and the admin UI on it (demo.q)
+```
 
-```
-di/qsp/init.q        the pipeline (parse, rewrite, pre-check, eval, bound), audit, serving
-di/qsp/policy.q      a policy as a value; what it resolves to per user
-di/qsp/files.q       a policy kept as a directory of CSVs: fromfiles, check, scaffold
-di/qsp/review.q      access and diff; filters written back as q
-di/qsp/walk.q        the walker and rewriter
-di/qsp/order.q       where-clause ordering - pure in (table info; constraints)
-di/qsp/fns.q         the function whitelist, never-allow list, guarded substitutes
-di/qsp/tree.q        parse-tree shapes, detected from q's own parser at load
-di/qsp/f.q           row filter builders (exported as qsp.f)
-di/qsp/VERSION       the module version, exported as qsp.version
-di/qsp/qsp.md        this file
-di/qsp/setup.md      the walkthrough for a team
-di/qsp/docs/         README.md (the index), concepts.md (what a policy is made of), time.md
-                     (embargoes and the clock), internals.md (the code, for developers)
-di/qsp/test.csv      the k4unit tests
-di/qsp/test.q        their fixtures and helpers; testserver.q, the process they police over IPC
-di/qsp/bin/          policy.q: check and review a policy directory, for CI and pull requests
-                     test.q: run the tests, exiting non-zero on failure
-di/qsp/examples/     equities/: an example HDB (mkhdb.q), its policy (policy/, with defs.q for the
-                     q it names), and a walkthrough of each role that serves it with -p (hdb.q)
-```
+[docs/internals.md](docs/internals.md#every-file) describes every file, and
+how the source files depend on each other.
 
 ## Tests
 
-The tests are k4unit tests in `test.csv`, as every kdbx-modules module has. With
-kdbx-modules on the search path:
-
-```q
-q)k4unit:use`di.k4unit
-q)k4unit.moduletest`di.qsp
-```
-
-or, for CI, `bin/test.q` runs them and exits 1 if any fail:
-
-```sh
-QPATH=${QPATH}:/path/to/kdbx-modules q di/qsp/bin/test.q -q
-```
-
-There are 387 assertions. The first 222 cover enforcement, against the
-in-process API and a real IPC server with a gateway login (`testserver.q`):
-
-| Area | Covers |
-|---|---|
-| the policy value | builders return new policies, config refuses typos, refresh, revoke, unmember, droptable |
-| rows and columns | `select *`, aggregates, exec, by, nested selects, updates over selects, joins, `fby`, `distinct` |
-| the attack surface | 41 attempts to reach hidden columns, other tables, globals, the filesystem, handles, assignment and `eval`, each refused, with checks that nothing ran or changed |
-| sorts and limits | `select[n;>c]`: hidden columns, functions and atoms in a sort are refused. A sort over a `by` uses the output |
-| more query shapes | delete, exec pivots, take and key, `reverse` `sublist` `xcols` `xcol`, every join, subqueries in where, the never list, `rowindex` |
-| entitlements and resolution | lambda filters, `USER` lookups, failing lookups, several groups at once, an aggregating policy filter |
-| a partitioned database | constraint ordering by partition and attribute, `placement`, aged filters, `NOW`, `fullscans`, `requirepartition` |
-| the audit log and serving | every decision kind, `auditto`, gateways, logins (`.z.pw` refuses unknown names and group names, and keeps a `.z.pw` defined before `serve`), a gateway naming a non-user, async, HTTP GET and POST (401 without a known user), websockets, policy swap |
-
-The other 165 cover policy files, scaffold, access, diff and `bin/policy.q`,
-including every way a policy directory can be wrong:
-- **The directory and files:** missing, empty, a file where a directory should
-  be, misspelt or wrongly-cased file names, unreadable, binary garbage, and
-  20 runs of random bytes.
-- **How the CSV is written:** Windows line endings, a UTF-8 byte order mark,
-  quoted cells, short and long rows, padded rows, and unterminated quotes.
-- **What the rows say:** every row-level mistake in each file, every filter
-  form and every bad one, and a failed reload that leaves the served policy in
-  place.
-- **Examples:** `examples/equities/hdb.q` builds its HDB and every step of
-  its walkthrough goes as expected, and `examples/equities/policy/` loads with
-  no data, given its `defs.q`.
-- **Scale and tools:** a 2000-grant, 5000-member policy, a scaffold
-  round trip, a scaffold refused inside a database (date, int, splayed and
-  segmented, and a relative path from an HDB's working directory), the property that every filter `access` shows loads back as the
-  same filter, and the CLI's exit codes.
-
-The module was also run against the original qsp's own suites through a
-test-only shim of the old global API:
-
-| suite | result |
-|---|---|
-| run | 202/204: the two "differences" are the `exec ... by` fix below |
-| attack | 255/255 bypass attempts refused |
-| attributes | 64/65: the module returns a typed empty dictionary where the old test expects `()!()` |
-| runtime | 31/31: three assertions on the removed `.qsp.currentuser` global skipped |
-| partition | 26/31: the five misses inspect the old `gwserver.q` demo script |
-
-## Changes from qsp
-
-**Reimagined:**
-- Global mutable state became a policy **value**, with config as part of it.
-  Gone with it: `clearpolicy`, `enabled`, the global settings, and the
-  placeholder row the grants table needed to keep its column types.
-- Tables are described with `meta` instead of `setattributes` / `settypes`.
-- `USER` and `NOW` resolve at rewrite time. There is no `.qsp.currentuser`
-  global, so nothing is left in the tree that a query could reach.
-- Audit decisions follow from the stage that refused. A fault carries an
-  unforgeable marker instead of a global flag. The log keeps the tree rather
-  than a `-3!` string, which `\c` truncated.
-
-**Dropped:** TorQ `.lg` / `.dotz` hooks, `limits`, the semantic layer, demo,
-data generator and evaluation harness. They belong to an application, not the
-module.
-
-**Fixed along the way:**
-- **Any login was accepted.** qsp trusted `.z.u`, and q accepts any name with
-  any password by default. Logging in as `compliance1`, or as the group name
-  `compliance`, gave that access. `serve` now installs a `.z.pw` that admits
-  only the policy's users and gateway logins, and a gateway may name only a
-  user. Passwords still need `-U` or your own `.z.pw`.
-- **The sort of `select[n;>c]` was never checked.** This was found by
-  reviewing test coverage, and was in the walker from this repository's first
-  commit. The walker treats a one-item list as data. parse puts the sort in
-  one, but q evaluates it. `select[>leakfn size]` called a global,
-  `select[>pnl]` ordered rows by a hidden column, and `select[<5000]` opened a
-  connection. The sort is now walked in the columns q evaluates it against,
-  and its grade is guarded.
-- **`scaffold` wrote into a database.** The setup guide's relative
-  `scaffold["policy";...]`, run from an HDB console, put `policy/` inside the
-  HDB, which then failed to load. It now refuses a database or a partition of
-  one, and the guide gives an absolute path.
-- `exec ... by sym` was normalised to a keyed table. It now returns q's own
-  dictionary shape.
-- `select distinct` was refused. It is now permitted.
-- The `` `$"\000..." `` markers were all the null symbol, because a symbol
-  stops at a NUL byte.
-- A refused function is now named in the refusal (`function not permitted:
-  system`), so a query generator can repair the query.
-- `qsp.f.notin` builds a two-item constraint (`not` and its argument), which
-  the filter check refused. It now loads like any other filter. Found by the
-  files suite.
+qsp's own tests - the unit tests (`bin/test.q`), the hardening campaign
+(`bin/harden.sh`) and the example's checks - and what each covers are in
+[docs/testing.md](docs/testing.md). What changed from the original qsp, and how
+the module did against its suites, is in [docs/history.md](docs/history.md).

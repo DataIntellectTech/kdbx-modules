@@ -34,6 +34,7 @@ defaultconfig:([
   maxsize:200000000;      / max result size, bytes
   maxrows:0W;             / max rows returned
   requirepartition:0b;    / refuse a scan of every partition
+  maxpartitions:0W;       / refuse a query that would read more partitions than this
   audit:1b;               / record every decision
   auditmax:10000]);       / rows kept in the audit log
 
@@ -125,7 +126,7 @@ info:{[p;t]
 / ------------------------------------------------------------------ grants
 
 / every function value in a parse tree
-fnvalues:{[x] :$[tree.isfn x;enlist x;0h=type x;raze .z.s each x;()];};
+fnvalues:{[x] :$[tree.isfn x;enlist x;(type x) in 0 98 99h;raze .z.s each tree.items x;()];};
 / a function value, named for a message
 fnlabel:{[v] :$[null n:fns.name v;-3!v;string n];};
 / can name n be read in this process?
@@ -150,7 +151,8 @@ grant:{[p;e;t;c;f]
   / grant an entity (a user or a group) columns and rows of a table
   /   c - a symbol list, or allcols (qsp.ALL)
   /   f - () for no row restriction, a list of constraints (see qsp.f), or a unary lambda taking
-  /       the user and returning either, called per query
+  /       the user and returning a list of constraints, or qsp.ALL for no restriction, called per
+  /       query. A lambda's empty result refuses the query
   / several grants on one table union their columns and OR their row filters
   chkname[e;"entity"];
   chkknown[p;t];
@@ -279,8 +281,21 @@ resolvesym:{[p;u;x]
   :x;
   };
 
+/ a marker in literal data: the value it stands for, never enlisted. Inside a symbol list the user
+/ stays a symbol, so the list stays one
+resolvedata:{[p;u;x]
+  if[-11h=type x;:$[x~tree.usermark;u;x~tree.nowmark;now p;x]];
+  if[11h=type x;:$[tree.nowmark in x;.z.s[p;u] each x;@[x;where x=tree.usermark;:;u]]];
+  if[0h=type x;:.z.s[p;u] each x];
+  :x;
+  };
+
 resolve:{[p;u;t;x]
-  / replace every marker in a constraint with the literal it stands for
+  / replace every marker in a constraint with the literal it stands for. A one-item list is
+  / quoted data - parse's form for a constant, as qsp.f.eq[c;qsp.USER] and
+  / qsp.f.isin[c;(qsp.USER;`shared)] write it - and a marker in it is a value. Anywhere else it
+  / is a name, the argument of a call such as `deskof`qsp.user, and becomes a quoted value
+  if[(1=count x)and(type x) in 0 11h;:enlist resolvedata[p;u;first x]];
   if[11h=type x;:resolvesyms[p;u;t;x]];
   if[-11h=type x;:resolvesym[p;u;x]];
   if[0h<>type x;:x];
@@ -291,8 +306,18 @@ resolve:{[p;u;t;x]
 andtree:{[l] :$[1=count l;first l;{((&);x;y)} over l];};
 ortree:{[l] :$[1=count l;first l;{((|);x;y)} over l];};
 
-/ a grant's rows for user u: a lambda is called with the user
-rowsfor:{[u;r] :$[100h=type r;r u;r];};
+/ a grant's rows for user u: a lambda is called with the user. A static grant of () is every row,
+/ written by whoever made the grant. A lambda's empty result is not: a lookup that does not know
+/ the user returns nothing, and that must not open the table. So a lambda says "every row"
+/ explicitly, by returning qsp.ALL, and an empty result refuses the query
+rowsfor:{[u;r]
+  if[not 100h=type r;:r];
+  f:r u;
+  if[f~allcols;:()];
+  tree.chk[0<count f;"row filter function returned no constraints for ",string[u],
+    " - return qsp.ALL for every row, or a constraint that matches none"];
+  :f;
+  };
 
 rawfilter:{[p;u;t]
   / the row filter for a user on a table: () for none, else a constraint list. A lambda that

@@ -70,7 +70,8 @@ p:qsp.fromfiles "examples/equities/policy"
 | 7. Schema disclosure via `cols` / `meta` on an unregistered table | **yes** (corrected) | moderate |
 | 8. `sym` enum pollution / in-place mutation | needs IPC re-verification | — |
 | 9. Gateway string / symbol-vector user handling | needs IPC re-verification | low (robustness) |
-| 10. IPC-injected one-item lambda list | not verified | — |
+| 10. IPC-injected one-item lambda list | **yes**, in another position (see Fixes) | high |
+| 11. Functional form clauses written as code bypass column grants (found later, not in the report) | **yes** | high |
 
 All five "confirmed" findings (1–5) stand. Findings 6 and 7 are **also
 confirmed** after the erratum above — they were wrongly dismissed in the first
@@ -324,7 +325,8 @@ check and q resolves it when the rewritten tree is evaluated. Finding 2 (row
 filter ordering) is a related but separate tree-analysis gap. None of these is a
 one-line fix; closing the runtime-symbol class may require constraining which
 primitives can appear with computed symbol arguments, or evaluating in a
-restricted namespace. Left for the maintainers — this review changed nothing.
+restricted namespace. This review itself changed no code; the Fixes section
+below records what was changed afterwards.
 
 Because this class allows code execution, a policed process should not be
 treated as a security boundary against a hostile query author until it is
@@ -397,6 +399,25 @@ that narrow a range count (`=`, `~`, `in`, `<`, `<=`, `>`, `>=`, `within`),
 not `<>` or `like`. `place` already puts a movable partition constraint first,
 so ordinary queries are unaffected.
 
+**Follow-up (2026-11-13).** The first fix still counted a one-sided range as
+pruning: `date>1900.01.01` passed and read every partition, as did an
+embargoed user's query with no date, whose only date constraint was the
+embargo's `date<cutoff`. Tested on the HDB, `date>=a, date<=b` also reads
+every partition from `a`, because q prunes by the first constraint only. Now:
+
+- only `=`, `~`, `in` and `within` count as pruning: they bound the column on
+  both sides. The refusal says so: `trades needs a constraint on `date -
+  date=d, date in ds or date within d0 d1`.
+- `order.crank` ranks a bounding partition constraint ahead of any other
+  constraint on the partition column, whoever wrote it. Before this, an
+  embargo led the user's `date=d`, and q read every partition before the
+  cutoff instead of one.
+
+This reverses the documented "an embargo satisfies `requirepartition`":
+embargoed users now name their dates like everyone else. Unit tests 558/558,
+`bin/harden.sh` 221/221. The 4 new harden checks were 3 failures on the
+previous code; the fourth checks that `within` still runs.
+
 ### Finding 5: `maxrows` (`init.rows`)
 
 `maxrows` now applies to a list's items, and to the longest column of a
@@ -409,9 +430,126 @@ with `qsp: not a user of this policy`, and is logged against the gateway's own
 login. Before, writing a string into the audit log's symbol column raised a
 bare `'type`.
 
+### Finding 10: a function quoted in a one-item list (`walk.literal`)
+
+Found by a colleague after the fixes above. The report's shape, a one-item
+list in the head, was safe: an expression head is wrapped in `fns.fnarg`, which
+refuses anything but a pure function. But the walker took every one-item list
+as inert data, and `eval` hands back its item unevaluated, so a function
+quoted in one reached a function that applies its argument with no check at
+all:
+
+```q
+q)qsp.run[qsp.policy[];`anyone;(each;enlist value;(enlist;"til 3"))]
+0 1 2
+```
+
+`enlist canaryfn` ran the canary the same way. `literal` now refuses a
+function anywhere in literal data, including inside a table, and `inert` no
+longer takes a one-item list for granted. parse never quotes a function, so
+no query written as text is affected. Unit tests 563/563 (6 new, which fail on
+the previous code), `bin/harden.sh` 223/223 (2 new attacks over IPC).
+
+### A functional form's clauses written as code (`walk.query`) — HIGH
+
+Found while answering whether trees should be accepted at all. The walker
+reads a select's clauses as parse writes them for select text. A functional
+form written as text parses differently: each argument is left as code that
+builds the clause, and q runs that code before `?` sees the result. The
+walker checked the code as if it were the clause, so a column named inside it
+looked like a quoted symbol. `sales_na`, not granted `trader`:
+
+```q
+"?[trades;();0b;(enlist`x)!enlist(distinct;`trader)]"   / returned every trader id
+```
+
+The row filter still applied. The column grant did not. The same tree sent
+over IPC did the same. A code-built where clause was misread too: `tree.getc`
+took the `enlist` function for the constraint list, and the user's
+constraints were dropped. That failed closed only by accident (`nyi`, or a
+full-scan refusal).
+
+Each clause must now have the shape parse gives select text, or the query is
+refused with "write the query as select, exec, update or delete". A
+functional form with plain-data arguments, `?[t;();0b;()]`, parses to that
+shape and still runs. Unit tests 573/573 (7 new here: the leak returned `pnl` on
+the previous code; 3 more for `.qsp.limits`), `bin/harden.sh` 228/228 (3 new attacks, plus 2 checks of
+`.qsp.limits`, which gateways can read again as they could in the original
+qsp).
+
 ### Not changed
 
-Finding 10 (IPC one-item lambda list) was not reproduced and needed no change:
-a hand-built tree is walked like a parsed one, and a lambda is never on the
-whitelist. The advice to run policed processes with `-T`, `-w` and a restricted
+The advice to run policed processes with `-T`, `-w` and a restricted
 OS account stands as defence in depth.
+
+---
+
+## Second review (13 Nov 2026)
+
+An independent read-through of the whole module at `f4ea3a6` raised twelve
+findings, most from code reading. Each was reproduced or checked here, and
+two turned out wider than reported. The first was the one-item list above.
+
+| # | Finding | Verdict | Change |
+|---|---|---|---|
+| 1 | a function in a one-item list runs unchecked | confirmed | fixed above (`walk.literal`) |
+| 2 | `notin`, `both`, `either`, and a user in two filtered groups lose partition pruning; `requirepartition` then refuses a dated query | confirmed, all three shapes | `order.movable` takes `&`, `\|` and `not` over movable constraints |
+| 3 | `requirepartition` is syntactic: `date within 0001.01.01 9999.12.31` reads everything | confirmed | new `maxpartitions` setting, counted against `.Q.pv` before the query runs |
+| 4 | a filter function's empty result means every row | confirmed: a lookup that did not know the user opened the table, and so did an empty symbol list, despite the docs saying otherwise | an empty result refuses; a function returns `qsp.ALL` for every row |
+| 5 | `strictcolumns` off: an update/delete's where clause names hidden columns the pinned select lacks | confirmed: with a global of the same name, the where clause read the global | an update/delete's where sees the granted columns only |
+| 6 | `~` counted as bounding the partition column (low) | **wider**: `~` aggregates. On an indexed column it was moved ahead of the row filter, and `where s~`a`b`a`zz` returned rows exactly when the hidden row's `s` was `` `zz `` | `~` is neither movable nor pruning |
+| 7 | `.z.pm` not refused | not exploitable as served (q answers 501), but serve now keeps prior handlers, so one installed earlier would stay live | `.z.pm` refused; restored by `unserve` |
+| 8 | `bin/test.q` passes with no tests | confirmed | no results exits 1 |
+| 9 | `schema.csv` ignored for a loaded table | confirmed | `schemadrift`, and a warning from `fromfiles` |
+| 10 | a granted name with no members can log in | by design: that is how a user is granted directly | documented, unchanged |
+| 11 | `requirepartition` unsatisfiable when the filter must lead, with a misleading refusal | confirmed | the refusal names the cause |
+| 12 | sort weighting spills at 1000+ constraints | confirmed: a user's constraint could sort ahead of the policy's within a rank | sorted on (rank; origin; position) |
+
+Found while checking these:
+
+- **A comparison with a list counts hidden rows.** `where s=`a`b`a` compares
+  row by row and signals `'length` unless the list matches the rows in front
+  of it. On an indexed column it was moved ahead of the row filter, so the
+  error said how many rows the table has, hidden ones included. A literal list
+  now keeps its place; a computed one is wrapped in `fns.scalar` (or `pair`,
+  `pattern`), which refuses a list as it runs.
+- **`.z.pi` was dropped** when serve was reworked to keep prior handlers, the
+  same day. It is policed again for remote input (qcon).
+
+Each change has unit tests (662/662) and the HTTP methods have harden checks
+(245/245). The documentation items - this section's stale line, the
+duplicated comment in `init.q`, the disclaimer in `harden.sh`, the version and
+a changelog, hard-coded test counts - are done. So is the overlap between the
+docs, which had already drifted: `qsp.md` said what a filter function may
+return in two places that disagreed, and `concepts.md` kept its own settings
+table without `maxpartitions`. `qsp.md` is now the reference, stating each
+rule once; `concepts.md`, `setup.md` and `internals.md` explain and link to
+it, and `docs/README.md` and `internals.md` say so for whoever changes a rule
+next.
+
+## Third review (13 Nov 2026)
+
+A review of 0.2.0 raised findings in three groups; each was reproduced
+against the live module with a counting canary, and the confirmed sandbox and
+leak findings are fixed in 0.3.0. One was wider than reported, one narrower.
+
+| # | Finding | Verdict | Change |
+|---|---|---|---|
+| 1.1 | handle 0 applied: `` (0+0i)"text" ``, `` 0 each enlist "text" `` | confirmed, **wider**: a negative handle writes to stdout/stderr, and a positive one sends down a connection. Narrower too: q does not apply an int reached by indexing at depth, `` (0;"a")[0;"text"] `` is `'type` | `fns.fnarg` refuses every atom; `walk.fnguard` checks a literal in an applied slot as the tree is walked, rather than passing it as "not a symbol" |
+| 1.2 | a list of functions indexed at depth applies one | confirmed, for lists, dictionaries and columns | `fns.impure`: data applied may hold only pure functions; a column indexed by arguments is checked as it runs |
+| 1.3 | `wj` with a symbol pair `` `f`c `` | confirmed, literal and computed. `fby` the same, behind a length check a one-row table passes | `fns.wjagg` and `fns.fbyarg` take (function;column) pairs only |
+| 1.4 | a hand-built select's clauses: `` enlist `f`c `` as an exec, `` `symbol$() `` and an empty dictionary as select * | confirmed | delete shapes are a delete's only; empty or unnamed select and by dictionaries are refused (`walk.names4`) |
+| 2.1 | phantom columns resolve to the global `sym` | confirmed through `exec ... by`; `` `a`b!t `` did not reproduce as written, but `!` kept its argument's columns whatever its left was | an exec is a table only with a named by; `!` projects through `walk.keyedcols` |
+| 2.2 | reads inside a select or by dictionary missed by the partition checks; file handles there too | confirmed: a subquery scanned every partition with `maxpartitions:1` | `tree.items`: the tree searches look inside dictionaries and table literals |
+| 2.3 | `maxpartitions` bypassed by a constraint computed twice | confirmed, 4 of 4 with `1?2` | `init.pin`: the leading constraint is computed once and its value written into the tree that runs |
+| 3.1 | `ispure` refuses the derived names on its own list | confirmed; each of the 12 was checked never to resolve a symbol or apply a function, with one argument or two | the list is checked first, by identity |
+| 3.2 | `` `$("#";"_") `` is one symbol | confirmed | `` `$(1#"#";1#"_") `` |
+| 3.3 | `$[`int]` signals `length` in the walker | confirmed | the rule pads to the argument count; the projection is refused as a computed function |
+| 3.4 | select by every granted column signals `rank` | confirmed, but it is q's own: `select by a,b from ([]a;b)` signals `rank` in plain q | refused up front, saying why |
+| 3.5 | `selectonly:0b` update on a partitioned table scans every partition | confirmed; plain q signals `par` for it | refused: wrap a select |
+| 3.6 | `access` text: a list of strings, `enlist`, `qsp.USER` in a symbol list | confirmed, and **wider**: `qsp.f.eq[c;qsp.USER]` gave a one-item list, and every query under the grant failed with `length` | a marker in a constant is a value (`policy.resolvedata`); `review.qlit` writes constants as q |
+| 3.7 | in-process `u` not validated; a one-name gateway message missed | confirmed: `` `a`b `` unioned two users' grants. The gateway case failed closed | a query runs only as a user of the policy (0.3.0); `isgatewaycall` takes a symbol vector |
+
+Every finding is now closed. Each fix has unit tests that fail without it, and the attacks suite of
+`bin/harden.sh` sends each exploit over IPC against the canaries (258/258).
+

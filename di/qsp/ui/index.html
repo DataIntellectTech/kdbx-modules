@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qsp admin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237aa2ff'/%3E%3Cpath d='M9 11h14M9 16h9M9 21h5' stroke='%230b0f17' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <a class="brand" href="#/map" title="qsp admin">
+      <span class="logo"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8"/><path d="M9 11h14M9 16h9M9 21h5"/></svg></span>
+      <span class="brand-text"><b>qsp</b><span>admin</span></span>
+    </a>
+    <div id="stats" class="stats"></div>
+    <div class="top-right">
+      <div id="edited" class="edited" hidden>
+        <span>session policy edited</span><button id="reset" class="btn btn-sm">reset</button>
+      </div>
+      <button id="theme" class="icon-btn" title="Toggle theme (t)">
+        <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+    </div>
+  </header>
+  <nav id="nav"></nav>
+  <main id="main"><div class="loading"><div class="spinner"></div>loading the policy…</div></main>
+  <aside id="drawer" aria-hidden="true">
+    <button class="icon-btn drawer-close" id="drawer-close" title="Close (Esc)">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div id="drawer-body"></div>
+  </aside>
+  <div id="tip" class="tip" hidden></div>
+  <div id="toasts"></div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

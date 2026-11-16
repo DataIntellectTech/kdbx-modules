@@ -84,8 +84,12 @@ ispure:{[f]
   / will f, applied to anything, never resolve a symbol or apply a function it is given? A
   / projection is its base function; a composition, all of its parts. Anything an iterator derives
   / applies its function, and resolves a symbol atom it is applied to, so is never pure
+  / a name on the list is pure whatever its type: sums is +\, raze ,/ and prev a projection of
+  / an each-prior, and each was checked as itself (not as what derived it) never to resolve a
+  / symbol or apply a function, with one argument or two
+  if[(count purefns)>purefns?f;:1b];
   t:type f;
-  if[t within 100 103;:(count purefns)>purefns?f];
+  if[t within 100 103;:0b];
   if[t=104h;:.z.s first value f];
   if[t=105h;:all .z.s each value f];
   :0b;
@@ -100,21 +104,61 @@ isiter:{[f] :any f~/:iters;};
 / a value that may not be a symbol: an argument q could read as a table or list by name
 nosym:{$[-11h=type x;'"qsp: a symbol cannot be used here - q would read it as the name of a global";x]};
 
-/ a value q will apply: data (which q indexes), or a pure function
-fnarg:{$[-11h=type x;'"qsp: a symbol cannot be applied - q would call the global it names";
-  not (type x) within 100 112;x;
-  ispure x;x;
-  '"qsp: only q's simple functions can be applied here, not ",$[null n:name x;"a function the query computed";string n]]};
+/ does x hold a function that is not pure, at any depth? q applies a list, a dictionary or a
+/ table to arguments by indexing it at depth, and an item it reaches with arguments left over is
+/ applied to them: (each;count)[0;f;y] is each[f;y], and (?;count)[0;`t;();0b;()] reads t
+impure:{[x]
+  t:type x;
+  if[t within 100 112;:not ispure x];
+  if[t=98h;:.z.s value flip x];
+  if[t=99h;:.z.s[key x]|.z.s value x];
+  if[t<>0h;:0b];
+  / most lists hold no list or function at all: settle those without looking at each item
+  ty:type each x;
+  if[not any (ty within 100 112)|ty in 0 98 99h;:0b];
+  :any .z.s each x;
+  };
+
+/ a value q will apply: data holding no function but the pure ones, which q indexes, or a pure
+/ function. Never an atom: q applies an int as a handle - 0"text" evaluates the text, -1"text"
+/ writes to stdout, h"text" sends it down an open connection - a symbol as the name of a global,
+/ and any other atom is an error in q anyway
+fnarg:{
+  if[-11h=type x;'"qsp: a symbol cannot be applied - q would call the global it names"];
+  if[0>type x;'"qsp: ",(-3!x)," cannot be applied - q applies an int as a handle, and no atom can be indexed"];
+  if[not (type x) within 100 112;
+    if[impure x;'"qsp: data holding a function cannot be applied - q would apply the function it reaches"];
+    :x];
+  if[ispure x;:x];
+  '"qsp: only q's simple functions can be applied here, not ",$[null n:name x;"a function the query computed";string n];
+  };
+
+/ the right side of a comparison the user computed: one value, as q compares a list row by row
+/ (see order.q - a list long enough to match would count rows the user cannot see)
+scalar:{$[0>type x;x;'"qsp: a comparison in a where clause takes one value - use in for a list"]};
+pair:{$[$[0h=type x;(2=count x)&all 0>type each x;(0<type x)&2=count x];x;'"qsp: within takes two values, low and high"]};
+pattern:{$[(type x) in -10 10h;x;'"qsp: like takes one pattern, as a string"]};
 
 / the left of $: a type name casts; any other symbol names an enumeration domain, which q reads
 typenames:``boolean`guid`byte`short`int`long`real`float`char`symbol`timestamp`month`date,
   `datetime`timespan`minute`second`time;
 castarg:{$[-11h<>type x;x;x in typenames;x;'"qsp: ",string[x],"$ casts to an enumeration - only a type name may be cast to"]};
 
-/ fby's (function;column): the function is applied
-fbyarg:{if[(0h=type x)&0<count x;fnarg first x]; x};
-/ wj's (table;(function;column);...): each function is applied
-wjagg:{if[0h=type x;{if[(0h=type x)&0<count x;fnarg first x]} each 1_x]; x};
+/ fby's (function;column): the function is applied. q's fby takes the function as x 0, so it
+/ applies a symbol pair - `f`c - as readily as (f;`c), and indexes a dictionary as well as a list
+fbyarg:{
+  if[not (type x) in 0 11h;'"qsp: fby takes (function;column)"];
+  if[count x;fnarg first x];
+  :x;
+  };
+/ wj's (table;(function;column);...): a symbol table is read as a global, and each function is
+/ applied - from a symbol pair, `f`c, as readily as from (f;`c)
+wjagg:{
+  if[0h<>type x;'"qsp: wj takes (table;(function;column);...)"];
+  nosym first x;
+  {if[not (0h=type x)&2<=count x;'"qsp: wj aggregates with (function;column) pairs"]; fnarg first x} each 1_x;
+  :x;
+  };
 
 / x?y with a symbol on the left extends the enumeration it names, and from an atom on the left
 / rolls or deals from the list a symbol on the right names. A list on the left finds
@@ -133,8 +177,13 @@ findsafe:{[x;y]
 /   `wjagg  wj's aggregation list
 
 higher:{x where not (::)~/:x} tryresolve each `each`peach`prior`over`scan;
-/ a column list in the first argument: `sym xasc t, `a`b#t, aj[`sym`time;t;q]
-colfirst:{x where not (::)~/:x} tryresolve each `xasc`xdesc`xcols`xcol`aj`aj0`ej,`$("#";"_");
+/ a column list in the first argument: `sym xasc t, aj[`sym`time;t;q]. The table after it is read
+/ by name if it is a symbol - `sym xasc `trade sorts the global - so it may not be one
+colfirst:{x where not (::)~/:x} tryresolve each `xasc`xdesc`xcols`xcol`aj`aj0`ej;
+/ # and _ never read a symbol as a global's name, on either side: 3#`t is `t`t`t, and `a#`t and
+/ `a _ `t are type errors. So neither argument is checked: `a`b#t, 30#`MSFT and d _ `k all run.
+/ (`$("#";"_") would be one symbol, `#_: two one-character strings are one two-character string)
+takedrop:{x where not (::)~/:x} tryresolve each `$(1#"#";1#"_");
 wjs:{x where not (::)~/:x} tryresolve each `wj`wj1;
 castop:resolve`$"$";
 findop:resolve`$"?";
@@ -149,9 +198,10 @@ rules:{[f;n]
   if[f~fbyop;:pad[`fby;n]];
   if[any f~/:wjs;:pad[`none`data`data`wjagg;n]];
   if[any f~/:colfirst;:pad[`none;n]];
+  if[any f~/:takedrop;:n#`none];
   / $[c;a;b] and ?[c;a;b] are conditionals: they return a symbol, but never resolve one
   if[(f~castop)&2<n;:n#`none];
-  if[f~castop;:`cast`none];
+  if[f~castop;:n#`cast`none];
   if[(f~findop)&2<n;:n#`none];
   :n#`data;
   };
@@ -183,4 +233,4 @@ defaults:catalog (`$("=";"<>";"<";">";"<=";">=";"~";"&";"|";"+";"-";"*";"%";
 if[not (::)~compose;defaults[`compose]:compose];
 
 export:([resolve;never;name;notsafe;ascsafe;descsafe;subst;compose;catalog;defaults;
-  ispure;isiter;rules;nosym;fnarg;castarg;fbyarg;wjagg;findop;findsafe]);
+  ispure;isiter;rules;impure;nosym;fnarg;castarg;fbyarg;wjagg;findop;findsafe;scalar;pair;pattern]);

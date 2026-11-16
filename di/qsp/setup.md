@@ -7,10 +7,17 @@ the process. You do not need q to read or change who can see what.
 
 The worked example throughout is `examples/equities/policy/`, the policy for a
 small equities HDB. To see it working, run `q di/qsp/examples/equities/hdb.q`.
-That builds the HDB, loads the policy, and shows what each role can and can't
-read. See [the example's README](examples/equities/README.md). To start from it
-rather than from a scaffold, copy the directory to where your team keeps its
-policies.
+That builds the HDB, loads the policy, and runs its tests, showing what each
+role can and can't read. See [the example's README](examples/equities/README.md).
+To start from it rather than from a scaffold, copy the directory to where your
+team keeps its policies.
+
+Every step below can also be done in the **admin UI**, a web page served by
+the process itself: `qsp.adminui`local`, then open the address it prints. It
+creates the policy, has forms for grants and memberships, shows what an edit
+changes for whom before you save it, and runs the policy's tests.
+[docs/ui.md](docs/ui.md) is its guide. The files it writes are the same files
+this guide describes, so the review and CI steps apply unchanged.
 
 ## What you are deciding
 
@@ -63,6 +70,10 @@ existing policy.
 Keep one policy directory per kind of process. An RDB and an HDB hold
 different tables, so each gets its own scaffold.
 
+In the admin UI, **Setup → Create one from this database** does the same: tick
+the tables, name the directory, and it takes you to Edit with a problem for
+each grant line still naming no one.
+
 ## 2. Decide the groups
 
 [docs/concepts.md](docs/concepts.md) explains users, groups, grants and how
@@ -110,14 +121,18 @@ compliance,trades,*,
 | `account in `A1`A2` | only those accounts |
 | `sym in `VOD`MSFT, size>100` | both. A comma means AND, as in any where clause |
 | `(side=`buy) or size<1000` | either |
-| `qsp.aged[time;0D00:15]` | only rows at least 15 minutes old. Age the partition column too (`qsp.aged[date;0D]`) and the embargo prunes partitions. An aged partition column also counts as the date constraint `requirepartition` asks for |
+| `qsp.aged[time;0D00:15]` | only rows at least 15 minutes old. Age the partition column too (`qsp.aged[date;0D]`) to keep today's partition out of every answer. An aged partition column is only an upper bound, so it does not count as the date constraint `requirepartition` asks for: users still name their dates |
 | `account in coveredaccounts qsp.USER` | a lookup run with every query. `qsp.USER` is the user the query runs as, even through a gateway |
 | `time < qsp.NOW - 0D01` | relative to the policy clock. See [docs/time.md](docs/time.md) for which column to age, and pointing the clock at the time your data is stamped in |
-| `fn:deskfilter` | the q function `deskfilter`, called with the user on every query. It returns a list of constraints (see `qsp.f`). Use this when a where clause can't express the filter |
+| `fn:deskfilter` | the q function `deskfilter`, called with the user on every query, returning the constraints. Use this when a where clause can't express the filter. What it may return is under [Row filters](qsp.md#row-filters) |
 
 Filters are parsed, never evaluated, when the policy loads. A name in a filter
 must be a column of the table or something defined in the process, so a
 misspelt column is caught at load.
+
+In the admin UI, Edit's **Grant a table** form writes a line from a table, its
+columns ticked, and a filter, and **Preview** shows what the grants give each
+user before anything is saved.
 
 There is one row per group and table. A second row would replace the first
 without anyone noticing, so it's refused. To combine two conditions, use `or`
@@ -150,6 +165,11 @@ Where they share one, the union and OR above apply. Put `sales` inside
 names traded by every client, with the `account` column, because research's
 row filter would be ORed with theirs.
 
+A user is a name in `members.csv`, or one granted something directly, that is
+not itself a group. Only users can run queries: qsp refuses a query run as a
+group's name, or as a name the policy does not know, whether it arrives over
+IPC or through `qsp.run`.
+
 `gateways.csv` lists logins that may run a query **as any other user**. A
 gateway authenticates the end user and passes their name along. Add a login
 here only for a service you trust as much as the policy itself. `diff`
@@ -162,20 +182,22 @@ For anything an LLM or other generator talks to, set at least:
 ```
 setting,value
 requirepartition,1b
+maxpartitions,31
 maxrows,1000000
 ```
 
+Choose `maxpartitions` for your data: the most days a legitimate query reads.
 Write values as q literals: `1b`, `` `first ``, `` `p`g ``. A function is
-written `fn:name`. Start the process with `-T` (query timeout) and `-w`
-(memory cap) as well. Those two bound the work a permitted query can do, and
-can't be set from inside the process.
+written `fn:name`. [Configuration](qsp.md#configuration) lists every setting.
+Start the process with `-T` (query timeout) and `-w` (memory cap) as well.
+Those two bound the work a permitted query can do, and can't be set from
+inside the process.
 
-`functions.csv` (`action,name`) adjusts the function whitelist:
-- `allow`/`deny` add a q function to the whitelist or remove one.
-- `call` lets a function of yours be called by name.
-- `joincall` lets it stand where a table would.
-
-`call` is trust: qsp checks the call, not what the function does.
+`functions.csv` (`action,name`) adjusts the function whitelist: `allow` and
+`deny` add a q function or remove one, and `call` and `joincall` let a
+function of yours be called by name. `call` is trust: qsp checks the call,
+not what the function does. [Building a policy](qsp.md#building-a-policy)
+says what each does.
 
 ## 6. Check it
 
@@ -212,9 +234,50 @@ A `fn:` setting is checked at load, so without `-init` the example fails with
 called in a filter, like `coveredaccounts`, is not checked. It runs only when
 a query does, so a misspelt one passes the check, and every query its grant
 covers then fails with `qsp: <name>`. After changing a lookup, run a query
-through it.
+through it - or better, write a test that does (step 7).
 
-## 7. Review a change
+## 7. Write down what it must mean
+
+The files say what is granted. `tests.csv`, beside them, says what that must
+mean, a query at a time, so a change that keeps the files valid but breaks an
+intention fails the build:
+
+```
+user,query,expect,value,note
+llm1,select sum size by account from trades where date=2026.10.07,refused,not-permitted column: account,research never sees an account
+sales_na,asc exec distinct account from select account from trades where date=2026.10.09,equals,`A1`A3`A5`A7,exactly the NA accounts
+llm1,select vwap:size wavg price by sym from trades where date=2026.10.09,empty,,the last two days are embargoed
+quant1,select from trades where sym=`AAPL,refused,full table scan,no date: every partition
+```
+
+Each test runs its query as its user and says what qsp must do: return
+`rows`, return none (`empty`), `runs` either way, be `refused` (with text the
+refusal contains), or return exactly a q literal (`equals`).
+[Testing a policy](qsp.md#testing-a-policy) has the details. Write one for
+each thing someone would be upset to see change: who must never see a
+column, whose rows a filter must keep to, what an embargo holds back. The
+example's 31 tests are in `examples/equities/policy/tests.csv`, and `hdb.q`
+walks through them.
+
+Running them needs the data, so load it with `-init` and add `-test`:
+
+```sh
+q di/qsp/bin/policy.q -dir policy -init /path/to/hdb defs.q -test
+```
+
+```
+== tests: 31 of 31 pass
+```
+
+A failure exits 1 with its line, what was expected and what came back. Run it
+in CI against a copy of the data. Without `-test`, `bin/policy.q` still checks
+that `tests.csv` is well formed.
+
+In the admin UI, **Tests** runs them with the same verdict, and **+ test** on
+any query you try in the Lab, a generated probe or a Compare row adds it to
+the file.
+
+## 8. Review a change
 
 A pull request against a policy should show what it does, not just which
 cells it changed:
@@ -239,9 +302,14 @@ now see who traded" and "research loses its embargo", not on edited cells in
 filters run as they would on a query, so they show today's answer.
 
 In q, the same two tools work on any policy value, whether built from files or
-in code: `qsp.access[p;users]` and `qsp.diff[old;new]`.
+in code: `qsp.access[p;users]` and `qsp.diff[old;new]`. Run the tests against
+the change too (`-test`): the diff says what changed, the tests say whether
+anything that mattered did.
 
-## 8. Serve it
+In the admin UI, open the branch's policy and **Preview** in Edit: it shows
+the same diff, and which tests the change breaks, before anything is saved.
+
+## 9. Serve it
 
 ```q
 qsp:use`di.qsp
@@ -265,7 +333,7 @@ names, not passwords, so add authentication in front: start the process with
 `serve`. qsp keeps it and calls it after its own check. See
 [docs/concepts.md](docs/concepts.md#who-checks-that-a-user-is-who-they-say).
 
-## 9. Confirm with real queries
+## 10. Confirm with real queries
 
 From the process console, which is not policed:
 
@@ -277,7 +345,9 @@ qsp.run[p;`llm1;"select from trades where date=2026.10.07"]       / runs it as l
 qsp.audit[]                                                       / who, what they asked, what ran, why
 ```
 
-`explain` and `validate` run nothing, so the audit log doesn't record them.
+Each takes a user of the policy: a name it doesn't know, or a group's name, is
+refused (`not a user of this policy`). `explain` and `validate` run nothing,
+so the audit log doesn't record them.
 It records every query that runs: each one arriving over IPC once the policy is
 served, and each `qsp.run` or `qsp.runx`, with who asked, what they asked,
 what ran, and why anything was refused. To let an auditor
@@ -300,3 +370,7 @@ and grant `auditlog` to them, as the example does for `compliance`.
 | `unterminated quote` | a quoted cell that doesn't close on the same line |
 | `unknown file - a policy directory holds only ...` | a misspelt file name, such as `member.csv` or `Grants.csv`. It would otherwise be ignored |
 | `filter uses system, which is never permitted` | a filter calls something no query may call |
+| `tests.csv in ... has N problems - qsp.checktests lists them` | a malformed `tests.csv`. `bin/policy.q` lists every problem; `qsp.checktests dir` returns them |
+| `expect must be one of rows, empty, runs, refused, equals` | a test's `expect` is misspelt |
+| `an equals value must be a q literal` | an `equals` value that is an expression. Write the value it must return: `` `a`b ``, `12`, `("x";"y")` |
+| `a value is only for refused ... and equals ...` | a `value` on a `rows`, `empty` or `runs` test, which has none |

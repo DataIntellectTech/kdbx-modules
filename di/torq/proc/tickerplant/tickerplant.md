@@ -76,6 +76,8 @@ because `di.tplogmgr.open` replays via `-11!`, which executes the root-level `up
   robustness against ambient root tables).
 - `di.eodtime` is vendored from an unmerged PR. Timezone strings become symbols and
   `rolltimeoffset` strings or seconds become a timespan; an unconvertible offset errors at init.
+  These keys are read at the top level, as in di.torq.proc.segmentedtp; an `[eodtime]` section is not read
+  and logs a warning.
 
 ## Testing
 

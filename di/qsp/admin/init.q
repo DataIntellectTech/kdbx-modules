@@ -14,13 +14,13 @@
 / `public, never runs in a process serving a policy, and writes only when the page asks to save.
 / The page itself is ui/, plain HTML and JavaScript, read from disk on every request
 
-tree:use`..tree;
-fns:use`..fns;
+tree:use`..core.tree;
+fns:use`..core.fns;
 pol:use`..policy;
-files:use`..files;
-rev:use`..review;
+files:use`..policy.files;
+rev:use`..policy.review;
 api:use`..api;
-suite:use`..suite;
+suite:use`..policy.suite;
 
 / ui/, beside this file. A module function knows the file it was defined in (value gives it, third
 / from last); .z.f while a module loads is the script that loaded it, not the module

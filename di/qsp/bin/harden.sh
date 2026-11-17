@@ -11,7 +11,10 @@
 #      loading di.qsp): each user's view of each table is written by hand from the
 #      policy spec, and each case's query is run unchanged over those views.
 #   3. Starts a policed HDB server (with harmless canaries planted) and a second
-#      server with -T 1 for query-timeout testing.
+#      server with -T 1 for query-timeout testing, and waits until each listens.
+#      A server that will not start is retried on new ports, and after five tries
+#      the run stops with its log. Their logs are kept beside the report, as
+#      server1.log and server2.log.
 #   4. Runs five client suites over IPC/HTTP (permissions, logins_transport,
 #      limits, audit, attacks), recording every pass and failure.
 #   5. Writes results.csv and report.md, and shuts the servers down on exit.
@@ -71,26 +74,60 @@ q "$MOD_DIR/examples/equities/mkhdb.q" -db "$RUN_DIR/hdb" -days 5 -q
 echo "== [2/5] Computing expected results from the hand-written policy model =="
 q "$QDIR/mkexpected.q" -db "$RUN_DIR/hdb" -out "$RUN_DIR/expected.bin" -q
 
-# Pick two free ports (RANDOM so small-PID containers never collide on TIME_WAIT)
-PORT1=$(( 20000 + (RANDOM % 25000) ))
-PORT2=$(( PORT1 + 1 ))
+# start_server NAME PORT [q args...]: start harden/server.q on PORT, logging to OUT_DIR/NAME.log,
+# and wait until it listens. Sets STARTED_PID. Returns 1 if it exits first or is not listening
+# within 60s - a port already taken, or a startup error, which its log then shows
+start_server() {
+  local name="$1" port="$2"; shift 2
+  q "$QDIR/server.q" \
+    -modroot "$REPO_ROOT" \
+    -db "$RUN_DIR/hdb" \
+    -poldir "$MOD_DIR/examples/equities/policy" \
+    -rundir "$RUN_DIR" \
+    -p "$port" "$@" -q </dev/null >"$OUT_DIR/$name.log" 2>&1 &
+  STARTED_PID=$!
+  local i
+  for (( i = 0; i < 600; i++ )); do
+    kill -0 "$STARTED_PID" 2>/dev/null || return 1
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && return 0
+    sleep 0.1
+  done
+  kill "$STARTED_PID" 2>/dev/null || true
+  return 1
+}
 
-echo "== [3/5] Starting policed HDB server (port $PORT1) and timeout server (port $PORT2, -T 1) =="
-q "$QDIR/server.q" \
-  -modroot "$REPO_ROOT" \
-  -db "$RUN_DIR/hdb" \
-  -poldir "$MOD_DIR/examples/equities/policy" \
-  -rundir "$RUN_DIR" \
-  -p "$PORT1" -q </dev/null >"$RUN_DIR/server1.log" 2>&1 &
-SERVER_PID=$!
+# start_pair: both servers on a pair of random ports, below Linux's ephemeral range (32768 up)
+# so an outgoing connection cannot already hold one. A pair that will not start is retried on
+# new ports; after five tries the run stops, showing the last server's log
+start_pair() {
+  local try
+  for (( try = 1; try <= 5; try++ )); do
+    PORT1=$(( 20000 + (RANDOM % 12000) ))
+    PORT2=$(( PORT1 + 1 ))
+    echo "== [3/5] Starting policed HDB server (port $PORT1) and timeout server (port $PORT2, -T 1) =="
+    if start_server server1 "$PORT1"; then
+      SERVER_PID=$STARTED_PID
+      if start_server server2 "$PORT2" -T 1; then
+        TIMEOUT_PID=$STARTED_PID
+        return 0
+      fi
+      FAILED=server2
+      kill "$SERVER_PID" 2>/dev/null || true
+      wait "$SERVER_PID" 2>/dev/null || true
+      SERVER_PID=""
+    else
+      FAILED=server1
+    fi
+    echo "   $FAILED did not start - its log:" >&2
+    sed 's/^/   | /' "$OUT_DIR/$FAILED.log" >&2
+  done
+  return 1
+}
 
-q "$QDIR/server.q" \
-  -modroot "$REPO_ROOT" \
-  -db "$RUN_DIR/hdb" \
-  -poldir "$MOD_DIR/examples/equities/policy" \
-  -rundir "$RUN_DIR" \
-  -p "$PORT2" -T 1 -q </dev/null >"$RUN_DIR/server2.log" 2>&1 &
-TIMEOUT_PID=$!
+if ! start_pair; then
+  echo "harden.sh: the policed servers would not start (logs in $OUT_DIR) - no checks were run" >&2
+  exit 1
+fi
 
 echo "== [4/5] Running client verification and attack suites =="
 RC=0

@@ -7,8 +7,8 @@
 / in both, in the same place - so a gateway can switch between them without rewriting its reader
 
 pol:use`..policy;
-rev:use`..review;
-tree:use`..tree;
+rev:use`..policy.review;
+tree:use`..core.tree;
 
 / ------------------------------------------------------------------ formats
 
@@ -103,14 +103,14 @@ ruletable:{[p]
     ("unknown or not-permitted column";"is not in scope here")];
   r,:enlist mkrule[`rows;
     "Your row filter is applied for you: you cannot see past it or remove it, and need not repeat it.";
-    "describe shows it as a where clause, under rows (\"all rows\" when there is none). The rows it hides do not exist for you: an empty result means no row you may see matches - it is not an error, and retrying will not change it. Your where-constraints run after the filter, so an aggregate such as size=max size is over your rows only.";
+    "describe shows it as a where clause, under rows (\"all rows\" when there is none). The rows it hides do not exist for you: an empty result means no row you may see matches - it is not an error, and retrying will not change it. Your where-constraints run after the filter, so an aggregate such as size=max size is over your rows only. explain shows your query as it would run, with the filter in place.";
     ("select from trades where date=",D);
     ();
     ()];
   if[c`requirepartition;
     r,:enlist mkrule[`partition;
       "On a partitioned table - one with a partition in describe - the first where-constraint must bound the partition column on both sides: date=d, date in d1 d2, or date within d0 d1.";
-      "Otherwise every partition would be read, and the query is refused before it runs. A one-sided range such as date>d is not a bound. This applies to every select on such a table, including one nested in another or inside a join.";
+      "Otherwise every partition would be read, and the query is refused before it runs. A one-sided range such as date>d is not a bound. This applies to every select on such a table, including one nested in another or inside a join. validate finds this without running the query.";
       ("select from trades where date=",D,", sym=`AAPL";"select n:count sym by date from trades where date within 2026.10.05 2026.10.09";"select from trades where date in 2026.10.08 2026.10.09");
       ("select from trades where sym=`AAPL";"select from trades where date>2026.10.05");
       "qsp: full table scan"]];
@@ -124,7 +124,7 @@ ruletable:{[p]
   if[0W>c`maxpartitions;
     r,:enlist mkrule[`maxpartitions;
       "A query may read at most ",string[c`maxpartitions]," partition",$[1=c`maxpartitions;"";"s"]," of each partitioned table.";
-      "The partitions are counted from the constraint on the partition column, before the query runs. Narrow the range, or ask several queries over smaller ones.";
+      "The partitions are counted from the constraint on the partition column, before the query runs: validate counts them too. Narrow the range, or ask several queries over smaller ones.";
       ("select from trades where date=",D);
       ();
       "qsp: too many partitions"]];
@@ -135,7 +135,7 @@ ruletable:{[p]
     ("select from trades where date=",D,", sym=`AAPL`MSFT";"select from trades where date=",D,", price within 100");
     ("takes one value";"within takes two values";"like takes one pattern";"qsp: length";"qsp: type")];
   r,:enlist mkrule[`functions;
-    "Use only the functions describe lists under functions, and the named calls under calls.";
+    "Use only the functions describe lists under functions, and the named calls under calls - the functions call gives the same two lists on their own.";
     "Lambdas ({...}), assignment (:), system commands, and anything that evaluates text or reaches a file or the network are refused whatever the list says: value, get, eval, parse, system, hopen, set, insert and upsert among them.";
     ("select avg price, max size by sym from trades where date=",D);
     ("select {x+1} price from trades where date=",D;"select from trades where date=",D,", 0<count system \"ls\"");
@@ -190,7 +190,7 @@ ruletable:{[p]
   if[count caps;
     r,:enlist mkrule[`results;
       "A result of more than ",(" or " sv caps)," is refused.";
-      "The query runs first, so a refused result still cost its work: aggregate with by, or narrow with where or select[n], rather than fetching rows to count or sum them yourself.";
+      "The query runs first, so a refused result still cost its work, and validate cannot see it coming: aggregate with by, or narrow with where or select[n], rather than fetching rows to count or sum them yourself.";
       ("select n:count sym, volume:sum size by sym from trades where date=",D;"select[100] from select from trades where date=",D);
       ();
       "result exceeds the maximum permitted"]];
@@ -202,7 +202,7 @@ ruletable:{[p]
     "nested too deeply"];
   r,:enlist mkrule[`refusals;
     "A refusal is an error whose message starts qsp: and names what was refused: change that part and send the query again.";
-    "The same query is refused the same way every time, so retrying it unchanged is pointless. \"qsp: not valid q (...)\" means q could not parse the text. Any other message - type, length, rank - is q itself failing to evaluate what qsp let through: check the types and shapes of what the query combines.";
+    "The same query is refused the same way every time, so retrying it unchanged is pointless. Each rule's refusal lists text its refusals contain: the rule whose text the message contains explains it, and its good examples show the fix. validate makes every check that does not need the query to run, so it catches most refusals without running anything; explain shows what would run. \"qsp: not valid q (...)\" means q could not parse the text. Any other message - type, length, rank - is q itself failing to evaluate what qsp let through: check the types and shapes of what the query combines.";
     ();
     ();
     "qsp: "];

@@ -1,7 +1,7 @@
 / the example's admin UI:   q di/qsp/examples/equities/demo.q [-db DIR] [-policy DIR] [-port 8080] [-public]
 / builds the example database if it is not there, loads it and the policy (setup.q, as hdb.q
 / does), then opens qsp.adminui on it and prints the address. That is all: the page is qsp's own
-/ (admin.q and ui/ in the module), and any process with data loaded can do the same with
+/ (admin/ in the module), and any process with data loaded can do the same with
 /   qsp.adminui`local
 / an admin tool, not a policed process: anyone who reaches the page can query as any user and see
 / the rows the policy hides, so it answers this machine only unless started with -public. Run it
@@ -53,7 +53,7 @@ if[`check in key o;
   r,:ok["an unknown call is refused";not x`ok];
   pg:.z.ph enlist "views/map.js";
   r,:ok["the page's files are served";pg like "HTTP/1.1 200 OK*"];
-  r,:ok["and nothing else";(.z.ph enlist "../admin.q") like "HTTP/1.1 404*"];
+  r,:ok["and nothing else";(.z.ph enlist "../init.q") like "HTTP/1.1 404*"];
   -1 $[all r;"every call answered";string[sum not r]," call(s) failed"];
   exit `long$not all r];
 

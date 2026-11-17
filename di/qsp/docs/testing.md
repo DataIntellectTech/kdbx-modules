@@ -4,12 +4,35 @@ This page is for developers changing qsp, and for CI. A policy's own tests -
 `tests.csv`, run with `bin/policy.q -test` - are in
 [Testing a policy](../qsp.md#testing-a-policy) instead.
 
+## Running everything
+
+`bin/ci.sh` runs every suite below, in one command:
+
+```sh
+di/qsp/bin/ci.sh [-o OUTPUT_DIR]    # default di/qsp/ci-output
+```
+
+It builds the example HDB once, then runs the unit tests, the example's
+walkthrough (`hdb.q`), `bin/policy.q -test` on the example's policy, the admin
+UI's endpoint check (`demo.q -check`) and the hardening campaign. Every suite
+runs even if one before it failed, so one run shows everything broken. It
+prints a pass or fail per suite, keeps each suite's output in
+`OUTPUT_DIR/<suite>.log`, and exits 1 if any suite failed. It takes about
+10s. It needs `q` on `PATH` and, for the unit tests, `di.k4unit`: run it from
+a kdbx-modules checkout, or put one on `QPATH`.
+
+```sh
+QPATH=$QPATH:/path/to/kdbx-modules di/qsp/bin/ci.sh
+```
+
+## The suites
+
 qsp has two suites of its own, and CI should run both, the unit tests first:
 
 | | `bin/test.q` (k4unit, `test.csv`) | `bin/harden.sh` |
 |---|---|---|
 | asks | does each piece of qsp do what it says? | does the example deployment hold against a hostile client? |
-| against | small fixtures in process, and one IPC server (`testserver.q`) | a fresh 5-day equities HDB served with the example policy over IPC |
+| against | small fixtures in process, and one IPC server (`test/server.q`) | a fresh 5-day equities HDB served with the example policy over IPC |
 | covers | the whole API, including policy files, policy tests, the admin UI's handlers, `access`, `diff` and the CLI | what a client can reach: grants, logins, limits, audit, attacks |
 | takes | about 2.5s | about 10s |
 | exits | 1 if any test fails | 1 if any check fails |
@@ -41,7 +64,7 @@ QPATH=${QPATH}:/path/to/kdbx-modules q di/qsp/bin/test.q -q
 ```
 
 Most of the assertions cover enforcement, against the
-in-process API and a real IPC server with a gateway login (`testserver.q`):
+in-process API and a real IPC server with a gateway login (`test/server.q`):
 
 | Area | Covers |
 |---|---|
@@ -88,8 +111,11 @@ table, a marker file), and attacks it over IPC as each of the example's users:
 di/qsp/bin/harden.sh [-o OUTPUT_DIR]    # default di/qsp/harden-output
 ```
 
-It writes `results.csv` and `report.md`, with every failure detailed. The
-checks are in five suites: `permissions`, `logins_transport`, `limits`,
+It writes `results.csv` and `report.md`, with every failure detailed, and
+the two servers' logs, `server1.log` and `server2.log`. It runs no checks
+until both servers are listening. A server that exits at startup (a port
+already taken, say) is retried on new ports, and after five tries the run
+stops with its log and exits 1. The checks are in five suites: `permissions`, `logins_transport`, `limits`,
 `audit` and `attacks`. An attack passes only if the canary function did not
 run, no file was created or deleted, and no secret value came back.
 

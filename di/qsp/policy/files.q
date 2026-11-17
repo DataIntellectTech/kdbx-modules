@@ -1,4 +1,4 @@
-/ di.qsp.files - a policy kept as files
+/ di.qsp.policy.files - a policy kept as files
 / a directory of CSVs is a policy in a form a permissions team can edit in a spreadsheet and
 / review in a pull request. fromfiles reads it into a policy value - the same value the builders
 / return - so nothing downstream knows or cares where a policy came from
@@ -18,9 +18,9 @@
 / the files are as sensitive as q code - a filter cell is q that runs inside every query it
 / applies to. Keep them where changes are reviewed
 
-tree:use`..tree;
-fns:use`..fns;
-pol:use`..policy;
+tree:use`...core.tree;
+fns:use`...core.fns;
+pol:use`...policy;
 f:use`..f;
 
 / file -> its header, in the order the files are applied. (Built with !, as tables is a reserved
@@ -390,15 +390,22 @@ schemadrift:{[d]
 / one problem, as a line of a refusal
 problemline:{[x] :"  ",string[x`file],$[x`line;":",string x`line;""],": ",x`error;};
 
-fromfiles:{[d]
-  / the policy in directory d, or a refusal listing every problem with it
+/ the policy in directory d, or a refusal listing every problem with it - fromfiles without its
+/ warnings, for a caller that reads schemadrift itself
+policyin:{[d]
   r:build d;
   if[count e:r 1;
     '"qsp: policy in ",dirname[d]," has ",string[count e]," problem",$[1=count e;"";"s"],":\n",
       "\n" sv problemline each e];
+  :r 0;
+  };
+
+fromfiles:{[d]
+  / the policy in directory d, or a refusal listing every problem with it
+  p:policyin d;
   / the loaded tables win, so a stale schema.csv is a warning, not a refusal
   {-2"qsp: warning: ",x," - the loaded table is enforced; update schema.csv";} each schemadrift d;
-  :r 0;
+  :p;
   };
 
 / ------------------------------------------------------------------ scaffold
@@ -461,4 +468,4 @@ scaffold:{[d;ts]
 / tests.csv in directory d -> (its rows, as strings with the line each is on; the problems)
 testfile:{[d] r:readfile[d;`tests]; :(r 0;r 1);};
 
-export:([fromfiles;check;scaffold;files;schemadrift;testfile;problem;problemline;dirname]);
+export:([fromfiles;policyin;check;scaffold;files;schemadrift;testfile;problem;problemline;dirname]);

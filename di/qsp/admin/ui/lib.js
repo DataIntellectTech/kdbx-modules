@@ -6,7 +6,7 @@ export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// one call to admin.q: POST /api {call, args} -> data, or throws the refusal
+// one call to admin/init.q: POST /api {call, args} -> data, or throws the refusal
 export async function api(call, args = {}) {
   const r = await fetch('api', { method: 'POST', body: JSON.stringify({ call, args }) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -134,7 +134,7 @@ export function fmt(v, ty) {
 }
 const isNum = ty => NUM.has(ty);
 
-// a result grid (admin.q's grid): columns, types, rows
+// a result grid (admin/init.q's grid): columns, types, rows
 export function grid(g, { max = 500, cls = '' } = {}) {
   if (!g) return '';
   const th = g.columns.map((c, i) => `<th>${esc(c)}<span class="ty">${esc(g.types[i] || '')}</span></th>`).join('');

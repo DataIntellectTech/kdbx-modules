@@ -1,4 +1,4 @@
-/ di.qsp.fns - the function whitelist
+/ di.qsp.core.fns - the function whitelist
 / parse trees hold function values, not names, so the whitelist is a name!value dictionary and
 / membership is tested by identity. A policy starts from defaults and is narrowed or widened with
 / policy.allowfunction / policy.denyfunction; nothing on the never list can be added whatever the

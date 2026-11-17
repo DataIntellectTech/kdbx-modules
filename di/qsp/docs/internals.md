@@ -13,22 +13,22 @@ same behaviour from the user's side. This page names the functions behind it.
 | file | what it is |
 |---|---|
 | `init.q` | The module's entry point, loaded by `` use`di.qsp ``. Loads the submodules, runs the pipeline (`go`), keeps the audit log, installs the message handlers, and exports the public API. |
-| `tree.q` | What a q parse tree looks like. Every shape qsp depends on is read from q's own parser at load. Also the refusal helpers (`chk`, `fault`), the file-handle guard, and the marker symbols. Depends on nothing. |
-| `fns.q` | The function whitelist: `defaults`, the never-allow list, name-to-value resolution, and the guarded replacements for `not` and the sort grades. The pure functions, the argument `rules` for everything else, and the run-time symbol checks the walker wraps around computed arguments. |
-| `policy.q` | A policy as a value. The builders (`new`, `table`, `grant`, `member`, `configure`, ...) and resolution: which columns and which row filter one user gets on one table. |
-| `walk.q` | The walker. Checks every node of a parse tree and rewrites each select so it reads only what the user may see. |
-| `order.q` | Where the row filter goes in a where clause. A pure function of the table's info and the constraints. |
-| `f.q` | The row-filter builders exported as `qsp.f` (`isin`, `eq`, `aged`, ...). Each returns one constraint as a parse tree. |
-| `files.q` | A policy kept as a directory of CSVs: `fromfiles`, `check`, `scaffold`, `schemadrift`. Reads the CSVs by hand and applies each row through the `policy.q` builders. A loaded table is registered from its live meta, and `schemadrift` reports where `schema.csv` disagrees. |
-| `suite.q` | A policy's own tests, `tests.csv`: reads and checks it (an `equals` value is parsed and evaluated only if it is plain data), and gives a test's verdict from what running it returned. `init.q` runs them (`runtests`), with the audit log off. |
-| `admin.q` | The admin UI (`qsp.adminui`): its JSON API over `.z.pp` and the page from `ui/` over `.z.ph`, the state of the policy it is editing (none, does not load, loads), and opening, creating (scaffold), previewing and saving one. It runs queries only through the functions `init.q` lends it. |
-| `ui/` | The admin UI's page: `index.html`, `style.css`, `app.js` (routing and state), `model.js` (the policy as the page reasons about it), `drawer.js`, `lib.js`, and a module per view in `views/`. Plain ES modules, no build. |
-| `review.q` | What a policy means: `access` (who can read what), `diff` (what a change changes), and `text`, which writes a constraint back as q. |
-| `api.q` | What a gateway or a query generator asks a policed process: `limits`, `memstats`, `users`, `functions`, `rules` (for an LLM agent: each rule with its reason, examples either way, and the text of its refusal), `access`, `describe` (one user's view of the policy, with the rules). Each takes a format last, `` `q `` or `` `json ``, which changes the encoding and never the content. `init.q` adds `version`, `validate` and `explain`, exports the lot as `qsp.api`, and serves the same calls over IPC as `` (`.qsp.api;name;...) ``. |
+| `core/tree.q` | What a q parse tree looks like. Every shape qsp depends on is read from q's own parser at load. Also the refusal helpers (`chk`, `fault`), the file-handle guard, and the marker symbols. Depends on nothing. |
+| `core/fns.q` | The function whitelist: `defaults`, the never-allow list, name-to-value resolution, and the guarded replacements for `not` and the sort grades. The pure functions, the argument `rules` for everything else, and the run-time symbol checks the walker wraps around computed arguments. |
+| `core/order.q` | Where the row filter goes in a where clause. A pure function of the table's info and the constraints. |
+| `core/walk.q` | The walker. Checks every node of a parse tree and rewrites each select so it reads only what the user may see. |
+| `policy/init.q` | A policy as a value. The builders (`new`, `table`, `grant`, `member`, `configure`, ...) and resolution: which columns and which row filter one user gets on one table. |
+| `policy/f.q` | The row-filter builders exported as `qsp.f` (`isin`, `eq`, `aged`, ...). Each returns one constraint as a parse tree. |
+| `policy/files.q` | A policy kept as a directory of CSVs: `fromfiles` (and `policyin`, the same without its schema warnings), `check`, `scaffold`, `schemadrift`. Reads the CSVs by hand and applies each row through the `policy/init.q` builders. A loaded table is registered from its live meta, and `schemadrift` reports where `schema.csv` disagrees. |
+| `policy/review.q` | What a policy means: `access` (who can read what), `diff` (what a change changes), and `text`, which writes a constraint back as q. |
+| `policy/suite.q` | A policy's own tests, `tests.csv`: reads and checks it (an `equals` value is parsed and evaluated only if it is plain data), and gives a test's verdict from what running it returned. `init.q` runs them (`runtests`), with the audit log off. |
+| `api/init.q` | What a gateway or a query generator asks a policed process: `limits`, `memstats`, `users`, `functions`, `rules` (for an LLM agent: each rule with its reason, examples either way, and the text of its refusal), `access`, `describe` (one user's view of the policy, with the rules). Each takes a format last, `` `q `` or `` `json ``, which changes the encoding and never the content. `init.q` adds `version`, `validate` and `explain`, exports the lot as `qsp.api`, and serves the same calls over IPC as `` (`.qsp.api;name;...) ``. |
+| `admin/init.q` | The admin UI (`qsp.adminui`): its JSON API over `.z.pp` and the page from `admin/ui/` over `.z.ph`, the state of the policy it is editing (none, does not load, loads), and opening, creating (scaffold), previewing and saving one. It runs queries only through the functions `init.q` lends it. |
+| `admin/ui/` | The admin UI's page: `index.html`, `style.css`, `app.js` (routing and state), `model.js` (the policy as the page reasons about it), `drawer.js`, `lib.js`, and a module per view in `views/`. Plain ES modules, no build. |
 | `VERSION` | The module version (semver), read into `qsp.version`. |
 | `CHANGELOG.md` | What changed in each version. A change to what a policy permits is marked **behaviour**. |
 | `qsp.md` | The module's documentation: install, example, API, how it works, limits. |
-| `setup.md` | The walkthrough for a team setting up a policy kept as files. |
+| `docs/setup.md` | The walkthrough for a team setting up a policy kept as files. |
 | `docs/README.md` | Index of the documentation. |
 | `docs/concepts.md` | What a policy is made of, and how one user's access is worked out. |
 | `docs/time.md` | Embargoes, delayed data and the policy clock. |
@@ -38,8 +38,9 @@ same behaviour from the user's side. This page names the functions behind it.
 | `docs/security-review.md` | The three security reviews: each finding, its verdict, root cause and fix. |
 | `docs/internals.md` | This page. |
 | `test.csv` | The k4unit tests. `k4unit.moduletest`di.qsp` runs them. |
-| `test.q` | The tests' fixtures (`trade`, `quote`, the policy `P`, ...) and `.t.*` helpers: assertions (`.t.allow`, `.t.deny`), partitioned test databases, connecting to `testserver.q`, policy directories written from strings, and running `bin/policy.q`. Loaded by `test.csv` and `testserver.q`. |
-| `testserver.q` | A process that serves `P` over IPC, for the serving tests. It exits when its last client disconnects, or after a minute. |
+| `test.q` | The tests' fixtures (`trade`, `quote`, the policy `P`, ...) and `.t.*` helpers: assertions (`.t.allow`, `.t.deny`), partitioned test databases, connecting to `test/server.q`, policy directories written from strings, and running `bin/policy.q`. Loaded by `test.csv` and `test/server.q`. |
+| `test/server.q` | A process that serves `P` over IPC, for the serving tests. It exits when its last client disconnects, or after a minute. |
+| `bin/ci.sh` | Every suite in one command, for CI: the unit tests, the example's walkthrough, `bin/policy.q -test` on the example's policy, the admin UI's endpoint check and the hardening campaign, on one example HDB. Runs them all, keeps each one's log, and exits 1 if any failed. |
 | `bin/test.q` | Runs the tests and exits 1 if any fail, for CI. |
 | `bin/policy.q` | Checks a policy directory and its `tests.csv`, and prints `access`, and optionally a `diff` against an older one. With `-test`, runs the tests against the data `-init` loads. Exits 1 if the policy would not load or a test fails. For CI and pull requests. |
 | `examples/equities/README.md` | The example: its roles, how to run it and load its policy, and queries that surprise people. |
@@ -52,30 +53,46 @@ same behaviour from the user's side. This page names the functions behind it.
 
 ## How the source files fit together
 
-Each `.q` file other than `init.q` is a submodule. `init.q` loads them with
-`` use`.name ``, and they load each other with `` use`..name ``, so the
-directory can be moved as a unit. Nothing loads a file by path.
+Every `.q` file other than `init.q` and the tests is a submodule, named
+for its path: `core/walk.q` is `di.qsp.core.walk`, and a directory's
+`init.q` is the directory, so `policy/init.q` is `di.qsp.policy`. They are
+grouped by what they do:
+
+| directory | modules | what they do |
+|---|---|---|
+| `core/` | `tree`, `fns`, `order`, `walk` | read a query's parse tree, check every node of it, and rewrite it |
+| `policy/` | `policy`, `.f`, `.files`, `.review`, `.suite` | the policy value and its builders, and a policy kept as files, reviewed and tested |
+| `api/` | `api` | what a gateway or a query generator asks a policed process |
+| `admin/` | `admin`, and its page, `ui/` | the admin UI |
+
+`init.q` loads them with `` use`.core.walk ``, `` use`.policy `` and so on,
+and they load each other by relative name: `` use`..x `` is a module in the
+same directory, and each further dot goes up one more. `core/walk.q` loads
+`` use`..tree `` and `` use`...policy ``, and `policy/files.q` loads
+`` use`..f `` and `` use`...core.tree ``. So the directory can be moved as a
+unit. Nothing loads a file by path.
 
 ```
-init.q ──► tree  policy  order  walk  f  files  review  api  suite  admin
-admin.q ─► tree  fns  policy  files  review  api  suite
-api.q ───► tree  policy  review
-suite.q ─► tree  files
-walk.q ──► tree  fns  policy  order
-files.q ─► tree  fns  policy  f
-review.q ► tree  fns  policy
-order.q ─► tree  fns
-policy.q ► tree  fns
-f.q ─────► tree  fns
-fns.q ───► tree
-tree.q     (nothing)
+init.q ─────────► core.tree  policy  core.order  core.walk  policy.f  policy.files
+                  policy.review  api  policy.suite  admin
+admin/init.q ───► core.tree  core.fns  policy  policy.files  policy.review  api  policy.suite
+api/init.q ─────► core.tree  policy  policy.review
+policy/suite.q ─► core.tree  policy.files
+policy/files.q ─► core.tree  core.fns  policy  policy.f
+policy/review.q ► core.tree  core.fns  policy
+policy/f.q ─────► core.tree  core.fns
+policy/init.q ──► core.tree  core.fns
+core/walk.q ────► core.tree  core.fns  policy  core.order
+core/order.q ───► core.tree  core.fns
+core/fns.q ─────► core.tree
+core/tree.q       (nothing)
 ```
 
-There are no cycles. `tree.q` is the leaf, so anything about how q represents
-a query goes there. The pipeline (`run`, `runx`, `rewrite`, `runtests`) lives
-in `init.q`, which `admin.q` cannot load without a cycle. So `adminui` lends
-those functions to `admin.start` as a dictionary when it is called, and the
-admin UI runs every query through them.
+There are no cycles. `core/tree.q` is the leaf, so anything about how q
+represents a query goes there. The pipeline (`run`, `runx`, `rewrite`,
+`runtests`) lives in `init.q`, which `admin/init.q` cannot load without a
+cycle. So `adminui` lends those functions to `admin.start` as a dictionary
+when it is called, and the admin UI runs every query through them.
 
 ### What runs at load
 
@@ -85,11 +102,11 @@ queries. It never misreads a tree.
 
 | file | detects at load |
 |---|---|
-| `tree.q` | `selop` and `updop`, the heads of `select` (`?`) and `update`/`delete` (`!`). `cnested`, whether the where slot has an extra enlist. `ascop` and `descop`, the grades behind `select[<c]` and `select[>c]`. |
-| `fns.q` | `defaults`: every whitelisted name resolved to its function value. `neverfns`: the never-allow list as values, plus the amend and assign operators read from parse. `compose`: the iterator q puts in the head of `a<>b`. |
-| `order.q` | `negations`: how `<>`, `<=` and `>=` appear in a parse tree (as `not` composed with `=`, `>` and `<`), so each can be ranked as the operator it stands for. |
-| `walk.q` | `preserve`, the heads that keep their input's columns. Loading fails if fewer than nine resolve. Also `takeop`, `dropop` and `dictop` (`#`, `_` and `!`). |
-| `admin.q` | `uidir`, the `ui/` directory beside it. It is read from the file a function of `admin.q` was defined in (`value`, third from last): while a module loads, `.z.f` is the script that loaded it, and a `:::` path built at run time does not resolve. |
+| `core/tree.q` | `selop` and `updop`, the heads of `select` (`?`) and `update`/`delete` (`!`). `cnested`, whether the where slot has an extra enlist. `ascop` and `descop`, the grades behind `select[<c]` and `select[>c]`. |
+| `core/fns.q` | `defaults`: every whitelisted name resolved to its function value. `neverfns`: the never-allow list as values, plus the amend and assign operators read from parse. `compose`: the iterator q puts in the head of `a<>b`. |
+| `core/order.q` | `negations`: how `<>`, `<=` and `>=` appear in a parse tree (as `not` composed with `=`, `>` and `<`), so each can be ranked as the operator it stands for. |
+| `core/walk.q` | `preserve`, the heads that keep their input's columns. Loading fails if fewer than nine resolve. Also `takeop`, `dropop` and `dictop` (`#`, `_` and `!`). |
+| `admin/init.q` | `uidir`, the `ui/` directory beside it. It is read from the file a function of `admin/init.q` was defined in (`value`, third from last): while a module loads, `.z.f` is the script that loaded it, and a `:::` path built at run time does not resolve. |
 
 ### Module state
 
@@ -101,10 +118,10 @@ A policy is a value, passed in. The only globals the module keeps are:
 | `served` | `init.q` | the policy the message handlers use |
 | `installed` | `init.q` | whether `serve` has installed the handlers yet |
 | `before` | `init.q` | each message handler as it was before the first `serve`. A query is evaluated through the `.z.pg` or `.z.ps` that was there, and `.z.pw` is called after the name check. `unserve` puts them all back |
-| `Q` | `admin.q` | the pipeline functions `adminui` lent it |
-| `dir`, `P`, `P0`, `PR`, `edited` | `admin.q` | the admin UI's policy: its directory, the policy (`(::)` while it does not load, with `PR` the problems), the policy as the files have it, and whether an edit has been applied to the session |
-| `T`, `TP` | `admin.q` | the policy's tests, and the problems with `tests.csv` |
-| `access`, `running`, `opened`, `before` | `admin.q` | whether the page answers `` `local `` or `` `public ``, whether its handlers are installed, whether it opened the port, and `.z.ph` and `.z.pp` as they were before, for `` adminui`stop `` |
+| `Q` | `admin/init.q` | the pipeline functions `adminui` lent it |
+| `dir`, `P`, `P0`, `PR`, `edited` | `admin/init.q` | the admin UI's policy: its directory, the policy (`(::)` while it does not load, with `PR` the problems), the policy as the files have it, and whether an edit has been applied to the session |
+| `T`, `TP` | `admin/init.q` | the policy's tests, and the problems with `tests.csv` |
+| `access`, `running`, `opened`, `before` | `admin/init.q` | whether the page answers `` `local `` or `` `public ``, whether its handlers are installed, whether it opened the port, and `.z.ph` and `.z.pp` as they were before, for `` adminui`stop `` |
 
 Nothing is set per query. The walker passes its state down as arguments.
 
@@ -539,7 +556,7 @@ Keep these true when you change anything:
    names, so the whitelist, never list and joins are compared with `~`. Never
    compare by name.
 4. **Read shapes from q.** If code needs to know how q represents something,
-   get it from `parse` at load (`tree.q`, `order.q`) and refuse to load if
+   get it from `parse` at load (`core/tree.q`, `core/order.q`) and refuse to load if
    that fails. Don't write the shape out by hand.
 5. **Keep a policy a value.** Builders return a new policy, and no query sets
    a global. The audit log and the served policy are the only exceptions.
@@ -565,19 +582,19 @@ they explain or walk through the change.
 
 | change | where | also |
 |---|---|---|
-| whitelist a function by default | the `catalog` call that builds `defaults` in `fns.q` | `catalog` refuses anything on the never list. Add attack tests for anything it can reach |
-| forbid a function outright | `nevernames` in `fns.q` (or `operators`, if it has no name) | list it under [What is never allowed](../qsp.md#what-is-never-allowed) |
-| guard a primitive by argument type | a wrapper like `notsafe` in `fns.q`, added to `subfrom`/`subto` | if the wrapper can appear in a filter, `review.fname` must name it, or `access` shows a lambda |
-| let a new head stand in a table slot | `preserve` or `exprcols` in `walk.q` | it must keep exactly its input's columns. If unsure, it projects nothing |
-| a new query shape | `query` and its slot handlers in `walk.q` | if it changes slot positions, detect them in `tree.q` |
-| a new config setting | `defaultconfig` in `policy.q`. `settingok` checks its type | `files.literal` reads it from `config.csv`, and `scaffold` writes its default, with no change needed in either unless it holds a function. Document it in qsp.md's [Configuration](../qsp.md#configuration) |
-| a new filter builder | `f.q` | `review.text` must write it back as something `files.filter` reads back. The `access` round-trip test checks this |
-| a new policy file | `files` and `applyfiles` in `files.q`, with a `...row` function | `scaffold` should write it. Add it to the file table in qsp.md and setup.md |
+| whitelist a function by default | the `catalog` call that builds `defaults` in `core/fns.q` | `catalog` refuses anything on the never list. Add attack tests for anything it can reach |
+| forbid a function outright | `nevernames` in `core/fns.q` (or `operators`, if it has no name) | list it under [What is never allowed](../qsp.md#what-is-never-allowed) |
+| guard a primitive by argument type | a wrapper like `notsafe` in `core/fns.q`, added to `subfrom`/`subto` | if the wrapper can appear in a filter, `review.fname` must name it, or `access` shows a lambda |
+| let a new head stand in a table slot | `preserve` or `exprcols` in `core/walk.q` | it must keep exactly its input's columns. If unsure, it projects nothing |
+| a new query shape | `query` and its slot handlers in `core/walk.q` | if it changes slot positions, detect them in `core/tree.q` |
+| a new config setting | `defaultconfig` in `policy/init.q`. `settingok` checks its type | `files.literal` reads it from `config.csv`, and `scaffold` writes its default, with no change needed in either unless it holds a function. Document it in qsp.md's [Configuration](../qsp.md#configuration) |
+| a new filter builder | `policy/f.q` | `review.text` must write it back as something `files.filter` reads back. The `access` round-trip test checks this |
+| a new policy file | `files` and `applyfiles` in `policy/files.q`, with a `...row` function | `scaffold` should write it. Add it to the file table in qsp.md and setup.md |
 | a new message handler | `install` in `init.q` | refuse anything you don't police |
-| a new kind of test expectation | `expects`, `rowproblem` and `verdict` in `suite.q` | the `expect` table in qsp.md's [Testing a policy](../qsp.md#testing-a-policy), and `EXPECTS` in `ui/views/tests.js` |
-| a new admin UI call | a function taking the page's `args` dictionary, added to `calls` in `admin.q` | if it runs a query, run it through `Q` (``Q[`runx]``, ...), never by evaluating text. Add it to the API table in [ui.md](ui.md#the-json-api), and test it through `.z.pp` (`.t.post` in `test.q`) |
-| a new admin UI view | a module in `ui/views/` exporting `render(el, ctx)`, returning a cleanup function if it starts timers or listeners, and an entry in `VIEWS` in `ui/app.js` (`always: true` if it works without a policy) | describe it in [ui.md](ui.md) |
-| a policy file the admin UI edits | `csvfiles` in `admin.q`, and `FILES`, `HEADERS` and `ABOUT` in `ui/views/edit.js` | |
+| a new kind of test expectation | `expects`, `rowproblem` and `verdict` in `policy/suite.q` | the `expect` table in qsp.md's [Testing a policy](../qsp.md#testing-a-policy), and `EXPECTS` in `admin/ui/views/tests.js` |
+| a new admin UI call | a function taking the page's `args` dictionary, added to `calls` in `admin/init.q` | if it runs a query, run it through `Q` (``Q[`runx]``, ...), never by evaluating text. Add it to the API table in [ui.md](ui.md#the-json-api), and test it through `.z.pp` (`.t.post` in `test.q`) |
+| a new admin UI view | a module in `admin/ui/views/` exporting `render(el, ctx)`, returning a cleanup function if it starts timers or listeners, and an entry in `VIEWS` in `admin/ui/app.js` (`always: true` if it works without a policy) | describe it in [ui.md](ui.md) |
+| a policy file the admin UI edits | `csvfiles` in `admin/init.q`, and `FILES`, `HEADERS` and `ABOUT` in `admin/ui/views/edit.js` | |
 
 Every change needs tests in `test.csv`, in the section for its area
 ([testing.md](testing.md) says what each covers). The
@@ -600,7 +617,7 @@ qp.columnsfor[P;`llmu;`trade]                 / step 6b
 qp.filterfor[P;`llmu;`trade]                  / step 6g
 qo.place[qp.info[P;`trade];P`config;qt.getc (parse q) 2;qp.filterfor[P;`llmu;`trade]]  / 6i
 qsp.explain[P;`llmu;q]                        / the whole rewrite, as text
-qsp.validate[P;`llmu;q]                       / (allowed;reason), with nothing run
+qsp.validate[P;`llmu;q]                       / (allowed;reason), without running q
 ```
 
 The admin UI's handlers can be called in the process, which is how the tests
@@ -614,7 +631,7 @@ qsp.adminui ([access:`local;port:0;dir:"/path/to/policy"])   / port 0: install t
 
 In the browser, the developer tools' console shows a view's errors, and the
 network tab every `/api` call with its JSON. The page's files are read from
-`ui/` on every request, so an edit to one shows on reload, without restarting
+`admin/ui/` on every request, so an edit to one shows on reload, without restarting
 q.
 
 `-3!` and `.Q.s1` cut their output to the console width (`\c`). `render` in
@@ -622,6 +639,6 @@ q.
 `\c 50 2000`, before comparing long trees by eye.
 
 Where the code works around a KDB-X quirk, such as a reserved word that can't
-be a dictionary-literal key (`files` in `files.q`) or a `\000` byte that
-truncates a symbol (the markers in `tree.q`), a comment says so. Read it
+be a dictionary-literal key (`files` in `policy/files.q`) or a `\000` byte that
+truncates a symbol (the markers in `core/tree.q`), a comment says so. Read it
 before "simplifying" the line.

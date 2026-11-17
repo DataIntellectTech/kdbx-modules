@@ -54,8 +54,8 @@ partitioncounthaschanged:{[]
   $[.z.m.partitionsize<>c:count key .z.m.idbdir;[.z.m.partitionsize:c;1b];0b]
   }
 
-/ clear the partition row-count cache
-clearrowcountcache:{[] set[`.Q.pn;.Q.pt!(count .Q.pt)#()]}
+/ clear the partition row-count caches; kdb-x refills .Q.pn from .Q.PN, so both are cleared
+clearrowcountcache:{[] e:.Q.pt!(count .Q.pt)#(); set[`.Q.pn;e]; set[`.Q.PN;e]}
 
 / reads savedir, hdbdir, the current partition and the writedown mode from the wdb
 setparametersfromwdb:{[config]

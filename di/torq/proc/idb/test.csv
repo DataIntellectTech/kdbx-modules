@@ -22,6 +22,12 @@ run,0,0,q,addpartition[TESTDATE-1],1,,a third dated partition appears under the 
 run,0,0,q,.idb.intradayreload[],1,,call the published root-level reload entry point
 true,0,0,q,9=count widgets,1,,the partition count changed so reload remounted and sees all three
 
+comment,,,,,,,row counts after an append to a mounted partition
+run,0,0,q,appendrows[TESTDATE],1,,the wdb appends two rows to a partition that is already mounted
+run,0,0,q,.idb.intradayreload[],1,,reload with the partition count unchanged - no remount
+true,0,0,q,11=count widgets,1,,count sees the appended rows - the row-count caches were cleared
+true,0,0,q,11=count select from widgets,1,,and agrees with a full select
+
 run,0,0,q,delete widgets from `.,1,,drop it again before testing a savedir that is not on disk
 run,0,0,q,resetcalls[],1,,reset call log
 run,0,0,q,setwdbmissingdir[],1,,the wdb reports a savedir that does not exist yet

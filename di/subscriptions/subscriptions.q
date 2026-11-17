@@ -6,6 +6,9 @@ cfg:use`di.util.cfg;
 named:cfg`named;
 astimespan:cfg`astimespan;
 
+/ for replayupto (repair-aware, count-limited -11!)
+tp:use`di.tplogmgr;
+
 / registry of active subscriptions
 SUBSCRIPTIONS:([]handle:`int$();tabs:();syms:();subtime:`timestamp$())
 
@@ -17,7 +20,6 @@ init:{[config;deps]
   if[not `timer in key deps;'"di.subscriptions: timer dependency is required - see di.timer"];
   if[not `handlers in key deps;'"di.subscriptions: handlers dependency is required - see di.torq.handlers"];
   .z.m.log:deps`log;
-  .z.m.tp:use`di.tplogmgr;          / for replayupto (repair-aware, count-limited -11!)
   / all settings required
   if[count m:`autoreconnect`checksubscriptionperiod except key config;'"di.subscriptions: missing settings: ",", " sv string m];
   .z.m.autoreconnect:config`autoreconnect;

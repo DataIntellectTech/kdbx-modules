@@ -50,6 +50,11 @@ getfield() {
   awk -F, -v n="$1" -v f="$fieldno" 'NR==n{print $f}' "$CSVPATH"
 }
 
+hasfield() {
+  # $1 = column name -> true if process.csv's header has it (getfield on a missing column prints the whole row)
+  head -1 "$CSVPATH" | tr -d '\r' | tr ',' '\n' | grep -qx "$1"
+}
+
 findprocno() {
   awk -F, -v name="$1" 'NR>1 && $4==name{print NR; exit}' "$CSVPATH"
 }
@@ -90,7 +95,7 @@ require_tmux() {
 }
 
 resolverow() {
-  # $1 = procname -> sets PROCTYPE/PORT globals, or returns 1 if not found
+  # $1 = procname -> sets PROCTYPE/PORT/EXTRAS globals, or returns 1 if not found
   local procno
   procno=$(findprocno "$1")
   if [ -z "$procno" ]; then
@@ -99,6 +104,9 @@ resolverow() {
   fi
   PROCTYPE=$(getfield "$procno" proctype)
   PORT=$(getfield "$procno" port)
+  # the optional extras column: extra q args for this process, as TorQ's process.csv
+  EXTRAS=""
+  if hasfield extras; then EXTRAS=$(getfield "$procno" extras | tr -d '\r'); fi
   return 0
 }
 
@@ -124,13 +132,13 @@ start_one() {
   fi
   local logfile="$LOGDIR/torqx_${TORQXSTACKID}_${procname}.log"
   if [ -n "$TMUX_MODE" ]; then
-    start_one_tmux "$procname" "$portarg" "$logfile" "$@"
+    start_one_tmux "$procname" "$portarg" "$logfile" $EXTRAS "$@"
     return
   fi
   echo "starting $procname ($PROCTYPE)... log: $logfile"
   QINIT="$TORQXBIN/torqx_init.q" nohup $QCMD \
     -torqxstackid "$TORQXSTACKID" -proctype "$PROCTYPE" -procname "$procname" \
-    $portarg "$@" > "$logfile" 2>&1 &
+    $portarg $EXTRAS "$@" > "$logfile" 2>&1 &
   disown
 }
 
@@ -209,7 +217,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${TORQXAPPHOME}
-ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="${TORQXBIN}/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg}'
+ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="${TORQXBIN}/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg} ${EXTRAS}'
 Restart=on-failure
 RestartSec=2
 
@@ -304,6 +312,7 @@ usage: torqx.sh {start|stop|restart|status|attach|export-systemd} [procname|all]
   attach [procname]                    attach to a process's tmux session; no arg lists sessions
   export-systemd [procname|all]       write systemd --user unit file(s) to
                                        \$TORQXAPPHOME/systemd/, no args means all
+  process.csv's optional extras column adds q args to that row's process, e.g. -parentproctype wdb
 
   dev-mode aliases (equivalent to the --tmux flag):
   devstart [procname|all] [args]      = start --tmux

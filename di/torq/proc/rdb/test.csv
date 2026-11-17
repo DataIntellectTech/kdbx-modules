@@ -15,4 +15,9 @@ true,0,0,q,manipulation[],1,,a config savedownmanipulation is applied once befor
 true,0,0,q,postreplay[],1,,a config postreplay is called with (hdbdir;date) after the clear and reapply and before the hdb reload
 true,0,0,q,failedpostreplay[],1,,a failing postreplay propagates out of end of day: saved and cleared but no hdb reload
 true,0,0,q,reloadenabled[],1,,with reloadenabled end of day escapes before postreplay
+
+comment,,,,,,,upd: appends to the root table
+true,0,0,q,updpayloads[],1,,upd appends a table, a list of columns and a single row of atoms to the root table and keeps g# on sym
+true,0,0,q,updreplay[],1,,-11! replay of a tickerplant log appends to the root table through the published upd
+true,0,0,q,updinplace[],1,,upd appends in place rather than copying the table per message
 run,0,0,q,"system ""rm -rf "",BASE",1,,remove the fixture hdb

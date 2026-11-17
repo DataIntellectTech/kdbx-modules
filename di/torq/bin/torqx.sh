@@ -293,10 +293,11 @@ foreachtarget() {
 usage() {
   cat >&2 <<USAGE
 usage: torqx.sh {start|stop|restart|status|attach|export-systemd} [procname|all] [--tmux] [extra torqx_init.q args]
-  start [procname|all] [--tmux|-t] [-norun ...]  start one or all process.csv rows (all skips
+  start [procname|all] [--tmux] [-norun ...]  start one or all process.csv rows (all skips
                                        rows whose optional startwithall column is 0)
-                                       --tmux/-t: run in attachable tmux sessions (dev mode)
+                                       --tmux: run in attachable tmux sessions (dev mode)
                                        instead of background nohup+logfile
+                                       other flags, e.g. q's -t timer, are passed to the process
   stop [procname|all]                 stop one or all (also cleans up any tmux session)
   restart [procname|all] [--tmux] ... stop then start
   status [procname|all]               show up/down (tags tmux-managed procs), no args means all
@@ -341,13 +342,13 @@ case "$cmd" in
   devattach) cmd="attach" ;;
 esac
 
-# pre-scan the remaining args: pull out the --tmux/-t flag (which may appear anywhere) so it is
+# pre-scan the remaining args: pull out the --tmux flag (which may appear anywhere) so it is
 # NOT forwarded to torqx_init.q, and collect the rest as the positional target + passthrough args.
 target=""
 args=()
 for a in "$@"; do
   case "$a" in
-    --tmux|-t) TMUX_MODE=1 ;;
+    --tmux) TMUX_MODE=1 ;;
     *)
       if [ -z "$target" ] && [ "${a#-}" = "$a" ]; then
         target="$a"          # first non-flag token is the target (procname|all)

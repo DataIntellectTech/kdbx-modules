@@ -70,7 +70,8 @@ for. See `di.torq.config`'s own docs for the 5-tier cascade itself.
 
 It also adds `timerms`: q's own `-t` in milliseconds, or null without `-t`. q consumes `-t`, so
 `cmdlinet` reads it from the full command line `.z.X`, once. The tickerplants batch on it, as TorQ's
-`.z.ts` runs at `-t`, without reading the command line themselves.
+`.z.ts` runs at `-t`, without reading the command line themselves. `torqx.sh` passes it through after
+the target: `torqx.sh start stp1 -t 1000`.
 
 ### Dependency building
 
@@ -328,7 +329,7 @@ stays exclusively `di.torq`'s job). An optional `startwithall` column, as in Tor
 ### Dev mode (tmux)
 
 `torqx.sh start` normally launches each process as a background `nohup` process
-redirecting to a logfile. Passing `--tmux` (or `-t`) instead runs each process inside a
+redirecting to a logfile. Passing `--tmux` instead runs each process inside a
 detached, **attachable tmux session** - one session per process, named
 `<TORQXSTACKID>-<procname>` (e.g. `torqx-poc-rdb1`) - so a developer can attach to a
 live `q)` console for any process:

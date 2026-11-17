@@ -691,6 +691,8 @@ init:{[config;deps]
   if[`partlimit in key config;mrgdeps[`partlimit]:named[`partlimit;aslong;config`partlimit]];
   (.z.m.mrg`init)[mrgdeps];
   checksortparams[];
+  / loaded in every mode, as deps.toml declares it; sort mode does not subscribe
+  .z.m.subs:use`di.subscriptions;
 
   if[.z.m.mode~`sort;
     conns:distinct .z.m.hdbtypes,.z.m.rdbtypes,.z.m.idbtypes,.z.m.gatewaytypes,.z.m.sortworkertypes,.z.m.wdbtypes;
@@ -701,7 +703,6 @@ init:{[config;deps]
       ", waiting to be called at .wdb.endofdaysort"];
     :()];
 
-  .z.m.subs:use`di.subscriptions;
   (.z.m.subs`init)[config;deps];
   .z.m.currentpartition:getpartition[];
   (.z.m.os`mkdir) .z.m.savedir;

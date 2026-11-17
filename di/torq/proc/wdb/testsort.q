@@ -149,6 +149,13 @@ workerssetting:{[]
   -2i~r
   };
 
+/ sort mode loads di.subscriptions, which deps.toml declares, without subscribing
+subsloaded:{[]
+  ![`.m.di.0torq.0proc.0wdb;();0b;enlist`subs];
+  freshwire config[];
+  `subs in key .m.di.0torq.0proc.0wdb
+  };
+
 / a table already in the hdb partition aborts the whole move; nothing is overwritten
 nooverwrite:{[]
   freshwire config[];

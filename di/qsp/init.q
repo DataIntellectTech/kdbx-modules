@@ -194,8 +194,9 @@ fold:{[p;pv;x]
   ti:pol.info[p;x 1];
   if[null ti`partition;:x];
   cons:tree.getc x 2;
-  k:0;
-  while[(k<count cons) and ord.partfixed[ti;cons k];k+:1];
+  if[2>count cons;:x];
+  / the length of the leading run: mins turns every flag after the first 0b to 0b
+  k:sum mins ord.partfixed[ti] each cons;
   if[k<2;:x];
   keep:all {[pv;c] :eval (first c;enlist pv;c 2);}[pv] each k#cons;
   x[2]:tree.setc (enlist (inop;ti`partition;tree.lit pv where keep)),k _ cons;

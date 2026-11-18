@@ -66,7 +66,7 @@ q di/qsp/examples/equities/demo.q            # then open the address it prints
 Run the process in the foreground: q exits when its console's input ends.
 Under WSL, the `localhost` address works from a Windows browser too.
 
-The page is plain HTML and JavaScript, read from `di/qsp/ui/` on every
+The page is plain HTML and JavaScript, read from `di/qsp/admin/ui/` on every
 request. Nothing is fetched from the internet and there is nothing to build.
 Any recent browser will do.
 

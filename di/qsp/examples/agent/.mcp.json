@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "qsp": {
+      "command": "python3",
+      "args": ["mcp.py"],
+      "env": {
+        "QSP_PORT": "5100"
+      }
+    }
+  }
+}

@@ -138,7 +138,7 @@ it stops it, records the decision in the audit log, and signals `'qsp: ...`:
 | 2. parse | A string is parsed with `parse`, never `value`. Text that is not q stops here, with q's error. | `error` |
 | 3. file handles | A symbol starting with `:` anywhere in the tree is refused. Every filesystem primitive needs one. | `denied` |
 | 4. walk and rewrite | Every node of the tree is checked against the policy and the user's grants, and each select is rewritten to read only what the user may see. See below. | `denied`, or `error` for a fault |
-| 5. partition checks | With `requirepartition` on, a query that would read every partition of a table is refused, naming the table and column. With `maxpartitions` set, so is one that would read more partitions than that. | `denied` |
+| 5. partition checks | With `requirepartition` on, a query that would read every partition of a table is refused, naming the table and column. Leading constraints that compare the partition column with literal data, such as the user's range and an embargo's cutoff, are then merged into one list of partitions, so q reads only the partitions both allow. With `maxpartitions` set, a query that would read more partitions than that is refused. | `denied` |
 | 6. evaluate | Only the rewritten tree is evaluated. If q signals, this is where. | `error` |
 | 7. bound the result | The result is checked against `maxsize` (serialised bytes) and `maxrows`. | `denied` |
 | 8. record | `allowed`, with the rewritten tree. | |

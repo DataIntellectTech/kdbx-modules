@@ -367,6 +367,13 @@ true,0,0,q,".t.eq[count qsp.run[H;`llmu;""select from ticks where date within 00
 run,0,0,q,"roll:""select from ticks where date within (2020.01.01 2020.01.01;2020.01.01 2020.01.02) first 1?2""",1,,
 true,0,0,q,"all {r:@[{count qsp.run[HM;`llmu;x]};x;{x}]; (r~3)|$[10h=type r;r like ""qsp: too many partitions*"";0b]} each 30#enlist roll",1,,"a constraint computed twice could pick one partition to count and both to read: it is computed once"
 true,0,0,q,"0<count ss[last qsp.runx[HM;`llmu;""select from ticks where date within 2020.01.01+0 0""];""2020.01.01 2020.01.01""]",1,,...and what ran holds its value
+true,0,0,q,"0<count ss[last qsp.runx[H;`extu;""select from ticks where date within 2020.01.01 2020.01.02""];""(in;`date;,2020.01.01)""]",1,,"an embargo after the user's range is folded into it: one list of partitions, so q reads only those"
+true,0,0,q,".t.eq[exec date from qsp.run[H;`extu;""select from ticks where date within 2020.01.01 2020.01.02""];4#2020.01.01]",1,,...the same rows as unfolded
+true,0,0,q,".t.eq[count qsp.run[H;`extu;""select from ticks where date within 2020.01.02 2020.01.02""];0]",1,,...and none when they select no partition in common
+true,0,0,q,".t.eq[count qsp.run[HM;`extu;""select from ticks where date within 2020.01.01 2020.01.02""];4]",1,,"...and maxpartitions counts the partitions read: one, not the range's two"
+true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date within 2020.01.01 2020.01.02, date<>2020.01.02""];""(in;`date;,2020.01.01)""]",1,,a user's own second constraint on the partition column is folded too
+true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date within 2020.01.01 2020.01.02, date=max date""];""(within;`date;2020.01.01 2020.01.02)""]",1,,...but not one that computes over the column
+true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date=2020.01.01""];""(=;`date;2020.01.01)""]",1,,a single partition constraint is left as written
 true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select x:(count select from ticks) from ticks where date=2020.01.01"");""qsp: full table scan*""]",1,,a select written as a column is a read like any other
 true,0,0,q,".t.eq[qsp.fullscans[H;`llmu;""select x:(count select from ticks) from ticks where date=2020.01.01""];enlist`ticks]",1,,...fullscans finds it
 true,0,0,q,".t.err[(qsp.run;HM;`llmu;""select n:count i by x:(count select from ticks where date within 2020.01.01 2020.01.02) from ticks where date=2020.01.01"");""qsp: *""]",1,,...in a by clause too

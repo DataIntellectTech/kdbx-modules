@@ -8,8 +8,9 @@
 / in the foreground: q exits when its console's input ends
 
 / this directory, absolute - loading the database moves the working directory into it
-here:{[f] :$[count i:where f="/";(1+last i)#f;"./"];} string .z.f;
-if["/"<>first here;here:system["cd"],"/",here];
+/ (q demo.q and q ./demo.q give no directory, or ./ - neither is written into the paths shown)
+here:{[f] d:$[count i:where f="/";(1+last i)#f;""]; if["/"<>first d;d:system["cd"],"/",d];
+  while[d like "*/./*";d:ssr[d;"/./";"/"]]; :d;} string .z.f;
 system"l ",here,"setup.q";
 \c 40 300
 / floats to 12 significant digits in the page's JSON, which .j.j writes as string does

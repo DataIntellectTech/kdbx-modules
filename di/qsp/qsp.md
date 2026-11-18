@@ -25,7 +25,7 @@ qsp.serve p                                                  / police every IPC 
 
 A team setting up permissions keeps the policy as CSV files instead. They
 edit it in a spreadsheet, review it in a pull request, and check it in CI,
-with tests of what it must mean. **[setup.md](setup.md)** walks through it
+with tests of what it must mean. **[docs/setup.md](docs/setup.md)** walks through it
 from an empty process. The **admin UI** (`qsp.adminui`local`) does the same
 in a browser, and shows what a policy means: the rows each user gets, what a
 change changes for whom, which tests it breaks
@@ -148,10 +148,13 @@ follows one query through these steps in the code, function by function,
 with the parse tree at each stage.
 
 The other entry points stop part way. `rewrite` and `explain` run steps 1 to
-4 and return the rewritten tree, or its text. `validate` runs 1 to 4 and
-returns `(allowed;reason)`. Neither evaluates nor records anything, so neither
-applies the partition checks or the result limits: use `fullscans` for the
-first. `runx` runs every step, and also returns what ran, as text.
+4 and return the rewritten tree, or its text; they evaluate nothing, so they
+don't apply the partition checks (`fullscans` lists the tables a query would
+scan). `validate` runs steps 1 to 5 and returns `(allowed;reason)`, refusing
+with the message `run` would give. It records nothing, and evaluates only the
+value of a leading partition constraint, which `maxpartitions` counts. The
+result limits in step 7, and checks on values the query computes, need it to
+run. `runx` runs every step, and also returns what ran, as text.
 
 A **fault** is a step-4 refusal that withholds nothing. The user holds the
 column, but an inner select did not carry it through
@@ -422,7 +425,7 @@ through the same builders. A filter cell is a q where clause, parsed (never
 evaluated) at load: `` sym in `VOD`MSFT, size>100 ``. It can also use
 `qsp.USER`, `qsp.NOW` and `qsp.aged[time;0D00:15]`, or `fn:name` to call a q
 function with the user. `bin/policy.q` runs the check and the review from the
-command line, for CI (see [setup.md](setup.md)).
+command line, for CI (see [docs/setup.md](docs/setup.md)).
 
 ### Reviewing a policy
 
@@ -553,7 +556,7 @@ not quietly open a policy up.
 | `runx[p;u;q]` | `(result; what ran, as text)`, for a caller that must show its user what the query became |
 | `rewrite[p;u;q]` | the safe parse tree. Evaluates nothing. |
 | `explain[p;u;q]` | the same, as text |
-| `validate[p;u;q]` | `(allowed;reason)`. Evaluates and records nothing, and so does not apply `requirepartition`, `maxpartitions`, `maxrows` or `maxsize` |
+| `validate[p;u;q]` | `(allowed;reason)`: every check `run` makes before it evaluates, including `requirepartition` and `maxpartitions`, with `run`'s message. Records nothing; evaluates only a leading partition constraint's value. `maxrows`, `maxsize` and checks on computed values need the query to run |
 | `fullscans[p;u;q]` | the tables `q` would read every partition of |
 | `columnsfor[p;u;t]` / `filterfor[p;u;t]` | what a policy resolves to for one user |
 
@@ -621,7 +624,7 @@ calls about itself, with no user named.
 ```q
 g (`.qsp.api;`describe;`alice)                     / everything a query writer needs, for alice
 g (`.qsp.api;`describe;`alice;`json)               / the same, as one JSON string
-g (`.qsp.api;`validate;`alice;"select from trade") / ([allowed;reason]), evaluating nothing
+g (`.qsp.api;`validate;`alice;"select from trade") / ([allowed;reason]), without running it
 h (`.qsp.api;`describe)                            / alice's own, from alice's own login
 h (`.qsp.api;`rules;`json)                         / the rules, for an agent's prompt
 ```
@@ -636,7 +639,7 @@ h (`.qsp.api;`rules;`json)                         / the rules, for an agent's p
 | `rules` | the rules of writing a query qsp will run, one per row (below) | anyone |
 | `access` | `qsp.access` for the user | a gateway, naming the user; a user, about itself |
 | `describe` | `user`; `tabs`: the tables the user may read, with the granted columns, their types by name (`` `date``, `` `symbol``, `` `char[]`` for a string column), the partition column and the row filter as a where clause; `functions` and `calls`; `limits` from the config; `rules` | the same |
-| `validate` | `([allowed;reason])` for a query, evaluating nothing | the same, with the query |
+| `validate` | `([allowed;reason])` for a query: every check `run` makes before it runs the query | the same, with the query |
 | `explain` | what the query becomes, as text | the same, with the query |
 
 **Formats.** Every call takes a format, `` `q `` or `` `json ``. Over IPC it
@@ -761,7 +764,7 @@ jobs, and the page's own JSON API.
 
 Select anything, in any view, and a drawer shows it in full, with the lines of
 the policy files that define it. The page is plain HTML and JavaScript in
-`ui/`, read from disk on each request: no build step, nothing fetched from the
+`admin/ui/`, read from disk on each request: no build step, nothing fetched from the
 internet. Every query runs through qsp: `runx`, `rewrite`, `access`, the api,
 `runtests`.
 
@@ -825,15 +828,22 @@ p:qsp.grant[p;`audit;`auditlog;qsp.ALL;()]
 ## Layout
 
 ```
-di/qsp/*.q          the module: init.q loads the rest
-di/qsp/ui/          the admin UI's page (qsp.adminui): HTML, CSS and JavaScript, no build
+di/qsp/init.q       the module: run, serve and the audit log; loads the rest and exports the API
+di/qsp/core/        checking and rewriting a query: tree.q (parse trees), fns.q (the function
+                    whitelist), walk.q (the walker), order.q (where the row filter goes)
+di/qsp/policy/      a policy: init.q (the value and its builders), f.q (row filter builders),
+                    files.q (a policy as files), review.q (access, diff), suite.q (tests.csv)
+di/qsp/api/         qsp.api, what a gateway or an agent asks a policed process
+di/qsp/admin/       the admin UI (qsp.adminui), and its page in ui/: HTML, CSS and JavaScript,
+                    no build
 di/qsp/VERSION      the module version (qsp.version), and CHANGELOG.md, what changed in each
-di/qsp/qsp.md       this reference; setup.md, the walkthrough for a team; docs/, the rest
-                    (docs/ui.md, the admin UI's guide, with screenshots in docs/img/;
-                    testing.md, qsp's own tests; history.md, the port from qsp)
-di/qsp/test.csv     the unit tests, with test.q (fixtures) and testserver.q (the IPC server)
-di/qsp/bin/         policy.q (check and review a policy directory, for CI), test.q (run the
-                    unit tests), harden.sh and harden/ (the hardening campaign)
+di/qsp/qsp.md       this reference; docs/, the rest (setup.md, the walkthrough for a team;
+                    ui.md, the admin UI's guide, with screenshots in img/; testing.md, qsp's
+                    own tests; history.md, the port from qsp)
+di/qsp/test.csv     the unit tests, with test.q (fixtures) and test/server.q (the IPC server)
+di/qsp/bin/         ci.sh (every test, for CI), test.q (the unit tests), harden.sh and
+                    harden/ (the hardening campaign), policy.q (check and review a policy
+                    directory, for a team's own CI)
 di/qsp/examples/    equities/: an example HDB, its policy and tests, a walkthrough of each
                     role (hdb.q), and the admin UI on it (demo.q)
 ```
@@ -844,6 +854,7 @@ how the source files depend on each other.
 ## Tests
 
 qsp's own tests - the unit tests (`bin/test.q`), the hardening campaign
-(`bin/harden.sh`) and the example's checks - and what each covers are in
-[docs/testing.md](docs/testing.md). What changed from the original qsp, and how
-the module did against its suites, is in [docs/history.md](docs/history.md).
+(`bin/harden.sh`) and the example's checks, all run by `bin/ci.sh` - and what
+each covers are in [docs/testing.md](docs/testing.md). What changed from the
+original qsp, and how the module did against its suites, is in
+[docs/history.md](docs/history.md).

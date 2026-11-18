@@ -3,3 +3,5 @@
 examples/**/*db/
 # written by bin/harden.sh
 harden-output/
+# written by bin/ci.sh
+ci-output/

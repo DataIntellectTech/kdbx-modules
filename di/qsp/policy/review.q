@@ -1,4 +1,4 @@
-/ di.qsp.review - what a policy means, for the people who approve it
+/ di.qsp.policy.review - what a policy means, for the people who approve it
 /   access[p;u]   what user u can read: per table, the columns and the rows
 /   diff[a;b]     what changes for whom when policy a is replaced by b
 / reviewing a policy file line by line answers "what did the author type"; these answer "who can
@@ -7,9 +7,9 @@
 / a lambda filter is called, for each user, as it would be on a query: the answer is as of now. A
 / lambda that signals shows as "refused: ...", which is what that user's queries would get
 
-tree:use`..tree;
-fns:use`..fns;
-pol:use`..policy;
+tree:use`...core.tree;
+fns:use`...core.fns;
+pol:use`...policy;
 
 / ------------------------------------------------------------------ rendering
 

@@ -179,7 +179,7 @@ Preview is the review a pull request should carry: "llm1 gains depth and
 loses the embargo", "three tests break", rather than "members.csv: one line
 added". Save writes even if the policy has problems, as a policy is often
 written over several sittings: Preview first to see them. The files are the
-policy: commit them, and let review and CI ([setup.md](../setup.md)) do the
+policy: commit them, and let review and CI ([setup.md](setup.md)) do the
 rest.
 
 ## Seeing what a policy means
@@ -319,7 +319,7 @@ collect tests from the Lab and Probes and save them. Commit the directory.
 **Review a change before it is merged.** Open the branch's policy directory.
 In Edit, Preview shows what the change does for whom and which tests break.
 Put that in the pull request beside `bin/policy.q -dir new -was old`
-([setup.md](../setup.md#8-review-a-change)), which CI can run.
+([setup.md](setup.md#8-review-a-change)), which CI can run.
 
 **Answer "why can't this user see that?"** Run their query in the Lab as
 them. A refusal names what was refused and the rule behind it; a result with
@@ -373,7 +373,7 @@ module's tests drive the page:
 
 ## How it works
 
-`admin.q` installs `.z.ph`, which serves the files in `ui/`, and `.z.pp`,
+`admin/init.q` installs `.z.ph`, which serves the files in `admin/ui/`, and `.z.pp`,
 which answers `/api`. It keeps the state of the policy it is editing: its
 directory, the policy, whether it loads, and its tests. It runs queries only
 through the functions `init.q` lends it when `adminui` is called: `runx`,

@@ -1,16 +1,16 @@
-/ fixtures and helpers for di.qsp's tests - loaded by test.csv and by testserver.q
+/ fixtures and helpers for di.qsp's tests - loaded by test.csv and by test/server.q
 / expects qsp:use`di.qsp to have run; defines globals only, and touches no files
 
 / the module directory, absolute, as loading a partitioned database changes directory
 .t.mod:{[m] $["/"=first m;m;system["cd"],"/",m],"/"} .Q.m.mp`di.qsp;
 .t.cwd:system"cd";
-qt:use`di.qsp.tree;
+qt:use`di.qsp.core.tree;
 qp:use`di.qsp.policy;
-qf:use`di.qsp.files;
+qf:use`di.qsp.policy.files;
 qa:use`di.qsp.api;
 
 / ------------------------------------------------------------------ fixtures
-/ the same data and policy are policed in process and, by testserver.q, over IPC
+/ the same data and policy are policed in process and, by test/server.q, over IPC
 
 trade:([]date:2010.01.01 2010.01.01 2010.01.02 2010.01.02 2010.01.03;
   sym:`aaa`bbb`aaa`ccc`bbb;account:`A1`A2`A1`A3`A2;size:10 20 30 40 50;

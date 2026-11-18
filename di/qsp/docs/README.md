@@ -8,7 +8,7 @@ pages only where they explain it.
 | page | read it to |
 |---|---|
 | [../qsp.md](../qsp.md) | install the module, try the example, and look up the API. Its [How it works](../qsp.md#how-it-works) section follows a query through every check |
-| [../setup.md](../setup.md) | set up permissions for a team: scaffold a policy, fill it in, write its tests, check it in CI, review changes, serve it |
+| [setup.md](setup.md) | set up permissions for a team: scaffold a policy, fill it in, write its tests, check it in CI, review changes, serve it |
 | [concepts.md](concepts.md) | understand what a policy is made of: users, groups, grants, filters, gateways, the whitelist and settings, and how one user's access is worked out |
 | [ui.md](ui.md) | use the admin UI (`qsp.adminui`): set a policy up, edit it with a preview of what each change does, run its tests, and see what it means for each user, view by view |
 | [time.md](time.md) | write rules that depend on when a query runs, such as embargoes and delayed data, and set the policy clock |

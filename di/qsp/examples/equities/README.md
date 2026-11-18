@@ -128,4 +128,4 @@ full.
 
 Copy `policy/` to where your team keeps its policies, delete the clock row
 from `config.csv` and `exampleclock` from `defs.q`, and follow
-[setup.md](../../setup.md).
+[setup.md](../../docs/setup.md).

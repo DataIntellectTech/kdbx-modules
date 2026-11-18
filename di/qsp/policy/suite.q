@@ -1,4 +1,4 @@
-/ di.qsp.suite - a policy's own tests: tests.csv, kept beside the policy and reviewed with it
+/ di.qsp.policy.suite - a policy's own tests: tests.csv, kept beside the policy and reviewed with it
 /   user,query,expect,value,note
 / each row runs a query as a user, and says what qsp must do with it:
 /   rows     return at least one row
@@ -11,7 +11,7 @@
 / change that keeps the files valid but breaks an intention fails the build
 / loading a test file checks its shape, and needs no data. Running one needs the tables
 
-tree:use`..tree;
+tree:use`...core.tree;
 files:use`..files;
 
 expects:`rows`empty`runs`refused`equals;

@@ -289,7 +289,7 @@ can be built in q. Each file is applied through the matching function:
 `qsp.fromfiles dir` builds the policy from a directory, refusing it, with every
 problem listed, if anything is wrong. `bin/policy.q` checks a directory and
 shows who can read what, or what a change changes, for CI and review. See
-[../setup.md](../setup.md).
+[setup.md](setup.md).
 
 Beside the files, `tests.csv` holds the policy's tests: what it must mean, a
 query at a time. "`llm1` is refused the `account` column", "`sales_na` sees

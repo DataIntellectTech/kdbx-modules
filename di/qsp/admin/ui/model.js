@@ -1,4 +1,4 @@
-// the policy, as the page reasons about it: built once from admin.q's overview
+// the policy, as the page reasons about it: built once from admin/init.q's overview
 
 const PALETTE = ['#7aa2ff', '#3ddc97', '#ffb547', '#ff6b9a', '#b388ff', '#4dd0e1', '#f4e04d', '#ff8a5c'];
 const SHARED = '#8b98b0';

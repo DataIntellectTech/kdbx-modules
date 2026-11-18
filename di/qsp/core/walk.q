@@ -1,4 +1,4 @@
-/ di.qsp.walk - check every node of a parse tree, and rewrite it
+/ di.qsp.core.walk - check every node of a parse tree, and rewrite it
 /   walk[c;scope;depth;node] -> (rewritten node; column names it projects)
 / c is the context of one rewrite (see ctx); scope is the set of names a bare symbol may legally
 / reference at this point. Every node must be explicitly permitted. Anything not understood is
@@ -15,7 +15,7 @@
 
 tree:use`..tree;
 fns:use`..fns;
-pol:use`..policy;
+pol:use`...policy;
 ord:use`..order;
 
 nocols:`symbol$();

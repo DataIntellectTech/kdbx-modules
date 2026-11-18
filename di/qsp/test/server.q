@@ -1,8 +1,8 @@
-/ the process test.csv talks to over IPC:   q di/qsp/testserver.q -p PORT
+/ the process test.csv talks to over IPC:   q di/qsp/test/server.q -p PORT
 / serves the fixtures' policy, and exits when its last client disconnects
 / (an exit sent over IPC would be refused - it is not on the whitelist)
 
-.Q.m.SP:(enlist {[f] $[count i:where f="/";(1+last i)#f;"./"],"../../"} string .z.f),.Q.m.SP;
+.Q.m.SP:(enlist {[f] $[count i:where f="/";(1+last i)#f;"./"],"../../../"} string .z.f),.Q.m.SP;
 qsp:use`di.qsp;
 system"l ",.Q.m.mp[`di.qsp],"/test.q";
 

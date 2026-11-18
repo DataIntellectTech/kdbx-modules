@@ -24,6 +24,16 @@ policy permits; each such change is marked **behaviour**.
   build a grid of minutes, and `d _ `k`, which drops a key. Found by replaying
   the surveillance agent's 739 recorded queries against this version: these
   were the only ones it allowed before and refuses now.
+- **behaviour** Leading constraints that compare a partition column with
+  literal data are merged into one before the query runs: `date within a b`
+  followed by an embargo's `date<cutoff` runs as `date in` the partitions
+  both allow. q chooses partitions by the leading constraint alone, so the
+  embargo used to be tested row by row in every partition of the range: on
+  20 partitions of 2M rows, 5 to 7 times slower than the merged query, with
+  33 to 67 MB more memory. The rows returned are unchanged. `maxpartitions`
+  now counts the merged list, so a range the embargo narrows under the cap
+  is allowed where it was refused. `explain` still shows the query before
+  the merge; `runx` and the admin UI's What ran show it after.
 - `bin/ci.sh` runs every test qsp has in one command, for CI: the unit
   tests, the example's walkthrough and its policy's tests, `bin/policy.q
   -test`, the admin UI's endpoint check and the hardening campaign. It runs

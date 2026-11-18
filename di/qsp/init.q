@@ -182,6 +182,37 @@ pinparts:{[p;rw]
   :tree.mapbase[pin p;rw];
   };
 
+/ q chooses the partitions it reads by the leading constraint alone. Any other constraint on the
+/ partition column is tested row by row, in every partition the first one chose: an embargo,
+/ "date<cutoff", placed after the user's "date within a b" reads and tests every row from a to b,
+/ slower than the range alone. fold[p;pv;x] is base query x with its leading run of constraints
+/ that compare the partition column with literal data - the user's, once pin has computed it, and
+/ an aged filter's cutoff, computed at rewrite - replaced by one: the partition column in the
+/ partitions of pv they select together. The same rows, from only the partitions that hold them
+inop:first parse"x in y";
+fold:{[p;pv;x]
+  ti:pol.info[p;x 1];
+  if[null ti`partition;:x];
+  cons:tree.getc x 2;
+  if[2>count cons;:x];
+  / the length of the leading run: mins turns every flag after the first 0b to 0b
+  k:sum mins ord.partfixed[ti] each cons;
+  if[k<2;:x];
+  keep:all {[pv;c] :eval (first c;enlist pv;c 2);}[pv] each k#cons;
+  x[2]:tree.setc (enlist (inop;ti`partition;tree.lit pv where keep)),k _ cons;
+  :x;
+  };
+
+/ rw with the leading partition constraints of each base query folded into one
+foldparts:{[p;rw]
+  if[0=count pv:@[value;`.Q.pv;()];:rw];
+  :tree.mapbase[fold[p;pv];rw];
+  };
+
+/ rewritten tree rw as it will run: partition constraints pinned and folded. Either step that
+/ cannot be taken leaves the tree as it was, which reads at least what the user asked for
+settle:{[p;rw] rw:@[pinparts p;rw;{[rw;e] rw}rw]; :@[foldparts p;rw;{[rw;e] rw}rw];};
+
 partitionlimit:{[p;rw]
   / requirepartition asks for a bounding constraint; maxpartitions caps how many partitions it
   / may select - "date within 0001.01.01 9999.12.31" bounds the column and reads everything
@@ -226,7 +257,7 @@ go:{[ev;p;u;q]
   if[not r 0;refuse[p;u;q;();$[tree.isfault r 1;`error;`denied];r 1]];
   rw:r 1;
   if[count m:partitioncheck[p;rw];refuse[p;u;q;rw;`denied;m]];
-  rw:@[pinparts p;rw;{[rw;e] rw}rw];
+  rw:settle[p;rw];
   if[count m:partitionlimit[p;rw];refuse[p;u;q;rw;`denied;m]];
   v:@[{(1b;x y)}[ev];rw;{(0b;x)}];
   / a qsp check the walker placed in the tree refused a value the query computed
@@ -257,7 +288,7 @@ validate:{[p;u;q]
   r:@[{(1b;rewrite[x;y;z])}[p;u];q;{(0b;x)}];
   if[not r 0;:r];
   m:partitioncheck[p;r 1];
-  if[not count m;m:partitionlimit[p;@[pinparts p;r 1;{[rw;e] rw}r 1]]];
+  if[not count m;m:partitionlimit[p;settle[p;r 1]]];
   :$[count m;(0b;tree.prefix tree.described tree.clean m);(1b;"")];
   };
 / fullscans[p;u;q] -> tables q would read every partition of

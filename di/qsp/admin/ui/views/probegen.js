@@ -38,8 +38,12 @@ export function probes(M, u) {
     const hidden = T.columns.filter(c => !a.columns.includes(c));
     const filtered = a.rows !== 'all rows';
 
-    out.push({ cat: 'see', title: `All of ${t} you can see`, q: `select from ${t}${W(Dv)}`, expect: Dv ? 'rows' : 'allowed',
-      why: `select * comes back with your ${a.columns.length} of ${T.columns.length} columns${filtered ? ', and only the rows your filter allows' : ''}.` });
+    // a day of a partitioned table can hold more rows, or bytes, than maxrows or maxsize let one
+    // result have, and the limit would refuse the probe: its first ten rows show the same columns
+    // and the same filter. select[n] wraps a plain select, as qsp's rules require
+    const all = `select from ${t}${W(Dv)}`;
+    out.push({ cat: 'see', title: `All of ${t} you can see`, q: T.partition ? `select[10] from ${all}` : all, expect: Dv ? 'rows' : 'allowed',
+      why: `select * comes back with your ${a.columns.length} of ${T.columns.length} columns${filtered ? ', and only the rows your filter allows' : ''}${T.partition ? ' (the first ten rows of the day)' : ''}.` });
 
     const fc = (/^(\w+) (in|=|within|like) /.exec(a.rows) || [])[1];
     const key = [fc, 'sym', 'account', 'trader', 'desk', 'region'].find(c => c && a.columns.includes(c));

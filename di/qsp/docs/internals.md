@@ -422,12 +422,28 @@ the policy filter can have put something ahead of it - `placement` `` `first ``,
 or a filter that could aggregate - and the refusal says that instead: no query
 can prune that table for that user.
 
+Next, `settle` prepares the tree to run. `pin` computes the value of each
+leading partition constraint, when `maxpartitions` is set, so the partitions
+counted are the partitions read. Then `fold` merges the leading run of
+constraints that compare the partition column with literal data
+(`ord.partfixed`) into one: `(in;date;the partitions of .Q.pv they select
+together)`. q chooses partitions by the leading constraint alone and tests
+any other constraint on the partition column row by row, in every partition
+the first one chose. So an embargo, `date<cutoff`, placed after the user's
+`date within a b`, would read and test every row from `a` to `b`. Folded,
+the query reads only the partitions both allow. Every row of a partition
+holds the partition's value in that column, so the result is the same. A
+constraint that computes over the column, such as `date=max date`, is not
+literal and is left as written, as is a single partition constraint.
+`explain` shows the tree before `settle`; `runx` shows it after.
+
 `partitionlimit` applies `maxpartitions` next, whether or not
 `requirepartition` is on. For each base query, `partsread` counts the
 partitions it would read: all of `.Q.pv` if it doesn't prune, or else the
 leading constraint evaluated with the partition column bound to `.Q.pv`.
 `date within 0001.01.01 9999.12.31` bounds the column, so it passes
-`requirepartition`, and is caught here.
+`requirepartition`, and is caught here. Counted after `fold`, an embargo
+narrows the count as it narrows the read.
 
 ### 8. Evaluate
 

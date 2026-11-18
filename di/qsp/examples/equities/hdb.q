@@ -32,6 +32,7 @@ showaccess qsp.access[p;`];
 / Here each is also run with qsp.run, to show what came back and fill the audit log
 
 D:"2026.10.09";   / the last day
+E:"2026.10.07";   / the last day research can see: its grant holds back two days
 failed:();
 T:qsp.tests pdir;
 R:qsp.runtests[p;T];

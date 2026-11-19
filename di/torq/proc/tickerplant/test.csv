@@ -83,6 +83,10 @@ run,0,0,q,doinit[tzstrcfg[]],1,,init with the eodtime settings as TOML strings
 true,0,0,q,(`$"America/New_York")~(use`di.eodtime)[`getrolltimezone][],1,,a string rolltimezone reaches di.eodtime as a symbol
 true,0,0,q,(`$"Asia/Tokyo")~(use`di.eodtime)[`getdatatimezone][],1,,a string datatimezone reaches di.eodtime as a symbol
 true,0,0,q,0D17:00:00~(use`di.eodtime)[`getrolltimeoffset][],1,,a string rolltimeoffset reaches di.eodtime as a timespan
+true,0,0,q,0=count select from calls where lvl=`warn,msg like "*eodtime*",1,,top-level eodtime keys log no warning
 fail,0,0,q,"doinit tzstrcfg[],enlist[`rolltimeoffset]!enlist ""junk""",1,,an unparseable rolltimeoffset errors
+run,0,0,q,"doinit tzstrcfg[],enlist[`eodtime]!enlist enlist[`rolltimezone]!enlist""Europe/London""",1,,init with an [eodtime] section as well as the top-level keys
+true,0,0,q,(`$"America/New_York")~(use`di.eodtime)[`getrolltimezone][],1,,the top-level rolltimezone is used and the section is not read
+true,0,0,q,1=count select from calls where lvl=`warn,msg like "*top level*",1,,the [eodtime] section is logged as a warning pointing to the top-level keys
 
 after,0,0,q,teardownfixture[],1,,remove the temp fixture dirs

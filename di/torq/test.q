@@ -97,6 +97,13 @@ qlsync:{[] .z.pg "1+1"}
 qlasync:{[] .z.ps (`upd;`trade;())}
 qlcfg:{[on] `procname`querylog!(`qltest;`enabled`flushtime!(on;86400))}
 
+/ password files under APPBASE/passwords, one per name in d; the previous set is removed first
+setpasswords:{[d]
+  system "rm -rf ",APPBASE,"/passwords";
+  system "mkdir -p ",APPBASE,"/passwords";
+  {writelines[APPBASE,"/passwords/",string[x],".txt";enlist y]}'[key d;value d];
+  }
+
 teardownfixture:{[]
   system "rm -rf ",APPBASE;
   system "rm -f ",TESTPROCFILE;

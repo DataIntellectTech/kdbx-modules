@@ -211,7 +211,7 @@ discovery collapses. Connection management and access control have to agree on t
 the setting lives here rather than in `di.permissions`.
 
 **Where the credentials come from.** The module reads no files. `di.torq` resolves `userpass` from
-`$TORQXAPPCONFIG/passwords/{default|<proctype>|<procname>}.txt` — one line, `user:pass`, most
+`$TORQXAPPCONFIG/passwords/{default|<parentproctype>|<proctype>|<procname>}.txt` — one line, `user:pass`, most
 specific file wins — and passes it in config, unless the settings cascade already named it. That
 mirrors TorQ's hierarchic `loadpassword`.
 

@@ -23,15 +23,26 @@ gone:`$"\001qsp.gone";
 
 / the context of one rewrite: the policy, the user, and what is worth computing once - the
 / whitelist's values, and which tables the query reads
-ctx:{[p;u;q] :([p;u;cfg:p`config;fv:value p`fns;reads:tree.basetables q]);};
+ctx:{[p;u;q] :([p;u;cfg:p`config;fv:value p`fns;reads:tree.basetables q;aliases:tree.aliases q]);};
 
 fnok:{[c;x] :(count c`fv)>(c`fv)?x;};
 
 fnstr:{[c;x]
-  / a function value, named for a refusal
-  if[not tree.isfn x;:"<not a function>"];
-  :$[(count c`fv)>i:(c`fv)?x;string (key c[`p;`fns])i;not null n:fns.name x;string n;"<unnamed>"];
+  / a function value, named for a refusal: by its whitelist name, its q name, or as q prints it -
+  / +\: is an iterator applied to +, and saying so tells the writer what to change
+  if[not tree.isfn x;:"not a function: ",60 sublist -3!x];
+  if[(count c`fv)>i:(c`fv)?x;:string (key c[`p;`fns])i];
+  if[not null n:fns.name x;:string n];
+  t:-3!x;
+  if[(type x) within 106 111h;:t," (an iterator applied to a function, which qsp cannot check: use the whitelisted functions, or each, over and scan by name)"];
+  if[count i:iterators t;:t," (",i,", applied to a function by its glyph, which qsp cannot check: build the list another way, or use each, over and scan by name)"];
+  :t;
   };
+
+/ q's iterators, by the glyph a parse tree holds
+itglyphs:(enlist"'";enlist"/";enlist"\\";"':";"/:";"\\:");
+itnames:("each";"over";"scan";"each-prior";"each-right";"each-left");
+iterators:{[t] :$[(count itglyphs)>i:itglyphs?t;itnames i;""];};
 
 cols4:{[c;t] :pol.columnsfor[c`p;c`u;t];};
 istable:{[c;n] :n in key c[`p;`tabs];};
@@ -45,7 +56,25 @@ notinscope:{[c;n]
   / refuse a name that is not in scope, saying why
   tree.chk[not istable[c;n];string[n]," can only be used as the table of a select, not as a value"];
   if[granted[c;n];tree.fault string[n]," is not in scope here - the inner select/update does not project it"];
+  shadowed[c;n];
+  ownalias[c;n];
   tree.chk[0b;"unknown or not-permitted column: ",string n];
+  };
+
+ownalias:{[c;n]
+  / a name the query gives a column itself, read where no select carries it: not a permission
+  / decision - the writer named it - but a shape the writer can fix by projecting it. Saying so
+  / tells them nothing they did not write
+  if[n in c`aliases;tree.fault string[n]," is not in scope here - the query computes it, but does not carry it out to where it is read"];
+  };
+
+shadowed:{[c;n]
+  / the writer named a column n in an inner select, and safename dropped it: n is also the name
+  / of something on the server. Saying so tells the writer only what dropping it already did - an
+  / alias that shadows nothing is carried through, so the query's success or failure gave the
+  / same answer - and turns a dead end into a rename
+  tree.chk[not (n in c`aliases) and not safename[c;n];
+    string[n]," is a column this query names, but that name is taken on this server, so it cannot be read back out of the inner select - rename it, e.g. ",string[n],"_ or a longer name"];
   };
 
 headsym:{[c;scope;h]
@@ -56,6 +85,9 @@ headsym:{[c;scope;h]
   if[h in scope;:h];
   tree.chk[not istable[c;h];string[h]," can only be used as the table of a select, not as a value"];
   if[granted[c;h];tree.fault string[h]," is not in scope here - the inner select/update does not project it"];
+  shadowed[c;h];
+  ownalias[c;h];
+  tree.chk[not h=`by;"by goes before from in q-SQL: write select ... by col from ..., not ... from ... by col"];
   tree.chk[0b;string[h]," is neither a permitted function nor a column in scope"];
   };
 
@@ -109,6 +141,34 @@ keyedcols:{[a;cs]
   if[all 0<count each cs;:distinct raze cs];
   if[(type first a) in -5 -6 -7h;:cs 1];
   :nocols;
+  };
+
+/ a keyed join whose first argument names its key columns: each table argument must have them.
+/ q does not fail fast when one lacks a key - an aj keyed on `sym`time whose right side had renamed
+/ time ran for minutes, until the timeout - so a key missing from a side whose columns are known is
+/ refused before anything runs. The arguments that are tables, by position after the keys
+joinsides:`aj`aj0`ej`wj`wj1!(1 2;1 2;1 2;enlist 2;enlist 2);
+
+joinkeys:{[h;a;cs]
+  if[not any h~/:tree.joins;:()];
+  n:fns.name h;
+  / lj, ij and pj require a keyed right-hand table; an unkeyed select throws an opaque 'type in q
+  if[(n in `lj`ij`pj)&(2=count a);
+    rhs:a 1;
+    if[tree.isquery rhs;
+      if[((first rhs)~tree.selop)&(0b~rhs 3);
+        if[(not ()~rhs 4) or (-11h=type rhs 1) and not 99h=type @[value;rhs 1;0];
+          tree.chk[0b;string[n]," requires a keyed right-hand table - group the right select with by <keycol> (e.g. select first col by keycol from ...), or use ej"]]]]];
+  if[not n in key joinsides;:()];
+  k:takelit first a;
+  if[0=count k;:()];
+  {[n;k;cs;i]
+    if[0=count c:cs i;:()];
+    if[0=count m:k except c;:()];
+    side:$[(i=1)|n in `wj`wj1;"left";"right"];
+    tree.chk[0b;string[n],": the ",side," side has no column ",(" " sv string m),
+      " to join on - its columns are ",(" " sv string c)];
+    }[n;k;cs] each joinsides n;
   };
 
 / is h a call the policy says carries its arguments' columns?
@@ -168,8 +228,31 @@ walkfn:{[c;n]
   :(fns.subst n;nocols);
   };
 
+/ a dotted temporal accessor on a column in scope - time.minute, time.hh, d.year - is q's cast of
+/ that name, and is rewritten to it: `minute$time. Without this, time.minute is refused as an
+/ unknown column, and an agent's first habit costs it a turn
+accessor:{[scope;n]
+  s:string n;
+  if[not "." in 1_s;:()];
+  i:last where s=".";
+  col:`$i#s;
+  f:`$(i+1)_s;
+  :$[(col in scope)and f in fns.accessors;(fns.castop;enlist f;col);()];
+  };
+
 / a symbol atom is a name reference, never data
-walksym:{[c;scope;n] if[not n in scope;notinscope[c;n]]; :(n;nocols);};
+walksym:{[c;scope;n]
+  if[n in scope;:(n;nocols)];
+  if[count a:accessor[scope;n];:(a;nocols)];
+  / a column in scope, then a part q does not take from it
+  s:string n;
+  if["." in 1_s;
+    i:last where s=".";
+    if[(`$i#s) in scope;
+      tree.chk[0b;s,": ",((i+1)_s)," is not a part q takes after a dot - use ",
+        (", " sv string fns.accessors),", or cast with `type$"]]];
+  notinscope[c;n];
+  };
 
 walkcall:{[c;scope;depth;n]
   / a bare symbol vector is a name call. parse never emits one - it enlist-wraps symbol
@@ -180,13 +263,32 @@ walkcall:{[c;scope;depth;n]
   :($[all r[;0]~'1_n;n;(enlist h),r[;0]];nocols);
   };
 
+/ a literal applied to a where: select ... from select ... where a, sym=`X where b parses its
+/ last constraint as sym=(`X where b). q would index `X, and the writer meant an outer where
+strayed:{[n]
+  h:first n;
+  if[(2<>count n)or(tree.isfn h)or -11h=type h;:0b];
+  / a literal, or a list of them written in brackets - (2026.10.05;2026.10.08) parses as
+  / (enlist;..) - which q would index by the where, as it would a vector
+  if[0h=type h;if[not literallist h;:0b]];
+  :$[0h=type a:n 1;$[count a;where~first a;0b];0b];
+  };
+
+/ (enlist;a;b;..) whose items are each a literal: a number, a date, a quoted symbol
+literallist:{[h]
+  if[2>count h;:0b];
+  if[not (first h)~enlist;:0b];
+  :all {[x] $[-11h=type x;0b;(type x)<0;1b;11h=type x;1=count x;0b]} each 1_h;
+  };
+
 walkhead:{[c;scope;depth;h]
   / the head of an application: usually a function value, but q renders <>, <= and >= as a
   / composition, which is an expression in its own right
   if[-11h=type h;:headsym[c;scope;h]];
   if[tree.isfn h;:first walkfn[c;h]];
   if[0h=type h;:first walk[c;scope;depth+1;h]];
-  tree.chk[0b;"expression head is not a permitted function: ",fnstr[c;h]];
+  / usually a list placed before its argument - (09:30 10:00 12:00) x - which q reads as indexing
+  tree.chk[0b;"expression head is not a function: ",(60 sublist -3!h)," - q applies a list to an argument as an index: index with @ or brackets, or restructure"];
   };
 
 walklist:{[c;scope;depth;n]
@@ -194,8 +296,10 @@ walklist:{[c;scope;depth;n]
   / () and one-item lists are literal data - (enlist x) is "x, verbatim"
   if[2>count n;:literal[c;n]];
   h:first n;
+  tree.chk[not strayed n;"a where after a value: ",(40 sublist -3!h)," where ... - q reads a where written after a nested select's last constraint as part of that constraint. Put the nested select in parentheses: select ... from (select ... where ...) where ..."];
   h2:walkhead[c;scope;depth;h];
   r:walk[c;scope;depth+1;] each 1_n;
+  joinkeys[h2;1_n;r[;1]];
   g:guarded[c;h;h2;r[;0]];
   / rebuild only if something changed: amending a general list of symbols would collapse it into
   / a symbol vector, which q evaluates differently

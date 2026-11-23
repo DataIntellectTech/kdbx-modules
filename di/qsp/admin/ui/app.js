@@ -16,6 +16,7 @@ const VIEWS = [
   { id: 'tests', label: 'Tests', icon: 'tests', mod: './views/tests.js', key: '7' },
   { id: 'compare', label: 'Compare', icon: 'compare', mod: './views/compare.js', key: '8' },
   { sep: true },
+  { id: 'terms', label: 'Terms', icon: 'terms', mod: './views/terms.js', key: '=' },
   { id: 'files', label: 'Files', icon: 'files', mod: './views/files.js', always: true, key: '9' },
   { id: 'edit', label: 'Edit', icon: 'whatif', mod: './views/edit.js', always: true, key: '0' },
   { id: 'audit', label: 'Audit', icon: 'audit', mod: './views/audit.js', always: true, key: '-' },

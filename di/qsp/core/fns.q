@@ -139,10 +139,16 @@ scalar:{$[0>type x;x;'"qsp: a comparison in a where clause takes one value - use
 pair:{$[$[0h=type x;(2=count x)&all 0>type each x;(0<type x)&2=count x];x;'"qsp: within takes two values, low and high"]};
 pattern:{$[(type x) in -10 10h;x;'"qsp: like takes one pattern, as a string"]};
 
-/ the left of $: a type name casts; any other symbol names an enumeration domain, which q reads
+/ the left of $: a type name casts; any other symbol names an enumeration domain, which q reads.
+/ The extractions - `hh$t, `uu$t, `ss$t, `mm$d, `dd$d, `year$d, `week$d - are q's own: a global of
+/ the same name does not change them, so they are as safe as a type name
 typenames:``boolean`guid`byte`short`int`long`real`float`char`symbol`timestamp`month`date,
   `datetime`timespan`minute`second`time;
-castarg:{$[-11h<>type x;x;x in typenames;x;'"qsp: ",string[x],"$ casts to an enumeration - only a type name may be cast to"]};
+extractions:`year`mm`dd`hh`uu`ss`week;
+castnames:typenames,extractions;
+/ the names q reads after a dot on a temporal column, time.minute or d.year, as that cast
+accessors:`date`month`minute`second`time`timespan`timestamp,extractions;
+castarg:{$[-11h<>type x;x;x in castnames;x;'"qsp: ",string[x],"$ casts to an enumeration - cast to a type name (`minute, `date, `float...) or extract with `hh, `uu, `ss, `mm, `dd, `year or `week"]};
 
 / fby's (function;column): the function is applied. q's fby takes the function as x 0, so it
 / applies a symbol pair - `f`c - as readily as (f;`c), and indexes a dictionary as well as a list
@@ -233,4 +239,4 @@ defaults:catalog (`$("=";"<>";"<";">";"<=";">=";"~";"&";"|";"+";"-";"*";"%";
 if[not (::)~compose;defaults[`compose]:compose];
 
 export:([resolve;never;name;notsafe;ascsafe;descsafe;subst;compose;catalog;defaults;
-  ispure;isiter;rules;impure;nosym;fnarg;castarg;fbyarg;wjagg;findop;findsafe;scalar;pair;pattern]);
+  ispure;isiter;rules;impure;nosym;fnarg;castarg;castnames;accessors;castop;fbyarg;wjagg;findop;findsafe;scalar;pair;pattern]);

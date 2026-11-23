@@ -17,12 +17,17 @@ same behaviour from the user's side. This page names the functions behind it.
 | `core/fns.q` | The function whitelist: `defaults`, the never-allow list, name-to-value resolution, and the guarded replacements for `not` and the sort grades. The pure functions, the argument `rules` for everything else, and the run-time symbol checks the walker wraps around computed arguments. |
 | `core/order.q` | Where the row filter goes in a where clause. A pure function of the table's info and the constraints. |
 | `core/walk.q` | The walker. Checks every node of a parse tree and rewrites each select so it reads only what the user may see. |
+| `core/qsql.q` | A rewritten tree written back as q-SQL, with the run-time checks shown as the expressions they check: `explain`, `runx`, a gateway's `execasx` and the admin UI use it. `text` returns the q-SQL only when parsing it gives back the same tree - checks aside, a one-item vector as `enlist` - and the parse tree otherwise, so it never misstates what ran. |
 | `policy/init.q` | A policy as a value. The builders (`new`, `table`, `grant`, `member`, `configure`, ...) and resolution: which columns and which row filter one user gets on one table. |
 | `policy/f.q` | The row-filter builders exported as `qsp.f` (`isin`, `eq`, `aged`, ...). Each returns one constraint as a parse tree. |
 | `policy/files.q` | A policy kept as a directory of CSVs: `fromfiles` (and `policyin`, the same without its schema warnings), `check`, `scaffold`, `schemadrift`. Reads the CSVs by hand and applies each row through the `policy/init.q` builders. A loaded table is registered from its live meta, and `schemadrift` reports where `schema.csv` disagrees. |
 | `policy/review.q` | What a policy means: `access` (who can read what), `diff` (what a change changes), and `text`, which writes a constraint back as q. |
 | `policy/suite.q` | A policy's own tests, `tests.csv`: reads and checks it (an `equals` value is parsed and evaluated only if it is plain data), and gives a test's verdict from what running it returned. `init.q` runs them (`runtests`), with the audit log off. |
-| `api/init.q` | What a gateway or a query generator asks a policed process: `limits`, `memstats`, `users`, `functions`, `rules` (for an LLM agent: each rule with its reason, examples either way, and the text of its refusal), `access`, `describe` (one user's view of the policy, with the rules). Each takes a format last, `` `q `` or `` `json ``, which changes the encoding and never the content. `init.q` adds `version`, `validate` and `explain`, exports the lot as `qsp.api`, and serves the same calls over IPC as `` (`.qsp.api;name;...) ``. |
+| `core/codes.q` | A refusal as data: `classify` matches a message against an ordered table of patterns, first match wins, giving its `code` (`family.reason`), `kind` (`permission`, `shape`, `limit`, `runtime`) and `subject`, taken from the message. A message no pattern knows is `refusals.other`, kind `permission`. |
+| `receipt/init.q` | Receipts: HMAC-SHA1 over `-33!`, the key ring (a directory of `<kid>.key` files, the newest signing), `issue` and `verify` (the bytes signed are `-8!` of every field but `sig`), and the store of receipts and small results, fetched only by a receipt's user or gateway. |
+| `mcp/mcp.q` | An MCP server over stdio, a q script rather than part of the module: a client of a policed process over IPC, which loads `api` for its JSON encoding. |
+| `api/init.q` | What a gateway or a query generator asks a policed process: `limits`, `memstats`, `users`, `functions`, `rules` (for an LLM agent: each rule with its reason, examples either way, and the text of its refusal), `primer` (`api/primer.md`, read on each call: how to write q that qsp accepts, as markdown for an agent's context), `access`, `describe` (one user's view of the policy, with the rules). Each takes a format last, `` `q `` or `` `json ``, which changes the encoding and never the content. `init.q` adds `version`, `validate` and `explain`, exports the lot as `qsp.api`, and serves the same calls over IPC as `` (`.qsp.api;name;...) ``. |
+| `api/primer.md` | The primer `qsp.api.primer` serves: how to write q that qsp accepts, for an LLM agent's context. Its q examples are single-line ```` ```q ```` blocks over the equities example's tables, and `examples/equities/hdb.q` runs every one as `compliance1`, so a change to what qsp accepts that breaks one fails CI. |
 | `admin/init.q` | The admin UI (`qsp.adminui`): its JSON API over `.z.pp` and the page from `admin/ui/` over `.z.ph`, the state of the policy it is editing (none, does not load, loads), and opening, creating (scaffold), previewing and saving one. It runs queries only through the functions `init.q` lends it. |
 | `admin/ui/` | The admin UI's page: `index.html`, `style.css`, `app.js` (routing and state), `model.js` (the policy as the page reasons about it), `drawer.js`, `lib.js`, and a module per view in `views/`. Plain ES modules, no build. |
 | `VERSION` | The module version (semver), read into `qsp.version`. |
@@ -48,7 +53,7 @@ same behaviour from the user's side. This page names the functions behind it.
 | `examples/equities/policy/*.csv` | The example's policy, as files: `config`, `gateways`, `grants`, `members`, `schema`, `tables`, and its tests, `tests.csv`. |
 | `examples/equities/policy/defs.q` | The q the example policy names: the lookup functions its filters call, and its fixed clock. Kept with the CSVs so it is reviewed with them. `fromfiles` doesn't load it. |
 | `examples/equities/setup.q` | What `hdb.q` and `demo.q` share: builds the HDB if `-db` doesn't exist, loads it, `defs.q` and the policy (`-policy DIR`, or `policy/`). |
-| `examples/equities/hdb.q` | Loads the example (`setup.q`), then walks through `policy/tests.csv`, showing what each query returns and checking each test passes, and the agent rules' examples. Exits 1 if any doesn't. With `-p`, it then serves the policy. |
+| `examples/equities/hdb.q` | Loads the example (`setup.q`), then walks through `policy/tests.csv`, showing what each query returns and checking each test passes, the agent rules' examples, and every q example in the primer. Exits 1 if any doesn't. With `-p`, it then serves the policy. |
 | `examples/equities/demo.q` | Loads the example (`setup.q`) and opens `qsp.adminui` on it. With `-check`, calls each of the admin UI's endpoints and exits 1 if one answers wrongly. |
 
 ## How the source files fit together
@@ -73,8 +78,9 @@ same directory, and each further dot goes up one more. `core/walk.q` loads
 unit. Nothing loads a file by path.
 
 ```
-init.q ─────────► core.tree  policy  core.order  core.walk  policy.f  policy.files
-                  policy.review  api  policy.suite  admin
+init.q ─────────► core.tree  core.codes  receipt  policy  core.order  core.walk  policy.f
+                  policy.files  policy.review  api  policy.suite  admin
+receipt/init.q ─► core.tree
 admin/init.q ───► core.tree  core.fns  policy  policy.files  policy.review  api  policy.suite
 api/init.q ─────► core.tree  policy  policy.review
 policy/suite.q ─► core.tree  policy.files
@@ -86,6 +92,7 @@ core/walk.q ────► core.tree  core.fns  policy  core.order
 core/order.q ───► core.tree  core.fns
 core/fns.q ─────► core.tree
 core/tree.q       (nothing)
+core/codes.q      (nothing)
 ```
 
 There are no cycles. `core/tree.q` is the leaf, so anything about how q
@@ -117,6 +124,8 @@ A policy is a value, passed in. The only globals the module keeps are:
 | `logname`, and the table it names | `init.q` | the audit log. `auditto` moves it to a root name |
 | `served` | `init.q` | the policy the message handlers use |
 | `installed` | `init.q` | whether `serve` has installed the handlers yet |
+| `recent` | `init.q` | each user's query times in the last minute, for `maxqueries` |
+| `ring`, `kept` | `receipt/init.q` | the receipt keys, read at `serve` or `reloadkeys`, and the receipts kept |
 | `before` | `init.q` | each message handler as it was before the first `serve`. A query is evaluated through the `.z.pg` or `.z.ps` that was there, and `.z.pw` is called after the name check. `unserve` puts them all back |
 | `Q` | `admin/init.q` | the pipeline functions `adminui` lent it |
 | `dir`, `P`, `P0`, `PR`, `edited` | `admin/init.q` | the admin UI's policy: its directory, the policy (`(::)` while it does not load, with `PR` the problems), the policy as the files have it, and whether an edit has been applied to the session |

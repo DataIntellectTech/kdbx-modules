@@ -20,6 +20,7 @@ pol:use`..policy;
 files:use`..policy.files;
 rev:use`..policy.review;
 api:use`..api;
+qsql:use`..core.qsql;
 suite:use`..policy.suite;
 
 / ui/, beside this file. A module function knows the file it was defined in (value gives it, third
@@ -126,103 +127,15 @@ grid:{[v;n]
   };
 
 / ------------------------------------------------------------------ q text for a rewritten tree
-/ qsp.explain shows the parse tree that runs. This writes it back as q-SQL, with qsp's run-time
-/ checks shown as the expressions they check: the page marks what the policy added
-
-guards:(fns.nosym;fns.fnarg;fns.castarg;fns.fbyarg;fns.wjagg;fns.scalar;fns.pair;fns.pattern);
-composeop:first first parse"a<>b";
-negated:(=;>;<)!("<>";"<=";">=");
-infixw:`in`within`like`and`or`mod`div`xbar`except`inter`union`bin`binr`xexp`xlog`wavg`wsum,
-  `each`over`scan`prior`peach`xasc`xdesc`xcol`xcols`xkey`sv`vs`ss`cross`lj`ij`uj`pj`ej`fby`cor`cov`set;
-
-fnname:{[x]
-  if[x~fns.notsafe;:"not"];
-  if[ok[];
-    ks:key P`fns;
-    if[(count ks)>i:(value P`fns)?x;:string ks i]];
-  :$[null n:fns.name x;-3!x;string n];
-  };
-issym:{[n] :all n in "=<>~&|+-*%#_,!?$^@.";};
-isinfix:{[n] :((`$n) in infixw)or issym n;};
-
-/ data as q text, never k's one-item ,x
-qlit:{[x]
-  if[0h=type x;:$[1=count x;"enlist ",.z.s first x;"(",(";"sv .z.s each x),")"]];
-  if[(0<type x)and 1=count x;:"enlist ",-3!first x];
-  :-3!x;
-  };
-
-qt:{[x]
-  t:type x;
-  if[t=-11h;:string x];
-  if[t=11h;:$[1=count x;qlit first x;string[first x],"[",(";"sv qt each 1_x),"]"]];
-  if[tree.isfn x;:fnname x];
-  if[t<>0h;:qlit x];
-  if[0=count x;:"()"];
-  if[1=count x;:qlit first x];
-  if[tree.isquery x;:qquery x];
-  h:first x;
-  a:1_x;
-  if[(2=count x)and any h~/:guards;:qt a 0];
-  if[h~fns.findsafe;h:fns.findop];
-  if[h~enlist;:$[1=count a;"enlist ",argt a 0;"(",(";"sv qt each a),")"]];
-  / a<>b, a<=b and a>=b are a composition of not with =, > and <
-  if[(0h=type h)and 3=count h;
-    if[(composeop~h 0)and any (h 1)~/:(not;fns.notsafe);
-      if[(count key negated)>i:(key negated)?h 2;:argt[a 0],(value negated)[i],argt a 1]]];
-  if[0h=type h;:"(",qt[h],")[",(";"sv qt each a),"]"];
-  if[-11h=type h;:string[h],"[",(";"sv qt each a),"]"];
-  n:fnname h;
-  if[(2=count a)and isinfix n;:argt[a 0],$[issym n;n;" ",n," "],argt a 1];
-  if[1=count a;:n," ",argt a 0];
-  :n,"[",(";"sv qt each a),"]";
-  };
-/ is application x written with an operator, infix or prefix, rather than as f[args]? Its text
-/ then needs brackets to be an argument
-isop:{[x]
-  if[not (0h=type x)and 1<count x;:0b];
-  if[tree.isquery x;:1b];
-  h:first x;
-  if[(2=count x)and any h~/:guards;:.z.s x 1];
-  if[h~enlist;:2=count x];
-  if[0h=type h;:3=count h];
-  if[not tree.isfn h;:0b];
-  if[h~fns.findsafe;:1b];
-  :(2=count x)or(3=count x)and isinfix fnname h;
-  };
-argt:{[x] s:qt x; :$[isop x;"(",s,")";s];};
-
-/ a select or exec's columns: name:expression, or just the name where they are the same
-qcols:{[a]
-  if[a~();:""];
-  if[99h<>type a;:", "sv qt each a];
-  :", "sv {[k;v] $[v~k;string k;string[k],":",qt v]}'[key a;value a];
-  };
-
-qquery:{[x]
-  upd:x[0]~tree.updop;
-  t:x 1; w:tree.getc x 2; b:x 3; a:x 4;
-  src:$[-11h=type t;string t;"(",qt[t],")"];
-  wh:$[count w;" where ",", "sv qt each w;""];
-  bys:$[99h=type b;" by ",qcols b;(0h=type b)and 0<count b;" by ",", "sv qt each b;11h=type b;" by ",", "sv string b;""];
-  if[upd;
-    if[11h=type a;:"delete from ",src,wh];
-    if[(0h=type a)and 11h=type first a;:"delete ",(", "sv string first a)," from ",src,wh];
-    :"update ",qcols[a],bys," from ",src,wh];
-  ex:(b~())or(0h=type b)and 0<count b;
-  if[11h=type b;ex:1b];
-  ext:"";
-  if[5<count x;
-    ext:"[",qt[x 5],$[6<count x;";",$[(first first x 6)~fns.descsafe;">";"<"],qt last first x 6;""],"]"];
-  :$[ex;"exec";"select",$[b~1b;" distinct";""]],ext,$[count c:qcols a;" ",c;""],bys," from ",src,wh;
-  };
-qshow:{[x] :@[qt;x;{[x;e] -3!x}x];};
+/ qsp.explain shows what runs as q-SQL (core/qsql.q). The page writes the tree the same way, with
+/ qsp's run-time checks shown as the expressions they check, and marks what the policy added
+qshow:{[x] :@[qsql.qt[$[ok[];P`fns;()!()]];x;{[x;e] -3!x}x];};
 
 / ------------------------------------------------------------------ the policy files
 / each file, and for each row of each, the line it is on and its first cells - what the page
 / highlights when something is selected
 
-csvfiles:`tables`schema`grants`members`gateways`functions`config`tests;
+csvfiles:`tables`schema`grants`members`gateways`functions`config`terms`tests;
 fpath:{[f] :hsym`$dir,"/",f;};
 disklines:{[f] :$[hasdir[];@[read0;fpath f;{()}];()];};
 lines:{[f] :$[(`$f) in key ED;ED`$f;disklines f];};
@@ -246,9 +159,9 @@ defsrows:{[]
   };
 
 sources:{[]
-  :`tables`schema`grants`members`gateways`config`defs`tests!(csvrows["tables.csv";1];csvrows["schema.csv";2];
-    csvrows["grants.csv";2];csvrows["members.csv";2];csvrows["gateways.csv";1];csvrows["config.csv";1];defsrows[];
-    csvrows["tests.csv";1]);
+  :`tables`schema`grants`members`gateways`config`terms`defs`tests!(csvrows["tables.csv";1];csvrows["schema.csv";2];
+    csvrows["grants.csv";2];csvrows["members.csv";2];csvrows["gateways.csv";1];csvrows["config.csv";1];
+    csvrows["terms.csv";1];defsrows[];csvrows["tests.csv";1]);
   };
 
 filelist:{[]
@@ -314,8 +227,11 @@ overview:{[]
     line:tl);
   cl:{[s;n] first exec line from s[`config] where k~\:enlist n}[s] each key P`config;
   cfg:flip `setting`value`line!(key P`config;{$[100h=type x;fnof x;-3!x]} each value P`config;cl);
-  :b,`users`gateways`members`grants`tables`access`config`functions`calls`rules`clock`limits!(
-    rev.users P;P`gateways;([]user:m`user;entity:m`entity;line:ml);gr;tabs;rev.access[P;`];cfg;
+  tm:$[`terms in key P;P`terms;pol.emptyterms];
+  tml:{[s;n] first exec line from s[`terms] where k~\:enlist n}[s] each tm`term;
+  tms:$[count tm;flip `term`meaning`formula`q`tables`caveat`line!(tm`term;tm`meaning;tm`formula;tm`q;tm`tbls;tm`caveat;tml);()];
+  :b,`users`gateways`members`grants`tables`access`config`terms`functions`calls`rules`clock`limits!(
+    rev.users P;P`gateways;([]user:m`user;entity:m`entity;line:ml);gr;tabs;rev.access[P;`];cfg;tms;
     asc key P`fns;asc P`calls;api.rules[P;`q];string P[`config;`clock][];api.limits[P;`q]);
   };
 
@@ -327,7 +243,7 @@ asym:{[x] :$[-11h=type x;x;`$x];};
 / the row filters the policy put into a rewritten tree, as text, for the page to mark
 injected:{[u;rw]
   ts:tree.basetables rw;
-  :distinct raze {[u;t] qt each @[pol.filterfor[P;u];t;{()}]}[u] each ts;
+  :distinct raze {[u;t] qsql.qt[P`fns] each @[pol.filterfor[P;u];t;{()}]}[u] each ts;
   };
 
 / a result short enough to write as an equals test's value: an atom, or a short simple list, as q
@@ -409,6 +325,7 @@ audit:{[a]
 
 describe:{[a] chkok[]; :api.describe[P;asym a`user;`q];};
 validate:{[a] chkok[]; :Q[`apis][`validate][P;asym a`user;a`query;`q];};
+checkterms:{[a] chkok[]; :Q[`checkterms][P];};
 
 / ------------------------------------------------------------------ setting up and editing
 
@@ -479,7 +396,13 @@ syncschema:{[a]
   ts:distinct $[ok[];key P`tabs;raze (csvrows["tables.csv";1])`k];
   loaded:ts where {1b~@[{.Q.qt get x};x;0b]} each ts;
   m:{0!meta x} each loaded;
-  new:raze {[t;m] ([]tbl:(count m)#t;col:m`c;typ:enlist each m`t;att:m`a)}'[loaded;m];
+  / types and attributes from the loaded tables, bytes measured from them, and each description
+  / already written kept - a description is a person's, and a resync must not lose it
+  new:raze files.schemarows'[loaded;m];
+  old:@[{first files.readfile[x;`schema]};dir;{()}];
+  if[count old;
+    i:((`$old`tbl),'`$old`col)?(new`tbl),'new`col;
+    new:update description:(old[`description],enlist"")i from new];
   ls:csv 0: new;
   if[a[`save]~1b;(fpath "schema.csv") 0: ls;open dir];
   :`ok`lines`drift!(1b;ls;$[hasdir[];@[files.schemadrift;dir;{()}];()]);
@@ -504,8 +427,8 @@ savetests:{[a]
 / back to the policy as the files have it
 reset:{[a] open dir; :1b;};
 
-calls:`overview`run`compare`lens`preview`whatif`reset`audit`describe`validate`test`savetests`open`create`save`syncschema!(
-  {[a] overview[]};run;compare;lens;preview;preview;reset;audit;describe;validate;test;savetests;openpolicy;create;savefiles;syncschema);
+calls:`overview`run`compare`lens`preview`whatif`reset`audit`describe`validate`checkterms`test`savetests`open`create`save`syncschema!(
+  {[a] overview[]};run;compare;lens;preview;preview;reset;audit;describe;validate;checkterms;test;savetests;openpolicy;create;savefiles;syncschema);
 
 / ------------------------------------------------------------------ HTTP
 

@@ -3,8 +3,146 @@
 `VERSION` follows semver. While it is 0.x, a minor version may change what a
 policy permits; each such change is marked **behaviour**.
 
-## Unreleased
+## 0.4.0 - unreleased
 
+The contract agenticq builds on: everything an agent's tooling needs from the process that
+enforces the policy. Each is general, and an existing client sees no difference.
+
+- **Refusals as data.** `classify[m]` gives a refusal message's `code`
+  (`family.reason`, the family the rule that explains it), its `kind`
+  (`permission`, `shape`, `limit` or `runtime`) and its `subject`. `validate`
+  and `estimate` return them, the audit log records the code, and `codes[]`
+  lists them all (`core/codes.q`).
+- **Context.** A gateway may send a dictionary as a fourth item of an execas
+  form: `session`, `turn`, `question`, `model`, `client`, and for a query an
+  agent's tooling corrected, `original` and `fixes`. It is checked, recorded in
+  new audit columns, and never interpreted. A user's own login may not send it.
+- **Receipts.** `(`.qsp.execasr;q;u)` returns a dictionary - `status`,
+  `result`, `rewritten` and a signed `receipt`, or the refusal as data - and
+  `runr` does the same in process. HMAC-SHA1 in q, tested against RFC 2202, with
+  a key ring (`receiptkeys`, `newreceiptkey`, `reloadkeys`): the newest key
+  signs, every key verifies. Receipts are kept (`receiptcells`, `receiptmax`)
+  and returned only to their user and gateway; api calls `verify`, `receipt`,
+  `reloadkeys` (`receipt/`).
+- **Gateway scope.** `gateways.csv` gains `users`, a group: the gateway may name
+  only its members (`scopegateway`). Naming anyone else is `users.outofscope`.
+- **Asynchronous requests.** `neg[h] (`.qsp.async;id;msg)` is handled as if
+  synchronous and answered with `(`.qsp.reply;id;(ok;value or refusal))`.
+- **Parameterised terms.** `terms.csv` gains `params` and `example`;
+  `termquery`/`runterm`, and the api call `term`, fill a term's `{name}`
+  placeholders with typed arguments, never text. `checkterms` runs each with
+  its example.
+- **`mingroup`** (`tables.csv`, `mingroup`): with `strictcolumns` off, an
+  aggregate that tests a hidden column must summarise at least this many rows
+  per output row, or the group is suppressed. Other queries that test a hidden
+  column of such a table are refused (`rows.mingroup`).
+- **`agentgroup`** and `agentlint`: `bin/policy.q` warns when agent users can
+  test hidden columns. **`exportgroup`**: `describe` reports `export`.
+- `totext`, the q-SQL renderer, exported for clients that build parse trees.
+- **An MCP server in q** (`mcp/mcp.q`, run by `mcp/qsp-mcp`): qsp's calls as an
+  agent's tools over stdio, bound to one user or in demo mode, and a Claude Code
+  skill (`skill/qsp/SKILL.md`). No Python.
+- **behaviour**: `validate`'s dictionary has three more keys, and the audit log
+  eleven more columns. A policy that registers the audit log as a table needs
+  them in its `schema.csv`, as the example's has.
+
+- Clearer refusals for two mistakes agents make. A column a nested select
+  names, read in the outer query, whose name is also a global on the server
+  was refused as `unknown or not-permitted column`; it now says the name is
+  taken and to rename it (still a denial; an alias that shadows nothing runs,
+  so this tells the caller nothing new). An outer `where` written after an
+  unparenthesised nested select, which q reads as part of its last
+  constraint, is now `a where after a value: ...` rather than `expression head
+  is not a function`. A new `nesting` rule and primer entries cover both.
+- `examples/equities/mkhdb.q` keeps its helpers in `.mk`: the example servers
+  carried root globals named `px`, `fill`, `base` and `tick`, and an agent
+  aliasing a column `px` was refused.
+- `precheck` (config, `0b` by default): `run` estimates a query first and
+  refuses one whose result cannot fit `maxrows` or `maxsize` before doing the
+  work - `qsp: too big to run: ...` with what to change - rather than after.
+- `terms.csv` in a policy directory: the business's own terms - `term`,
+  `meaning`, and optionally `formula`, an example query `q`, the `tables` it
+  needs and a `caveat`. `describe` returns the terms whose tables a user can
+  read, so a definition never shows a hidden table, and `qsp.checkterms` (run
+  by `bin/policy.q`) refuses a term whose example the policy would not run as
+  any user who can read its tables. `qsp.term` builds one in q, and `scaffold`
+  writes an empty `terms.csv`. The equities example defines six; the
+  surveillance database's policy carries the surveillance agent's 38.
+- `(`.qsp.api;`brief)`: `describe` without the rules and the function
+  whitelist, which an agent holding the primer has, with their versions.
+- `(`.qsp.api;`history;n)`: a user's own last `n` decisions, from the audit
+  log.
+- `maxqueries` (config): most queries one user may run in a minute; `0W`, the
+  default, is no limit.
+- `estimate` also advises when one side of a join reads more than a hundred
+  times the other: usually that side unfiltered.
+- `describe` gains `shape`: for each table a user may read, the partitions
+  they can see, the first and last of each time column, and the values of
+  each symbol column with 20 or fewer - computed as the user, so a filter or
+  an embargo shows, with no audit record, cached for a minute. An agent no
+  longer spends queries finding which dates exist or what `side` holds.
+- The agent example's `query` returns JSON (`client.q -json`): what ran, the
+  full row count, the columns and types, the first 100 rows, and whether
+  those are all of them, rather than a printout cut to the console.
+- **behaviour** `explain`, `runx` and a gateway's (or a user's own)
+  `.qsp.execasx` show what ran as q-SQL - `select date, sym, size from trade
+  where sym in allowedsyms[`carol]` - not the parse tree. The text is used
+  only when parsing it gives back the tree that ran, checks aside; otherwise
+  the parse tree, as before. The admin UI's renderer moved to `core/qsql.q`,
+  shared, and no longer cuts long literals short, prints `!` as `lsq`, or
+  reads a pivoting `exec ... by` as a select. The audit log keeps the parse
+  tree.
+- `qsp.estimate` (and `` (`.qsp.api;`estimate;...) ``): how big a query is
+  before it runs. For each table it reads, the rows its rewritten where
+  clause selects - counted as the user, so a count never includes rows the
+  row filter hides - and their bytes, from `schema.csv`'s measured sizes; the
+  result's rows and bytes; the limits; a verdict (`fits`, `large`, `toobig`,
+  `refused`) and what to change. `describe`'s `limits` gain the timeout and
+  memory cap, which every user may now know. The primer has a sizing
+  section, and the rules point to `estimate`.
+- `schema.csv` takes two optional fields, `bytes` and `description`: a
+  column's size per row as `-22!` counts a result, and what it means. A
+  four-field `schema.csv` still loads. `scaffold`, the admin UI's schema sync
+  and `bin/policy.q -measure` (`qsp.remeasure`) measure `bytes` from a sample
+  of the latest partition, read by row index; a resync keeps descriptions.
+  `describe` returns both for each granted column, so an agent can size a
+  query - rows times bytes - before it runs it. `qsp.measure` and
+  `qsp.colinfo` do the same in q. The equities example's policy is measured
+  and describes its less obvious columns.
+- **behaviour** Refusals say what to change, for the mistakes LLM agents make
+  most (measured on the surveillance question set):
+  - a column named after a q function: q's parser says only `'assign`;
+    qsp now names it - `not valid q (assign): fills is a q function, so it
+    cannot name a column - rename it`;
+  - a dotted temporal part - `time.minute`, `time.hh`, `date.year` - is now
+    accepted, rewritten to q's cast of that name; a part q does not have is
+    named, with the ones it does;
+  - q's extractions `` `hh$ ``, `` `uu$ ``, `` `ss$ ``, `` `mm$ ``, `` `dd$ ``,
+    `` `year$ `` and `` `week$ `` are accepted as casts, like a type name:
+    a global of the same name does not change them;
+  - an iterator applied by its glyph (`+\:`) and a list applied as an index
+    are named instead of `<unnamed>` and `<not a function>`;
+  - a keyed join (`aj`, `aj0`, `ej`, `wj`, `wj1`) on a key one side lacks is
+    refused before it runs - q does not fail fast, and one ran until the
+    timeout;
+  - q's `stop` (the `-T` timeout) and `wsfull` (`-w`) say what they mean and
+    what to narrow.
+  `validate` (and `` (`.qsp.api;`validate;...) ``) returns the `rule` whose
+  refusal text the reason contains, the most specific one, so a caller goes
+  from a refusal to its rule's examples. The rules gain a `size` rule (the
+  timeout and memory cap) and say how to name and join columns.
+- A user's own login may send `` (`.qsp.execasx;q;self) `` (or `.qsp.execas`)
+  naming itself, and gets what ran with the result, as a gateway does. An agent
+  bound to one user - the agent example's default, `agent.sh -u USER` - logs in
+  as that user and still sees the rewrite. Naming anyone else from a login that
+  is not a gateway is refused, as before.
+- `qsp.api.primer` (and `` (`.qsp.api;`primer) ``): how to write q that qsp
+  accepts, as one markdown text for an LLM agent to hold in context before
+  its first query - a method, the q that matters, the shapes qsp takes, the
+  names a column cannot have, time-series techniques, and a table of what
+  each refusal means. It is `api/primer.md`; the equities walkthrough runs
+  every q example in it. The agent example's `agent.sh` puts it in the
+  system prompt.
 - **behaviour** `validate` (and `` (`.qsp.api;`validate;...) ``) now makes
   every check `run` makes before it evaluates a query: `requirepartition` and
   `maxpartitions` as well as the rewrite, refusing with `run`'s message. It

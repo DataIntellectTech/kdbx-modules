@@ -1,0 +1,6 @@
+tbl,partition
+sites,
+turbines,
+telemetry,date
+faults,date
+maintenance,date

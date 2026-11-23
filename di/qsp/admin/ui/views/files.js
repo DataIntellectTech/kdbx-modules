@@ -11,6 +11,7 @@ const ABOUT = {
   'members.csv': 'users in groups, and groups in groups',
   'gateways.csv': 'logins allowed to run a query as a named user',
   'config.csv': 'settings, where they differ from the defaults',
+  'terms.csv': 'business terms - meaning, formula, example query and caveat, returned in describe to users who can read their tables',
   'defs.q': 'the q the filters call - loaded by the process, reviewed with the grants',
   'tests.csv': 'what the policy must mean, a query at a time - run by bin/policy.q -test and the Tests view',
 };

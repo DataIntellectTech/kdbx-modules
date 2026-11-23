@@ -1,0 +1,6 @@
+setting,value
+requirepartition,1b
+maxpartitions,31
+maxrows,100000
+maxsize,50000000
+precheck,1b

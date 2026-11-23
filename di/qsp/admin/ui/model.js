@@ -6,7 +6,7 @@ const SHARED = '#8b98b0';
 // with no policy, or one that does not load, only what the files and the database say
 function partial(ov) {
   return {
-    ov, state: ov.state, users: [], usersSorted: [], groups: [], tables: [], grants: [], tableBy: {}, roles: [],
+    ov, state: ov.state, users: [], usersSorted: [], groups: [], tables: [], grants: [], terms: [], tableBy: {}, roles: [],
     dates: ov.dates || [], config: {}, rules: [], access: {}, colorOf: {}, color: () => SHARED, isUser: () => false,
     accessOf: () => [], can: () => false, files: Object.fromEntries((ov.files || []).map(f => [f.name, f.lines])),
     diskFiles: Object.fromEntries((ov.diskfiles || ov.files || []).map(f => [f.name, f.lines])) };
@@ -20,6 +20,7 @@ export function build(ov) {
   M.members = ov.members;
   M.grants = ov.grants;
   M.tables = ov.tables;
+  M.terms = ov.terms || [];
   M.tableBy = Object.fromEntries(ov.tables.map(t => [t.tbl, t]));
   M.dates = ov.dates;
   M.config = Object.fromEntries(ov.config.map(c => [c.setting, c.value]));
@@ -144,6 +145,10 @@ export function sourcesFor(M, sel) {
   } else if (sel.kind === 'def') {
     add('defs.q', M.defLine(sel.id));
     grantLines(M.grants.filter(g => M.defsIn(g.rows).includes(sel.id)));
+  } else if (sel.kind === 'term') {
+    (S.terms || []).filter(r => r.k[0] === sel.id).forEach(r => add('terms.csv', r.line));
+    const tm = M.terms.find(x => x.term === sel.id);
+    if (tm) (tm.tables || []).forEach(tableLines);
   }
   return Object.fromEntries(Object.entries(out).map(([f, s]) => [f, [...s].sort((a, b) => a - b)]));
 }
@@ -159,6 +164,7 @@ export function selectionAt(M, file, line) {
   if (file === 'schema.csv') { const r = hit(S.schema); if (r) return { kind: 'column', id: `${r.k[0]}.${r.k[1]}` }; }
   if (file === 'config.csv') { const r = hit(S.config); if (r) return { kind: 'config', id: r.k[0] }; }
   if (file === 'gateways.csv') { const r = hit(S.gateways || []); if (r) return { kind: 'gateway', id: r.k[0] }; }
+  if (file === 'terms.csv') { const r = hit(S.terms || []); if (r) return { kind: 'term', id: r.k[0] }; }
   if (file === 'tests.csv') { const r = hit(S.tests || []); if (r && M.isUser(r.k[0])) return { kind: 'user', id: r.k[0] }; }
   if (file === 'defs.q') {
     const d = [...(S.defs || [])].reverse().find(d => d.line <= line);

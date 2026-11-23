@@ -354,6 +354,30 @@ what ran, and why anything was refused. To let an auditor
 query it like any table, call `qsp.auditto`auditlog` before loading the policy
 and grant `auditlog` to them, as the example does for `compliance`.
 
+## 11. If agents will query it
+
+An LLM agent writes q from what qsp tells it, so give it more to go on:
+
+- **Measure the columns.** `q di/qsp/bin/policy.q -dir policy -init /path/to/hdb -measure`
+  writes each column's bytes per row into `schema.csv`. `describe` returns them, and
+  `estimate` uses them to size a query before it runs. Run it again when the data
+  changes shape, from a nightly job for example. It keeps everything else in the file.
+- **Describe the columns that need it.** `schema.csv`'s `description` field, one
+  sentence each: "the venue it traded on: venues.src (N, O, L)". Measuring again keeps
+  them.
+- **Write down your terms.** In `terms.csv`, give each term the business uses (markout,
+  fill rate, slippage) its meaning, its formula and an example query. An agent can't
+  guess these, and a wrong guess gives a confident wrong answer. `bin/policy.q` checks
+  each example runs.
+- **Bind each agent to one user.** An agent acts for one person. Connect it as that
+  user (the agent example's `agent.sh -u`), not through a gateway login, so that
+  nothing it reads can make it act as anyone else.
+- **Protect the process.** q runs one query at a time per thread, and an agent retries,
+  loops and follows up. Set `-T` (a timeout) and `-w` (a memory cap) where agents
+  connect. Set `maxqueries` in `config.csv` to cap each user's queries per minute. Where
+  agents share a process with people, serve them from their own replica, or give it
+  secondary threads (`-s`).
+
 ## When it doesn't load
 
 | message | means |

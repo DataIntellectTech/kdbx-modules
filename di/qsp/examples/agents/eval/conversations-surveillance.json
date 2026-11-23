@@ -1,0 +1,354 @@
+[
+ {
+  "id": "correlation",
+  "source": "2026-10-21-1712-correlation",
+  "persona": "llmu2",
+  "turns": [
+   {
+    "turn": 1,
+    "question": "Calculate the correlation matrix of AAPL and MSFT using minutely prices on 2026.10.07.",
+    "truth": "On 2026.10.07, AAPL and MSFT on one-minute bars. The answer is the correlation of RETURNS: 0.226 on last-trade bars, 0.288 on VWAP bars \u2014 either convention is right, the question does not say which. The correlation of price LEVELS is 0.602. AAPL has 389 bars, MSFT has 384, and 383 line up. Either figure counts ONLY if the reply says which series it measured, because the two differ by nearly three times and a bare number is unreadable. RETURNS is the answer. Levels is largely shared trend, so a reply whose headline figure is 0.602 is wrong even when it says the word \"levels\" \u2014 saying which wrong series you measured is honest, not correct.",
+    "checks": [
+     "states a returns correlation, on either bar convention",
+     "says which series it correlated"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "states a returns correlation, on either bar convention": true,
+      "says which series it correlated": true
+     },
+     "judge": true
+    }
+   }
+  ]
+ },
+ {
+  "id": "investigation",
+  "source": "2026-10-21-1713-investigation",
+  "persona": "llmu2",
+  "turns": [
+   {
+    "turn": 1,
+    "question": "Which stock had the biggest one-day move between 2026.10.05 and 2026.10.08?",
+    "truth": "INTC, -12.1% on 2026-10-06 (30.65 to 26.935).",
+    "checks": [
+     "names INTC",
+     "states 12.12% (\u00b10.3)"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names INTC": true,
+      "states 12.12% (\u00b10.3)": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 2,
+    "question": "Was that the whole tech sector, or just that name?",
+    "truth": "Just INTC, not the sector. Other technology names that day: ORCL +4.3%, VRSN -1.8%, NVDA +1.4%, AAPL -1.2%, CSCO +0.8%, MSFT -0.5%, DI +0.3%.",
+    "checks": [
+     "names INTC",
+     "states ORCL 4.27% (\u00b10.3)"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names INTC": true,
+      "states ORCL 4.27% (\u00b10.3)": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 3,
+    "question": "Different topic. On 2026.10.07, which algo had the worst slippage against the order's arrival price, in basis points?",
+    "truth": "IS is worst at 2.91 bps per order; then DMA 2.62, POV 2.5, VWAP 2.48, TWAP 2.44. The answer is the algo: weighting per fill or by quantity instead of per order gives about 3 bps and the same ranking at the top, and is also correct.",
+    "checks": [
+     "names IS",
+     "states 2.91 bps (\u00b10.3)"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names IS": true,
+      "states 2.91 bps (\u00b10.3)": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 4,
+    "question": "Is that a fair comparison? Were the algos given equally difficult orders?",
+    "truth": "No. IS was given far more hard orders (spread at arrival over 6 bps): 70.8% of its orders on 2026.10.07 against 25.8\u201328.3% for the others. Any reply making the same point with another reasonable difficulty measure or date range is correct.",
+    "checks": [
+     "names IS"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names IS": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 5,
+    "question": "So like for like, which algo actually executes best?",
+    "truth": "IS executes best like for like: best on easy orders (IS) and hard orders (IS), and best after reweighting to the same mix. Per algo (easy / hard / reweighted bps): DMA 2.21 / 3.65 / 2.76; IS 1.78 / 3.39 / 2.39; POV 2.15 / 3.52 / 2.67; TWAP 2.12 / 3.4 / 2.61; VWAP 2.08 / 3.64 / 2.68. The hard-order gap to the next algo may be small, so calling those level is acceptable.",
+    "checks": [
+     "names IS"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names IS": true
+     },
+     "judge": true
+    }
+   }
+  ]
+ },
+ {
+  "id": "markout",
+  "source": "2026-10-21-1812-markout",
+  "persona": "llmu2",
+  "turns": [
+   {
+    "turn": 1,
+    "question": "On 2026.10.07, which client account's fills were followed by the price moving in its favour over the next minute?",
+    "truth": "A7: the only account whose fills were followed by a favourable move. The figure depends on the method, and the reply must state the true one for the method it used: against the fill price, +0.67 bps a minute later (every other account -1.74 to -1.13); from the mid at the fill, +3.11 bps; as a share of fills followed by a favourable move, 48.9% (others 39.3-42.1%). Naming the right account with a figure that matches none of these is wrong.",
+    "checks": [
+     "names A7",
+     "states a true figure for its method"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names A7": true,
+      "states a true figure for its method": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 2,
+    "question": "Did that account do that on every day from 2026.10.02 to 2026.10.08, or was 2026.10.07 a one-off?",
+    "truth": "Yes, every day: A7 was the top account on all 5 days. Top account per day: 2026.10.02 A7 +0.83 bps; 2026.10.05 A7 +0.80 bps; 2026.10.06 A7 +0.79 bps; 2026.10.07 A7 +0.67 bps; 2026.10.08 A7 +0.52 bps. Every other account was negative on every day.",
+    "checks": [
+     "names A7"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names A7": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 3,
+    "question": "Is that driven by a handful of stocks, or is it across the board?",
+    "truth": "Across the board, not a handful: A7's one-minute markout was positive on 28 of the 39 names it traded on 2026.10.07. The largest were GS +2.64 bps (331 fills), BAC +2.28 bps (1023 fills), KHC +1.85 bps (237 fills).",
+    "checks": [],
+    "surveillance": {
+     "correct": true,
+     "checks": {},
+     "judge": true
+    }
+   },
+   {
+    "turn": 4,
+    "question": "Take the spread out: measured from the mid at the time of each fill rather than the fill price, how big is that account's one-minute edge, and how does it compare with the other accounts?",
+    "truth": "Measured from the mid at each fill to the mid a minute later (the spread taken out), A7 is +3.11 bps, against +0.71 to +1.38 for the other accounts: every account is positive measured this way, and A7's edge is 2.3 times the next. Against the fill price (turn 1) the others looked negative because that includes the half-spread each fill paid.",
+    "checks": [
+     "names A7",
+     "states 3.11 bps (\u00b10.3)"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names A7": true,
+      "states 3.11 bps (\u00b10.3)": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 5,
+    "question": "Is that one of our traders working the account, or the client's own flow?",
+    "truth": "The client's own flow, not one trader: 12 of the 12 traders who worked A7's orders on 2026.10.07 show a positive one-minute markout (+0.31 to +1.36 bps; the highest is T09, 1591 fills). Naming one trader as the source is wrong. The conclusion counts only when the reply backs it with a markout or edge measured per trader: counting fills or notional per trader shows who worked the account, not where the edge came from, and a reply that rests on that alone is wrong even if its conclusion matches.",
+    "checks": [],
+    "surveillance": {
+     "correct": true,
+     "checks": {},
+     "judge": true
+    }
+   }
+  ]
+ },
+ {
+  "id": "book",
+  "source": "2026-10-21-1928-book",
+  "persona": "llmu2",
+  "turns": [
+   {
+    "turn": 1,
+    "question": "What did the AAPL order book look like just before 4pm on 2026.10.02?",
+    "truth": "Last snapshot before 16:00 (15:59:59.996): best bid 66.36 for 9656, best ask 66.39 for 2041. Deeper levels may be given too.",
+    "checks": [
+     "states bid 66.36",
+     "states ask 66.39"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "states bid 66.36": true,
+      "states ask 66.39": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 2,
+    "question": "Was there buying or selling pressure in AAPL through 2026.10.05?",
+    "truth": "Neither: the book was balanced. The average top-of-book imbalance (bsize1-asize1)/(bsize1+asize1) over 2026.10.05 was -0.0002, and 14 of 26 fifteen-minute bars leaned to the bid. A reply that reports clear buying or selling pressure for the day is wrong; noting brief intraday swings is fine.",
+    "checks": [],
+    "surveillance": {
+     "correct": true,
+     "checks": {},
+     "judge": true
+    }
+   },
+   {
+    "turn": 3,
+    "question": "Which sector had the widest average quoted spread, in basis points, from 2026.10.02 to 2026.10.08?",
+    "truth": "HealthCare at 6.76 bps averaged over every quote, then Communication 6.55, Staples 6.52. Averaging each instrument equally instead puts HealthCare first at 6.38. Either method is correct if it is stated.",
+    "checks": [
+     "names HealthCare"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names HealthCare": true
+     },
+     "judge": true
+    }
+   }
+  ]
+ },
+ {
+  "id": "boundary",
+  "source": "2026-10-21-1931-boundary",
+  "persona": "llmu3",
+  "turns": [
+   {
+    "turn": 1,
+    "question": "On 2026.10.07, which algo had the worst slippage against the order's arrival price, in basis points?",
+    "truth": "Declined: algo and arrival price are not visible to this user (qsp: unknown or not-permitted column: algo). Offering slippage against the mid by symbol instead is a good answer; naming any algo's slippage is wrong.",
+    "checks": [
+     "names no algo as an answer"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names no algo as an answer": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 2,
+    "question": "Which traders were behind INTC's drop on 2026.10.06?",
+    "truth": "Declined: trader is not granted to this user (qsp: unknown or not-permitted column: trader). Describing the move from what it can see (prices, fills) is a good answer; naming a trader is wrong.",
+    "checks": [
+     "names no trader"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "names no trader": true
+     },
+     "judge": true
+    }
+   }
+  ]
+ },
+ {
+  "id": "complex",
+  "source": "2026-10-21-1933-complex",
+  "persona": "llmu2",
+  "turns": [
+   {
+    "turn": 1,
+    "question": "On 2026.10.07, split each algo's cost against arrival into the spread paid and the market drift, separately for easy and hard orders (arrival spread over 6 bps).",
+    "truth": "A grid of algo x difficulty. Cheapest is IS/easy at 1.7770 bps total; dearest is DMA/hard at 3.6495. The split is spread paid plus market drift, size-weighted per order then averaged. Naming the right cell with a figure that matches neither is wrong. The grid itself is rendered as an attached table that the reply is told NOT to retype, so grade the conclusions and figures the reply states, not whether a grid appears in its text. ",
+    "checks": [
+     "states the cheapest cell's total cost",
+     "names the cheapest algo/difficulty"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "states the cheapest cell's total cost": true,
+      "names the cheapest algo/difficulty": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 2,
+    "question": "On 2026.10.07, show me the size-weighted one-minute markout in bps for every client type against every algo, as a grid.",
+    "truth": "A client type x algo grid of size-weighted one-minute markout in bps, measured against the FILL price so most cells are negative. Strongest is quant/POV at +1.0807; weakest is insurer/IS at -2.4440. The grid itself is rendered as an attached table that the reply is told NOT to retype, so grade the conclusions and figures the reply states, not whether a grid appears in its text. ",
+    "checks": [
+     "states a true markout cell",
+     "names the client type that stands out"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "states a true markout cell": true,
+      "names the client type that stands out": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 3,
+    "question": "Bucket 2026.10.07's orders by spread at arrival (under 5, 5-10, 10-20, over 20 bps) and show each algo's fill rate as a grid.",
+    "truth": "Fill rate by spread-at-arrival bucket x algo. On the widest bucket (over 20 bps) DMA collapses to 0.1805 while VWAP holds 0.6109. Buckets come back alphabetically, not in spread order. The grid itself is rendered as an attached table that the reply is told NOT to retype, so grade the conclusions and figures the reply states, not whether a grid appears in its text. ",
+    "checks": [
+     "states a true fill rate on the widest bucket",
+     "names the algo that collapses on wide spreads"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "states a true fill rate on the widest bucket": true,
+      "names the algo that collapses on wide spreads": true
+     },
+     "judge": true
+    }
+   },
+   {
+    "turn": 4,
+    "question": "Rebuild A4's AAPL position for 2026.10.07, mark it to market against the mid, and tell me the peak position and the worst drawdown.",
+    "truth": "There is no positions table, so the position is rebuilt from fills with running sums and marked to the as-of mid. Peak position 222120 shares; worst drawdown -245496.3; peak mark-to-market 54502; end position 173926; end mark-to-market -190994.6. It assumes A4 starts flat, so this is intraday only.",
+    "checks": [
+     "states the peak position",
+     "states the worst drawdown"
+    ],
+    "surveillance": {
+     "correct": true,
+     "checks": {
+      "states the peak position": true,
+      "states the worst drawdown": true
+     },
+     "judge": true
+    }
+   }
+  ]
+ }
+]

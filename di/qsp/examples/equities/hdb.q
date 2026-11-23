@@ -63,6 +63,16 @@ rulecheck each qsp.api.rules[p;`q];
 -1"  ",string[count qsp.api.rules[p;`q]]," rules, every example as it says";
 -1"  for llm1, describe as JSON starts: ",80#qsp.api.describe[p;`llm1;`json];
 
+-1"\n== the primer an LLM agent is given (qsp.api.primer`q), checked: every q example in it runs";
+/ each example is one line between ```q and ``` (indented in a list or not), over trades, quotes
+/ and orders, which compliance1 reads in full
+pl:trim "\n" vs qsp.api.primer`q;
+pi:where pl like "```q";
+if[not all pl[pi+2] like "```";-1"  ** a primer example spans more than one line";failed,:enlist"primer layout"];
+{[q] e:@[{qsp.run[p;`compliance1;x];""};q;{x}];
+  if[count e;-1"  ** primer: ",q," was refused: ",e;failed,:enlist q]} each pl pi+1;
+-1"  ",string[count pi]," examples, each run as compliance1";
+
 -1"\n== what actually runs (qsp.explain): sales_na's query, with the row filter and the columns pinned\n";
 -1 qsp.explain[p;`sales_na;"select notional:sum notional by account from trades where date=",D];
 

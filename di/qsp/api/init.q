@@ -87,6 +87,12 @@ ruletable:{[p]
     ("select from trades where date=",D,", size>100, price<5";"select x:(2*price)+1 from trades where date=",D);
     ("select from trades where date=",D,", size>100 and price<5");
     ()];
+  r,:enlist mkrule[`nesting;
+    "Put a nested select in parentheses when the outer select has a where of its own: select ... from (select ... where ...) where ....";
+    "Without them, the outer where joins the nested select's last constraint: sym=`AAPL where price>100 reads as sym=(`AAPL where price>100), which q cannot run. The same holds for an update over a select.";
+    ("select n:count sym from (select sym,price from trades where date=",D,", sym=`AAPL) where price>100");
+    ("select n:count sym from select sym,price from trades where date=",D,", sym=`AAPL where price>100");
+    "a where after a value"];
   r,:enlist mkrule[`tables;
     "Read only the tables describe lists, and name a table only after from - including a nested select's from.";
     "A table named anywhere else - as a value, as a function's argument, or computed from a string - is refused, as is a table describe does not list.";
@@ -97,10 +103,12 @@ ruletable:{[p]
     "Name only the columns describe lists for each table; select with no columns returns exactly those.";
     $[c`strictcolumns;"This holds in the where clause as much as the select and by.";
       "A where clause may also test the table's other columns; the select and by may name only the listed ones."],
-      " A select over a nested select can name only the columns the nested one returns: name them in the nested select.";
-    ("select date,sym,price from trades where date=",D;"select from trades where date=",D);
-    ("select account from trades where date=",D);
-    ("unknown or not-permitted column";"is not in scope here")];
+      " A select over a nested select can name only the columns the nested one returns: name them in the nested select.",
+      " A column you name in a nested select and read in the outer one needs a distinctive name: one that is also a name on the server cannot be read back out, and the refusal says so - rename it.",
+      " A column you name cannot take the name of a q function - fills, prev, next, rank, xbar and the rest: q will not parse it. A temporal column's parts are read after a dot, as in q: time.minute, time.hh, date.year.";
+    ("select date,sym,price from trades where date=",D;"select from trades where date=",D;"select n:count sym by time.minute from trades where date=",D);
+    ("select account from trades where date=",D;"select fills:count sym by sym from trades where date=",D);
+    ("unknown or not-permitted column";"is not in scope here";"that name is taken on this server";"cannot name a column";"is not a part q takes after a dot")];
   r,:enlist mkrule[`rows;
     "Your row filter is applied for you: you cannot see past it or remove it, and need not repeat it.";
     "describe shows it as a where clause, under rows (\"all rows\" when there is none). The rows it hides do not exist for you: an empty result means no row you may see matches - it is not an error, and retrying will not change it. Your where-constraints run after the filter, so an aggregate such as size=max size is over your rows only. explain shows your query as it would run, with the filter in place.";
@@ -169,10 +177,10 @@ ruletable:{[p]
     $[c`selectonly;enlist "must wrap a select";()]];
   r,:enlist mkrule[`joins;
     "Join nested selects, each constrained as if it stood alone: aj[`sym`time; select ... from trades where ...; select ... from quotes where ...].";
-    "The joins - lj, ij, uj, pj, ej, aj, aj0, wj and wj1, where describe lists them - take a table only as a nested select, never by name. A select over a join can name the columns either side returns. Each side gets its own row filter before they meet.";
+    "The joins - lj, ij, uj, pj, ej, aj, aj0, wj and wj1, where describe lists them - take a table only as a nested select, never by name. A select over a join can name the columns either side returns. Each side gets its own row filter before they meet. The key columns of aj, aj0, ej, wj and wj1 must be in each side: a side that renames one cannot be joined on it.";
     ("aj[`sym`time; select sym,time,price from trades where date=",D,"; select sym,time,bid,ask from quotes where date=",D,"]");
-    ("aj[`sym`time; trades; quotes]");
-    ("can only be used as the table of a select";"a join in the table position must be over nested selects")];
+    ("aj[`sym`time; trades; quotes]";"aj[`sym`time; select sym,time,price from trades where date=",D,"; select sym,t5:time,bid from quotes where date=",D,"]");
+    ("can only be used as the table of a select";"a join in the table position must be over nested selects";"to join on")];
   if[not c`rowindex;
     r,:enlist mkrule[`rowindex;
       "The virtual column i, the row index, is not available: count a column instead.";
@@ -190,10 +198,16 @@ ruletable:{[p]
   if[count caps;
     r,:enlist mkrule[`results;
       "A result of more than ",(" or " sv caps)," is refused.";
-      "The query runs first, so a refused result still cost its work, and validate cannot see it coming: aggregate with by, or narrow with where or select[n], rather than fetching rows to count or sum them yourself.";
+      "The query runs first, so a refused result still cost its work, and validate cannot see it coming - estimate can: it counts the rows before anything runs. Aggregate with by, or narrow with where or select[n], rather than fetching rows to count or sum them yourself.";
       ("select n:count sym, volume:sum size by sym from trades where date=",D;"select[100] from select from trades where date=",D);
       ();
       "result exceeds the maximum permitted"]];
+  r,:enlist mkrule[`size;
+    "A query that runs longer than the timeout, or needs more memory than the process may use, is stopped.";
+    "What counts is its work, not its result: the rows it reads and joins, which estimate counts before anything runs. Narrow its dates and instruments, filter both sides of a join to what the other needs, and aggregate before joining rather than after.";
+    ("select n:count sym, volume:sum size by sym from trades where date=",D);
+    ();
+    ("ran longer than the timeout";"needed more memory")];
   r,:enlist mkrule[`depth;
     "An expression may nest at most ",string[c`maxdepth]," levels deep.";
     "Nesting counts each function application, bracket and nested select. Split a deep expression into simpler parts, or several queries.";
@@ -212,6 +226,16 @@ ruletable:{[p]
 / the rules a query writer has to know, as a table: see ruletable
 rules:{[p;f] :encode[f;ruletable p];};
 
+/ primer.md, beside this file: how to write q that qsp accepts - a method, the q that matters,
+/ the shapes qsp takes, time-series techniques, and what a refusal means - as one markdown text
+/ for an agent to hold in context before it writes its first query. The rules say what qsp
+/ refuses; the primer says how to get an answer within them. It is the same for every policy and
+/ user, and read on every call, like the admin UI's page. Every q example in it is a query qsp
+/ accepts: the equities example's walkthrough (hdb.q) runs each one
+mark:{[] };
+primerfile:{[f] :hsym`$((1+last where f="/")#f),"primer.md";} first -3#value mark;
+primer:{[f] :encode[f;"\n" sv read0 primerfile];};
+
 / ------------------------------------------------------------------ per user
 
 / q's type of each type character a schema holds, by name; a capital is a list of that type in
@@ -227,19 +251,39 @@ chkuser:{[p;u] tree.chk[rev.isuser[p;u];"not a user of this policy: ",-3!u];};
 / what user u can read: per table, the columns and the rows (review.access)
 access:{[p;u;f] chkuser[p;u]; :encode[f;rev.access[p;u]];};
 
+/ the business's terms whose tables can all be read from ts, with their tables as `tables`
+termsfor:{[p;ts]
+  t:$[`terms in key p;p`terms;pol.emptyterms];
+  t:t where all each t[`tbls] in\: ts;
+  if[not `params in cols t;t:update params:(count t)#enlist "",example:(count t)#enlist "" from t];
+  :flip `term`meaning`formula`q`tables`caveat`params`example!t`term`meaning`formula`q`tbls`caveat`params`example;
+  };
+
 / everything a query writer needs, as one dictionary: the tables user u may read (tabs: their
-/ granted columns, in the table's order, with q type names, the partition column and the row
-/ filter as a where clause), the functions and calls permitted, the limits, and the rules
+/ granted columns, in the table's order, with q type names, bytes per row and descriptions, the
+/ partition column and the row filter as a where clause), the functions and calls permitted, the
+/ limits, and the rules
 describe:{[p;u;f]
   chkuser[p;u];
   a:rev.access[p;u];
   / computed first: q-sql resolves a module's names in the caller's namespace
   ty:types[p]'[a`tbl;a`columns];
   pc:p[`tabs]a`tbl;
-  t:select tbl,partition:pc,columns,types:ty,rows from a;
+  / each granted column's bytes per row (0n where not measured) and description ("" where none):
+  / the columns the user may not read are never described
+  ci:pol.colinfofor[p]'[a`tbl;a`columns];
+  t:select tbl,partition:pc,columns,types:ty,bytes:ci[;0],descriptions:ci[;1],rows from a;
   :encode[f;([user:u;tabs:t;functions:asc key p`fns;calls:asc p`calls;
-    limits:(`maxrows`maxsize`maxdepth`requirepartition`maxpartitions`strictcolumns`rowindex`selectonly)#p`config;
-    rules:ruletable p])];
+    / the limits a query writer may know: the policy's, and the process's timeout (-T) and
+    / memory cap (-w, 0 for none). Physical memory and the heap stay with gateways (limits)
+    limits:((`maxrows`maxsize`maxdepth`requirepartition`maxpartitions`strictcolumns`rowindex`selectonly)#p`config),
+      `timeout_s`memory_cap_bytes!(`long$system"T";.Q.w[]`wmax);
+    rules:ruletable p;
+    / the business's terms whose tables this user can read
+    terms:termsfor[p;a`tbl];
+    / may this user save results out of the database - to a workspace, a file, another tool?
+    / The policy decides; whatever writes the file enforces it
+    export:pol.ingroup[p;p[`config;`exportgroup];u]])];
   };
 
-export:([formats;encode;limits;memstats;users;functions;rules;access;describe]);
+export:([formats;encode;limits;memstats;users;functions;rules;primer;access;describe;termsfor]);

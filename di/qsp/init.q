@@ -23,9 +23,12 @@
 / message handlers
 
 tree:use`.core.tree;
+codes:use`.core.codes;
+rcpt:use`.receipt;
 pol:use`.policy;
 ord:use`.core.order;
 walker:use`.core.walk;
+qsql:use`.core.qsql;
 f:use`.policy.f;
 api:use`.api;
 polfiles:use`.policy.files;
@@ -51,6 +54,10 @@ render:{[x]
   :r;
   };
 
+/ x as q-SQL - what explain, runx and a gateway's execasx show - when that text parses back to x;
+/ else as render prints it. Function names come from policy p's whitelist
+readable:{[p;x] :qsql.text[p`fns;x];};
+
 / ------------------------------------------------------------------ audit
 / every decision taken by run: who, what was asked, the tree that ran (as a parse tree - lossless,
 / and eval-able), and the decision:
@@ -62,16 +69,34 @@ render:{[x]
 / name of your choosing - which can then be registered in a policy and granted to an auditor like
 / any other table
 
+/ code is the refusal as data (core/codes.q), ` when allowed. A gateway's call adds who it was and
+/ the context it sent - the conversation and question the query belongs to, and, for a query an
+/ agent's tooling corrected before sending, what was written and the fixes applied - and a
+/ receipt, when one was asked for, adds its id and the result's hash
 decisions:([]time:`timestamp$();user:`symbol$();query:();rewritten:();
-  allowed:`boolean$();decision:`symbol$();reason:());
+  allowed:`boolean$();decision:`symbol$();reason:();code:`symbol$();gateway:`symbol$();
+  session:`guid$();turn:`long$();question:();model:`symbol$();client:`symbol$();
+  original:();fixes:();receipt:`guid$();resulthash:());
 / the global name the log is kept under
 logname:.z.M.decisions;
 
-record:{[p;u;q;rw;d;m]
+/ the context a gateway may send with a query, (`.qsp.execas;query;user;ctx), and what each key
+/ holds when it is not sent. It is recorded, never interpreted: nothing in it changes a decision
+nullctx:`session`turn`question`model`client`original`fixes!(0Ng;0N;"";`;`;"";`symbol$());
+/ what a call adds to its decision: the gateway that asked (` for none), its context, whether it
+/ wants a receipt, and the receipt issued
+noextra:`gateway`ctx`wantreceipt`receipt`resulthash!(`;nullctx;0b;0Ng;"");
+
+record:{[p;u;q;rw;d;m;x]
   / add a decision to the audit log, keeping at most auditmax rows
   if[not p[`config;`audit];:()];
+  c:x`ctx;
   logname upsert ([]time:enlist .z.p;user:enlist u;query:enlist $[10h=abs type q;q;render q];
-    rewritten:enlist rw;allowed:enlist d=`allowed;decision:enlist d;reason:enlist m);
+    rewritten:enlist rw;allowed:enlist d=`allowed;decision:enlist d;reason:enlist m;
+    code:enlist $[d=`allowed;`;codes.classify[m]`code];gateway:enlist x`gateway;
+    session:enlist c`session;turn:enlist c`turn;question:enlist c`question;model:enlist c`model;
+    client:enlist c`client;original:enlist c`original;fixes:enlist c`fixes;
+    receipt:enlist x`receipt;resulthash:enlist x`resulthash);
   if[p[`config;`auditmax]<count get logname;logname set neg[p[`config;`auditmax]] sublist get logname];
   };
 
@@ -91,7 +116,27 @@ auditto:{[n]
 
 / a query that does not parse is q rejecting it, not qsp withholding anything: name it as such,
 / so a caller knows a bracket would fix it
-toparse:{[x] :$[10h=abs type x;@[parse;(),x;{'"qsp: not valid q (",tree.described[x],")"}];x];};
+toparse:{[x] :$[10h=abs type x;@[parse;(),x;parsefail (),x];x];};
+
+/ the names text s assigns that q reserves: an identifier just before a single colon, that names a
+/ q function or keyword. q's parser rejects "select fills:count sym ..." with only 'assign, and
+/ a column named after a function - fills, prev, next, rank - is the usual cause
+reservednames:{[s]
+  j:where s=":";
+  j:j where (0<j)&not ":"=s 1+j;
+  w:{[s;j] t:reverse j#s; :reverse (t?first t where not t in .Q.an)#t;}[s] each j;
+  n:distinct `$w where 0<count each w;
+  :n where n in (key `.q),.Q.res;
+  };
+
+parsefail:{[s;e]
+  m:"qsp: not valid q (",tree.described[e],")";
+  if[(e~"assign")and count r:reservednames s;
+    one:1=count r;
+    m,:": ",(", " sv string r),$[one;" is a q function, so it cannot";" are q functions, so they cannot"],
+      " name a column - rename ",$[one;"it";"them"]];
+  'm;
+  };
 
 / the rows in a result: a table's rows, the items of a list, and the longest column of a
 / dictionary or list of columns - exec a,b from t is a dictionary of two columns
@@ -229,10 +274,19 @@ partitionlimit:{[p;rw]
 
 isqsp:{[m] :(10h=type m)and(5<=count m)and"qsp: "~5#m;};
 
-refuse:{[p;u;q;rw;d;m]
+/ q's error from evaluating a query, made into one its writer can act on. A timeout or the memory
+/ cap is the query's size, not a mistake in it, and q says only stop or wsfull
+evalerror:{[e]
+  if[e~"stop";:"stop: the query ran longer than the timeout (-T ",string[system"T"],"s) - narrow its dates or instruments, or filter both sides of a join before joining"];
+  if[e~"wsfull";:"wsfull: the query needed more memory than the process may use (-w) - narrow it, or aggregate before joining"];
+  :e;
+  };
+
+refuse:{[p;u;q;rw;d;m] refusex[p;u;q;rw;d;m;noextra];};
+refusex:{[p;u;q;rw;d;m;x]
   / record a refusal, and signal it. A user that is not a single name is logged as `
   m:tree.prefix tree.described tree.clean m;
-  record[p;$[-11h=type u;u;`];q;rw;d;m];
+  record[p;$[-11h=type u;u;`];q;rw;d;m;x];
   'm;
   };
 
@@ -245,26 +299,167 @@ chkuser:{[p;u] tree.chk[isuser[p;u];"not a user of this policy: ",-3!u];};
 / (1b;the rewritten tree)
 tryrewrite:{[p;u;q] :(1b;walker.rewrite[walker.ctx[p;u;q];q]);};
 
-go:{[ev;p;u;q]
+/ ------------------------------------------------------------------ rate
+/ an agent retries, loops and follows up, and q runs one query at a time: one user's burst delays
+/ everyone. maxqueries caps the queries a user may run in a minute; 0W, the default, is no cap.
+/ Only what run evaluates counts - validate, estimate and describe run nothing
+recent:()!();
+ratecheck:{[p;u]
+  n:p[`config;`maxqueries];
+  if[0W=n;:""];
+  t:$[u in key recent;recent u;`timestamp$()];
+  t:t where t>.z.p-0D00:01;
+  if[n<=count t;
+    :"rate limit: ",string[count t]," queries in the last minute, the most maxqueries allows - wait ",
+      string[1|ceiling (`long$(first t)+0D00:01-.z.p)%1e9],"s"];
+  .z.m.recent[u]:t,.z.p;
+  :"";
+  };
+
+/ ensure aj/aj0 and wj/wj1 right-hand tables have `p# or `g# on the first join key: multi-partition
+/ selects drop `p#, which otherwise forces an O(N*M) linear scan that can block the process past -T
+safeaj:{[f;k;l;r]
+  if[(98h=type r)&(1<count k)&(-11h=type c:first k);
+    if[(c in cols r)&not (attr r c) in `p`g; r:@[r;c;`g#]]];
+  :f[k;l;r];
+  };
+safewj:{[f;w;k;l;rs]
+  if[(0h=type rs)&(0<count rs)&(1<count k)&(-11h=type c:first k);
+    r:first rs;
+    if[(98h=type r)&(c in cols r)&not (attr r c) in `p`g; rs:@[rs;0;@[;c;`g#]]]];
+  :f[w;k;l;rs];
+  };
+prepaj:{[x]
+  if[0h<>type x;:x];
+  if[0=count x;:x];
+  if[(4=count x)&any (first x)~/:(aj;aj0); :(safeaj first x),.z.s each 1_x];
+  if[(5=count x)&any (first x)~/:(wj;wj1); :(safewj first x),.z.s each 1_x];
+  :.z.s each x;
+  };
+
+go:{[ev;p;u;q] :2#gox[ev;p;u;q;noextra];};
+
+gox:{[ev;p;u;q;x]
   / parse, rewrite, pre-check, evaluate, bound - recording the decision. Every gate lives here,
-  / and the decision kind follows from the stage that refused. Returns (result; rewritten tree).
-  / ev evaluates the rewritten tree: eval, or over IPC the handler that was there before serve
+  / and the decision kind follows from the stage that refused. Returns (result; rewritten tree;
+  / receipt, or (::) when x did not ask for one). ev evaluates the rewritten tree: eval, or over
+  / IPC the handler that was there before serve. x is what the call adds (noextra)
   chkpolicy p;
-  if[not isuser[p;u];refuse[p;u;q;();`denied;"not a user of this policy: ",-3!u]];
+  no:refusex[p;u;q;;;;x];
+  if[not isuser[p;u];no[();`denied;"not a user of this policy: ",-3!u]];
+  if[count m:ratecheck[p;u];no[();`denied;m]];
   s:@[{(1b;toparse x)};q;{(0b;x)}];
-  if[not s 0;refuse[p;u;q;();`error;s 1]];
+  if[not s 0;no[();`error;s 1]];
   r:@[tryrewrite[p;u];s 1;{(0b;x)}];
-  if[not r 0;refuse[p;u;q;();$[tree.isfault r 1;`error;`denied];r 1]];
+  if[not r 0;no[();$[tree.isfault r 1;`error;`denied];r 1]];
   rw:r 1;
-  if[count m:partitioncheck[p;rw];refuse[p;u;q;rw;`denied;m]];
+  if[count m:partitioncheck[p;rw];no[rw;`denied;m]];
   rw:settle[p;rw];
-  if[count m:partitionlimit[p;rw];refuse[p;u;q;rw;`denied;m]];
-  v:@[{(1b;x y)}[ev];rw;{(0b;x)}];
+  if[count m:partitionlimit[p;rw];no[rw;`denied;m]];
+  / precheck: a result that cannot fit is refused before the work, not after it
+  if[p[`config;`precheck];
+    e:@[sizeof[p;u];rw;{(::)}];
+    if[99h=type e;if[`toobig~e`verdict;no[rw;`denied;"too big to run: ",first e`advice]]]];
+  v:@[{(1b;x y)}[ev];prepaj rw;{(0b;x)}];
   / a qsp check the walker placed in the tree refused a value the query computed
-  if[not v 0;refuse[p;u;q;rw;$[isqsp v 1;`denied;`error];v 1]];
-  if[count m:sizecheck[p`config;v 1];refuse[p;u;q;rw;`denied;m]];
-  record[p;u;q;rw;`allowed;""];
-  :(v 1;rw);
+  if[not v 0;no[rw;$[isqsp v 1;`denied;`error];evalerror v 1]];
+  / mingroup: groups too small to hide a hidden value are suppressed, or the query refused
+  mg:mingroupapply[p;u;s 1;rw;v 1];
+  if[count mg 0;no[rw;`denied;mg 0]];
+  v[1]:mg 1;
+  if[count m:sizecheck[p`config;v 1];no[rw;`denied;m]];
+  rc:(::);
+  if[x`wantreceipt;rc:receiptfor[p;u;q;rw;v 1;x];x[`receipt]:rc`id;x[`resulthash]:rc`resulthash];
+  record[p;u;q;rw;`allowed;"";x];
+  :(v 1;rw;rc);
+  };
+
+/ ------------------------------------------------------------------ mingroup
+/ With strictcolumns off a where clause may test a column its user may not read. One question at
+/ a time - select count sym from trades where account=`A7 - that tells the user about the hidden
+/ column. A table's mingroup is the fewest rows each output row of such a query must summarise:
+/ a group with fewer is suppressed, as if it had no rows. It is checked against the user's own
+/ query, not the rewritten one: the policy's row filter tests hidden columns by design.
+/ What it covers: one select over one table, grouped with by or aggregated to a single row. A
+/ nested query or a join could recombine suppressed groups, and an ungrouped select returns rows
+/ that each summarise one row, so those are refused when they test a hidden column. That is the
+/ conservative reading of a question still open - whether a bound on each level of a nested
+/ query is enough - and narrowing it is future work
+
+/ the columns of base query x's table, hidden from user u, that x tests in its where or by
+hiddentested:{[p;u;x]
+  t:x 1;
+  h:(pol.columnsof[p;t]) except pol.columnsfor[p;u;t];
+  if[0=count h;:`symbol$()];
+  b:$[99h=type x 3;value x 3;()];
+  :h inter distinct raze tree.namerefs each (tree.getc x 2),b;
+  };
+
+/ (refusal or "";result) for user query q0, rewritten to rw, whose result is v
+mingroupapply:{[p;u;q0;rw;v]
+  bs:tree.basequeries q0;
+  if[0=count bs;:("";v)];
+  bs:bs where 0<{[p;x] pol.mingroupof[p;x 1]}[p] each bs;
+  if[0=count bs;:("";v)];
+  h:hiddentested[p;u] each bs;
+  bs:bs where 0<count each h;
+  h:h where 0<count each h;
+  if[0=count bs;:("";v)];
+  t:bs[0;1];
+  k:pol.mingroupof[p;t];
+  what:"tests ",(", " sv string first h)," of ",string[t],", which you cannot read: ";
+  if[not (1=count tree.basequeries q0)and q0~first bs;
+    :("mingroup: this query ",what,"it must be one select over ",string[t],", not nested or joined";v)];
+  b:rw 3;
+  if[(b~())or b~1b;:("mingroup: this query ",what,"it must be a select, grouped with by or aggregated to one row";v)];
+  / the rows each output row summarises, counted by the same where and by
+  n:eval (first rw;rw 1;rw 2;b;(enlist`qspn)!enlist (count;`i));
+  if[b~0b;
+    if[1<>count v;:("mingroup: this query ",what,"it must aggregate - group with by, or return one row";v)];
+    :("";$[k>first n`qspn;0#v;v])];
+  ok:key select from n where qspn>=k;
+  kc:cols ok;
+  r:0!v;
+  :("";kc xkey r where (kc#r) in ok);
+  };
+
+/ ------------------------------------------------------------------ receipts
+/ the receipt for result v of query q, run as user u, rewritten to rw: issued, signed and kept
+/ (receipt/init.q). The policy is named by a hash of itself, so a receipt shows which policy
+/ decided it; the row filter and partitions are what the rewrite applied to each table read
+
+policyhash:{[p] :raze string md5 `char$-8!p;};
+
+/ result v's hash: SHA-1 of its serialisation, as any q process can compute it again
+resulthash:{[v] :@[{raze string -33!-8!x};v;{""}];};
+
+/ each table rw reads -> the row filter user u has on it, as q text
+filtertext:{[p;u;rw]
+  ts:distinct `symbol$tree.basetables rw;
+  :ts!{[p;u;t] c:pol.filterfor[p;u;t]; $[count c;", " sv {[p;x] readable[p;x]}[p] each c;""]}[p;u] each ts;
+  };
+
+/ each table rw reads -> the partitions it read, counted as maxpartitions counts them
+partitionsread:{[p;rw]
+  b:tree.basequeries rw;
+  pv:@[value;`.Q.pv;()];
+  if[0=count b;:(`symbol$())!`long$()];
+  n:$[count pv;partsread[p;pv] each b;(count b)#0];
+  g:group `symbol$b[;1];
+  :(key g)!sum each n value g;
+  };
+
+receiptfor:{[p;u;q;rw;v;x]
+  / in process, with no serve to have read them, the keys are read on first use
+  if[not null k:p[`config;`receiptkeys];if[null rcpt.signer[];rcpt.loadkeys k]];
+  c:x`ctx;
+  d:`user`gateway`session`turn`original`fixes`policy`query`rewritten`filter`partitions`rows`columns`resulthash!(
+    u;x`gateway;c`session;c`turn;c`original;c`fixes;policyhash p;$[10h=abs type q;q;render q];
+    readable[p;rw];filtertext[p;u;rw];partitionsread[p;rw];rows v;$[98h=type v;cols v;99h=type v;cols 0!v;`symbol$()];
+    resulthash v);
+  r:rcpt.issue d;
+  rcpt.keep[p`config;r;v];
+  :r;
   };
 
 / ------------------------------------------------------------------ the api
@@ -273,12 +468,12 @@ go:{[ev;p;u;q]
 run:{[p;u;q] :first go[eval;p;u;q];};
 / runx[p;u;q] -> (result; what actually ran, rendered) - for a caller that must show its user
 / what its query was turned into
-runx:{[p;u;q] r:go[eval;p;u;q]; :(r 0;render r 1);};
+runx:{[p;u;q] r:go[eval;p;u;q]; :(r 0;readable[p;r 1]);};
 / rewrite[p;u;q] -> the safe parse tree. Signals a refusal. Evaluates nothing
 rewrite:{[p;u;q] chkpolicy p; chkuser[p;u]; q:toparse q; :@[walker.rewrite[walker.ctx[p;u;q]];q;{'tree.clean x}];};
 / explain[p;u;q] -> what would run, as text - the thing to paste into a ticket when someone asks
 / why they saw fewer rows than they expected
-explain:{[p;u;q] :render rewrite[p;u;q];};
+explain:{[p;u;q] :readable[p;rewrite[p;u;q]];};
 / validate[p;u;q] -> (allowed;reason): every check run makes before it evaluates the query - the
 / rewrite, requirepartition and maxpartitions - each refusing with run's message. Records
 / nothing, and evaluates nothing but the value of a leading partition constraint, as run does to
@@ -291,8 +486,241 @@ validate:{[p;u;q]
   if[not count m;m:partitionlimit[p;settle[p;r 1]]];
   :$[count m;(0b;tree.prefix tree.described tree.clean m);(1b;"")];
   };
+/ checkterms[p] -> every problem with policy p's terms, as ([]term;problem): a term no user can
+/ read all the tables of, or whose example query is refused as such a user. A term describes the
+/ data, so its example must be a query the policy would run
+checkterms:{[p]
+  t:$[`terms in key p;p`terms;pol.emptyterms];
+  e:([]term:`symbol$();problem:());
+  if[0=count t;:e];
+  us:rev.users p;
+  acc:rev.access[p;`];
+  r:{[p;us;acc;x]
+    who:us where {[acc;ts;u] all ts in exec tbl from acc where user=u}[acc;x`tbls] each us;
+    if[0=count who;:enlist (x`term;"no user can read all of its tables: "," "sv string x`tbls)];
+    if[0=count x`q;:()];
+    / a parameterised term runs with its example arguments; with none, it cannot be checked
+    q:x`q;
+    if[count ps:$[`params in key x;x`params;""];
+      if[0=count x`example;:enlist (x`term;"it takes parameters, and has no example to check it with")];
+      e:@[{[p;x;ps] (1b;pol.terminst[p;x`term;pol.exampleargs[pol.parseparams ps;x`example]])}[p;x];ps;{(0b;x)}];
+      if[not e 0;:enlist (x`term;"its example does not fill its parameters: ",e 1)];
+      q:e 1];
+    / a term is sound if any user who can read its tables can run its example
+    v:validate[p;;q] each who;
+    :$[any v[;0];();enlist (x`term;"its query is refused as every user who can read its tables: ",last last v)];
+    }[p;us;acc] each t;
+  r:raze r;
+  :$[count r;flip `term`problem!flip r;e];
+  };
+
+/ agentlint[p] -> for each user in the policy's agentgroup, the columns their where clauses could
+/ test without being granted them, as ([]user;tbl;hidden). Empty when strictcolumns is on, or no
+/ agentgroup is set. With strictcolumns off, where may test any column of a table it reads: one
+/ question at a time, an agent can learn a hidden value - select count sym from t where account=`A7
+/ - and an agent asks questions without tiring
+agentlint:{[p]
+  e:([]user:`symbol$();tbl:`symbol$();hidden:());
+  g:p[`config;`agentgroup];
+  if[null g;:e];
+  if[p[`config;`strictcolumns];:e];
+  us:rev.users p;
+  us:us where {[p;g;u] pol.ingroup[p;g;u]}[p;g] each us;
+  if[0=count us;:e];
+  / computed first: q-sql resolves a module's names in the caller's namespace
+  a:raze {[p;u] t:rev.access[p;u]; :([]user:(count t)#u;tbl:t`tbl;columns:t`columns);}[p] each us;
+  h:{[p;t;c] (pol.columnsof[p;t]) except c}[p]'[a`tbl;a`columns];
+  r:([]user:a`user;tbl:a`tbl;hidden:h);
+  :r where 0<count each r`hidden;
+  };
+
 / fullscans[p;u;q] -> tables q would read every partition of
 fullscans:{[p;u;q] :scanned[p;rewrite[p;u;q]];};
+
+/ ------------------------------------------------------------------ the shape of the data
+/ what an agent otherwise spends queries finding out, for each table user u may read: the
+/ partitions they can see, the first and last of each time column, and the values of each code
+/ column - side, src, algo - that has few. All of it as the user: each query is the rewritten one,
+/ row filter and embargo in it, evaluated without an audit record, since the user asked nothing.
+/ Cached for a minute per user and table: describe is called often, and the data moves slowly
+
+/ a rewritten, settled query, evaluated without a record: describe's own reads
+quiet:{[p;u;q] :eval settle[p;rewrite[p;u;q]];};
+
+/ the partitions of table t user u can see: .Q.pv, narrowed by the policy's literal constraints on
+/ the partition column pc - an embargo - as run would narrow a query over every one
+visibledates:{[p;u;t;pc]
+  pv:@[value;`.Q.pv;()];
+  if[0=count pv;:pv];
+  rw:@[{settle[x;rewrite[x;y;z]]}[p;u];"select from ",string[t]," where ",string[pc]," within ",(-3!first pv)," ",-3!last pv;{()}];
+  if[()~rw;:pv];
+  c:first tree.getc rw 2;
+  :pv where @[{eval (x 0;enlist y;x 2)}[c];pv;{[pv;e] (count pv)#1b}pv];
+  };
+
+/ a column's few values: up to this many distinct ones, or none
+fewvalues:20;
+
+tableshape:{[p;u;t]
+  pc:p[`tabs;t];
+  cs:pol.columnsfor[p;u;t];
+  ty:(exec col!typ from p[`schema] where tbl=t) cs;
+  / a null entry first keeps r a general dictionary: dictionaries as its values would collapse it
+  / into a table, and the next, with other keys, would not fit
+  r:(enlist`)!enlist(::);
+  w:"";
+  if[not null pc;
+    ds:visibledates[p;u;t;pc];
+    r[`dates]:`first`last`count!(first ds;last ds;count ds);
+    if[0=count ds;:1_r];
+    w:" where ",string[pc],"=",-3!last ds];
+  tc:cs where (ty in "pntuvz")and not cs=pc;
+  if[count tc;
+    r[`time]:tc!{[p;u;t;w;c] @[{first each x};
+      value flip quiet[p;u;"select a:min ",(string c),", b:max ",(string c)," from ",(string t),w];()]}[p;u;t;w] each tc];
+  sc:cs where (ty="s")and not cs=pc;
+  if[count sc;
+    v:sc!{[p;u;t;w;c] @[{x};quiet[p;u;"exec distinct ",(string c)," from select ",(string c)," from ",(string t),w];()]}[p;u;t;w] each sc;
+    r[`values]:(where {(count x)within 1,fewvalues} each v)#v];
+  :1_r;
+  };
+
+shapettl:0D00:01;
+shapecache:()!();
+shape:{[p;u]
+  ts:exec distinct tbl from rev.access[p;u];
+  :ts!{[p;u;t]
+    k:`$string[u],"|",string t;
+    if[k in key shapecache;if[shapettl>.z.p-first shapecache k;:last shapecache k]];
+    r:@[tableshape[p;u];t;{()!()}];
+    .z.m.shapecache[k]:(.z.p;r);
+    :r;
+    }[p;u] each ts;
+  };
+
+/ ------------------------------------------------------------------ estimate
+/ estimate[p;u;q] -> how big query q is, before it runs. maxrows and maxsize refuse a result after
+/ its work is done, and a join too big for -T or -w stalls the process for everyone first. So for
+/ each table the query reads - each base select - the rows its where clause selects are counted,
+/ as the user: the clause is the rewritten one, with the row filter in it, so a count never
+/ includes rows the user cannot see (a raw partition count would say how many a filter hides).
+/ That reads only the clause's columns. Rows times the bytes of the columns the select returns -
+/ schema.csv's measured bytes, or a type's width - is its size; the result's is that of the query
+/ it comes from, or a bound. The verdict is checked against the limits, with what to change
+
+/ bytes per row of a type where no measured size is known. A symbol is sent as its text, so 8 is a
+/ guess; a list per row (an upper-case type) is a guess at 32
+typewidths:"bxhijefcspmdznuvtg"!1 1 2 4 8 4 8 1 8 8 4 4 8 8 4 4 4 16f;
+
+colbytes:{[p;t;c]
+  b:first first pol.colinfofor[p;t;enlist c];
+  if[not null b;:b];
+  ty:first exec typ from p[`schema] where tbl=t,col=c;
+  :$[null ty;8f;ty in key typewidths;typewidths ty;32f];
+  };
+
+/ bytes per row of one column of a result: a column of table t named as it is, or a computed value
+/ as 8
+exprbytes:{[p;t;e] :$[-11h<>type e;8f;e in pol.columnsof[p;t];colbytes[p;t;e];8f];};
+
+/ bytes per row of base query x's result: the columns it returns, and its by columns
+rowbytes:{[p;u;x]
+  t:x 1;
+  a:x 4;
+  if[(::)~a;a:()];
+  e:$[99h=type a;value a;0=count a;pol.columnsfor[p;u;t];enlist a];
+  bk:$[99h=type b:x 3;value b;()];
+  :sum exprbytes[p;t] each e,bk;
+  };
+
+/ the rows base query x's where clause selects
+readrows:{[x] :first first value flip eval (tree.selop;x 1;x 2;0b;(enlist`n)!enlist(count;`i));};
+
+/ reducing aggregates: a select with no by whose columns are all aggregates returns 1 row
+aggfns:(count;sum;avg;min;max;med;dev;sdev;var;svar;first;last;wavg;wsum;cor;cov;scov;all;any;prd);
+isagg:{[e]
+  if[0h<>type e;:0b];
+  if[0=count e;:0b];
+  h:first e;
+  if[any h~/:aggfns;:1b];
+  if[any h~/:(+;-;*;%;abs;neg;sqrt;log;exp;floor;ceiling;reciprocal;?:);:any isagg each 1_e];
+  :0b;
+  };
+isaggquery:{[x]
+  if[not (tree.selop~first x)and(0b~x 3)and 99h=type x 4;:0b];
+  if[0=count x 4;:0b];
+  :all isagg each value x 4;
+  };
+
+/ (rows; exact) of what expression x returns, given each base query's rows and whether it groups:
+/ a base query's own (or 1 for an ungrouped aggregate), a select over a select at most its inner
+/ one's, a join its left side's (uj both sides'), and 0N where nothing is known
+resultrows:{[bs;ns;gs;x]
+  if[isaggquery x;:(1;1b)];
+  if[not null i:first where bs~\:x;:(ns i;not gs i)];
+  if[tree.isjoin x;
+    n:.q?first x;
+    if[n~`uj;:(sum first each .z.s[bs;ns;gs] each 1_x;0b)];
+    l:$[n in `aj`aj0`ej`wj`wj1;x 2;x 1];
+    r:.z.s[bs;ns;gs;l];
+    :(r 0;(r 1)&n in `aj`aj0`lj`wj`wj1)];
+  if[tree.isquery x;if[not -11h=type x 1;:(first .z.s[bs;ns;gs;x 1];0b)]];
+  :(0N;0b);
+  };
+
+/ the work a read may do before the timeout is a guess: past this many rows, say so
+largeread:20000000;
+
+limitsnow:{[p] :`maxrows`maxsize`timeout_s`memory_cap_bytes!(p[`config;`maxrows];p[`config;`maxsize];`long$system"T";.Q.w[]`wmax);};
+
+estimate:{[p;u;q]
+  v:validate[p;u;q];
+  if[not v 0;:`allowed`reason`reads`result`limits`verdict`advice!(0b;v 1;();()!();limitsnow p;`refused;enlist v 1)];
+  :sizeof[p;u;settle[p;rewrite[p;u;q]]];
+  };
+
+/ the estimate of rewritten, settled tree rw: what estimate returns for an allowed query, and what
+/ precheck consults before run evaluates
+sizeof:{[p;u;rw]
+  lim:limitsnow p;
+  bs:tree.basequeries rw;
+  ns:readrows each bs;
+  gs:{not 0b~x 3} each bs;
+  bpr:rowbytes[p;u] each bs;
+  reads:([]table:bs[;1];rows:ns;bytes:`long$ns*bpr;grouped:gs);
+  rr:resultrows[bs;ns;gs;rw];
+  i:first where bs~\:rw;
+  rb:$[null rr 0;0N;not null i;`long$(rr 0)*bpr i;`long$(rr 0)*sum bpr];
+  res:`rows`exact`bytes!(rr 0;rr 1;rb);
+  adv:();
+  hard:0b;
+  if[(not null rr 0)&(rr 0)>lim`maxrows;
+    if[rr 1;hard:1b];
+    adv,:enlist "the result would have ",$[rr 1;"";"up to "],string[rr 0]," rows, more than maxrows ",string[lim`maxrows],
+      ": aggregate with by, or take the first rows with select[n] over a select"];
+  if[(not null rb)&rb>lim`maxsize;
+    if[rr 1;hard:1b];
+    adv,:enlist "the result would be about ",string[rb]," bytes, more than maxsize ",string[lim`maxsize],
+      ": return fewer columns or rows"];
+  if[(0<lim`memory_cap_bytes)&(sum reads`bytes)>lim`memory_cap_bytes;
+    hard:1b;
+    adv,:enlist "its reads come to about ",string[sum reads`bytes]," bytes, more than the process may use (-w ",
+      string[lim`memory_cap_bytes],"): narrow its dates and instruments"];
+  / a local: q-sql resolves a module's globals in the caller's namespace
+  lr:largeread;
+  big:select from reads where rows>lr;
+  if[count big;
+    adv,:{"it reads ",string[x`rows]," rows of ",string[x`table],", which may run past the timeout: narrow its dates or instruments, or filter it to what the other side of a join needs"} each big];
+  / a join whose one side reads far more than the other is usually that side unfiltered: all of a
+  / day's quotes against one instrument's trades
+  if[(1<count reads)&(1000000<max reads`rows)&(max reads`rows)>100*1|min reads`rows;
+    big:first select from reads where rows=max rows;
+    small:first select from reads where rows=min rows;
+    adv,:enlist "one side reads ",string[big`rows]," rows of ",string[big`table],", ",string[floor big[`rows]%1|small`rows],
+      " times the ",string[small`rows]," of ",string[small`table],": filter it to what the other needs - the same instruments and window"];
+  vd:$[hard;`toobig;count adv;`large;`fits];
+  :`allowed`reason`reads`result`limits`verdict`advice!(1b;"";reads;res;lim;vd;adv);
+  };
 
 / ------------------------------------------------------------------ a policy's tests (policy/suite.q)
 
@@ -323,7 +751,7 @@ runtests:{[p;t]
 / dir (the policy directory). It lends the page the pipeline - nothing else in admin/ can run a
 / query - and refuses a process that serves a policy
 adminui:{[x]
-  :admin.start[([run;runx;rewrite;runtests;audit;version;apis;serving:{[] installed}]);x];
+  :admin.start[([run;runx;rewrite;runtests;checkterms;audit;version;apis;serving:{[] installed}]);x];
   };
 
 / ------------------------------------------------------------------ serving
@@ -337,29 +765,169 @@ adminui:{[x]
 
 execas:`.qsp.execas;
 execasx:`.qsp.execasx;
+/ the same, returning a dictionary: the result, what ran, and a signed receipt - or, refused, the
+/ refusal as data (code, kind, subject, reason, rule) rather than a signal
+execasr:`.qsp.execasr;
+execforms:(execas;execasx;execasr);
+/ (`.qsp.async;id;msg), sent asynchronously: msg is handled as if sent synchronously, and the
+/ answer comes back asynchronously as (`.qsp.reply;id;(1b;value)) or (`.qsp.reply;id;(0b;refusal))
+asyncmsg:`.qsp.async;
+replymsg:`.qsp.reply;
 apimsg:`.qsp.api;
 limitsmsg:`.qsp.limits;
 served:(::);
 installed:0b;
 
 / is message x a gateway, named in policy p, running a query as another user?
-isgatewaycall:{[p;x]
-  / (`.qsp.execas;`sym;`alice) - a query that is one name - is a symbol vector, as q stores a list
-  / of symbols
-  if[not ((type x) in 0 11h)&3=count x;:0b];
-  if[not .z.u in p`gateways;:0b];
-  :any (first x)~/:(execas;execasx);
+/ is x an execas form: (form;query;user), or (form;query;user;ctx) from a gateway?
+/ (`.qsp.execas;`sym;`alice) - a query that is one name - is a symbol vector, as q stores a list
+/ of symbols
+isexecform:{[x]
+  if[not (type x) in 0 11h;:0b];
+  if[not (count x) in 3 4;:0b];
+  :any (first x)~/:execforms;
   };
+isgatewaycall:{[p;x] :$[isexecform x;.z.u in p`gateways;0b];};
+
+/ is message x the execas form naming the caller itself? Any login may run as itself, so nothing
+/ is granted that a plain query does not already have
+isselfcall:{[x] :$[isexecform x;(x 2)~.z.u;0b];};
+
+isasync:{[x] :$[(type x) in 0 11h;$[3=count x;(first x)~asyncmsg;0b];0b];};
+
+/ a gateway's context, checked: a dictionary of nullctx's keys, each of its type. The question
+/ and the original query are capped, so a context cannot grow the audit log without bound
+ctxmax:4000;
+chkctx:{[c]
+  tree.chk[99h=type c;"ctx must be a dictionary - keys from ",", " sv string key nullctx];
+  tree.chk[11h=type key c;"ctx keys must be symbols"];
+  bad:(key c) except key nullctx;
+  tree.chk[0=count bad;"unknown ctx key: ",(", " sv string bad)," - one of ",", " sv string key nullctx];
+  if[`turn in key c;if[-6h=type c`turn;c[`turn]:`long$c`turn]];
+  if[`fixes in key c;if[(0h=type c`fixes)and 0=count c`fixes;c[`fixes]:`symbol$()]];
+  if[`fixes in key c;if[-11h=type c`fixes;c[`fixes]:enlist c`fixes]];
+  ty:{[c;k] (type c k)=type nullctx k}[c] each key c;
+  tree.chk[all ty;"wrong type for ctx key: ",", " sv string (key c) where not ty];
+  long:(key c) where {[c;k] $[10h=type c k;ctxmax<count c k;0b]}[c] each key c;
+  tree.chk[0=count long;"ctx ",(", " sv string long)," longer than ",string[ctxmax]," characters"];
+  :nullctx,c;
+  };
+
+/ the refusal in message m, as data: what execasr and an async reply return in place of a result
+refusal:{[p;m]
+  m:tree.prefix tree.described tree.clean m;
+  c:codes.classify m;
+  :`reason`rule`code`kind`subject!(m;ruleof[p;m];c`code;c`kind;c`subject);
+  };
+
+/ an execas form x, run as user u for gateway gw (` for a self call), evaluating with ev
+execrun:{[ev;p;u;x;gw]
+  e:noextra;
+  e[`gateway]:gw;
+  if[4=count x;e[`ctx]:@[chkctx;x 3;{[p;u;x;m] refuse[p;u;x;();`denied;m]}[p;u;x 1]]];
+  f:first x;
+  if[f~execasr;:runrx[ev;p;u;x 1;e]];
+  r:gox[ev;p;u;x 1;e];
+  :$[f~execas;r 0;(r 0;readable[p;r 1])];
+  };
+
+/ query q as user u, with what the call adds e and a receipt, as a dictionary: on success the
+/ result, what ran and the receipt; refused, the refusal as data. Nothing is signalled
+runrx:{[ev;p;u;q;e]
+  e[`wantreceipt]:1b;
+  r:@[{(1b;gox . x)};(ev;p;u;q;e);{(0b;x)}];
+  if[r 0;v:r 1;:`status`result`rewritten`receipt!(`ok;v 0;readable[p;v 1];v 2)];
+  :refusalreply[p;r 1];
+  };
+
+/ runr[p;u;q;ctx] -> query q run in process as user u, with a receipt: what execasr returns. ctx
+/ is a context dictionary, or (::) for none
+runr:{[p;u;q;c]
+  e:noextra;
+  e[`gateway]:`;
+  if[not (::)~c;e[`ctx]:chkctx c];
+  :runrx[eval;p;u;q;e];
+  };
+
+/ the receipt with id and its kept values, to the user it ran as or the gateway that asked; and
+/ whether a receipt is genuine - signed by a key this process holds, and unchanged
+receipt:{[id;caller] :rcpt.fetch[id;caller];};
+verify:{[r] :rcpt.verify r;};
+newreceiptkey:{[dir] :rcpt.newkey dir;};
+reloadkeys:{[p] :rcpt.loadkeys p[`config;`receiptkeys];};
 
 / ------------------------------------------------------------------ the api
 / qsp.api: api/init.q's endpoints, and the pipeline's own, each taking a format last - `q or `json (see
 / api/init.q). validate gives a dictionary here, ([allowed;reason]), so it reads the same in JSON
 apiversion:{[f] :api.encode[f;version];};
-apivalidate:{[p;u;q;f] :api.encode[f;`allowed`reason!validate[p;u;q]];};
+/ describe without the rules and the function whitelist - which an agent holding the primer
+/ already has - and with a version of each, so it can tell its copy is current
+apibrief:{[p;u;f]
+  d:api.describe[p;u;`q];
+  d:(`rules`functions`calls)_d;
+  d[`shape]:shape[p;u];
+  d[`rulesversion]:raze string md5 `char$-8!api.rules[p;`q];
+  d[`functionsversion]:raze string md5 `char$-8!(asc key p`fns;asc p`calls);
+  :api.encode[f;d];
+  };
+/ user u's own last n decisions, from the audit log: what it asked, what ran, and why it was
+/ refused. Its own calls only, so it tells it nothing new
+history:{[u;n]
+  a:audit[];
+  :(neg n)sublist select time,query,rewritten,allowed,decision,reason from a where user=u;
+  };
+apihistory:{[p;u;n;f] tree.chk[(-7h=type n)or -6h=type n;"history takes how many decisions, as a number"]; :api.encode[f;history[u;`long$n]];};
+/ describe, with the shape of the data the user can see (shape, above)
+apidescribe:{[p;u;f] d:api.describe[p;u;`q]; d[`shape]:shape[p;u]; :api.encode[f;d];};
+/ the rule whose refusal text a message contains (qsp.api.rules), or ` - so a caller goes straight
+/ from a refusal to the rule that explains it, and to that rule's good examples
+ruleof:{[p;m]
+  if[0=count m;:`];
+  t:api.rules[p;`q];
+  / the longest pattern the message contains is the most specific rule; language and refusals,
+  / the catch-alls, lose a tie
+  n:{[m;rf] max 0,count each rf where m like/: {"*",x,"*"} each rf}[m] each t`refusal;
+  n-:0.5*t[`id] in `language`refusals;
+  :$[0<max n;t[`id] n?max n;`];
+  };
+/ validate's answer with the refusal as data: code, kind and subject (core/codes.q) - `, ` and ""
+/ when allowed
+apivalidate:{[p;u;q;f]
+  v:validate[p;u;q];
+  c:$[v 0;`code`kind`subject!(`;`;"");codes.classify v 1];
+  :api.encode[f;(`allowed`reason`rule!(v 0;v 1;ruleof[p;v 1])),c];
+  };
 apiexplain:{[p;u;q;f] :api.encode[f;explain[p;u;q]];};
-apis:``version`limits`memstats`users`functions`rules`access`describe`validate`explain!(::;
-  apiversion;api.limits;api.memstats;api.users;api.functions;api.rules;api.access;api.describe;
-  apivalidate;apiexplain);
+/ term n's query with arguments a filled in, for user u: the query text, to run like any other. A
+/ term the user cannot see - one naming a table it cannot read - is no term to it
+termquery:{[p;u;n;a]
+  if[10h=type n;n:`$n];
+  tree.chk[-11h=type n;"term takes a term's name, then its arguments"];
+  t:api.termsfor[p;exec tbl from rev.access[p;u]];
+  tree.chk[n in t`term;"no term ",string[n]," that this user can read"];
+  :pol.terminst[p;n;a];
+  };
+/ runterm[p;u;n;args] -> term n run as user u with args
+runterm:{[p;u;n;a] :run[p;u;termquery[p;u;n;a]];};
+
+/ is a receipt genuine, and is it one this process still keeps? Any login may ask: a receipt
+/ says nothing to anyone who does not already hold it
+apiverify:{[r;f] :api.encode[f;`valid`stored!(verify r;$[99h=type r;rcpt.isstored r`id;0b])];};
+/ a stored receipt and the values it kept, to the login it ran for or the gateway that asked
+apireceipt:{[id;caller;f]
+  if[10h=type id;id:"G"$id];
+  tree.chk[-2h=type id;"receipt takes a receipt id, a guid"];
+  :api.encode[f;receipt[id;caller]];
+  };
+/ estimate, with a refusal as data as validate gives it
+apiestimate:{[p;u;q;f]
+  e:estimate[p;u;q];
+  if[not e`allowed;e,:`code`kind`subject#codes.classify e`reason];
+  :api.encode[f;e];
+  };
+apis:``version`limits`memstats`users`functions`rules`primer`access`describe`validate`explain`estimate`brief`history`verify`receipt!(::;
+  apiversion;api.limits;api.memstats;api.users;api.functions;api.rules;api.primer;api.access;apidescribe;
+  apivalidate;apiexplain;apiestimate;apibrief;apihistory;apiverify;apireceipt);
 
 / ------------------------------------------------------------------ the api over IPC
 / (`.qsp.api;name;...) calls the api by name against the served policy: process facts, and the
@@ -370,16 +938,22 @@ apis:``version`limits`memstats`users`functions`rules`access`describe`validate`ex
 / when it does not. `.qsp.limits alone is (`.qsp.api;`limits), as the original qsp answered it
 
 / each call: which only a gateway may make, which name a user, and how many arguments follow
-apinames:`version`limits`memstats`users`functions`rules`access`describe`validate`explain;
-apigwonly:`limits`memstats`users;
-apiuser:`access`describe`validate`explain;
-apinargs:apinames!0 0 0 0 0 0 0 0 1 1;
+apinames:`version`limits`memstats`users`functions`rules`primer`access`describe`validate`explain`estimate`brief`history`verify`receipt`reloadkeys`codes`term;
+apigwonly:`limits`memstats`users`reloadkeys;
+apiuser:`access`describe`validate`explain`estimate`brief`history`term;
+apinargs:apinames!0 0 0 0 0 0 0 0 0 1 1 1 0 1 1 1 0 0 2;
 / and what it does, as [policy;user;arguments;format]
 apifns:apinames!(
   {[p;u;a;f] apiversion f};{[p;u;a;f] api.limits[p;f]};{[p;u;a;f] api.memstats f};
   {[p;u;a;f] api.users[p;f]};{[p;u;a;f] api.functions[p;f]};{[p;u;a;f] api.rules[p;f]};
-  {[p;u;a;f] api.access[p;u;f]};{[p;u;a;f] api.describe[p;u;f]};
-  {[p;u;a;f] apivalidate[p;u;first a;f]};{[p;u;a;f] apiexplain[p;u;first a;f]});
+  {[p;u;a;f] api.primer f};
+  {[p;u;a;f] api.access[p;u;f]};{[p;u;a;f] apidescribe[p;u;f]};
+  {[p;u;a;f] apivalidate[p;u;first a;f]};{[p;u;a;f] apiexplain[p;u;first a;f]};
+  {[p;u;a;f] apiestimate[p;u;first a;f]};
+  {[p;u;a;f] apibrief[p;u;f]};{[p;u;a;f] apihistory[p;u;first a;f]};
+  {[p;u;a;f] apiverify[first a;f]};{[p;u;a;f] apireceipt[first a;.z.u;f]};
+  {[p;u;a;f] api.encode[f;reloadkeys p]};{[p;u;a;f] api.encode[f;codes.table[]]};
+  {[p;u;a;f] api.encode[f;termquery[p;u;a 0;a 1]]});
 
 / (`.qsp.api;`limits) is a symbol vector - q stores a list of symbols as one - and a call with
 / a string argument is a general list
@@ -442,7 +1016,7 @@ pi:{[x]
 chain:{[h;x] :priorof[h] (eval;x);};
 
 serverun:{[h;p;u;q] :first go[chain h;p;u;q];};
-serverunx:{[h;p;u;q] r:go[chain h;p;u;q]; :(r 0;render r 1);};
+serverunx:{[h;p;u;q] r:go[chain h;p;u;q]; :(r 0;readable[p;r 1]);};
 
 req:{[h;x]
   / the handler h: run message x as the caller, under the served policy
@@ -453,11 +1027,45 @@ req:{[h;x]
   if[not islogin[p;.z.u];refuse[p;.z.u;x;();`denied;"not a user of this policy: ",-3!.z.u]];
   if[x~limitsmsg;x:(apimsg;`limits)];
   if[isapicall x;:@[apicall[p];x;{[p;x;e] refuse[p;.z.u;x;();$[isqsp e;`denied;`error];e]}[p;x]]];
+  if[isasync x;:asyncreq[h;x]];
   if[isgatewaycall[p;x];
-    / a user that is not a single symbol is refused, and logged against the gateway's own login
-    if[not isuser[p;x 2];refuse[p;$[-11h=type x 2;x 2;.z.u];x 1;();`denied;"not a user of this policy: ",-3!x 2]];
-    :$[execas~first x;serverun;serverunx][h;p;x 2;x 1]];
+    / execasr answers with data whatever happens, so its caller has one shape to read
+    :$[execasr~first x;@[gatewaycall[h;p];x;{[p;x;m] $[99h=type m;m;refusalreply[p;m]]}[p;x]];gatewaycall[h;p;x]]];
+  / a user's own login may send the same message naming itself, to get back what ran with the
+  / result: an agent bound to one user sees the rewrite without a gateway's power to be anyone.
+  / Context is a gateway's to give: a user could otherwise label its queries with any question
+  if[isselfcall x;
+    if[4=count x;refuse[p;.z.u;x 1;();`denied;"only a gateway login may send ctx with a query"]];
+    :execrun[chain h;p;.z.u;x;`]];
   :serverun[h;p;.z.u;x];
+  };
+
+gatewaycall:{[h;p;x]
+  / a user that is not a single symbol is refused, and logged against the gateway's own login
+  if[not isuser[p;x 2];refuse[p;$[-11h=type x 2;x 2;.z.u];x 1;();`denied;"not a user of this policy: ",-3!x 2]];
+  / a scoped gateway names only members of its group, and is logged against its own login when
+  / it names anyone else
+  if[not pol.inscope[p;.z.u;x 2];refuse[p;.z.u;x 1;();`denied;
+    "gateway ",string[.z.u]," may not run queries as ",string[x 2]," - it may name only members of ",string p[`gwscope] .z.u]];
+  :execrun[chain h;p;x 2;x;.z.u];
+  };
+
+/ execasr's reply to a refusal that came before the query was run
+refusalreply:{[p;m]
+  d:refusal[p;m];
+  :(`status`result`rewritten`receipt!($[`runtime~d`kind;`error;`refused];(::);"";(::))),d;
+  };
+
+asyncreq:{[h;x]
+  / an async request: handle the message it carries as if it had come synchronously, then send the
+  / answer back on the same handle. A refusal is an answer, not a signal: the caller is waiting
+  / for a reply with its id, and a signal would leave it waiting
+  w:.z.w;
+  m:x 2;
+  r:$[isasync m;(0b;"qsp: an async request cannot carry another");@[{(1b;req[x;y])}[h];m;{(0b;x)}]];
+  a:$[r 0;r;(0b;refusal[served;r 1])];
+  @[neg w;(replymsg;x 1;a);{[e] }];
+  :(::);
   };
 
 install:{[]
@@ -478,6 +1086,8 @@ install:{[]
 serve:{[p]
   / police every IPC query with p, swapping it in for any policy served before
   chkpolicy p;
+  / the receipt keys first: a policy naming a key directory that cannot be read is not served
+  rcpt.loadkeys p[`config;`receiptkeys];
   .z.m.served:p;
   if[not installed;install[]];
   };
@@ -495,6 +1105,7 @@ unserve:{[]
 / what a gateway sends a qsp backend, to run q as user u
 gatewaywrap:{[q;u] :(execas;q;u);};
 gatewaywrapx:{[q;u] :(execasx;q;u);};
+gatewaywrapr:{[q;u] :(execasr;q;u);};
 
 export:([
   / build a policy - each returns a new policy
@@ -502,17 +1113,26 @@ export:([
   droptable:pol.droptable;grant:pol.grant;revoke:pol.revoke;member:pol.member;
   unmember:pol.unmember;allowfunction:pol.allowfunction;denyfunction:pol.denyfunction;
   allowcall:pol.allowcall;allowjoincall:pol.allowjoincall;denycall:pol.denycall;
-  gateway:pol.gateway;configure:pol.configure;
+  gateway:pol.gateway;configure:pol.configure;colinfo:pol.colinfo;term:pol.term;paramterm:pol.paramterm;mingroup:pol.mingroup;
   / keep one as files
   fromfiles:polfiles.fromfiles;check:polfiles.check;scaffold:polfiles.scaffold;schemadrift:polfiles.schemadrift;
+  measure:polfiles.measure;remeasure:polfiles.remeasure;
   / inspect one
   columnsfor:pol.columnsfor;filterfor:pol.filterfor;access:rev.access;diff:rev.diff;api:apis;
   / enforce it
-  run;runx;rewrite;explain;validate;fullscans;
+  run;runx;rewrite;explain;validate;estimate;fullscans;checkterms;agentlint;termquery;runterm;
+  / a refusal as data: its code, kind and subject, and the published codes
+  classify:codes.classify;codes:codes.table;refusal;
   / test it
   tests;checktests;runtests;adminui;
   / serve it
-  serve;unserve;active;audit;clearaudit;audittable;auditto;gatewaywrap;gatewaywrapx;
+  serve;unserve;active;audit;clearaudit;audittable;auditto;gatewaywrap;gatewaywrapx;gatewaywrapr;
+  / receipts: run with one, fetch one, check one, and keep the keys that sign them
+  runr;receipt;verify;newreceiptkey;reloadkeys;
+  / render a parse tree as q-SQL text, with a whitelist's names (a policy's fns)
+  totext:qsql.text;
+  / gateways limited to the users of one group
+  scopegateway:pol.scopegateway;
   / write filters
   f;ALL:pol.allcols;USER:tree.usermark;NOW:tree.nowmark;
   version]);

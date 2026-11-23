@@ -103,6 +103,15 @@ mapbase:{[f;x]
   };
 basetables:{[x] :distinct `symbol$({x 1} each basequeries x);};
 
+/ the names a query gives columns itself, in the select and by of every select, exec and update
+/ it holds: what a refusal can check a missing name against, to say the writer named it. A key
+/ whose expression is the same name - select pnl from t - names no new column: it reads one
+aliases:{[x]
+  if[not (type x) in 0 98 99h;:`symbol$()];
+  a:$[isquery x;raze {$[99h=type x;`symbol$(key x) where not (key x)~'value x;`symbol$()]} each x 3 4;`symbol$()];
+  :distinct a,raze .z.s each exprs x;
+  };
+
 / ------------------------------------------------------------------ filesystem guard
 / a file handle is a symbol beginning with ":". No analytic query needs one and every filesystem
 / primitive requires one - including hdel, which is the same primitive as not (see fns.q)
@@ -123,4 +132,4 @@ usermark:`$"\001qsp.user";
 nowmark:`$"\001qsp.now";
 
 export:([chk;prefix;fault;isfault;clean;described;selop;updop;ascop;descop;cnested;getc;setc;lit;isfn;isquery;
-  hasquery;joins;isjoin;namerefs;basequeries;mapbase;basetables;hasfilehandle;items;agedmark;usermark;nowmark]);
+  hasquery;joins;isjoin;namerefs;basequeries;mapbase;basetables;aliases;hasfilehandle;items;agedmark;usermark;nowmark]);

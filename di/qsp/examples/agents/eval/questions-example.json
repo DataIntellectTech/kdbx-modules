@@ -1,0 +1,200 @@
+[
+ {
+  "id": "h-1",
+  "question": "What was the time-weighted average spread for AAPL and MSFT in 15-minute buckets on 2026.10.05?",
+  "q": "select twas:dur wavg ask-bid by sym,bucket:0D00:15 xbar time from update dur:(next time)-time by sym,src from select time,sym,src,bid,ask from quotes where date=2026.10.05,sym in `AAPL`MSFT",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-2",
+  "question": "On 2026.10.05, how many AAPL fills executed at the bid, at the ask, inside the prevailing quote, or outside it, by side?",
+  "q": "select n:count sym by side,status:?[price=bid;`atbid;?[price=ask;`atask;?[price within (bid;ask);`inside;`outside]]] from aj[`sym`time; select time,sym,side,price from trades where date=2026.10.05,sym=`AAPL; select time,sym,bid,ask from quotes where date=2026.10.05,sym=`AAPL]",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-3",
+  "question": "For each AAPL fill between 10:00 and 10:10 on 2026.10.05, what was the VWAP of the five minutes up to and including that fill?",
+  "q": "select time,price,size,vwap5:(sumps-sumps5)%sumsz-sumsz5 from aj[`sym`time; select time,sym,price,size,sumps:sums price*size,sumsz:sums size from trades where date=2026.10.05,sym=`AAPL; select time:time+0D00:05,sym,sumps5:sumps,sumsz5:sumsz from select time,sym,sumps:sums price*size,sumsz:sums size from trades where date=2026.10.05,sym=`AAPL] where time within (2026.10.05D10:00;2026.10.05D10:10)",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-4",
+  "question": "Per instrument, how many fills on 2026.10.05 were more than one and a half standard deviations from that instrument's own mean price for the day? Use the population standard deviation, not the sample one. Give a count for each instrument that had at least one.",
+  "q": "select outliers:count sym by sym from trades where date=2026.10.05,abs[price-(avg;price) fby sym]>1.5*(dev;price) fby sym",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": true
+ },
+ {
+  "id": "h-5",
+  "question": "Between 10:00 and 10:15 on 2026.10.05, what was the average round-trip cost per share of 500 shares of AAPL, walking the five levels of the book?",
+  "q": "select cost500:avg (deltas[0;500&sums (asize1;asize2;asize3;asize4;asize5)] wavg (ask1;ask2;ask3;ask4;ask5))-deltas[0;500&sums (bsize1;bsize2;bsize3;bsize4;bsize5)] wavg (bid1;bid2;bid3;bid4;bid5) by sym from depth where date=2026.10.05,sym=`AAPL,time within (2026.10.05D10:00;2026.10.05D10:15)",
+  "kind": "number",
+  "tolerance": 0.0001,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-6",
+  "question": "For each AAPL fill between 10:00 and 10:10 on 2026.10.05, how much had the price moved in the five minutes before it?",
+  "q": "select time,price,pminus5,change:price-pminus5 from aj[`sym`time; select time,sym,price from trades where date=2026.10.05,sym=`AAPL,time within (2026.10.05D10:00;2026.10.05D10:10); select time:time+0D00:05,sym,pminus5:price from trades where date=2026.10.05,sym=`AAPL]",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-7",
+  "question": "What was the average cumulative volume profile for MSFT in 30-minute buckets across 2026.10.05 to 2026.10.09?",
+  "q": "select cumvol:avg cv by sym,bucket from select date,sym,bucket,cv:(sums;vol) fby date from select vol:sum size by date,sym,bucket:0D00:30 xbar `timespan$time from trades where date within (2026.10.05;2026.10.09),sym=`MSFT",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-8",
+  "question": "Give me hourly open, high, low and close bars for AAPL and MSFT on 2026.10.05, on the clock hour (09:00, 10:00 and so on), with each bar's open carried from the previous bar's close.",
+  "q": "update open:open^prev close by sym from select open:first price,high:max price,low:min price,close:last price by sym,bucket:0D01:00 xbar time from trades where date=2026.10.05,sym in `AAPL`MSFT",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-9",
+  "question": "Show MSFT's volume for every minute from 09:30 to 09:59 on 2026.10.05, with zero for any minute that had no fills.",
+  "q": "select sym,time,volume:0^volume from lj[([]sym:enlist`MSFT) cross ([]time:2026.10.05D09:30+0D00:01*til 30); select volume:sum size by sym,time:0D00:01 xbar time from trades where date=2026.10.05,sym=`MSFT,time<2026.10.05D10:00]",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-10",
+  "question": "For AAPL, which day between 2026.10.05 and 2026.10.09 had the largest disparity between its TWAP and its VWAP?",
+  "q": "`disparity xdesc select date,twap,vwap,disparity:100*abs 1-twap%vwap from select twap:(next deltas time) wavg price,vwap:size wavg price by date from trades where date within (2026.10.05;2026.10.09),sym=`AAPL",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-11",
+  "question": "On 2026.10.05, how many fills did an order receive on average, by side?",
+  "q": "select fillsPerOrder:avg 0^n by side from (select orderID,side from orders where date=2026.10.05) lj select n:count sym by orderID from trades where date=2026.10.05",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "compliance1",
+  "changed": false
+ },
+ {
+  "id": "h-12",
+  "question": "For each AAPL fill between 10:00 and 10:30 on 2026.10.05, show the quote NEAREST in time to the fill, even if that quote came after it.",
+  "q": "select time,qtime,sym,side,price,bid,ask from aj[`sym`time; select time,sym,side,price from trades where date=2026.10.05,sym=`AAPL,time within (2026.10.05D10:00;2026.10.05D10:30); select time:time-(0D00:00^time-prev time) div 2,qtime:time,sym,bid,ask from quotes where date=2026.10.05,sym=`AAPL]",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": true
+ },
+ {
+  "id": "h-13",
+  "question": "On 2026.10.05, which venue quoted AAPL most often, and how long did each venue's quotes persist on average?",
+  "q": "`n xdesc select n:count sym,avgLife:`timespan$avg next[time]-time by src from quotes where date=2026.10.05,sym=`AAPL",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-14",
+  "question": "Show the running VWAP through the first thirty minutes of AAPL trading on 2026.10.05, fill by fill.",
+  "q": "select time,price,size,rvwap:(sums size*price)%sums size from trades where date=2026.10.05,sym=`AAPL,time within (2026.10.05D09:30;2026.10.05D10:00)",
+  "kind": "listing",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": true
+ },
+ {
+  "id": "h-15",
+  "question": "Of the quote updates for AAPL and MSFT on 2026.10.05, how many actually changed the bid or the ask?",
+  "q": "select changed:sum chg,total:count sym by sym from update chg:(differ bid)|differ ask by sym,src from select sym,src,time,bid,ask from quotes where date=2026.10.05,sym in `AAPL`MSFT",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-16",
+  "question": "Split MSFT's fills on 2026.10.05 into four buckets of equal volume; when did each start and end, and how much traded in each?",
+  "q": "select startTime:first time,endTime:last time,volume:sum size by volbucket:3&floor 4*(sums size)%sum size from trades where date=2026.10.05,sym=`MSFT",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-17",
+  "question": "What was MSFT's VWAP and volume on 2026.10.05 in the four sessions 09:30-10:00, 10:00-12:00, 12:00-15:30 and 15:30-16:00?",
+  "q": "select vwap:size wavg price,volume:sum size by session:2026.10.05D09:30 2026.10.05D10:00 2026.10.05D12:00 2026.10.05D15:30 bin time from trades where date=2026.10.05,sym=`MSFT,time within (2026.10.05D09:30;2026.10.05D16:00)",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": true
+ },
+ {
+  "id": "h-18",
+  "question": "Pivot the daily closes of AAPL, MSFT and VOD from 2026.10.05 to 2026.10.09 into one column per symbol.",
+  "q": "exec (`AAPL`MSFT`VOD)#sym!close by date:date from select close:last price by date,sym from trades where date within (2026.10.05;2026.10.09),sym in `AAPL`MSFT`VOD",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-19",
+  "question": "Using one-minute last-trade prices, how correlated were AAPL and MSFT through 2026.10.05?",
+  "q": "select correlation:cor[1_deltas aapl;1_deltas msft] from ((select aapl:last price by t:0D00:01 xbar time from trades where date=2026.10.05,sym=`AAPL) ij select msft:last price by t:0D00:01 xbar time from trades where date=2026.10.05,sym=`MSFT)",
+  "kind": "number",
+  "tolerance": 0.0001,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-20",
+  "question": "For AAPL's fills on 2026.10.05, what was the one-minute markout, by side?",
+  "q": "select markoutBps:avg 1e4*?[side=`buy;mid1-price;price-mid1]%price by side from aj[`sym`time; select time,sym,side,price from trades where date=2026.10.05,sym=`AAPL; select time:time-0D00:01,sym,mid1:(bid+ask)%2 from quotes where date=2026.10.05,sym=`AAPL]",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-21",
+  "question": "Which days between 2026.10.05 and 2026.10.09 had MSFT volume more than one standard deviation from the week's mean?",
+  "q": "select date,volume from (select volume:sum size by date from trades where date within (2026.10.05;2026.10.09),sym=`MSFT) where abs[volume-avg volume]>dev volume",
+  "kind": "table",
+  "tolerance": null,
+  "persona": "quant1",
+  "changed": false
+ },
+ {
+  "id": "h-22",
+  "question": "What fraction of 2026.10.05 was AAPL's quoted spread wider than one and a half times its median, time-weighted?",
+  "q": "select wideShare:(sum ?[(ask-bid)>1.5*med ask-bid;next[time]-time;0D00:00])%sum next[time]-time by sym from quotes where date=2026.10.05,sym=`AAPL",
+  "kind": "number",
+  "tolerance": 0.0001,
+  "persona": "quant1",
+  "changed": false
+ }
+]

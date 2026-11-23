@@ -151,7 +151,7 @@ true,0,0,q,".t.err[(qsp.run;P;`llmu;""exec enlist sym from (exec (distinct `a`b)
 true,0,0,q,".t.err[(qsp.run;P;`llmu;""exec enlist sym from (`a`b!select[2] date,sym from trade)"");""qsp: the columns this expression projects cannot be known*""]",1,,`a`b!t is a dictionary
 true,0,0,q,".t.eq[qsp.run[P;`llmu;""exec size from (1!select sym,size from trade)""];10 20 30 50]",1,,...n!t a keyed table
 true,0,0,q,".t.eq[qsp.run[P;`llmu;""exec a from (exec a:sum size by s:sym from trade)""];40 70]",1,,...as is an exec with a named by
-true,0,0,q,".t.err[(qsp.run;P;`llmu;""exec a from (exec a:sum size by sym from trade)"");""qsp: unknown or not-permitted column: a""]",1,,...but not with a bare one: a dictionary keyed by sym
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""exec a from (exec a:sum size by sym from trade)"");""qsp: a is not in scope here*""]",1,,...but not with a bare one: a dictionary keyed by sym
 true,0,0,q,".t.deny[P;`llmu;""meta `secret""]",1,,meta on a table name
 true,0,0,q,".t.deny[P;`llmu;""cols `$\""secret\""""]",1,,cols on a computed table name
 true,0,0,q,".t.deny[P;`llmu;""count each `$\""secret\""""]",1,,each reads a symbol atom it is applied to
@@ -176,7 +176,9 @@ true,0,0,q,".t.allow[P;`alice;""select distinct sym from trade"";([]sym:`aaa`bbb
 true,0,0,q,".t.allow[P;`bob;""select distinct sym from trade"";([]sym:enlist`ccc)]",1,,a lambda filter: bob
 true,0,0,q,"0<count ss[qsp.explain[P;`alice;""select from trade""];""`aaa`bbb""]",1,,...its values are in what ran
 true,0,0,q,".t.allow[P;`carol;""select distinct sym from trade"";([]sym:0#`)]",1,,"a lookup left in the tree, with USER"
-true,0,0,q,"0<count ss[qsp.explain[P;`carol;""select from trade""];""(`allowedsyms;,`carol)""]",1,,"...it stays a call, keyed on the user literally"
+true,0,0,q,"qsp.explain[P;`carol;""select from trade""] like ""*allowedsyms?`carol?*""",1,,"...it stays a call, keyed on the user literally"
+true,0,0,q,".t.eq[qsp.explain[P;`llmu;""select from trade""];""select date, sym, account, size, price from trade where account in `A1`A2""]",1,,"explain gives q-SQL: the query as it runs, with the row filter and the columns pinned"
+true,0,0,q,".t.eq[eval parse qsp.explain[P;`llmu;""select s:sum size by sym from trade where size>10""];qsp.run[P;`llmu;""select s:sum size by sym from trade where size>10""]]",1,,"...text that, run as it is, gives exactly what qsp ran: it is shown only when it parses back to the same tree"
 true,0,0,q,".t.deny[P;`carol;""select from trade where sym in allowedsyms`alice""]",1,,...and the caller cannot make that call themselves
 run,0,0,q,"PB:qsp.grant[P;`desk;`trade;qsp.ALL;{[u] '""lookup down""}]",1,,
 true,0,0,q,".t.deny[PB;`alice;""select from trade""]",1,,a failing lookup refuses - it never falls back to no filter
@@ -237,6 +239,11 @@ true,0,0,q,".t.allow[P;`llmu;""select from aj[`sym`date;select date,sym,size fro
 true,0,0,q,".t.deny[P;`llmu;""select from trade lj 1!select sym,bid from quote""]",1,,a raw table in a join
 true,0,0,q,".t.deny[P;`llmu;""select from (select sym,pnl from trade) lj 1!select sym,bid from quote""]",1,,a hidden column inside a join
 true,0,0,q,".t.deny[P;`llmu;""select r:allowedsyms[`alice] from select allowedsyms:size from trade""]",1,,"an inner select cannot name a column after a process function, then call it"
+run,0,0,q,shadowfn:{x},1,,a process global a writer could pick as an alias
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select m:sum shadowfn from select shadowfn:size from trade"");""qsp: shadowfn is a column this query names, but that name is taken on this server*""]",1,,"an alias that shadows a process global is dropped, and the refusal says to rename it"
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select m:shadowfn 0 from select shadowfn:size from trade"");""qsp: shadowfn is a column this query names, but that name is taken on this server*""]",1,,...applied as well as read
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select m:sum shadowfn from select size from trade"");""qsp: unknown or not-permitted column: shadowfn""]",1,,"a global's name the query does not alias gets the plain refusal, which says nothing of the server"
+true,0,0,q,".t.eq[count qsp.run[P;`llmu;""select m:sum shadowfn_ from select shadowfn_:size from trade""];1]",1,,...and the rename runs
 true,0,0,q,".t.allow[P;`llmu;""select from trade where size<>10, price>=2"";select from (LLMC#A12) where size<>10, price>=2]",1,,"<> and >=, which q writes as compositions"
 true,0,0,q,".t.allow[P;`llmu;""select from trade where sym in exec sym from quote"";LLMC#A12]",1,,a subquery in where is pinned too
 true,0,0,q,".t.deny[P;`llmu;""select from trade where sym in exec sym from select from trade where pnl>0""]",1,,...and checked
@@ -367,13 +374,15 @@ true,0,0,q,".t.eq[count qsp.run[H;`llmu;""select from ticks where date within 00
 run,0,0,q,"roll:""select from ticks where date within (2020.01.01 2020.01.01;2020.01.01 2020.01.02) first 1?2""",1,,
 true,0,0,q,"all {r:@[{count qsp.run[HM;`llmu;x]};x;{x}]; (r~3)|$[10h=type r;r like ""qsp: too many partitions*"";0b]} each 30#enlist roll",1,,"a constraint computed twice could pick one partition to count and both to read: it is computed once"
 true,0,0,q,"0<count ss[last qsp.runx[HM;`llmu;""select from ticks where date within 2020.01.01+0 0""];""2020.01.01 2020.01.01""]",1,,...and what ran holds its value
-true,0,0,q,"0<count ss[last qsp.runx[H;`extu;""select from ticks where date within 2020.01.01 2020.01.02""];""(in;`date;,2020.01.01)""]",1,,"an embargo after the user's range is folded into it: one list of partitions, so q reads only those"
+true,0,0,q,"0<count ss[last qsp.runx[H;`extu;""select from ticks where date within 2020.01.01 2020.01.02""];""date in enlist 2020.01.01""]",1,,"an embargo after the user's range is folded into it: one list of partitions, so q reads only those"
 true,0,0,q,".t.eq[exec date from qsp.run[H;`extu;""select from ticks where date within 2020.01.01 2020.01.02""];4#2020.01.01]",1,,...the same rows as unfolded
 true,0,0,q,".t.eq[count qsp.run[H;`extu;""select from ticks where date within 2020.01.02 2020.01.02""];0]",1,,...and none when they select no partition in common
 true,0,0,q,".t.eq[count qsp.run[HM;`extu;""select from ticks where date within 2020.01.01 2020.01.02""];4]",1,,"...and maxpartitions counts the partitions read: one, not the range's two"
-true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date within 2020.01.01 2020.01.02, date<>2020.01.02""];""(in;`date;,2020.01.01)""]",1,,a user's own second constraint on the partition column is folded too
-true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date within 2020.01.01 2020.01.02, date=max date""];""(within;`date;2020.01.01 2020.01.02)""]",1,,...but not one that computes over the column
-true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date=2020.01.01""];""(=;`date;2020.01.01)""]",1,,a single partition constraint is left as written
+true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date within 2020.01.01 2020.01.02, date<>2020.01.02""];""date in enlist 2020.01.01""]",1,,a user's own second constraint on the partition column is folded too
+true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date within 2020.01.01 2020.01.02, date=max date""];""date within 2020.01.01 2020.01.02""]",1,,...but not one that computes over the column
+true,0,0,q,"0<count ss[last qsp.runx[H;`llmu;""select from ticks where date=2020.01.01""];""where date=2020.01.01""]",1,,a single partition constraint is left as written
+true,0,0,q,".t.eq[qsp.api.describe[H;`extu;`q][`shape;`ticks;`dates];`first`last`count!(2020.01.01;2020.01.01;1)]",1,,"describe's shape gives the partitions a user can see: extu's embargo holds back the last"
+true,0,0,q,".t.eq[qsp.api.describe[H;`llmu;`q][`shape;`ticks;`dates;`count];2]",1,,...llmu has none
 true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select x:(count select from ticks) from ticks where date=2020.01.01"");""qsp: full table scan*""]",1,,a select written as a column is a read like any other
 true,0,0,q,".t.eq[qsp.fullscans[H;`llmu;""select x:(count select from ticks) from ticks where date=2020.01.01""];enlist`ticks]",1,,...fullscans finds it
 true,0,0,q,".t.err[(qsp.run;HM;`llmu;""select n:count i by x:(count select from ticks where date within 2020.01.01 2020.01.02) from ticks where date=2020.01.01"");""qsp: *""]",1,,...in a by clause too
@@ -395,7 +404,10 @@ true,0,0,q,".t.eq[decision[P;`llmu;""select from trade""];`allowed]",1,,allowed
 true,0,0,q,".t.eq[decision[P;`llmu;""select pnl from trade""];`denied]",1,,denied
 true,0,0,q,".t.eq[decision[P;`llmu;""select from trade where (""];`error]",1,,"not q is an error, not a denial"
 true,0,0,q,".t.eq[ decision[P;`llmu;""select price from select sym from trade""];`error]",1,,a column the caller holds but an inner select dropped is an error
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select w from (select sym from (select sym,w:size from trade))"");""qsp: w is not in scope here - the query computes it, but does not carry it out to where it is read""]",1,,"a column the query computes, lost on the way out, is not in scope - the writer named it"
+true,0,0,q,".t.eq[decision[P;`llmu;""select w from (select sym from (select sym,w:size from trade))""];`error]",1,,"...an error, not a denial: nothing was withheld"
 true,0,0,q,".t.err[(qsp.run;P;`llmu;""select price from select sym from trade""); ""qsp: price is not in scope here*""]",1,,...and the caller sees a clean qsp message
+true,0,0,q,".t.eq[decision[P;`llmu;""select m:sum shadowfn from select shadowfn:size from trade""];`denied]",1,,...and it stays a denial: the shape is the one an attack on a process function takes
 true,0,0,q,".t.eq[decision[P;`llmu;""select x:size+`a from trade""];`error]",1,,q failing on a permitted query is an error
 true,0,0,q,".t.eq[decision[qsp.configure[P;([maxrows:1])];`llmu;""select from trade""];`denied]",1,,a limit is a denial
 true,0,0,q,".t.eq[decision[P;`llmu;""cols `$\""secret\""""];`denied]",1,,a check refusing a computed value is a denial
@@ -435,6 +447,9 @@ true,0,0,q,"r like ""*qsp: HTTP access is not permitted*""",1,,HTTP is refused
 run,0,0,q,"r:raze @[system;""curl -s -i -m 2 'http://localhost:"",string[.t.port],""/?select%20from%20trade' 2>/dev/null"";{enlist""""}]",1,,
 true,0,0,q,"r like ""*401 Unauthorized*""",1,,"...and without a known user, refused at login (.z.pw), with 401"
 true,0,0,q,".t.err[(u;qsp.gatewaywrapx[""select from trade"";`ana]);""qsp: *""]",1,,a non-gateway cannot use the execasx form either
+true,0,0,q,".t.eq[u qsp.gatewaywrapx[""select from trade"";`llmu];(u ""select from trade"";qsp.explain[P;`llmu;""select from trade""])]",1,,"...except naming itself: an agent bound to one login sees what ran, as a gateway does"
+true,0,0,q,".t.eq[u qsp.gatewaywrap[""select from trade"";`llmu];u ""select from trade""]",1,,...and the execas form naming itself is a plain query
+true,0,0,q,".t.err[(u;qsp.gatewaywrapx[""select pnl from trade"";`llmu]);""qsp: unknown or not-permitted column: pnl""]",1,,...policed as its own query
 true,0,0,q,".t.err[(g;(`.qsp.other;""select from trade"";`ana));""qsp: *""]",1,,"from a gateway, any other three-item message is an ordinary call"
 true,0,0,q,".t.eq[g qsp.gatewaywrap[parse""select from trade"";`llmu];LLMC#A12]",1,,a gateway may forward a parse tree
 true,0,0,q,".t.err[(g;(`.qsp.execas;`sym;`llmu));""qsp: unknown or not-permitted column: sym""]",1,,"...or one name, which makes the message a symbol vector: it is still a gateway call"
@@ -454,29 +469,35 @@ comment,0,0,q,,1,,the api over IPC
 true,0,0,q,".t.eq[g (`.qsp.api;`limits);g`.qsp.limits]",1,,`.qsp.limits is the api call limits
 true,0,0,q,".t.eq[g (`.qsp.api;`version);qsp.version]",1,,version
 true,0,0,q,"`wmax in key g (`.qsp.api;`memstats)",1,,memstats is .Q.w[]
-true,0,0,q,".t.eq[g (`.qsp.api;`users);([users:qsp.api.users[P;`q]`users;gateways:1#`gateway])]",1,,users and gateways
+true,0,0,q,".t.eq[g (`.qsp.api;`users);([users:qsp.api.users[P;`q]`users;gateways:`gateway`gwllm])]",1,,users and gateways
 true,0,0,q,".t.eq[(g (`.qsp.api;`functions))`functions;asc key P`fns]",1,,the whitelist
 true,0,0,q,".t.eq[g (`.qsp.api;`access;`ana);qsp.access[P;`ana]]",1,,a gateway names the user
 true,0,0,q,".t.eq[(d:g (`.qsp.api;`describe;`llmu))`user;`llmu]",1,,describe
 true,0,0,q,".t.eq[exec columns from d[`tabs] where tbl=`trade;enlist LLMC]",1,,...the granted columns
 true,0,0,q,".t.eq[exec types from d[`tabs] where tbl=`trade;enlist `date`symbol`symbol`long`float]",1,,...their types, by name
 true,0,0,q,".t.eq[exec rows from d[`tabs] where tbl=`trade;enlist ""account in `A1`A2""]",1,,...the row filter as a where clause
-true,0,0,q,".t.eq[d`limits;(`maxrows`maxsize`maxdepth`requirepartition`maxpartitions`strictcolumns`rowindex`selectonly)#P`config]",1,,...the limits
+true,0,0,q,".t.eq[d`limits;((`maxrows`maxsize`maxdepth`requirepartition`maxpartitions`strictcolumns`rowindex`selectonly)#P`config),`timeout_s`memory_cap_bytes!(`long$system""T"";.Q.w[]`wmax)]",1,,"...the limits: the policy's, and the process's timeout and memory cap"
 true,0,0,q,"any d[`rules;`rule] like ""*functional forms*""",1,,...and the rules
-true,0,0,q,".t.eq[g (`.qsp.api;`validate;`llmu;""select pnl from trade"");([allowed:0b;reason:""qsp: unknown or not-permitted column: pnl""])]",1,,validate
+true,0,0,q,".t.eq[g (`.qsp.api;`validate;`llmu;""select pnl from trade"");([allowed:0b;reason:""qsp: unknown or not-permitted column: pnl"";rule:`columns;code:`columns.unknown;kind:`permission;subject:""pnl""])]",1,,"validate, with the rule that explains a refusal"
 true,0,0,q,".t.eq[g (`.qsp.api;`explain;`llmu;""select from trade"");qsp.explain[P;`llmu;""select from trade""]]",1,,explain
 true,0,0,q,".t.eq[(u (`.qsp.api;`describe))`user;`llmu]",1,,a user may ask about itself
-true,0,0,q,".t.eq[u (`.qsp.api;`validate;""select from trade"");([allowed:1b;reason:""""])]",1,,...and validate its own queries
+true,0,0,q,".t.eq[u (`.qsp.api;`validate;""select from trade"");([allowed:1b;reason:"""";rule:`;code:`;kind:`;subject:""""])]",1,,...and validate its own queries
+true,0,0,q,".t.eq[(g (`.qsp.api;`estimate;`llmu;""select from trade""))`verdict;`fits]",1,,estimate over IPC: a gateway names the user
+true,0,0,q,".t.eq[(u (`.qsp.api;`estimate;""select from trade""))[`result;`rows];4]",1,,...and a user asks about itself
 true,0,0,q,".t.err[(u;(`.qsp.api;`describe;`ana));""qsp: api call describe takes 0 arguments, then optionally a format*""]",1,,...but cannot name another user
 true,0,0,q,".t.err[(u;(`.qsp.api;`memstats));""qsp: api call memstats is for gateway logins only""]",1,,...nor ask what only a gateway may
 true,0,0,q,".t.err[(g;(`.qsp.api;`explain;`llmu));""qsp: api call explain takes 1 argument after the user*""]",1,,a missing argument
 true,0,0,q,".t.eq[(.j.k g (`.qsp.api;`describe;`llmu;`json))`user;""llmu""]",1,,a format follows the arguments: JSON
 true,0,0,q,".t.eq[g (`.qsp.api;`describe;`llmu;`q);g (`.qsp.api;`describe;`llmu)]",1,,...`q is the default
-true,0,0,q,".t.eq[.j.k u (`.qsp.api;`validate;""select pnl from trade"";`json);`allowed`reason!(0b;""qsp: unknown or not-permitted column: pnl"")]",1,,...after a query too
+true,0,0,q,".t.eq[.j.k u (`.qsp.api;`validate;""select pnl from trade"";`json);`allowed`reason`rule`code`kind`subject!(0b;""qsp: unknown or not-permitted column: pnl"";""columns"";""columns.unknown"";""permission"";""pnl"")]",1,,...after a query too
 true,0,0,q,".t.eq[(.j.k u (`.qsp.api;`describe;`json))`user;""llmu""]",1,,"...from a user's own login, where `json cannot be a user"
 true,0,0,q,".t.err[(g;(`.qsp.api;`describe;`json));""qsp: not a user of this policy: `json""]",1,,"...and from a gateway, where it is the user"
 true,0,0,q,".t.eq[.j.k u (`.qsp.api;`version;`json);qsp.version]",1,,...version
 true,0,0,q,".t.eq[g (`.qsp.api;`rules);qsp.api.rules[P;`q]]",1,,rules is a call any login may make
+true,0,0,q,".t.eq[u (`.qsp.api;`primer);qsp.api.primer`q]",1,,"...and primer, from a user's own login"
+true,0,0,q,".t.eq[.j.k g (`.qsp.api;`primer;`json);qsp.api.primer`q]",1,,"...as JSON, one string"
+true,0,0,q,"qsp.api.primer[`q] like ""# q under qsp*""",1,,"primer is primer.md, the markdown beside api/init.q"
+true,0,0,q,".t.err[(g;(`.qsp.api;`primer;`llmu));""qsp: api call primer takes 0 arguments*""]",1,,"...the same for every user, so it names none"
 true,0,0,q,".t.err[(u;(`.qsp.api;`limits;`xml));""qsp: api call limits is for gateway logins only""]",1,,...the login is checked before the format
 true,0,0,q,".t.err[(g;(`.qsp.api;`limits;`xml));""qsp: api call limits takes 0 arguments, then optionally a format, `q or `json""]",1,,a format that is neither
 true,0,0,q,".t.err[(g;(`.qsp.api;`describe;`nobody));""qsp: not a user of this policy: `nobody""]",1,,a user the policy does not know
@@ -492,6 +513,60 @@ true,0,0,q,".t.eq[last exec m from u""select from seen where h=`pg"";(eval;qsp.r
 run,0,0,q,"(neg u)""select from trade"";u""1""",1,,
 true,0,0,q,".t.eq[last exec m from u""select from seen where h=`ps"";(eval;qsp.rewrite[PS;`llmu;""select from trade""])]",1,,"...and so does a .z.ps: async messages are policed exactly as sync ones"
 true,0,0,q,".t.eq[last exec m from g qsp.gatewaywrap[""select from seen where h=`pg"";`llmu];(eval;qsp.rewrite[PS;`llmu;""select from seen where h=`pg""])]",1,,...and a gateway's query runs through it as the user it names
+comment,0,0,q,,1,,the MCP server: JSON-RPC on stdin and stdout
+run,0,0,q,".t.mcpin:""/tmp/qspmcp"",string[.z.i],"".in""; .t.mcpout:""/tmp/qspmcp"",string[.z.i],"".out""",1,,
+run,0,0,q,".t.mcpmsg:{[m] .j.j m,enlist[`jsonrpc]!enlist""2.0""}; .t.mcpcall:{[id;n;a] .t.mcpmsg `id`method`params!(id;""tools/call"";`name`arguments!(n;a))}",1,,
+run,0,0,q,"(hsym`$.t.mcpin) 0: (.t.mcpmsg `id`method`params!(1;""initialize"";enlist[`protocolVersion]!enlist""2025-03-26"");.t.mcpmsg `method`params!(""notifications/initialized"";()!());.t.mcpmsg `id`method!(2;""tools/list"");.t.mcpcall[3;""qsp_query"";enlist[`query]!enlist""select from trade""];.t.mcpcall[4;""qsp_query"";enlist[`query]!enlist""select pnl from trade""];.t.mcpcall[5;""qsp_query"";`query`user!(""select from trade"";""ana"")];.t.mcpmsg `id`method!(6;""nosuch""))",1,,
+run,0,0,q,".t.mcprc:system""(q "",.t.mod,""mcp/mcp.q -q -port "",string[.t.port],"" -user llmu < "",.t.mcpin,"" > "",.t.mcpout,"" 2>/dev/null); echo $?""",1,,
+run,0,0,q,.t.mcpr:.j.k each read0 hsym`$.t.mcpout,1,,
+true,0,0,q,".t.eq[first .t.mcprc;enlist ""0""]",1,,the server exits cleanly when its input ends
+true,0,0,q,".t.eq[count .t.mcpr;6]",1,,"one reply per request, none for a notification"
+true,0,0,q,".t.eq[.t.mcpr[0;`result;`protocolVersion];""2025-03-26""]",1,,it agrees the protocol version the client asks for
+true,0,0,q,"""qsp_query"" in .t.mcpr[1;`result;`tools;;`name]",1,,it lists its tools
+true,0,0,q,"not ""qsp_users"" in .t.mcpr[1;`result;`tools;;`name]",1,,"...bound to a user, none to list the users"
+true,0,0,q,".t.eq[(.j.k .t.mcpr[2;`result;`content;0;`text])`ran;qsp.explain[P;`llmu;""select from trade""]]",1,,a query's reply says what qsp ran
+true,0,0,q,".t.eq[.t.mcpr[3;`result]`isError`content;(1b;enlist `type`text!(""text"";""qsp: unknown or not-permitted column: pnl""))]",1,,a refusal is a tool error with qsp's message
+true,0,0,q,".t.mcpr[4;`result;`isError]",1,,a bound server cannot act as another user
+true,0,0,q,".t.eq[.t.mcpr[5;`error;`code];-32601f]",1,,an unknown method is a JSON-RPC error
+run,0,0,q,"hdel each hsym`$(.t.mcpin;.t.mcpout)",1,,
+comment,0,0,q,,1,,async requests: a reply with the request's id
+run,0,0,q,".t.rep:()!();.qsp.reply:{[id;a] .t.rep[id]:a}",1,,
+run,0,0,q,"neg[u] (`.qsp.async;1;""select from trade""); u""1""",1,,
+true,0,0,q,".t.eq[.t.rep 1;(1b;LLMC#A12)]",1,,an async query is answered asynchronously with its id
+run,0,0,q,"neg[u] (`.qsp.async;2;""select pnl from trade""); u""1""",1,,
+true,0,0,q,".t.eq[.t.rep[2;0];0b]",1,,...a refusal is an answer too
+true,0,0,q,".t.eq[.t.rep[2;1]`code`kind`subject`rule;(`columns.unknown;`permission;""pnl"";`columns)]",1,,...with the refusal as data
+run,0,0,q,"neg[u] (`.qsp.async;3;(`.qsp.api;`validate;""select from trade"")); u""1""",1,,
+true,0,0,q,".t.eq[.t.rep[3;1]`allowed;1b]",1,,...an api call can be sent async
+run,0,0,q,"neg[u] (`.qsp.async;4;(`.qsp.async;5;""1"")); u""1""",1,,
+true,0,0,q,".t.eq[(.t.rep[4;0];5 in key .t.rep);(0b;0b)]",1,,...and cannot carry another async request
+comment,0,0,q,,1,,execasr: a result with a receipt, or the refusal as data
+run,0,0,q,"R:g (`.qsp.execasr;""select from trade"";`llmu)",1,,
+true,0,0,q,".t.eq[R`status`result;(`ok;LLMC#A12)]",1,,a gateway gets the result
+true,0,0,q,".t.eq[R[`receipt]`user`gateway`rows;(`llmu;`gateway;count LLMC#A12)]",1,,...and a receipt naming the user and the gateway
+true,0,0,q,".t.eq[R[`receipt;`resulthash];raze string -33!-8!R`result]",1,,...whose hash any q process can compute again from the result
+true,0,0,q,".t.eq[R`rewritten;qsp.explain[P;`llmu;""select from trade""]]",1,,...and what ran
+true,0,0,q,".t.eq[g (`.qsp.api;`verify;R`receipt);`valid`stored!01b]",1,,a receipt from a process with no keys is stored but not signed
+true,0,0,q,".t.eq[(g (`.qsp.api;`receipt;R[`receipt;`id]))[`receipt;`id];R[`receipt;`id]]",1,,the gateway that asked can fetch it
+true,0,0,q,".t.eq[(u (`.qsp.api;`receipt;R[`receipt;`id]))[`values];LLMC#A12]",1,,"...and so can the user it ran as, with its values"
+run,0,0,q,a:.t.open`ana,1,,
+true,0,0,q,".t.err[(a;(`.qsp.api;`receipt;R[`receipt;`id]));""qsp: no receipt * that this login may read""]",1,,...and no one else
+run,0,0,q,hclose a,1,,
+run,0,0,q,"R:g (`.qsp.execasr;""select pnl from trade"";`llmu)",1,,
+true,0,0,q,".t.eq[R`status`code`kind`subject`rule;(`refused;`columns.unknown;`permission;""pnl"";`columns)]",1,,"refused, execasr returns the refusal as data, not a signal"
+true,0,0,q,".t.eq[(u (`.qsp.execasr;""select from trade"";`llmu))`status;`ok]",1,,a user may ask for a receipt for its own query
+comment,0,0,q,,1,,ctx: context from a gateway only
+true,0,0,q,".t.eq[g (`.qsp.execas;""select from trade"";`llmu;`session`turn`question!(first -1?0Ng;1;""how much?""));LLMC#A12]",1,,a gateway may send context with a query
+true,0,0,q,".t.err[(g;(`.qsp.execas;""select from trade"";`llmu;enlist[`colour]!enlist`red));""qsp: unknown ctx key: colour*""]",1,,...only the keys qsp records
+true,0,0,q,".t.err[(g;(`.qsp.execas;""select from trade"";`llmu;enlist[`turn]!enlist""one""));""qsp: wrong type for ctx key: turn""]",1,,...of their types
+true,0,0,q,".t.err[(g;(`.qsp.execas;""select from trade"";`llmu;enlist[`question]!enlist 5000#""x""));""qsp: ctx question longer than 4000 characters""]",1,,...and bounded
+true,0,0,q,".t.err[(u;(`.qsp.execas;""select from trade"";`llmu;enlist[`turn]!enlist 1));""qsp: only a gateway login may send ctx with a query""]",1,,a user's own login may not send context
+comment,0,0,q,,1,,a gateway scoped to a group
+run,0,0,q,s:.t.open`gwllm,1,,
+true,0,0,q,".t.eq[s qsp.gatewaywrap[""select from trade"";`llmu];LLMC#A12]",1,,a scoped gateway runs as a member of its group
+true,0,0,q,".t.err[(s;qsp.gatewaywrap[""select from trade"";`ana]);""qsp: gateway gwllm may not run queries as ana - it may name only members of llm""]",1,,...and as no one else
+true,0,0,q,".t.eq[(s (`.qsp.execasr;""select from trade"";`ana))`code;`users.outofscope]",1,,...whatever form it sends
+run,0,0,q,hclose s,1,,
 run,0,0,q,hclose u,1,,
 run,0,0,q,hclose g,1,,
 comment,0,0,q,,1,,serve swaps the policy
@@ -529,7 +604,77 @@ true,0,0,q,".t.err[(qsp.api.describe;P;`llm;`q);""qsp: not a user of this policy
 true,0,0,q,".t.err[(qsp.api.access;P;`nobody;`q);""qsp: not a user of this policy: `nobody""]",1,,access too
 true,0,0,q,.t.eq[qsp.api.access[P;`ana;`q];qsp.access[P;`ana]],1,,...which is qsp.access for one user
 true,0,0,q,.t.eq[qsp.api.version`q;qsp.version],1,,version
-true,0,0,q,".t.eq[qsp.api.validate[P;`llmu;""select pnl from trade"";`q];([allowed:0b;reason:""qsp: unknown or not-permitted column: pnl""])]",1,,validate: a dictionary
+true,0,0,q,".t.eq[qsp.api.validate[P;`llmu;""select pnl from trade"";`q];([allowed:0b;reason:""qsp: unknown or not-permitted column: pnl"";rule:`columns;code:`columns.unknown;kind:`permission;subject:""pnl""])]",1,,validate: a dictionary
+true,0,0,q,".t.eq[qsp.api.validate[P;`llmu;""select fills:count sym from trade"";`q]`rule;`columns]",1,,"...whose rule is the most specific match: a reserved name is the columns rule, not the catch-all language rule"
+true,0,0,q,".t.eq[qsp.api.validate[P;`llmu;""select n:count i from trade"";`q]`rule;`rowindex]",1,,...and i is the rowindex rule
+comment,0,0,q,,1,,estimate: how big a query is before it runs
+run,0,0,q,"E4:qsp.estimate[P;`llmu;""select from trade""]",1,,
+true,0,0,q,".t.eq[E4[`result;`rows`exact];(4;1b)]",1,,"the rows a select returns, counted as the user: llmu's row filter leaves 4 of trade's 5"
+true,0,0,q,".t.eq[E4`verdict;`fits]",1,,...which fits
+true,0,0,q,".t.eq[exec rows from E4`reads;enlist 4]",1,,"...one read, counted with the row filter in its where clause: a count never includes rows the user cannot see"
+true,0,0,q,".t.eq[0<E4[`result;`bytes];1b]",1,,...and its bytes: rows times the bytes of the columns it returns
+true,0,0,q,".t.eq[qsp.estimate[P;`ana;""select from trade""][`result;`rows];5]",1,,...another user's own count
+true,0,0,q,".t.eq[qsp.estimate[P;`llmu;""select s:sum size by sym from trade""][`result;`rows`exact];(4;0b)]",1,,"a grouped select returns at most the rows it reads: a bound, not exact"
+true,0,0,q,".t.eq[qsp.estimate[P;`llmu;""select pnl from trade""]`verdict`reason;(`refused;""qsp: unknown or not-permitted column: pnl"")]",1,,"a query qsp would refuse is refused, with the reason"
+run,0,0,q,"E5:qsp.estimate[qsp.configure[P;([maxrows:2])];`llmu;""select from trade""]",1,,
+true,0,0,q,".t.eq[E5`verdict;`toobig]",1,,a result over maxrows is too big
+true,0,0,q,"any E5[`advice] like ""*more than maxrows 2*""",1,,...and the advice says which limit and what to do
+comment,0,0,q,,1,,"describe's shape: what the data looks like, as the user sees it"
+run,0,0,q,AN:count qsp.audit[],1,,
+run,0,0,q,"SH:qsp.api.describe[P;`llmu;`q]`shape",1,,
+true,0,0,q,".t.eq[asc SH[`trade;`values;`account];`A1`A2]",1,,"a code column's few values, as the user sees them: llmu's filter leaves accounts A1 and A2"
+true,0,0,q,"not `pnl in key SH[`trade;`values]",1,,...never a column the user may not read
+true,0,0,q,".t.eq[count qsp.audit[];AN]",1,,"...and describing writes no audit record: the user asked nothing"
+comment,0,0,q,,1,,"terms: the business's own words, for whoever writes queries"
+run,0,0,q,"PT:qsp.term[P;`turnover;""what traded, in money"";""price times size, summed"";""select t:sum price*size from trade"";`trade;""""]",1,,
+run,0,0,q,"PT:qsp.term[PT;`spread;""the ask less the bid"";"""";""select s:avg ask-bid from quote"";`quote;""""]",1,,
+true,0,0,q,".t.eq[exec term from qsp.api.describe[PT;`llmu;`q]`terms;`turnover`spread]",1,,describe gives a user the terms over tables they can read
+true,0,0,q,".t.eq[exec term from qsp.api.describe[PT;`ana;`q]`terms;enlist`turnover]",1,,"...and not a term over a table they cannot: its definition would show the table"
+true,0,0,q,".t.eq[count qsp.checkterms PT;0]",1,,checkterms: each term's example runs as a user who can read its tables
+true,0,0,q,".t.eq[(qsp.checkterms qsp.term[P;`bad;""x"";"""";""select pnl2 from trade"";`trade;""""])`term;enlist`bad]",1,,...and a term whose example the policy refuses is reported
+true,0,0,q,".t.err[(qsp.term;P;`x;""m"";"""";"""";`nosuch;"""");""qsp: x names a table the policy does not have: nosuch""]",1,,a term names only tables the policy has
+comment,0,0,q,,1,,"brief, history and maxqueries: for an agent's context, its own record, and its pace"
+run,0,0,q,"BR:qsp.api.brief[P;`llmu;`q]",1,,
+true,0,0,q,"not any `rules`functions in key BR",1,,brief is describe without the rules and the function whitelist an agent holding the primer has
+true,0,0,q,".t.eq[BR`rulesversion;raze string md5 `char$-8!qsp.api.rules[P;`q]]",1,,...with their version
+true,0,0,q,"all `tabs`shape`terms`limits in key BR",1,,...and everything else describe has
+run,0,0,q,"@[qsp.run[P;`llmu];""select pnl from trade"";{x}]",1,,
+true,0,0,q,".t.eq[last[qsp.api.history[P;`llmu;5;`q]]`allowed`reason;(0b;""qsp: unknown or not-permitted column: pnl"")]",1,,"history: a user's own last decisions, refusals with their reasons"
+true,0,0,q,"all `llmu=exec user from qsp.audit[] where time in qsp.api.history[P;`llmu;5;`q]`time",1,,...its own only
+run,0,0,q,"PQ:qsp.configure[P;([maxqueries:2])]",1,,
+true,0,0,q,".t.eq[count each (qsp.run[PQ;`ana;""select from trade""];qsp.run[PQ;`ana;""select from trade""]);5 5]",1,,"maxqueries: a user may run this many queries a minute"
+true,0,0,q,".t.err[(qsp.run;PQ;`ana;""select from trade"");""qsp: rate limit: 2 queries in the last minute, the most maxqueries allows - wait*""]",1,,...and the next is refused with how long to wait
+true,0,0,q,".t.eq[qsp.validate[PQ;`ana;""select from trade""];(1b;"""")]",1,,...validate runs nothing and does not count
+true,0,0,q,".t.err[(qsp.run;qsp.configure[P;([maxrows:2])];`llmu;""select from trade"");""qsp: result exceeds the maximum permitted row count""]",1,,"without precheck, a result over maxrows is refused after the work"
+true,0,0,q,".t.err[(qsp.run;qsp.configure[P;([maxrows:2;precheck:1b])];`llmu;""select from trade"");""qsp: too big to run: the result would have 4 rows, more than maxrows 2*""]",1,,"precheck: refused before it runs, from the estimate"
+true,0,0,q,".t.eq[count qsp.run[qsp.configure[P;([maxrows:2;precheck:1b])];`llmu;""select n:count sym by account from trade""];2]",1,,"precheck: a grouped query whose upper bound exceeds maxrows still runs and is checked on its actual result"
+true,0,0,q,".t.eq[(qsp.estimate[qsp.configure[P;([maxrows:2;precheck:1b])];`llmu;""select n:count sym from trade""])[`result;`rows];1]",1,,"estimate: an ungrouped aggregate returns 1 row"
+true,0,0,q,".t.eq[count qsp.run[qsp.configure[P;([maxrows:2;precheck:1b])];`llmu;""select n:count sym from trade""];1]",1,,"precheck: an ungrouped aggregate is not refused when input rows exceed maxrows"
+true,0,0,q,".t.eq[count qsp.run[qsp.configure[P;([maxrows:10;precheck:1b])];`llmu;""select from trade""];4]",1,,...and a query that fits runs as before
+true,0,0,q,".t.eq[qsp.estimate[H;`llmu;""select from ticks where date=2020.01.01""][`result;`rows];count qsp.run[H;`llmu;""select from ticks where date=2020.01.01""]]",1,,a partitioned read is counted in the partitions it reads
+comment,0,0,q,,1,,refusals that say what to change
+true,0,0,q,".t.err[(qsp.run;P;`ana;""select fills:count sym from trade"");""qsp: not valid q (assign): fills is a q function, so it cannot name a column - rename it""]",1,,a column named after a q function: q says only 'assign - qsp names it
+true,0,0,q,".t.err[(qsp.run;P;`ana;""select fills:count sym, prev:last price from trade"");""qsp: not valid q (assign): fills, prev are q functions, so they cannot name a column - rename them""]",1,,...every one
+true,0,0,q,".t.err[(qsp.run;P;`ana;""select x from trade where 3:4"");""qsp: not valid q (3:)""]",1,,...any other parse error is reported as q gave it
+true,0,0,q,".t.eq[qsp.run[P;`ana;""select y:date.year, m:date.mm from trade""];select y:`year$date, m:`mm$date from trade]",1,,"a dotted temporal accessor is q's cast of that name, rewritten to it"
+true,0,0,q,".t.eq[qsp.run[P;`ana;""select n:count sym by date.year from trade""];select n:count sym by date.year from trade]",1,,...in a by clause too
+true,0,0,q,".t.err[(qsp.run;P;`ana;""select x:date.foo from trade"");""qsp: date.foo: foo is not a part q takes after a dot*""]",1,,...a part q does not take is named
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select x:pnl.year from trade"");""qsp: unknown or not-permitted column: pnl.year""]",1,,...and a hidden column's parts are as hidden as the column
+true,0,0,q,".t.eq[qsp.run[P;`ana;""select y:`year$date, d:`dd$date from trade""];select y:`year$date, d:`dd$date from trade]",1,,"q's extractions - `year, `mm, `dd, `hh, `uu, `ss, `week - are casts like a type name"
+true,0,0,q,".t.err[(qsp.run;P;`ana;""select x:`zz$sym from trade"");""qsp: zz$ casts to an enumeration - cast to a type name*""]",1,,...any other name is still an enumeration domain
+true,0,0,q,".t.err[(qsp.run;P;`ana;""select x:size+\\:1 2 from trade"");""qsp: function not permitted: \\: (each-left*""]",1,,an iterator applied by its glyph is named
+true,0,0,q,".t.err[(qsp.run;P;`ana;""select x:(10 20 30) 0 from trade"");""qsp: expression head is not a function: 10 20 30 - q applies a list*""]",1,,a list applied to an argument is named
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select n:count sym from select sym,size from trade where sym=`a where size>1"");""qsp: a where after a value: ,`a where ... - q reads a where written after a nested select's last constraint*""]",1,,a where that binds into a nested select's last constraint is named
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select n:count sym from select sym,size from trade where size>1 where size>2"");""qsp: a where after a value: 1 where*""]",1,,...after a number too
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select n:count sym from select sym,size from trade where size within (1;9) where size>2"");""qsp: a where after a value: (enlist;1;9) where*""]",1,,...and after a list written in brackets
+true,0,0,q,".t.eq[count qsp.run[P;`llmu;""select n:count sym from trade where size within (1;9)""];1]",1,,...which is otherwise a list like any other
+true,0,0,q,".t.eq[count qsp.run[P;`llmu;""select n:count sym from (select sym,size from trade where sym=`a) where size>1""];1]",1,,...and the parenthesised form runs
+true,0,0,q,".t.eq[qsp.api.validate[P;`llmu;""select n:count sym from select sym,size from trade where sym=`a where size>1"";`q]`rule;`nesting]",1,,validate names the nesting rule
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""aj[`sym`price; select sym,price,size from trade; select sym,bid from quote]"");""qsp: aj: the right side has no column price to join on - its columns are sym bid""]",1,,"a keyed join on a key one side lacks is refused before it runs: q would not fail fast"
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""aj[`sym`bid; select sym,price from trade; select sym,bid from quote]"");""qsp: aj: the left side has no column bid to join on*""]",1,,...either side
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""(select sym,price from trade) lj select sym,bid from quote"");""qsp: lj requires a keyed right-hand table*""]",1,,"lj/ij/pj with an unkeyed right-hand select is refused before it runs with how to key it"
+true,0,0,q,"0<count qsp.run[P;`llmu;""(select sym,price from trade) lj select last bid by sym from quote""]",1,,"...and a keyed right-hand select with by is accepted"
+true,0,0,q,".t.eq[count qsp.run[P;`llmu;""aj[`sym; select sym,price from trade; select sym,bid from quote]""];4]",1,,...and one with its keys on both sides runs
 true,0,0,q,".t.eq[qsp.api.explain[P;`llmu;""select from trade"";`q];qsp.explain[P;`llmu;""select from trade""]]",1,,explain
 true,0,0,q,"any qsp.api.rules[qsp.configure[P;([requirepartition:1b])];`q][`rule] like ""*partition column*""",1,,the rules follow the config
 true,0,0,q,"not any qsp.api.rules[P;`q][`rule] like ""*partition column*""",1,,...
@@ -628,6 +773,21 @@ true,0,0,q,".t.eq[ exec col from qf.policyin[GD][`schema] where tbl=`trade;cols 
 true,0,0,q,".t.eq[ count qf.schemadrift GD;1+count cols trade]",1,,"...and each difference is one line of fromfiles' warning: ghost, and every live column"
 true,0,0,q,".t.clean[ .t.problems B,(1#`schema)!enlist(""tbl,col,typ,att"";""gone,a,j,"")]",1,,schema rows for a table tables.csv does not list are ignored
 true,0,0,q,".t.report[ .t.problems .t.with[SR;`schema;(""tbl,col,typ,att"";""remote,d,d,"";""remote,s,zz,"";""remote,v,Q,"";""remote,c,C,x""; "",a,j,"";""remote,,j,"";""remote,s,s,g"")]; ((""schema.csv"";3;""type must be one meta type character*found zz""); (""schema.csv"";4;""type must be one meta type character*found Q""); (""schema.csv"";5;""attribute must be blank, p, u, g or s - found x""); (""schema.csv"";6;""no table"");(""schema.csv"";7;""no column""); (""schema.csv"";8;""s of remote is already described on line 3""))]",1,,schema.csv rows are checked
+comment,0,0,q,,1,,"schema.csv's optional bytes and description: what a column is like, for whoever writes queries"
+run,0,0,q,"CI:.t.pol[""p"";B,(1#`schema)!enlist(""tbl,col,typ,att,bytes,description"";""trade,sym,s,,4.5,the instrument"";""trade,price,f,,8,"";""trade,pnl,f,,8,\""what we made, in dollars\"""")]",1,,
+true,0,0,q,".t.eq[exec col!bytes from qf.policyin[CI]`colinfo;`sym`price`pnl!4.5 8 8f]",1,,"bytes per row and a description load from schema.csv, for a table loaded here too"
+true,0,0,q,".t.eq[exec description from qf.policyin[CI]`colinfo where col=`pnl;enlist""what we made, in dollars""]",1,,...a description may hold a comma
+true,0,0,q,".t.eq[(first qsp.api.describe[qf.policyin CI;`llm;`q]`tabs)`columns`bytes`descriptions;(`date`sym;0n 4.5;("""";""the instrument""))]",1,,"describe gives each granted column's bytes and description, 0n and empty where there are none"
+true,0,0,q,"not any ((first qsp.api.describe[qf.policyin CI;`llm;`q]`tabs)`descriptions) like ""what we made*""",1,,...and never a column the user may not read
+true,0,0,q,".t.clean[.t.problems B,(1#`schema)!enlist(""tbl,col,typ,att,bytes"";""trade,sym,s,,4.5"")]",1,,"a header may stop after any optional field"
+true,0,0,q,".t.report[.t.problems B,(1#`schema)!enlist(""tbl,col,typ,att,bytes,description"";""trade,sym,s,,-1,"");(""schema.csv"";2;""bytes must be blank or a number of bytes per row*"")]",1,,a negative size is refused
+true,0,0,q,".t.report[.t.problems B,(1#`schema)!enlist(""tbl,col,typ,att,bytes,description"";""trade,sym,s,,big,"");(""schema.csv"";2;""bytes must be blank or a number of bytes per row*"")]",1,,...and one that is not a number
+true,0,0,q,".t.eq[(qsp.measure[`trade;100])`price`size;8 8f]",1,,"measure: bytes per row, as -22! counts a result, less a column's fixed overhead"
+run,0,0,q,"bigt:([]a:til 20000;s:20000?`ab`cdef`ghijkl;f:20000?1f)",1,,
+true,0,0,q,"{abs[x-y]<0.02*y}[20000*sum qsp.measure[`bigt;20000];-22!bigt]",1,,"...whose sum predicts a result's size: rows times the bytes of its columns"
+true,0,0,q,".t.err[(qsp.colinfo;P;`trade;`nosuch;1f;"""");""qsp: nosuch is not a column of trade""]",1,,colinfo: a policy built in q describes columns too
+true,0,0,q,".t.err[(qsp.colinfo;P;`trade;`sym;-1f;"""");""qsp: bytes must be a float, 0n or not negative""]",1,,...with a size that is not negative
+true,0,0,q,".t.eq[exec term from qf.policyin[.t.pol[""p"";B,(1#`terms)!enlist(""term,meaning"";""vwap,volume-weighted average price"")]]`terms;enlist`vwap]",1,,"terms.csv: term and meaning are needed, the rest may be left off"
 comment,0,0,q,,1,,grants.csv
 run,0,0,q,"E:.t.problems .t.with[B;`grants;(""entity,tbl,columns,filter""; "",trade,date sym,"";""llm,,date,"";""llm,nosuch,*,"";""llm,trade,,"";""llm2,trade,   ,"";""llm3,trade,date sim pnll,"")]",1,,
 true,0,0,q,".t.report[E;( (""grants.csv"";2;""no entity - name a user or group, or delete the row""); (""grants.csv"";3;""no table""); (""grants.csv"";4;""unregistered table nosuch""); (""grants.csv"";5;""no columns - list them separated by spaces, or * for all""); (""grants.csv"";6;""no columns*""); (""grants.csv"";7;""no column sim, pnll in trade""))]",1,,each row is checked
@@ -767,7 +927,7 @@ run,0,0,q,"(hsym`$.t.tmp,""/db4/par.txt"") 0: enlist""/nowhere""",1,,
 true,0,0,q,".t.err[(qsp.scaffold;.t.tmp,""/db4/policy"";`trade);""*/db4, a database*""]",1,,...a segmented one
 true,0,0,q,".t.err[(qsp.scaffold;.t.tmp,""/db1/2026.01.01/policy"";`trade);""*/2026.01.01, a database*""]",1,,...or a partition of one
 run,0,0,q,"(hsym`$.t.tmp,""/notdb/2026.01.01"") 0: enlist""a file"";(hsym`$.t.tmp,""/notdb/sub/x"") 0: enlist""no .d""",1,,
-true,0,0,q,"7=count qsp.scaffold[.t.tmp,""/notdb/policy"";`trade]",1,,"a file named like a partition, or a directory that is not a table, is not a database"
+true,0,0,q,"8=count qsp.scaffold[.t.tmp,""/notdb/policy"";`trade]",1,,"a file named like a partition, or a directory that is not a table, is not a database"
 run,0,0,q,"c:system""cd"";system""cd "",.t.tmp,""/db1"";r:@[qsp.scaffold[""policy""];`trade;::];system""cd "",c",1,,
 true,0,0,q,"(r like""qsp: refusing to write into /*"")and r like""*/db1, a database*""",1,,"a relative directory in an HDB's working directory is refused, naming the database in full"
 run,0,0,q,"qsp.scaffold[.t.tmp,""/s4"";`]",1,,
@@ -837,9 +997,11 @@ true,0,0,q,".t.eq[first .t.tool""-dir "",.t.mod,""examples/equities/policy -init
 comment,0,0,q,,1,,"the admin UI (admin/init.q, admin/ui/): its handlers, called in process"
 run,0,0,q,qsp.unserve[],1,,
 run,0,0,q,ZPH:.z.ph,1,,
-run,0,0,q,"AD:.t.pol[""admin"";FD,(1#`tests)!enlist (""user,query,expect,value,note"";""llmu,select from trade,rows"")]",1,,
+run,0,0,q,"AD:.t.pol[""admin"";FD,`tests`terms!((""user,query,expect,value,note"";""llmu,select from trade,rows"");(""term,meaning,formula,q,tables,caveat"";""vwap,volume-weighted average price,sum px*sz over sum sz,select v:size wavg price by sym from trade,trade,""))]",1,,
 true,0,0,q,"qsp.adminui[([access:`local;port:0;dir:AD])] like ""http://localhost:*/""",1,,adminui gives the page's address
 true,0,0,q,".t.eq[(.t.post[`overview;()!()])[`data;`state];""ok""]",1,,"...and the page sees the policy in dir, loaded"
+true,0,0,q,".t.eq[(.t.post[`overview;()!()])[`data;`terms;0;`term];""vwap""]",1,,...and its business terms
+true,0,0,q,".t.eq[count (.t.post[`checkterms;()!()])[`data];0]",1,,checkterms passes on sound terms
 true,0,0,q,".t.eq[(.t.post[`run;`user`query!(""llmu"";""select from trade"")])[`data;`result;`count];4f]",1,,it runs a query as a user
 true,0,0,q,"(.t.post[`run;`user`query!(""llmu"";""select pnl from trade"")])[`data;`error] like ""qsp: unknown or not-permitted column: pnl""",1,,...through qsp
 true,0,0,q,"(.t.post[`test;(enlist`i)!enlist 0])[`data;`pass]",1,,it runs the policy's tests
@@ -857,6 +1019,7 @@ true,0,0,q,".t.eq[(.t.post[`open;(enlist`dir)!enlist .t.tmp,""/nosuch""])[`data;
 true,0,0,q,"(.t.post[`run;`user`query!(""llmu"";""1+1"")])[`error] like ""qsp: no policy is loaded*""",1,,...and nothing runs without a policy
 true,0,0,q,".z.ph[enlist """"] like ""HTTP/1.1 200 OK*""",1,,the page is served from admin/ui/
 true,0,0,q,"{(x like ""HTTP/1.1 200 OK*"")and 0<count x ss ""text/javascript""} .z.ph enlist ""views/map.js""",1,,"...its scripts, as JavaScript"
+true,0,0,q,"{(x like ""HTTP/1.1 200 OK*"")and 0<count x ss ""text/javascript""} .z.ph enlist ""views/terms.js""",1,,"...including the terms view"
 true,0,0,q,".z.ph[enlist ""../init.q""] like ""HTTP/1.1 404*""",1,,...and nothing outside it
 true,0,0,q,"(.t.post[`nosuch;()!()])[`error] like ""unknown call*""",1,,an unknown call
 true,0,0,q,".t.eq[qsp.adminui`stop;""the admin UI has stopped""]",1,,stop
@@ -865,6 +1028,80 @@ run,0,0,q,qsp.serve P,1,,
 true,0,0,q,".t.err[(qsp.adminui;`local);""qsp: this process serves a policy*""]",1,,never in a process serving a policy: the page can query as anyone
 run,0,0,q,qsp.unserve[],1,,
 true,0,0,q,".t.err[(qsp.adminui;`nosuch);""qsp: access must be `local or `public""]",1,,a mode it does not know
+comment,0,0,q,,1,,refusal codes in the audit log
+run,0,0,q,"@[qsp.run[P;`llmu];""select pnl from trade"";::]",1,,
+true,0,0,q,".t.eq[last exec code from qsp.audit[];`columns.unknown]",1,,a refusal is logged with its code
+run,0,0,q,"qsp.run[P;`llmu;""select from trade""]",1,,
+true,0,0,q,".t.eq[last exec code from qsp.audit[];`]",1,,...and an allowed query with none
+true,0,0,q,".t.eq[qsp.classify ""qsp: a where after a value: ,`a where ..."";`code`kind`subject!(`nesting.stray;`shape;"",`a"")]",1,,classify gives a refusal's code from its message
+true,0,0,q,".t.eq[qsp.classify ""qsp: type"";`code`kind`subject!(`q.type;`runtime;"""")]",1,,...q's own errors as runtime
+true,0,0,q,".t.eq[(qsp.classify ""something new"")`code`kind;`refusals.other`permission]",1,,...and a message it does not know as permission: nothing should suggest a way round it
+true,0,0,q,"all `permission`shape`limit`runtime in exec distinct kind from qsp.codes[]",1,,the published codes cover every kind
+comment,0,0,q,,1,,receipts in process: signed with a key ring
+run,0,0,q,".t.kd:""/tmp/qspkeys"",string .z.i; system""rm -rf "",.t.kd; system""mkdir -p "",.t.kd",1,,
+run,0,0,q,.t.k1:qsp.newreceiptkey hsym`$.t.kd,1,,
+true,0,0,q,".t.eq[count read1 ` sv (hsym`$.t.kd),`$string[.t.k1],"".key"";32]",1,,newreceiptkey writes a 32-byte key
+run,0,0,q,"PK:qsp.configure[P;([receiptkeys:hsym`$.t.kd])]",1,,
+run,0,0,q,"R:qsp.runr[PK;`llmu;""select from trade"";`session`turn`question!(.t.sid:first -1?0Ng;3;""how big?"")]",1,,
+true,0,0,q,".t.eq[R`status`result;(`ok;LLMC#A12)]",1,,runr runs with a receipt in process
+true,0,0,q,".t.eq[R[`receipt]`kid;.t.k1]",1,,...signed with the key
+true,0,0,q,qsp.verify R`receipt,1,,...which verifies
+true,0,0,q,".t.eq[R[`receipt]`session`turn;(.t.sid;3)]",1,,...and carries the context
+true,0,0,q,".t.eq[last[qsp.audit[]]`session`turn`question`receipt`resulthash;(.t.sid;3;""how big?"";R[`receipt;`id];R[`receipt;`resulthash])]",1,,the audit log records the context and the receipt
+true,0,0,q,"not qsp.verify @[R`receipt;`rows;+;1]",1,,a receipt changed in any field no longer verifies
+true,0,0,q,"not qsp.verify @[R`receipt;`user;:;`ana]",1,,...not even who it ran as
+true,0,0,q,"not qsp.verify (-1_key R`receipt)#R`receipt",1,,...or with a field missing
+true,0,0,q,"0<count (R`receipt)[`filter;`trade]",1,,the receipt says which row filter applied
+run,0,0,q,".t.k2:qsp.newreceiptkey hsym`$.t.kd; qsp.reloadkeys PK",1,,
+true,0,0,q,qsp.verify R`receipt,1,,"after rotation, an old receipt still verifies"
+true,0,0,q,".t.eq[(qsp.runr[PK;`llmu;""select from trade"";::])[`receipt;`kid];.t.k2]",1,,...and the newest key signs
+run,0,0,q,"hdel ` sv (hsym`$.t.kd),`$string[.t.k1],"".key""; qsp.reloadkeys PK",1,,
+true,0,0,q,not qsp.verify R`receipt,1,,"retire a key, and what it signed stops verifying"
+true,0,0,q,".t.eq[(qsp.runr[P;`llmu;""select pnl from trade"";::])`status`code;(`refused;`columns.unknown)]",1,,"runr refused returns the refusal, not a signal"
+true,0,0,q,".t.err[(qsp.runr;P;`llmu;""select from trade"";enlist[`colour]!enlist 1);""qsp: unknown ctx key*""]",1,,runr checks the context
+run,0,0,q,"system""rm -rf "",.t.kd",1,,
+true,0,0,q,".t.eq[(qsp.api.estimate[P;`llmu;""select pnl from trade"";`q])`code`kind;`columns.unknown`permission]",1,,estimate gives a refusal's code too
+comment,0,0,q,,1,,mingroup: aggregates that test hidden columns must summarise enough rows
+run,0,0,q,"P0:qsp.configure[P;([strictcolumns:0b])]; PM:qsp.mingroup[P0;`trade;3]",1,,
+run,0,0,q,"MQ:""select n:count sym by sym from trade where pnl>0""",1,,
+true,0,0,q,".t.eq[qsp.run[PM;`llmu;MQ];select from qsp.run[P0;`llmu;MQ] where n>=3]",1,,groups of fewer than mingroup rows are suppressed
+true,0,0,q,"0<count qsp.run[P0;`llmu;MQ] except qsp.run[PM;`llmu;MQ]",1,,"...and this fixture has some, so the test means something"
+run,0,0,q,"MQ1:""select n:count sym from trade where pnl>0, size>800""",1,,
+true,0,0,q,".t.eq[qsp.run[PM;`llmu;MQ1];{$[3>first x`n;0#x;x]} qsp.run[P0;`llmu;MQ1]]",1,,"one row aggregating too few rows is suppressed too"
+true,0,0,q,".t.err[(qsp.run;PM;`llmu;""select sym from trade where pnl>0"");""qsp: mingroup: this query tests pnl of trade*""]",1,,a row-level select that tests a hidden column is refused
+true,0,0,q,".t.err[(qsp.run;PM;`llmu;""select from (select n:count sym by sym from trade where pnl>0)"");""qsp: mingroup:*not nested or joined""]",1,,...and a nested one
+true,0,0,q,".t.eq[qsp.run[PM;`llmu;""select n:count sym by sym from trade""];qsp.run[P0;`llmu;""select n:count sym by sym from trade""]]",1,,a query testing no hidden column is untouched
+true,0,0,q,".t.eq[qsp.classify ""qsp: by goes before from in q-SQL: write select ... by col from ..., not ... from ... by col"";`code`kind`subject!(`nesting.by;`shape;"""")]",1,,"SQL-style by after from is a shape refusal, never a permission refusal"
+true,0,0,q,".t.err[(qsp.run;P;`llmu;""select n:count sym from trade where date=2010.01.01 by sym"");""qsp: by goes before from in q-SQL*""]",1,,"...and refuses cleanly with the right advice"
+true,0,0,q,".t.eq[(qsp.classify ""qsp: mingroup: this query tests pnl of trade"")`kind;`permission]",1,,"a mingroup refusal is a refusal of access: nothing should suggest a way round it"
+comment,0,0,q,,1,,parameterised terms
+run,0,0,q,"PT:qsp.term[P;`sizeof;""size traded in one name"";""sum of size"";""select n:sum size from trade where sym={sym}"";`trade;""""]",1,,
+run,0,0,q,"PT:qsp.paramterm[PT;`sizeof;""sym:s"";""a""]",1,,
+true,0,0,q,".t.eq[qsp.termquery[PT;`llmu;`sizeof;enlist[`sym]!enlist`a];""select n:sum size from trade where sym=`a""]",1,,a term's parameters are filled with q literals
+true,0,0,q,".t.eq[qsp.termquery[PT;`llmu;`sizeof;enlist`a];""select n:sum size from trade where sym=`a""]",1,,...by name or in order
+true,0,0,q,".t.eq[qsp.runterm[PT;`llmu;`sizeof;enlist`a];qsp.run[P;`llmu;""select n:sum size from trade where sym=`a""]]",1,,"...and run as the user, filtered like any query"
+true,0,0,q,".t.err[(qsp.termquery;PT;`llmu;`sizeof;enlist[`sym]!enlist""a;exit 0"");""qsp: a term argument is a typed value, never text*""]",1,,text is never an argument
+true,0,0,q,".t.err[(qsp.termquery;PT;`llmu;`sizeof;enlist[`sym]!enlist 1 2);""qsp: a list was given where an atom is needed""]",1,,...and an atom must be an atom
+true,0,0,q,".t.err[(qsp.termquery;PT;`llmu;`sizeof;()!());""qsp: sizeof needs sym""]",1,,...every parameter given
+run,0,0,q,"PT:qsp.term[PT;`daysize;""size over days"";"""";""select n:sum size by sym from trade where date within {days}, sym in {syms}"";`trade;""""]",1,,
+run,0,0,q,"PT:qsp.paramterm[PT;`daysize;""days:D,syms:S"";""2026.10.01 2026.10.09,a b""]",1,,
+true,0,0,q,".t.eq[qsp.termquery[PT;`llmu;`daysize;(2026.10.01 2026.10.09;enlist`a)];""select n:sum size by sym from trade where date within 2026.10.01 2026.10.09, sym in enlist `a""]",1,,lists fill as lists - a one-item list as enlist
+true,0,0,q,".t.eq[qsp.checkterms PT;([]term:`symbol$();problem:())]",1,,checkterms runs parameterised terms with their examples
+true,0,0,q,".t.err[(qsp.paramterm;PT;`sizeof;""sym:s,qty:j"";"""");""qsp: sizeof's parameters qty are not named in its q""]",1,,a parameter must appear in the q
+true,0,0,q,".t.err[(qsp.paramterm;PT;`sizeof;""sym:c"";"""");""qsp: a parameter's type is one of*""]",1,,...and cannot be text
+true,0,0,q,".t.err[(qsp.paramterm;PT;`sizeof;""sym:s"";""a,b"");""qsp: an example needs 1 arguments*""]",1,,...and an example must fit
+true,0,0,q,".t.eq[first exec params from (qsp.api.describe[PT;`llmu;`q])`terms where term=`sizeof;""sym:s""]",1,,describe lists a term's parameters
+run,0,0,q,"PT:qsp.term[PT;`bids;""bids in one name"";"""";""select from quote where sym={sym}"";`quote;""""]; PT:qsp.paramterm[PT;`bids;""sym:s"";""a""]",1,,
+true,0,0,q,".t.err[(qsp.termquery;PT;`ana;`bids;enlist`a);""qsp: no term bids that this user can read""]",1,,a term on a table a user cannot read is no term to it
+comment,0,0,q,,1,,agent users: the lint, and the export permission
+true,0,0,q,.t.eq[count qsp.agentlint P;0],1,,no agentgroup: nothing to lint
+true,0,0,q,".t.eq[count qsp.agentlint qsp.configure[P;([agentgroup:`llm])];0]",1,,...nor with strictcolumns on
+run,0,0,q,"AL:qsp.agentlint qsp.configure[P;([agentgroup:`llm;strictcolumns:0b])]",1,,
+true,0,0,q,"all `llmu`junior in AL`user",1,,"strictcolumns off: each agent user, and the columns its where clauses could test"
+true,0,0,q,"`pnl in raze exec hidden from AL where user=`llmu,tbl=`trade",1,,...a hidden column among them
+true,0,0,q,".t.eq[(qsp.api.describe[P;`llmu;`q])`export;0b]",1,,no exportgroup: no one may export
+true,0,0,q,".t.eq[(qsp.api.describe[qsp.configure[P;([exportgroup:`llm])];`llmu;`q])`export;1b]",1,,...a member of the exportgroup may
+true,0,0,q,".t.eq[(qsp.api.describe[qsp.configure[P;([exportgroup:`llm])];`ana;`q])`export;0b]",1,,...and no one else
 run,0,0,q,"system""cd "",.t.cwd",1,,
 run,0,0,q,"system""rm -rf "",.t.tmp",1,,
 run,0,0,q,"system""rm -rf /tmp/qspsuite"",string .z.i",1,,

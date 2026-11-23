@@ -35,12 +35,35 @@ defaultconfig:([
   maxrows:0W;             / max rows returned
   requirepartition:0b;    / refuse a scan of every partition
   maxpartitions:0W;       / refuse a query that would read more partitions than this
+  maxqueries:0W;          / most queries one user may run in a minute
+  precheck:0b;            / estimate before running, and refuse what cannot fit
   audit:1b;               / record every decision
-  auditmax:10000]);       / rows kept in the audit log
+  auditmax:10000;         / rows kept in the audit log
+  agentgroup:`;           / the group agent users belong to: bin/policy.q lints it
+  exportgroup:`;          / the group whose members may save results out of the database
+  receiptkeys:`;          / directory of receipt signing keys; ` issues receipts unsigned
+  receiptcells:1000;      / a receipt keeps the values of a result with at most this many cells
+  receiptmax:10000]);     / receipts kept
 
 chkname:{[n;what] tree.chk[(-11h=type n)and not null n;what," name must be a non-null symbol"];};
 known:{[p;t] :t in key p`tabs;};
 chkknown:{[p;t] tree.chk[known[p;t];"unregistered table ",string t];};
+
+/ what is known about a column beyond its type: its size in bytes per row, as -22! counts a
+/ result (measured from the data - see policy/files.q's measure), and a description written by a
+/ person. Either may be missing: bytes is 0n, the description "". It is for whoever writes
+/ queries - describe returns it for the columns a user is granted - and decides nothing
+emptycolinfo:([]tbl:`symbol$();col:`symbol$();bytes:`float$();description:());
+
+/ the business's own terms - markout, fill rate, slippage - with what each means, how it is
+/ computed, an example query and the tables it needs. A query writer cannot guess these from the
+/ schema, and getting one wrong gives a confident wrong answer. describe returns a term only to a
+/ user who can read every table it names, so a definition never shows a table that is hidden
+/ (the column is tbls: tables is a q function, and cannot name a column)
+/ A term may take parameters: params is "name:type" pairs - "date:d,sym:s,qty:j" - and its q names
+/ each as {name}. example holds example arguments, comma-separated, a list's items separated by
+/ spaces: "2026.10.08,NVDA,5000"
+emptyterms:([]term:`symbol$();meaning:();formula:();q:();tbls:();caveat:();params:();example:());
 
 new:{[]
   / an empty policy: it denies everything
@@ -53,7 +76,11 @@ new:{[]
     calls:`symbol$();
     joincalls:`symbol$();
     gateways:`symbol$();
-    config:defaultconfig]);
+    gwscope:(`symbol$())!`symbol$();
+    mingroups:(`symbol$())!`long$();
+    config:defaultconfig;
+    colinfo:emptycolinfo;
+    terms:emptyterms]);
   };
 
 / ------------------------------------------------------------------ tables
@@ -111,10 +138,142 @@ droptable:{[p;t]
   p[`tabs]:(enlist t)_p`tabs;
   p[`schema]:delete from p[`schema] where tbl=t;
   p[`grants]:delete from p[`grants] where tbl=t;
+  if[`colinfo in key p;p[`colinfo]:delete from p[`colinfo] where tbl=t];
   :p;
   };
 
 columnsof:{[p;t] :exec col from p[`schema] where tbl=t;};
+
+/ the size and description of column c of table t: either may be 0n or ""
+colinfo:{[p;t;c;b;d]
+  tree.chk[known[p;t];"unregistered table ",string t];
+  tree.chk[c in columnsof[p;t];string[c]," is not a column of ",string t];
+  tree.chk[(-9h=type b)and(null b)or b>=0;"bytes must be a float, 0n or not negative"];
+  tree.chk[10h=abs type d;"a description must be a string"];
+  ci:$[`colinfo in key p;p`colinfo;emptycolinfo];
+  p[`colinfo]:(delete from ci where tbl=t,col=c),([]tbl:enlist t;col:enlist c;bytes:enlist b;description:enlist (),d);
+  :p;
+  };
+
+/ term n: what it means, how it is computed (formula, in words), an example query q, the tables it
+/ needs, and a caveat. Every field but the name and meaning may be ""; tables may be `symbol$()
+term:{[p;n;meaning;formula;q;ts;caveat]
+  tree.chk[(-11h=type n)and not null n;"a term's name must be a non-null symbol"];
+  tree.chk[0<count meaning;"say what ",string[n]," means"];
+  ts:(),ts;
+  tree.chk[11h=type ts;"a term's tables must be symbols"];
+  if[count u:ts where not known[p] each ts;'"qsp: ",string[n]," names a table the policy does not have: ",", "sv string u];
+  t:$[`terms in key p;p`terms;emptyterms];
+  if[not `params in cols t;t:update params:(count t)#enlist "",example:(count t)#enlist "" from t];
+  p[`terms]:(delete from t where term=n),([]term:enlist n;meaning:enlist (),meaning;formula:enlist (),formula;
+    q:enlist (),q;tbls:enlist ts;caveat:enlist (),caveat;params:enlist "";example:enlist "");
+  :p;
+  };
+
+/ ------------------------------------------------------------------ parameterised terms
+/ a term's q with {name} placeholders, filled with typed arguments: a term is a convenience and
+/ never a privilege - what it makes is walked and filtered as any other query. Only typed values
+/ are substituted, rendered as q literals: text is refused, so an argument cannot carry q
+
+/ the types a parameter may have: an atom (lower case) or a list (upper case) of these. Not char:
+/ a string argument is text, and text is what an argument must never be
+paramtypes:"bhijefspmdznuvt";
+
+/ "date:d,sym:s" -> `date`sym!"ds"
+parseparams:{[s]
+  s:trim (),s;
+  if[0=count s;:(`symbol$())!""];
+  kv:{":" vs trim x} each "," vs s;
+  tree.chk[all 2=count each kv;"parameters are name:type pairs, comma-separated: ",s];
+  n:`$kv[;0];
+  ty:raze kv[;1];
+  tree.chk[(count ty)=count kv;"a parameter's type is one letter: ",s];
+  tree.chk[all (lower ty) in paramtypes;"a parameter's type is one of ",paramtypes," (a list: upper case), not ",ty where not (lower ty) in paramtypes];
+  tree.chk[not any null n;"a parameter needs a name: ",s];
+  tree.chk[(count n)=count distinct n;"parameter names repeat: ",s];
+  :n!ty;
+  };
+
+/ the {name} placeholders in q
+placeholders:{[q]
+  o:where q="{";
+  c:where q="}";
+  :distinct `${[q;c;i] j:first c where c>i; :(i+1)_j#q;}[q;c] each o;
+  };
+
+paramterm:{[p;n;ptxt;etxt]
+  / give term n parameters - ptxt, "name:type" pairs - and example arguments etxt, which
+  / checkterms runs it with. (Not params and example: those are columns of terms, and in q-sql a
+  / column hides a local of the same name)
+  t:p`terms;
+  tree.chk[n in t`term;"no term ",string n];
+  ptxt:(),ptxt;
+  etxt:(),etxt;
+  ps:parseparams ptxt;
+  qt:first exec q from t where term=n;
+  ph:placeholders qt;
+  m:ph except key ps;
+  tree.chk[0=count m;string[n],"'s q names {",("}, {" sv string m),"}, which are not among its parameters"];
+  m:(key ps) except ph;
+  tree.chk[0=count m;string[n],"'s parameters ",(", " sv string m)," are not named in its q"];
+  if[count etxt;exampleargs[ps;etxt]];
+  i:t[`term]?n;
+  t[`params]:@[t`params;i;:;(),ptxt];
+  t[`example]:@[t`example;i;:;(),etxt];
+  p[`terms]:t;
+  :p;
+  };
+
+/ text x as a value of parameter type t: an atom, or a list whose items are separated by spaces
+readarg:{[t;x] :$[t="s";`$x;t="S";`$" " vs x;t in .Q.A;t$" " vs x;(upper t)$x];};
+
+/ example arguments "2026.10.08,NVDA,5000" read as the types of params ps
+exampleargs:{[ps;e]
+  e:(),e;
+  v:trim each "," vs e;
+  tree.chk[(count v)=count ps;"an example needs ",string[count ps]," arguments, comma-separated: ",e];
+  a:readarg'[value ps;v];
+  tree.chk[not any {any null x} each a;"an example argument did not read as its type: ",e];
+  :(key ps)!a;
+  };
+
+/ argument v, of declared type t, as a q literal - or a refusal
+argtext:{[t;v]
+  tree.chk[not (abs type v) in 0 10h;"a term argument is a typed value, never text or a general list"];
+  if[t in paramtypes;
+    tree.chk[type[v]<0;"a list was given where an atom is needed"];
+    v:@[t$;v;{[t;e] '"qsp: cannot be made type ",t}t];
+    :-3!v];
+  tree.chk[type[v]>0;"an atom was given where a list is needed"];
+  v:@[(lower t)$;v;{[t;e] '"qsp: cannot be made type ",t}t];
+  :$[1=count v;"enlist ",-3!first v;-3!v];
+  };
+
+terminst:{[p;n;args]
+  / term n's q with args - a dictionary by name, or a list in the parameters' order - filled in
+  t:p`terms;
+  tree.chk[n in t`term;"no term ",string n];
+  r:first select from t where term=n;
+  ps:parseparams r`params;
+  if[not 99h=type args;
+    args:(),args;
+    tree.chk[(count args)=count ps;string[n]," takes ",string[count ps]," arguments: ",r`params];
+    args:(key ps)!args];
+  m:(key ps) except key args;
+  tree.chk[0=count m;string[n]," needs ",", " sv string m];
+  m:(key args) except key ps;
+  tree.chk[0=count m;string[n]," takes no ",", " sv string m];
+  q:r`q;
+  :{[q;n;txt] ssr[q;"{",string[n],"}";txt]}/[q;key ps;argtext'[value ps;args key ps]];
+  };
+
+/ the colinfo of table t, as two lists in the order of columns cs: bytes (0n where unknown) and
+/ descriptions ("" where none). A policy built before colinfo existed has none
+colinfofor:{[p;t;cs]
+  ci:$[`colinfo in key p;select from p`colinfo where tbl=t;emptycolinfo];
+  i:ci[`col]?cs;
+  :((ci[`bytes],0n)i;(ci[`description],enlist"")i);
+  };
 
 info:{[p;t]
   / what the walker and the orderer need to know about one table
@@ -202,6 +361,42 @@ denycall:{[p;ns]
 
 / logins (a gateway's) that may run a query as another, named user
 gateway:{[p;us] p[`gateways]:distinct p[`gateways],(),us; :p;};
+
+/ the group gateway g may name users from: it may run a query as a member of grp, at any depth,
+/ and as no one else. A gateway with no scope may name any user, as every gateway could before
+/ scopes existed. ` removes the scope
+scopegateway:{[p;g;grp]
+  chkname[g;"gateway"];
+  tree.chk[-11h=type grp;"a gateway's scope is a group name, or ` for none"];
+  if[not g in p`gateways;p:gateway[p;g]];
+  s:$[`gwscope in key p;p`gwscope;(`symbol$())!`symbol$()];
+  p[`gwscope]:$[null grp;(enlist g) _ s;s,(enlist g)!enlist grp];
+  :p;
+  };
+
+/ may gateway g run a query as user u? Within its scope, if it has one
+inscope:{[p;g;u]
+  s:$[`gwscope in key p;p`gwscope;()!()];
+  if[not g in key s;:1b];
+  :(s g) in entitiesfor[p;u];
+  };
+
+/ the fewest rows each output row of an aggregate must summarise, when a query tests columns of
+/ table t its user may not read - the user can otherwise learn a hidden value by narrowing a
+/ group to one row. 0 removes the minimum. It matters only with strictcolumns off: with it on, a
+/ hidden column cannot be tested at all
+mingroup:{[p;t;k]
+  chkknown[p;t];
+  tree.chk[(-7h=type k)or -6h=type k;"mingroup is a number of rows"];
+  tree.chk[k>=0;"mingroup cannot be negative"];
+  m:$[`mingroups in key p;p`mingroups;(`symbol$())!`long$()];
+  p[`mingroups]:$[k=0;(enlist t) _ m;m,(enlist t)!enlist `long$k];
+  :p;
+  };
+mingroupof:{[p;t] :$[`mingroups in key p;0^p[`mingroups] t;0];};
+
+/ is user u in group grp, at any depth? ` is a group no one is in
+ingroup:{[p;grp;u] :$[null grp;0b;grp in entitiesfor[p;u]];};
 
 / is v a valid value for setting k?
 settingok:{[k;v] :$[k=`clock;tree.isfn v;(type v)=type defaultconfig k];};
@@ -332,7 +527,7 @@ rawfilter:{[p;u;t]
   };
 filterfor:{[p;u;t] :resolve[p;u;t] each rawfilter[p;u;t];};
 
-export:([allcols;defaultconfig;new;known;table;partition;refresh;droptable;columnsof;info;
+export:([allcols;defaultconfig;new;known;table;partition;refresh;droptable;columnsof;colinfo;colinfofor;term;emptyterms;info;
   grant;revoke;member;unmember;allowfunction;denyfunction;allowcall;
-  allowjoincall;denycall;gateway;configure;entitiesfor;grantsfor;columnsfor;
-  rawfilter;filterfor]);
+  allowjoincall;denycall;gateway;scopegateway;inscope;ingroup;mingroup;mingroupof;configure;entitiesfor;grantsfor;columnsfor;
+  rawfilter;filterfor;parseparams;paramterm;exampleargs;terminst]);

@@ -5,3 +5,9 @@ examples/**/*db/
 harden-output/
 # written by bin/ci.sh
 ci-output/
+# ...but this one is a policy, for the surveillance database the agent eval is asked about
+!examples/equities/policylargeequitiesdb/
+# written by examples/agents/eval/run.py: transcripts, and what each run cost
+examples/agents/eval/runs/
+# Python's bytecode cache, written by the eval harness
+__pycache__/

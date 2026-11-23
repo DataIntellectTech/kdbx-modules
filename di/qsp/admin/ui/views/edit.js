@@ -4,18 +4,19 @@
 
 import { api, esc, icon, toast } from '../lib.js';
 
-const FILES = ['grants.csv', 'members.csv', 'tables.csv', 'schema.csv', 'config.csv', 'gateways.csv', 'functions.csv', 'tests.csv'];
+const FILES = ['grants.csv', 'members.csv', 'tables.csv', 'schema.csv', 'config.csv', 'gateways.csv', 'functions.csv', 'terms.csv', 'tests.csv'];
 const HEADERS = {
   'grants.csv': 'entity,tbl,columns,filter', 'members.csv': 'user,entity', 'tables.csv': 'tbl,partition',
-  'schema.csv': 'tbl,col,typ,att', 'config.csv': 'setting,value', 'gateways.csv': 'login', 'functions.csv': 'action,name',
-  'tests.csv': 'user,query,expect,value,note',
+  'schema.csv': 'tbl,col,typ,att,bytes,description', 'config.csv': 'setting,value', 'gateways.csv': 'login', 'functions.csv': 'action,name',
+  'terms.csv': 'term,meaning,formula,q,tables,caveat', 'tests.csv': 'user,query,expect,value,note',
 };
 const ABOUT = {
   'grants.csv': 'who reads what: an entity (a user or a group), a table, its columns (space separated, or *) and a row filter - a q where clause',
   'members.csv': 'users in groups, and groups in groups', 'tables.csv': 'the tables the policy knows, and each one\'s partition column',
-  'schema.csv': 'columns of tables not loaded in the process - a loaded table is read from its meta',
+  'schema.csv': 'columns of tables not loaded in the process, plus measured bytes/row and descriptions',
   'config.csv': 'settings that differ from the defaults: requirepartition, maxpartitions, maxrows, ...',
   'gateways.csv': 'logins that may run a query as a named user', 'functions.csv': 'allow, deny, call or joincall a function by name',
+  'terms.csv': 'business terms: term, meaning, formula, example q, space-separated tables, caveat',
   'tests.csv': 'what the policy must mean: user, query, expect (rows empty runs refused equals), value, note',
 };
 

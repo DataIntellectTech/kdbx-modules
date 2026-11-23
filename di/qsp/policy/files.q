@@ -25,14 +25,16 @@ f:use`..f;
 
 / file -> its header, in the order the files are applied. (Built with !, as tables is a reserved
 / word and cannot be a key in a dictionary literal.)
-files:`config`functions`schema`tables`grants`members`gateways!(
-  `setting`value;`action`name;`tbl`col`typ`att;`tbl`partition;
-  `entity`tbl`columns`filter;`user`entity;enlist`login);
+files:`config`functions`schema`tables`grants`members`gateways`terms!(
+  `setting`value;`action`name;`tbl`col`typ`att`bytes`description;`tbl`partition`mingroup;
+  `entity`tbl`columns`filter;`user`entity;`login`users;`term`meaning`formula`q`tables`caveat`params`example);
 required:`tables`grants;
 / files a policy directory holds that are not the policy, and how many of their fields a row must
 / have: the rest may be left off
 others:(enlist`tests)!enlist `user`query`expect`value`note;
-least:(enlist`tests)!enlist 3;
+/ schema.csv's bytes and description are optional, and a schema.csv written before they existed -
+/ tbl,col,typ,att - still loads: a header may stop after the fields every row needs
+least:`tests`schema`terms`gateways`tables!3 4 2 1 2;
 headers:files,others;
 
 / ------------------------------------------------------------------ paths
@@ -109,7 +111,7 @@ readfile:{[d;n]
   i:where not {(0=count x)or"#"=first x} each trim each l;
   if[0=count i;:(empty;problem[nm;0;string[nm]," has no header line"];1b)];
   got:header l first i;
-  if[not got~h;
+  if[not $[11h=type got;(m<=count got)&got~(count got)#h;0b];
     :(empty;problem[nm;1+first i;"header must be ",(","sv string h),
       " - found ",$[11h=type got;","sv string got;"an unreadable line"]];1b)];
   j:1_i;
@@ -251,6 +253,11 @@ tablerow:{[sc;p;r]
   tree.chk[not null t;"no table name"];
   tree.chk[not pol.known[p;t];"table ",string[t]," is listed twice"];
   p:registertable[p;t;sc where sc[`tbl]~\:string t];
+  / mingroup, optional: the fewest rows an aggregate testing hidden columns must summarise
+  if[`mingroup in key r;if[count m:trim r`mingroup;
+    k:"J"$m;
+    tree.chk[not null k;"mingroup must be a whole number of rows, not ",m];
+    p:pol.mingroup[p;t;k]]];
   if[null pc:sym r`partition;:p];
   if[null c:p[`tabs;t];:pol.partition[p;t;pc]];
   tree.chk[c=pc;string[t]," is partitioned on ",string[c],", not ",string pc];
@@ -280,10 +287,25 @@ memberrow:{[p;r]
   :pol.member[p;u;e];
   };
 
+termrow:{[p;r]
+  / one row of terms.csv: tables separated by spaces
+  n:sym r`term;
+  tree.chk[not null n;"no term"];
+  tree.chk[0=r`earlier;string[n]," is already defined on line ",string r`earlier];
+  ts:`$" " vs trim r`tables;
+  p:pol.term[p;n;r`meaning;r`formula;r`q;ts where not null ts;$[`caveat in key r;r`caveat;""]];
+  / params and example are optional: a terms.csv written before they existed still loads
+  ps:$[`params in key r;trim r`params;""];
+  :$[count ps;pol.paramterm[p;n;ps;$[`example in key r;trim r`example;""]];p];
+  };
+
 gatewayrow:{[p;r]
   / one row of gateways.csv
   tree.chk[not null g:sym r`login;"no login"];
-  :pol.gateway[p;g];
+  p:pol.gateway[p;g];
+  / users: the group this gateway may name users from; empty for any user
+  grp:$[`users in key r;sym r`users;`];
+  :$[null grp;p;pol.scopegateway[p;g;grp]];
   };
 
 / schema.csv changes nothing by itself: its rows are checked here, and used by tablerow for a
@@ -297,8 +319,22 @@ schemarow:{[p;r]
   tree.chk[(1>=count r`typ)and all (r`typ) in types;
     "type must be one meta type character such as j, s or p - found ",r`typ];
   tree.chk[(sym r`att) in ``p`u`g`s;"attribute must be blank, p, u, g or s - found ",r`att];
+  tree.chk[isbytes r`bytes;"bytes must be blank or a number of bytes per row, not negative - found ",r`bytes];
   tree.chk[0=r`earlier;string[sym r`col]," of ",string[sym r`tbl]," is already described on line ",string r`earlier];
   :p;
+  };
+
+/ a schema.csv bytes cell: blank, or a number not below 0
+isbytes:{[b] :$[0=count trim b;1b;(not null f)&0<=f:"F"$trim b];};
+
+colinforow:{[p;r]
+  / a schema.csv row's size and description, for a table registered by now. A column the
+  / loaded table lacks is left for schemadrift to report
+  t:sym r`tbl; c:sym r`col;
+  if[not pol.known[p;t];:p];
+  if[not c in pol.columnsof[p;t];:p];
+  b:$[0=count trim r`bytes;0n;"F"$trim r`bytes];
+  :pol.colinfo[p;t;c;b;r`description];
   };
 
 / the line of an earlier row with the same key, or 0 - for rows where a repeat would silently
@@ -340,13 +376,16 @@ applyfiles:{[fs;s]
   s:step[`functions;functionrow]/[s;fs`functions];
   s:step[`schema;schemarow]/[s;earlier[fs`schema;{(sym x`tbl;sym x`col)} each fs`schema]];
   s:step[`tables;tablerow[fs`schema]]/[s;fs`tables];
+  / a row whose size was refused above is already reported
+  s:step[`schema;colinforow]/[s;fs[`schema] where {(isbytes x`bytes)&0<count[trim x`bytes]+count trim x`description} each fs`schema];
   g:earlier[fs`grants;{(sym x`entity;sym x`tbl)} each fs`grants];
   / a table whose own row failed is already reported: its grants would only repeat that as
   / "unregistered table", once per grant
   broken:(sym each fs[`tables]`tbl) except key s[0]`tabs;
   s:step[`grants;grantrow]/[s;g where not (sym each g`tbl) in broken];
   s:step[`members;memberrow]/[s;fs`members];
-  :step[`gateways;gatewayrow]/[s;fs`gateways];
+  s:step[`gateways;gatewayrow]/[s;fs`gateways];
+  :step[`terms;termrow]/[s;earlier[fs`terms;sym each fs[`terms]`term]];
   };
 
 / every problem with the policy in directory d - empty when it would load
@@ -412,8 +451,62 @@ fromfiles:{[d]
 
 / write table t into file n of policy directory d
 writefile:{[d;n;t] path[d;n] 0: csv 0: t;};
-/ schema.csv rows for table t with meta m
-schemarows:{[t;m] :([]tbl:(count m)#t;col:m`c;typ:enlist each m`t;att:m`a);};
+/ ------------------------------------------------------------------ column sizes
+/ bytes per row of each column, as -22! counts a result - what maxsize checks - measured on a
+/ sample, so a query's size can be estimated before it runs: rows times the bytes of the columns
+/ it returns. A fixed-width column is its width (date and int 4, float and timestamp 8), but a
+/ symbol is sent as its text, so its size is its values' - 2 bytes for a venue code, 21 for an
+/ order id - and has to be measured
+
+/ up to n rows of table t loaded here: of its latest partition, read by row index so that a day
+/ of quotes is not read whole, or of the table
+sample:{[t;n]
+  v:get t;
+  if[not 1b~.Q.qp v;:n sublist v];
+  c:.Q.cn v;
+  :.Q.ind[v;(sum -1_c)+til n&last c];
+  };
+
+/ column -> bytes per row, to 0.1, for table t loaded here: from up to n rows. 0n for every
+/ column of an empty table
+measure:{[t;n]
+  s:sample[t;n];
+  cs:cols s;
+  if[0=count s;:cs!(count cs)#0n];
+  / less the column's fixed overhead - its size with no rows - which a small table would
+  / otherwise spread over a few rows
+  :cs!{[s;c] v:?[s;();0b;(enlist c)!enlist c]; 0.1*floor 0.5+10*((-22!v)-(-22!0#v))%count s}[s] each cs;
+  };
+
+/ how many rows measure samples
+measuren:100000;
+
+/ schema.csv rows for table t with meta m: its columns, types and attributes, the bytes measured
+/ if it is loaded here, and no description
+schemarows:{[t;m]
+  b:$[loaded t;measure[t;measuren];()!()];
+  :([]tbl:(count m)#t;col:m`c;typ:enlist each m`t;att:m`a;bytes:{$[null x;"";string x]} each b m`c;
+    description:(count m)#enlist"");
+  };
+
+/ schema.csv in directory d with its bytes measured again from the tables loaded here: every other
+/ field, the descriptions, and the rows of tables not loaded, are kept. Returns what changed, as
+/ ([]tbl;col;was;now) - bytes moving by more than a quarter is the data changing shape
+remeasure:{[d]
+  r:readfile[d;`schema];
+  tree.chk[not r 2;"schema.csv cannot be read: ",.Q.s1 r 1];
+  t:delete line from r 0;
+  ts:distinct sym each t`tbl;
+  ts:ts where loaded each ts;
+  m:ts!measure[;measuren] each ts;
+  now:{[m;t;c] $[(t in key m)and c in key m t;$[null b:m[t;c];"";string b];`keep]}[m]'[sym each t`tbl;sym each t`col];
+  k:where not now~\:`keep;
+  was:t[`bytes]k;
+  t:@[t;`bytes;:;@[t`bytes;k;:;now k]];
+  writefile[d;`schema;t];
+  ch:([]tbl:sym each t[`tbl]k;col:sym each t[`col]k;was:"F"$was;now:"F"$now k);
+  :select from ch where not was=now;
+  };
 / the partition column of a table loaded here, or `
 partitionof:{[t] :$[1b~.Q.qp get t;.Q.pf;`];};
 
@@ -460,6 +553,8 @@ scaffold:{[d;ts]
   writefile[d;`members;([]user:`symbol$();entity:`symbol$())];
   writefile[d;`gateways;([]login:`symbol$())];
   writefile[d;`functions;([]action:`symbol$();name:`symbol$())];
+  / no terms yet: the header, for whoever knows the business to fill in
+  writefile[d;`terms;flip (files`terms)!(count files`terms)#enlist ()];
   c:(enlist`clock)_pol.defaultconfig;
   writefile[d;`config;flip `setting`value!(key c;{-3!x} each value c)];
   :path[d] each key files;
@@ -468,4 +563,5 @@ scaffold:{[d;ts]
 / tests.csv in directory d -> (its rows, as strings with the line each is on; the problems)
 testfile:{[d] r:readfile[d;`tests]; :(r 0;r 1);};
 
-export:([fromfiles;policyin;check;scaffold;files;schemadrift;testfile;problem;problemline;dirname]);
+export:([fromfiles;policyin;check;scaffold;files;schemadrift;testfile;problem;problemline;dirname;
+  measure;remeasure;schemarows;readfile]);

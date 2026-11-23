@@ -405,20 +405,39 @@ exactly one group.
 
 | Call | Does |
 |---|---|
-| `scaffold[dir;tables]` | write a starting policy for `tables` (`` ` `` for all) into `dir`: every table, partition column and column, and one grant row per table with **no entity**, so nothing is granted until someone decides. Never overwrites, and refuses to write into a database or a partition of one, since q would load the policy directory as a table and the database would fail to load |
+| `scaffold[dir;tables]` | write a starting policy for `tables` (`` ` `` for all) into `dir`: every table, partition column and column, with each column's measured bytes per row, and one grant row per table with **no entity**, so nothing is granted until someone decides. Never overwrites, and refuses to write into a database or a partition of one, since q would load the policy directory as a table and the database would fail to load |
 | `check[dir]` | every problem with the policy in `dir`, as `([]file;line;error)`. Empty means it loads |
 | `fromfiles[dir]` | the policy in `dir`, the same value the builders return. Refuses, listing every problem, if there are any. Warns on stderr for each `schemadrift` difference |
 | `schemadrift[dir]` | where `schema.csv` and the tables loaded in this process disagree, as lines of text. A loaded table is registered from its live meta, so this is what CI's check of `schema.csv` did not see |
+| `measure[t;n]` | column -> bytes per row of table `t` loaded here, as `-22!` counts a result (what `maxsize` checks), less each column's fixed overhead: from up to `n` rows of its latest partition, read by row index |
+| `remeasure[dir]` | `schema.csv` in `dir` with its `bytes` measured again from the tables loaded here, every other field and description kept. Returns what changed, `([]tbl;col;was;now)`. `bin/policy.q -measure` runs it |
+| `colinfo[p;t;c;bytes;description]` | the policy with column `c` of `t` given its size and description, for a policy built in q |
 
 ```
-tables.csv     tbl,partition                  required
+tables.csv     tbl,partition[,mingroup]       required; mingroup: see below
 grants.csv     entity,tbl,columns,filter      required: columns "a b c" or *; filter a where clause
 members.csv    user,entity
-gateways.csv   login
+gateways.csv   login[,users]                  users: the group the gateway may name users from
+terms.csv      term,meaning[,formula,q,tables,caveat[,params,example]]
+                                              the business's terms; tables separated by spaces
 functions.csv  action,name                    allow | deny | call | joincall
 config.csv     setting,value                  q literals; a function as fn:name
-schema.csv     tbl,col,typ,att                for tables not loaded in this process
+schema.csv     tbl,col,typ,att[,bytes[,description]]
+                                              types for tables not loaded in this process;
+                                              bytes and description for every table
 ```
+
+`schema.csv`'s `bytes` and `description` are optional, and a `schema.csv`
+written with four fields still loads. `bytes` is a column's size per row in
+a result, as `-22!` counts it. A fixed-width column is its width: date and
+int 4, float and timestamp 8. A symbol is sent as its text, so its size is its
+values' - 2 bytes for a venue code, 21 for an order id - and has to be
+measured: `scaffold`, the admin UI's schema sync and `bin/policy.q -measure`
+measure it, and never by hand. A row count times the summed bytes of the
+columns a query returns predicts its result's size to within a few percent.
+`description` is a person's: what the column means, in a sentence. A resync
+keeps it. `describe` returns both for each column a user is granted, and
+nothing for the columns they are not.
 
 The files are applied in that order, each row to the policy built so far,
 through the same builders. A filter cell is a q where clause, parsed (never
@@ -426,6 +445,44 @@ evaluated) at load: `` sym in `VOD`MSFT, size>100 ``. It can also use
 `qsp.USER`, `qsp.NOW` and `qsp.aged[time;0D00:15]`, or `fn:name` to call a q
 function with the user. `bin/policy.q` runs the check and the review from the
 command line, for CI (see [docs/setup.md](docs/setup.md)).
+
+**A gateway's scope.** `gateways.csv`'s `users` names a group: the gateway may
+run queries as members of it, at any depth, and as no one else. Empty, it may
+name any user, as every gateway could before scopes existed. A gateway that
+names someone outside its group is refused, `users.outofscope`, and the
+refusal is recorded against the gateway's own login. In q,
+`scopegateway[p;g;grp]`. Scope every gateway that serves agents: whatever
+holds its login can then act only as the users it was meant to.
+
+**Parameterised terms.** A term's `q` may name parameters as `{name}`.
+`params` declares them, `name:type` pairs separated by commas (a lower-case
+type is an atom, upper case a list), and `example` gives example arguments,
+comma-separated, a list's items separated by spaces:
+
+```
+term,meaning,formula,q,tables,caveat,params,example
+volume,shares traded in one name on one day,sum of size,select v:sum size from trades where date={date}, sym={sym},trades,,date:d,sym:s,"2026.10.08,NVDA"
+```
+
+`termquery[p;u;n;args]` fills them in - `args` a dictionary by name, or a
+list in order - and returns the query, which runs like any other: walked and
+filtered as the user. `runterm[p;u;n;args]` runs it. Arguments must be typed
+values: a string is refused, so an argument cannot carry q, and each is
+written into the query as a q literal. A term on a table the user cannot read
+is no term to them. `checkterms` runs each parameterised term with its
+`example`. In q, `paramterm[p;n;params;example]`.
+
+**`mingroup`.** With `strictcolumns` off a where clause may test a column its
+user cannot read, so `select count sym from trades where account=`A7` tells
+them about `account`. A table's `mingroup` is the fewest rows each output row
+of such a query must summarise. Smaller groups are suppressed, as if they had
+no rows. It applies to one select over one table, grouped with `by` or
+aggregated to a single row. A query that tests a hidden column some other way
+- row by row, nested, or joined - is refused (`rows.mingroup`), since it could
+recombine what was suppressed. It is checked against the user's query, not
+the rewritten one, as the policy's own row filter tests hidden columns by
+design. With `strictcolumns` on, nothing can test a hidden column and
+`mingroup` has nothing to do. In q, `mingroup[p;t;k]`.
 
 ### Reviewing a policy
 
@@ -545,28 +602,118 @@ not quietly open a policy up.
 | `maxrows` | `0W` | max result rows (checked after evaluation): a table's rows, a list's items, the longest column of a dictionary |
 | `requirepartition` | `0b` | refuse a query that would scan every partition: one whose leading constraint, as rewritten, does not bound the partition column with `=`, `in` or `within`. A one-sided range (`date>d`, or an embargo's `date<cutoff`) is not enough. **Turn this on for anything an LLM talks to.** |
 | `maxpartitions` | `0W` | refuse a query that would read more partitions than this. The leading constraint is evaluated against `.Q.pv` before the query runs, so `date within 0001.01.01 9999.12.31`, which satisfies `requirepartition`, is caught here. Ignored where no partitioned database is loaded |
+| `maxqueries` | `0W` | most queries one user may run in a minute through `run`, or none past it: an agent retries and loops, and q runs one query at a time. `validate`, `estimate` and `describe` run nothing and do not count |
+| `precheck` | `0b` | estimate each query before `run` evaluates it (`qsp.estimate`), and refuse one whose result cannot fit `maxrows` or `maxsize` - before the work, rather than after it. It costs a count of each read's rows |
 | `audit` | `1b` | record every decision |
 | `auditmax` | `10000` | rows kept in the audit log |
+| `agentgroup` | `` ` `` | the group agent users belong to. `bin/policy.q` warns when it is set and `strictcolumns` is off, listing the hidden columns each agent user's where clauses could test (`agentlint`) |
+| `exportgroup` | `` ` `` | the group whose members may save results out of the database: to a file, a workspace, another tool. `describe` reports `export` for the user; whatever writes the file enforces it. `` ` ``, the default, is no one |
+| `receiptkeys` | `` ` `` | a directory of receipt signing keys (see [Receipts](#receipts)). `` ` `` issues receipts unsigned |
+| `receiptcells` | `1000` | a receipt keeps the values of a result with at most this many cells, so a number quoted from it can be checked later |
+| `receiptmax` | `10000` | receipts kept |
 
 ## Enforcing it
 
 | Call | Returns |
 |---|---|
 | `run[p;u;q]` | the result of `q` as user `u`. Signals `'qsp: ...` on refusal. `q` is a string or a parse tree. A functional form must be written with plain-data clauses (see [What the rewrite does to a select](#what-the-rewrite-does-to-a-select)) |
-| `runx[p;u;q]` | `(result; what ran, as text)`, for a caller that must show its user what the query became |
+| `runx[p;u;q]` | `(result; what ran, as text)`, for a caller that must show its user what the query became. The text is q-SQL - `select date, sym, size from trade where sym in allowedsyms[`carol]` - with qsp's run-time checks shown as the expressions they check, and only when parsing it gives back the same tree; otherwise the parse tree, as `-3!` prints it. The audit log keeps the parse tree, which is lossless |
 | `rewrite[p;u;q]` | the safe parse tree. Evaluates nothing. |
-| `explain[p;u;q]` | the same, as text |
+| `explain[p;u;q]` | what `q` becomes, as `runx` writes it, without running it |
 | `validate[p;u;q]` | `(allowed;reason)`: every check `run` makes before it evaluates, including `requirepartition` and `maxpartitions`, with `run`'s message. Records nothing; evaluates only a leading partition constraint's value. `maxrows`, `maxsize` and checks on computed values need the query to run |
+| `estimate[p;u;q]` | how big `q` is before it runs, as a dictionary: `reads`, for each table it reads, the rows its where clause selects - counted as `u`, with the row filter - and their bytes; `result`, its rows (`exact`, or a bound for a grouped select or a join) and bytes; `limits`, `maxrows`, `maxsize`, the timeout and memory cap; `verdict`, `` `fits ``, `` `large ``, `` `toobig `` or `` `refused ``; and `advice`, what to change. Bytes are rows times the columns' measured bytes per row (`schema.csv`), or a type's width |
 | `fullscans[p;u;q]` | the tables `q` would read every partition of |
+| `runr[p;u;q;ctx]` | `q` run as `u` with a [receipt](#receipts), as a dictionary - what a gateway's `execasr` returns: `status` (`` `ok ``, `` `refused ``, `` `error ``), `result`, `rewritten` and `receipt`; refused, the refusal as data instead of a signal. `ctx` is a [context](#context) dictionary, or `(::)` |
+| `classify[m]` | refusal message `m` as data: `code`, `kind` and `subject` (see [Refusals as data](#refusals-as-data)). `codes[]` lists every code |
+| `termquery[p;u;n;args]` / `runterm[p;u;n;args]` | a [parameterised term](#keeping-a-policy-in-files) filled in, or run |
+| `agentlint[p]` | the hidden columns each `agentgroup` user's where clauses could test, with `strictcolumns` off |
+| `totext[fns;tree]` | a parse tree as q-SQL text, naming functions from whitelist `fns` (a policy's `fns`): what `runx` and `explain` write. It reads no data and no policy, so a client can render trees it builds |
 | `columnsfor[p;u;t]` / `filterfor[p;u;t]` | what a policy resolves to for one user |
 
 Each of these refuses a `u` that isn't a user of the policy (see
 [Who a query runs as](#who-a-query-runs-as)).
 
 Every refusal is a signal starting `qsp: `. None is a return value, so a
-caller that forgets to check can't run past one. The message names what was
-refused (a column, a function, the table and column a full scan needs), so a
-query generator can repair its query.
+caller that forgets to check can't run past one. (`runr` and `execasr` are the
+exception, by request: a caller that asks for a dictionary gets the refusal in
+it.) The message names what was refused (a column, a function, the table and
+column a full scan needs), so a query generator can repair its query.
+
+### Refusals as data
+
+A refusal's text is written for a person. A program that acts on one - an
+agent's tooling deciding whether to suggest a fix, a dashboard counting
+refusals - needs it as data that doesn't change when the wording does.
+`classify` gives each message a **code**, a **kind** and a **subject**:
+
+```q
+q)qsp.classify "qsp: unknown or not-permitted column: pnl"
+code   | `columns.unknown
+kind   | `permission
+subject| "pnl"
+```
+
+The code is `family.reason`. The family is the id of the [rule](#the-api)
+that explains it, or for refusals no rule covers, the thing refused: `users`,
+`rate`, `q` (q's own errors), `api`, `transport`. The kind says what sort of
+no it is:
+
+| kind | | e.g. |
+|---|---|---|
+| `permission` | access was withheld, or a form was refused because it could reach something the caller may not. Nothing should suggest a way round it | `columns.unknown`, `tables.unknown`, `functions.notpermitted`, `users.outofscope`, `rows.mingroup` |
+| `shape` | the query could run in another form that reads exactly the same: a bracket, a name, the order of constraints | `nesting.stray`, `columns.shadowed`, `columns.notinscope`, `partition.fullscan`, `language.invalid` |
+| `limit` | a bound on the work or the result | `maxpartitions.toomany`, `results.maxrows`, `size.toobig`, `rate.limit` |
+| `runtime` | q could not evaluate a query qsp had permitted | `q.type`, `q.length`, `q.stop`, `q.wsfull` |
+
+The subject is the name or expression the refusal is about, taken from the
+message: it never says anything the message doesn't. A message no pattern
+knows is `refusals.other`, kind `permission`, the kind that invites no
+workaround. The audit log records each refusal's code; `validate`, `estimate`,
+`execasr` and async replies return all three. `codes[]` (or
+`` (`.qsp.api;`codes) ``) lists every code and its kind; the patterns are in
+`core/codes.q`.
+
+### Receipts
+
+A gateway that runs a query for a person - an agent's tooling, a reporting
+service - can ask for a **receipt** with the result. It says who the query ran
+as and who asked, what was sent and what ran, the row filter applied to each
+table, the partitions read, the result's size and columns, a SHA-1 hash of the
+result (`-8!`), a hash of the policy that decided it, and any
+[context](#context). It is signed with HMAC-SHA1 under a key only the policed
+process holds. A number later quoted from the result can then be traced to an
+audited query the user was entitled to run, and a receipt changed in any
+field no longer verifies.
+
+```q
+r:h (`.qsp.execasr;"select from trade";`alice)    / a gateway: result, rewritten, receipt
+r:qsp.runr[p;`alice;"select from trade";::]        / in process
+qsp.verify r`receipt                               / 1b: signed by a key held here, unchanged
+h (`.qsp.api;`verify;r`receipt)                    / the same, from any login
+h (`.qsp.api;`receipt;r[`receipt;`id])             / the receipt and its kept values
+```
+
+**Keys** are a directory, named by `receiptkeys`: one file per key, 32 bytes,
+`<kid>.key`, readable only by the process's account.
+`qsp.newreceiptkey[dir]` writes one from `/dev/urandom` (q's own generator is
+seeded, and a key must not be guessable). The newest key - the greatest kid,
+which `newreceiptkey` makes from the time - signs, and every key verifies, so
+rotating is adding a key and reloading (`serve`, `qsp.reloadkeys p`, or
+`` (`.qsp.api;`reloadkeys) `` from a gateway). Retire a key by deleting its
+file once the receipts it signed are past keeping: they stop verifying. A
+policy whose key directory can't be read is not served. With no
+`receiptkeys`, receipts are issued unsigned, with `kid` and `sig` empty, and
+never verify.
+
+**Storing.** Each receipt is kept, with the result's values when it has at
+most `receiptcells` cells, up to `receiptmax` receipts. The audit log records
+the receipt's id and the result's hash. A stored receipt is returned to the
+user it ran as and the gateway that asked, and to no one else: anyone else is
+told there is no receipt they may read, so its existence isn't disclosed.
+
+HMAC-SHA1 is written in q over q's own SHA-1 (`-33!`), and checked against RFC
+2202's test vectors. HMAC's security doesn't rest on SHA-1's collision
+resistance.
 
 ## Serving it
 
@@ -606,13 +753,59 @@ h (`.qsp.execas;"select from trade";`alice)      / or qsp.gatewaywrap[q;u]
 h (`.qsp.execasx;"select from trade";`alice)     / (result; what ran)
 ```
 
-Both forms are honoured only for logins named with `qsp.gateway`. From any other login
-each is an ordinary call, and is refused. The leading symbol is matched, never
+```q
+h (`.qsp.execasr;"select from trade";`alice)     / a dictionary, with a receipt - see Receipts
+h (`.qsp.execas;"select from trade";`alice;ctx)  / with context - below
+```
+
+All three forms are honoured for logins named with `qsp.gateway`. Any other login may
+send them naming only itself: `` (`.qsp.execasx;q;`alice) `` from alice's own
+login runs as alice and returns what ran with the result. That is how an agent bound
+to one user sees the rewrite without a gateway's power to be anyone. Naming
+anyone else, from a login that is not a gateway, is an ordinary call, and is refused. The leading symbol is matched, never
 resolved, so the wire format needs no global to exist and is unchanged from the
 original qsp. A gateway's own login holds no grants unless you give it some.
 The user it names must be a user of the policy. A name the policy doesn't know,
 or a group's name, is refused and recorded as `denied`:
-`qsp: not a user of this policy: `sales`.
+`qsp: not a user of this policy: `sales`. A gateway with a
+[scope](#keeping-a-policy-in-files) may name only members of its group.
+
+### Context
+
+A gateway may send a dictionary as a fourth item, recorded with the decision:
+the conversation and question a query belongs to.
+
+| key | type | |
+|---|---|---|
+| `session` | guid | the conversation |
+| `turn` | long | the question within it |
+| `question` | string | the question, as asked (at most 4000 characters) |
+| `model`, `client` | symbol | what wrote the query, and where it came from |
+| `original` | string | for a query an agent's tooling corrected before sending, what was written |
+| `fixes` | symbols | the codes of the corrections applied |
+
+Unknown keys and wrong types are refused, so the audit log's schema stays
+fixed. Context is recorded, never interpreted: nothing in it changes a
+decision. Only a gateway may send it. A user's own login could otherwise
+attach any question to its queries.
+
+### Asynchronous requests
+
+q runs one query at a time, and a client that waits for each answer can do
+nothing else meanwhile. A client may instead send, asynchronously,
+
+```q
+neg[h] (`.qsp.async;id;msg)
+```
+
+where `msg` is any message qsp takes: a query, an execas form, an api call.
+qsp handles it exactly as if it had arrived synchronously from the same
+login - the same checks, audit and limits - and replies asynchronously on the
+same handle with `` (`.qsp.reply;id;(1b;value)) ``, or `` (0b;refusal) ``
+where the refusal is a dictionary: `reason`, `rule`, `code`, `kind`,
+`subject`. A refusal is an answer, not a signal: the caller is waiting for a
+reply with its id. `id` is whatever the client chose; qsp only echoes it. The
+client defines `.qsp.reply`. An async request cannot carry another.
 
 ### The api
 
@@ -624,9 +817,10 @@ calls about itself, with no user named.
 ```q
 g (`.qsp.api;`describe;`alice)                     / everything a query writer needs, for alice
 g (`.qsp.api;`describe;`alice;`json)               / the same, as one JSON string
-g (`.qsp.api;`validate;`alice;"select from trade") / ([allowed;reason]), without running it
+g (`.qsp.api;`validate;`alice;"select from trade") / ([allowed;reason;rule]), without running it
 h (`.qsp.api;`describe)                            / alice's own, from alice's own login
 h (`.qsp.api;`rules;`json)                         / the rules, for an agent's prompt
+h (`.qsp.api;`primer)                              / how to write q that qsp accepts, as markdown
 ```
 
 | Call | Returns | Who |
@@ -637,10 +831,19 @@ h (`.qsp.api;`rules;`json)                         / the rules, for an agent's p
 | `users` | the policy's users and gateway logins | gateways |
 | `functions` | the whitelist, `calls` and `joincalls` | anyone |
 | `rules` | the rules of writing a query qsp will run, one per row (below) | anyone |
+| `primer` | how to write q that qsp accepts, as one markdown text for an agent's context: a method for answering a question, the q that matters, the shapes qsp takes, the names a column cannot have, time-series techniques, and what each refusal means. The same for every policy and user. It is `api/primer.md`, read on each call; every q example in it runs in the equities walkthrough (`hdb.q`) | anyone |
 | `access` | `qsp.access` for the user | a gateway, naming the user; a user, about itself |
-| `describe` | `user`; `tabs`: the tables the user may read, with the granted columns, their types by name (`` `date``, `` `symbol``, `` `char[]`` for a string column), the partition column and the row filter as a where clause; `functions` and `calls`; `limits` from the config; `rules` | the same |
-| `validate` | `([allowed;reason])` for a query: every check `run` makes before it runs the query | the same, with the query |
+| `describe` | `user`; `tabs`: the tables the user may read, with the granted columns, their types by name, bytes per row and descriptions (`` `date``, `` `symbol``, `` `char[]`` for a string column), the partition column and the row filter as a where clause; `functions` and `calls`; `limits` from the config, with the timeout (`timeout_s`) and memory cap (`memory_cap_bytes`); `rules`; `terms`, the business's terms (`terms.csv`) over tables the user can read - a term over a table they cannot is left out; `export`, whether the user may save results out of the database (`exportgroup`); and `shape`, what the data looks like as the user sees it: for each table, the partitions they can see (`first`, `last`, `count`), the first and last of each time column in the latest, and the values of each symbol column with 20 or fewer. It is computed as the user - the row filter and any embargo in it - without an audit record, and cached for a minute | the same |
+| `validate` | `([allowed;reason;rule;code;kind;subject])` for a query: every check `run` makes before it runs the query; the id of the rule (below) whose refusal text the reason contains - the most specific - or `` ` ``; and the [refusal as data](#refusals-as-data) (`` ` ``, `` ` `` and `""` when allowed) | the same, with the query |
 | `explain` | what the query becomes, as text | the same, with the query |
+| `estimate` | `qsp.estimate`: how big the query is before it runs, against the limits; refused, with the refusal's `code`, `kind` and `subject` | the same, with the query |
+| `brief` | `describe` without `rules`, `functions` and `calls` - which an agent holding the primer has - and with `rulesversion` and `functionsversion`, md5 hashes, so it can tell its copy is current | the same |
+| `history` | the user's own last `n` decisions from the audit log: `time`, `query`, `rewritten`, `allowed`, `decision`, `reason` | the same, with `n` |
+| `term` | a [parameterised term](#keeping-a-policy-in-files)'s query, filled in with the arguments given: a query to run like any other | the same, with the term's name and its arguments |
+| `verify` | `` `valid`stored `` for a [receipt](#receipts): is it signed by a key held here and unchanged, and is it still kept | anyone |
+| `receipt` | a stored receipt and its kept values, by id | the user it ran as, and the gateway that asked |
+| `reloadkeys` | read the receipt keys again, after one is added or retired; returns how many | gateways |
+| `codes` | every [refusal code](#refusals-as-data) and its kind | anyone |
 
 **Formats.** Every call takes a format, `` `q `` or `` `json ``. Over IPC it
 is optional and follows the arguments; it is `` `q `` when left out. It is
@@ -793,6 +996,12 @@ llmu "select pnl from trade"             denied   "qsp: unknown or not-permitted
 llmu "select sum size by sym from trade" allowed  ""
 ```
 
+Each row also has the refusal's `code` (see [Refusals as data](#refusals-as-data)),
+`` ` `` when allowed; the `gateway` that sent the query, `` ` `` for none; the
+[context](#context) it sent, `session`, `turn`, `question`, `model`,
+`client`, `original` and `fixes`; and, when a receipt was issued, its id
+(`receipt`) and the result's hash (`resulthash`).
+
 The log is kept only while the policy's `audit` setting is on, and is trimmed
 to its newest `auditmax` rows.
 
@@ -830,12 +1039,19 @@ p:qsp.grant[p;`audit;`auditlog;qsp.ALL;()]
 ```
 di/qsp/init.q       the module: run, serve and the audit log; loads the rest and exports the API
 di/qsp/core/        checking and rewriting a query: tree.q (parse trees), fns.q (the function
-                    whitelist), walk.q (the walker), order.q (where the row filter goes)
+                    whitelist), walk.q (the walker), order.q (where the row filter goes),
+                    qsql.q (a rewritten tree written back as q-SQL), codes.q (a refusal as
+                    data)
+di/qsp/receipt/     receipts: HMAC-SHA1, the key ring, issuing, verifying and keeping them
 di/qsp/policy/      a policy: init.q (the value and its builders), f.q (row filter builders),
                     files.q (a policy as files), review.q (access, diff), suite.q (tests.csv)
-di/qsp/api/         qsp.api, what a gateway or an agent asks a policed process
+di/qsp/api/         qsp.api, what a gateway or an agent asks a policed process, and primer.md,
+                    the q primer it serves to an agent
 di/qsp/admin/       the admin UI (qsp.adminui), and its page in ui/: HTML, CSS and JavaScript,
                     no build
+di/qsp/mcp/         an MCP server in q (mcp.q, run by qsp-mcp): qsp's calls as an agent's tools,
+                    over stdio - see mcp/README.md
+di/qsp/skill/       the Claude Code skill that teaches an agent to use those tools
 di/qsp/VERSION      the module version (qsp.version), and CHANGELOG.md, what changed in each
 di/qsp/qsp.md       this reference; docs/, the rest (setup.md, the walkthrough for a team;
                     ui.md, the admin UI's guide, with screenshots in img/; testing.md, qsp's

@@ -1,0 +1,5 @@
+#!/bin/sh
+# qsp's MCP server, for an MCP client to start as a command. It passes -q so that q prints no
+# banner: stdout carries nothing but the protocol. Arguments are mcp.q's: see the top of mcp.q
+here=$(cd "$(dirname "$0")" && pwd)
+exec "${QBIN:-q}" "$here/mcp.q" -q "$@"

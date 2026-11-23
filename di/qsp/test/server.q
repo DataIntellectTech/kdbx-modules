@@ -12,6 +12,8 @@ seen:([]h:`symbol$();m:());
 .z.pg:{[x] `seen upsert `h`m!(`pg;x); value x};
 .z.ps:{[x] `seen upsert `h`m!(`ps;x); value x};
 P:qsp.grant[qsp.table[P;`seen;::];`llm;`seen;qsp.ALL;()];
+/ a second gateway, scoped to the llm group: it may name llmu and junior, and no one else
+P:qsp.scopegateway[P;`gwllm;`llm];
 qsp.serve P;
 / .z.pc also fires for handle 0 when stdin closes, so only a client counts
 .z.pc:{if[(x>0)&0=count .z.W;exit 0];};

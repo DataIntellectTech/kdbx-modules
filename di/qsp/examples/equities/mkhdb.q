@@ -5,6 +5,11 @@
 / is the same on every run: the dates are fixed and the generator is seeded.
 / hdb.q builds one with this if it has to. Refuses to write over a directory that exists
 
+/ the builder's helpers live in .mk, not at the root: a process that loads this file would
+/ otherwise carry globals called px, fill, base and tick, and qsp refuses a column alias that
+/ shadows a global function (select px:price*size ... then reads px), which an agent trips over
+\d .mk
+
 / ------------------------------------------------------------------ reference data
 
 mkaccounts:{[]
@@ -123,6 +128,9 @@ mkhdb:{[db;days]
   delete trades,quotes,orders,depth from `.;
   :h;
   };
+
+\d .
+mkhdb:.mk.mkhdb;
 
 / run as a script: build, and exit
 if[(string .z.f) like "*mkhdb.q";

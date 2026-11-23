@@ -1,0 +1,19 @@
+entity,tbl,columns,filter
+# ops_lead: full fleet access including financial costs and warranty contracts
+ops,sites,*,
+ops,turbines,*,
+ops,telemetry,*,
+ops,faults,*,
+ops,maintenance,*,
+# northsea_eng: row-filtered to North Sea offshore farms only, no repairCostUsd or warrantyContract
+northsea,sites,*,site in `DOGGER`HORNSEA
+northsea,turbines,turbine site manufacturer ratedMw installYear,site in `DOGGER`HORNSEA
+northsea,telemetry,*,site in `DOGGER`HORNSEA
+northsea,faults,date time turbine site faultCode severity downtimeMin,site in `DOGGER`HORNSEA
+northsea,maintenance,date time turbine site workType hours,site in `DOGGER`HORNSEA
+# researcher: all sites, operational telemetry & reliability only (no costs, contracts, or technician IDs)
+research,sites,*,
+research,turbines,turbine site manufacturer ratedMw installYear,
+research,telemetry,*,
+research,faults,date time turbine site faultCode severity downtimeMin,
+research,maintenance,date time turbine site workType hours,

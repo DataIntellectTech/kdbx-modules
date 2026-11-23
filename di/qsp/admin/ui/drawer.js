@@ -153,12 +153,32 @@ function defBody(M, n) {
     <div class="hint">qsp calls it with the user on every query; change the table it reads and the next query sees it.</div>`;
 }
 
+function termBody(M, n) {
+  const tm = (M.terms || []).find(x => x.term === n);
+  if (!tm) return '';
+  const ts = tm.tables || [];
+  const who = M.usersSorted.filter(u => ts.every(t => M.can(u, t)));
+  const firstUser = who[0] || M.usersSorted[0] || '';
+  return head('#64748b', 'terms', tm.term, 'business term') +
+    `<p>${esc(tm.meaning)}</p>` +
+    (tm.formula ? `<div class="label d-sec">Formula</div><p class="muted">${esc(tm.formula)}</p>` : '') +
+    (tm.caveat ? `<div class="label d-sec">Caveat</div><p class="muted">${esc(tm.caveat)}</p>` : '') +
+    (tm.q ? `<div class="label d-sec">Example query</div><div class="code">${hq(tm.q)}</div>` : '') +
+    `<div class="label d-sec">Tables</div><div class="chips" style="margin-top:6px">${ts.map(t => `<span class="chip" data-sel="table:${esc(t)}">${icon('table')}${esc(t)}</span>`).join('') || '<span class="faint">none</span>'}</div>` +
+    `<div class="label d-sec">Visible in describe to ${who.length} of ${M.users.length} users</div>` +
+    `<div class="chips" style="margin-top:6px">${who.map(u => userChip(M, u)).join('') || '<span class="faint">nobody</span>'}</div>` +
+    `<div class="actions">` +
+    (tm.q && firstUser ? `<a class="btn primary" href="#/lab?user=${esc(firstUser)}&q=${encodeURIComponent(tm.q)}">${icon('lab')}Run in Lab</a>` : '') +
+    `<a class="btn" href="#/edit?file=terms.csv&line=${tm.line || ''}">${icon('whatif')}Edit terms.csv</a>` +
+    `</div>`;
+}
+
 export function renderDrawer(ctx) {
   const { M, S } = ctx;
   const body = $('#drawer-body');
   const sel = S.sel;
   if (!sel || !M) { body.innerHTML = ''; return; }
-  const f = { user: userBody, group: groupBody, table: tableBody, column: columnBody, access: accessBody, grant: grantBody, config: configBody, gateway: gatewayBody, def: defBody }[sel.kind];
+  const f = { user: userBody, group: groupBody, table: tableBody, column: columnBody, access: accessBody, grant: grantBody, config: configBody, gateway: gatewayBody, def: defBody, term: termBody }[sel.kind];
   body.innerHTML = (f ? f(M, sel.id) : '') + sourceBlock(M, sel);
   body.onclick = e => {
     const ed = e.target.closest('[data-editfile]');

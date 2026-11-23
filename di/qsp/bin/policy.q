@@ -3,6 +3,7 @@
 /   q di/qsp/bin/policy.q -dir new/policy -was old/policy         ...and what the change changes
 /   q di/qsp/bin/policy.q -dir p -init defs.q -user alice bob     load q first; only these users
 /   q di/qsp/bin/policy.q -dir p -init /path/to/hdb defs.q -test  ...and run the policy's tests.csv
+/   q di/qsp/bin/policy.q -dir p -init /path/to/hdb -measure      measure bytes per row into schema.csv
 / exits 1 if the policy would not load, so a broken policy fails the build. Tables not loaded here
 / are described by the policy's schema.csv, so no data is needed. -init loads q that the policy
 / names: fn: filters, clock functions, functions in functions.csv - or the data itself, if you
@@ -15,11 +16,21 @@ qsp:use`di.qsp;
 \c 50 250
 
 o:.Q.opt .z.x;
-if[not `dir in key o;-2"usage: q di/qsp/bin/policy.q -dir DIR [-was DIR] [-init FILE ...] [-user U ...] [-test]";exit 2];
+if[not `dir in key o;-2"usage: q di/qsp/bin/policy.q -dir DIR [-was DIR] [-init FILE ...] [-user U ...] [-test] [-measure]";exit 2];
 / every path absolute before anything loads: loading a database moves the working directory into it
 absolute:{[x] :$["/"=first x;x;system["cd"],"/",x];};
 @[`o;`dir`was`init inter key o;{absolute each x}];
 if[`init in key o;{system"l ",x} each o`init];
+
+/ -measure: schema.csv's bytes measured again from the tables -init loaded, everything else kept -
+/ for a nightly job, or after the data changes shape. A column moving by more than a quarter is
+/ listed: estimates made from the old figure were that far out
+if[`measure in key o;
+  ch:qsp.remeasure first o`dir;
+  -1"schema.csv in ",(first o`dir),": ",string[count ch]," column size",$[1=count ch;"";"s"]," measured anew";
+  big:select from ch where not null was, 0.25<abs[now-was]%was;
+  if[count big;-1"moved by more than a quarter:";show big];
+  -1""];
 
 / one problem with a policy, to stderr
 showproblem:{[x] -2"  ",string[x`file],$[x`line;":",string x`line;""],": ",x`error;};
@@ -35,6 +46,19 @@ problems:{[d]
 
 p:problems first o`dir;
 -1"policy in ",(first o`dir)," loads.\n";
+
+/ its terms: each example query must be one the policy runs
+if[count e:qsp.checkterms p;
+  -2"terms.csv in ",(first o`dir)," has ",string[count e]," problem",$[1=count e;"";"s"],":";
+  {-2"  ",string[x`term],": ",x`problem} each e;
+  exit 1];
+
+/ agent users: with strictcolumns off, a where clause may test columns the user cannot select, and
+/ an agent can ask question after question. A warning, not a failure: some policies need it off
+if[count e:qsp.agentlint p;
+  -2"warning: strictcolumns is off, and agentgroup ",string[p[`config;`agentgroup]],"'s users can test hidden columns in a where clause:";
+  {-2"  ",string[x`user]," on ",string[x`tbl],": ",", " sv string x`hidden} each e;
+  -2"  set strictcolumns to 1b in config.csv, or accept the risk for these users\n"];
 
 / its tests: checked always, run with -test
 if[count e:qsp.checktests first o`dir;

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "qsp": {
+      "command": "../../../mcp/qsp-mcp",
+      "args": ["-port", "5100", "-gateway", "gateway", "-default", "llm1"]
+    }
+  }
+}

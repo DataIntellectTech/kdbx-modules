@@ -166,9 +166,20 @@ scanned:{[p;rw] b:tree.basequeries rw; :`symbol$distinct {x 1} each b where not 
 / the base queries of rewritten tree rw that read table t
 readsof:{[rw;t] b:tree.basequeries rw; :b where t~/:b[;1];};
 
+/ the reads of t in rw that scan it end to end. Only these say why: another read of t in the same
+/ query - a nested select that does bound the column - says nothing about them
+scans:{[p;rw;t] b:readsof[rw;t]; :b where not prunedby[p] each b;};
+
 / does a query on t bound its partition column, but not first? Only the policy's row filter puts
 / a constraint ahead of the user's: placement `first, or a filter that reads other rows
-buried:{[p;rw;t] ti:pol.info[p;t]; :any {[ti;x] any ord.prunesby[ti] each tree.getc x 2}[ti] each readsof[rw;t];};
+buried:{[p;rw;t] ti:pol.info[p;t]; :any {[ti;x] any ord.prunesby[ti] each tree.getc x 2}[ti] each scans[p;rw;t];};
+
+/ does a query on t constrain its partition column with a value computed as the query runs - a
+/ nested select, an exec, max date - rather than one written in? q cannot prune by that
+computed:{[p;rw;t]
+  pc:pol.info[p;t]`partition;
+  :any {[pc;x] any {[pc;c] $[0h=type c;$[3=count c;$[pc~c 1;not first ord.literal c 2;0b];0b];0b]}[pc] each tree.getc x 2}[pc] each scans[p;rw;t];
+  };
 
 / the refusal for table t, scanned end to end. The column must be bounded: a one-sided range reads
 / every partition on one side of it
@@ -178,6 +189,10 @@ needs:{[p;rw;t]
     :string[t]," - this user's row filter must run before the constraint on `",c,
       $[`first=p[`config;`placement];" (placement is `first)";" (it reads other rows)"],
       ", and q prunes by the first constraint only, so every partition is read whatever the query says"];
+  if[computed[p;rw;t];
+    :string[t]," - the constraint on `",c," must be a value written into the query (",c,"=d, ",c," in ds or ",c,
+      " within d0 d1): one computed from other rows (a nested select, an exec, max ",c,
+      ") is known only as the query runs, so q cannot prune by it. Find the value with a query of its own first, then write it in"];
   :string[t]," needs a constraint on `",c," - ",c,"=d, ",c," in ds or ",c," within d0 d1";
   };
 
@@ -279,6 +294,7 @@ isqsp:{[m] :(10h=type m)and(5<=count m)and"qsp: "~5#m;};
 evalerror:{[e]
   if[e~"stop";:"stop: the query ran longer than the timeout (-T ",string[system"T"],"s) - narrow its dates or instruments, or filter both sides of a join before joining"];
   if[e~"wsfull";:"wsfull: the query needed more memory than the process may use (-w) - narrow it, or aggregate before joining"];
+  if[codes.qname e;:"not found when the query ran: ",e," - q could not find this name: a join key missing from the left table, a column an earlier step did not keep, or a name never defined"];
   :e;
   };
 
@@ -544,8 +560,10 @@ fullscans:{[p;u;q] :scanned[p;rewrite[p;u;q]];};
 / row filter and embargo in it, evaluated without an audit record, since the user asked nothing.
 / Cached for a minute per user and table: describe is called often, and the data moves slowly
 
-/ a rewritten, settled query, evaluated without a record: describe's own reads
-quiet:{[p;u;q] :eval settle[p;rewrite[p;u;q]];};
+/ a rewritten, settled query, evaluated without a record: describe's own reads. Served, it goes to
+/ the evaluator a policed query goes to - the handler there before serve, which is eval when there
+/ was none - so a qsp in front of a gateway, holding no data, reads the shape where the data is
+quiet:{[p;u;q] t:settle[p;rewrite[p;u;q]]; :$[installed;chain[`.z.pg;t];eval t];};
 
 / the partitions of table t user u can see: .Q.pv, narrowed by the policy's literal constraints on
 / the partition column pc - an embargo - as run would narrow a query over every one
@@ -574,13 +592,15 @@ tableshape:{[p;u;t]
     r[`dates]:`first`last`count!(first ds;last ds;count ds);
     if[0=count ds;:1_r];
     w:" where ",string[pc],"=",-3!last ds];
+  / each read on its own: one that fails - a gateway that is down - costs its column, not the
+  / dates already found
   tc:cs where (ty in "pntuvz")and not cs=pc;
   if[count tc;
-    r[`time]:tc!{[p;u;t;w;c] @[{first each x};
-      value flip quiet[p;u;"select a:min ",(string c),", b:max ",(string c)," from ",(string t),w];()]}[p;u;t;w] each tc];
+    r[`time]:tc!{[p;u;t;w;c] @[{first each value flip x};
+      @[quiet[p;u];"select a:min ",(string c),", b:max ",(string c)," from ",(string t),w;{()}];{()}]}[p;u;t;w] each tc];
   sc:cs where (ty="s")and not cs=pc;
   if[count sc;
-    v:sc!{[p;u;t;w;c] @[{x};quiet[p;u;"exec distinct ",(string c)," from select ",(string c)," from ",(string t),w];()]}[p;u;t;w] each sc;
+    v:sc!{[p;u;t;w;c] @[quiet[p;u];"exec distinct ",(string c)," from select ",(string c)," from ",(string t),w;{()}]}[p;u;t;w] each sc;
     r[`values]:(where {(count x)within 1,fewvalues} each v)#v];
   :1_r;
   };

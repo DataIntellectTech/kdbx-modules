@@ -77,10 +77,26 @@ patterns:flip `code`kind`how`pattern`subject!flip (
   (`api.call;              `shape;     `prefix;"api call ";                               `none);
   (`q.stop;                `runtime;   `prefix;"stop: ";                                  `none);
   (`q.wsfull;              `runtime;   `prefix;"wsfull: ";                                `none);
+  (`q.name;                `runtime;   `prefix;"not found when the query ran: ";          `after);
   (`q.unknown;             `runtime;   `prefix;"the database would not evaluate this query"; `none));
 
 / q's own errors, which evalerror passes on as they are: one word, sometimes with detail after it
-qerrors:`type`length`rank`nyi`domain`limit`par`os`mismatch`assign`stack`value`noamend`splay`part;
+qerrors:`type`length`rank`nyi`domain`limit`par`os`mismatch`assign`stack`value`noamend`splay`part,
+  `parse`from`access`noupdate`loop`insert`conn`abort;
+
+/ whether q's error e, from evaluating a permitted query, is a name q could not find. q signals
+/ that as the bare name: 'algo when a join's key is missing from its left table, or a column an
+/ earlier step did not keep. Left as it is, the classifier knows no such message and calls it
+/ permission, which tells an agent to stop when it should fix its query. The query was permitted
+/ before it ran and a column its user may not read is already gone from the tree, so the name says
+/ nothing about access
+qname:{[e]
+  if[not 10h=type e;:0b];
+  if[not count e;:0b];
+  if[not (first e) in .Q.a,.Q.A,".";:0b];
+  if[not all e in .Q.an,".";:0b];
+  :not (`$e) in qerrors,`stop`wsfull;
+  };
 
 / the text of message m after "qsp: ", and after the marker byte a fault carries
 body:{[m]
@@ -125,4 +141,4 @@ classify:{[m]
 / the codes and their kinds, as published: one row per code
 table:{[] :distinct flip `code`kind!(patterns`code;patterns`kind);};
 
-export:([classify;table;body]);
+export:([classify;table;body;qname]);

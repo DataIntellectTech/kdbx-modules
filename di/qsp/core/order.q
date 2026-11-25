@@ -189,4 +189,4 @@ partfixed:{[ti;c]
   :first literal c 2;
   };
 
-export:([normop;movable;place;prunes;prunesby;partfixed;guardvalues]);
+export:([normop;movable;place;prunes;prunesby;partfixed;guardvalues;literal]);

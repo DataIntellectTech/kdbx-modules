@@ -344,6 +344,8 @@ run,0,0,q,HR:qsp.configure[H;([requirepartition:1b])],1,,
 true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select count sym from ticks""); ""qsp: full table scan: ticks needs a constraint on `date - date=d, date in ds or date within d0 d1""]",1,,"requirepartition names the table and the column, and how to bound it"
 true,0,0,q,".t.eq[count qsp.run[HR;`llmu;""select from ticks where date=2020.01.01""];3]",1,,...and allows a pruned query
 true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select from ticks where date=max date"");""qsp: full table scan*""]",1,,...date=max date cannot prune
+true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select from ticks where date=max date"");""qsp: full table scan: ticks - the constraint on `date must be a value written into the query*""]",1,,"...and the refusal says why: a value computed as the query runs"
+true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select from ticks where date=(exec max date from (select date from ticks where date=2020.01.01))"");""qsp: full table scan: ticks - the constraint on `date must be a value written into the query*""]",1,,"...even beside a nested select that does prune: the row filter is not what stops it"
 true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select from ticks where size=max size, date=2020.01.01"");""qsp: full table scan*""]",1,,...nor a partition constraint that does not lead
 true,0,0,q,".t.err[(qsp.run;HR;`llmu;""select from ticks where date<>2020.01.01"");""qsp: full table scan*""]",1,,...nor date<>d
 true,0,0,q,".t.eq[qsp.fullscans[H;`llmu;""select from ticks where date within 2020.01.01 2020.01.02""];`symbol$()]",1,,...a range prunes
@@ -571,7 +573,7 @@ run,0,0,q,hclose u,1,,
 run,0,0,q,hclose g,1,,
 comment,0,0,q,,1,,serve swaps the policy
 run,0,0,q,".z.pw:{[u;pw] pw~""secret""}",1,,
-run,0,0,q,.t.pg:{[x] value x};.z.pg:.t.pg,1,,
+run,0,0,q,.t.npg:0;.t.pg:{[x] .t.npg+:1; value x};.z.pg:.t.pg,1,,
 run,0,0,q,qsp.serve P,1,,
 true,0,0,q,".z.pw[`llmu;""secret""]",1,,serve installs .z.pw: a user of the policy may log in
 true,0,0,q,".z.pw[`gateway;""secret""]",1,,...and a gateway login
@@ -579,6 +581,7 @@ true,0,0,q,"not any .z.pw[;""secret""] each `nobody`llm`desk`analyst",1,,"...not
 true,0,0,q,"not .z.pw[`llmu;""wrong""]",1,,a .z.pw defined before the first serve still runs after the name check: the password is still checked
 true,0,0,q,qsp.active[]~P,1,,active is the policy served
 true,0,0,q,not .z.pg~.t.pg,1,,serve replaced .z.pg
+true,0,0,q,".m.di.0qsp.shapecache:()!(); .t.npg:0; v:(qsp.api.brief[P;`ana;`q])[`shape;`trade;`values;`sym]; (0<.t.npg)&v~`aaa`bbb`ccc",1,,"served, describe reads the data's shape through the handler there before serve - a gateway, when qsp holds no data"
 run,0,0,q,qsp.unserve[],1,,
 true,0,0,q,.z.pg~.t.pg,1,,unserve puts back the .z.pg that was there before the first serve
 true,0,0,q,".z.pw[`nobody;""secret""]",1,,...and the .z.pw: the name check is gone
@@ -1036,6 +1039,11 @@ true,0,0,q,".t.eq[last exec code from qsp.audit[];`]",1,,...and an allowed query
 true,0,0,q,".t.eq[qsp.classify ""qsp: a where after a value: ,`a where ..."";`code`kind`subject!(`nesting.stray;`shape;"",`a"")]",1,,classify gives a refusal's code from its message
 true,0,0,q,".t.eq[qsp.classify ""qsp: type"";`code`kind`subject!(`q.type;`runtime;"""")]",1,,...q's own errors as runtime
 true,0,0,q,".t.eq[(qsp.classify ""something new"")`code`kind;`refusals.other`permission]",1,,...and a message it does not know as permission: nothing should suggest a way round it
+true,0,0,q,".t.eq[qsp.classify ""qsp: parse"";`code`kind`subject!(`q.parse;`runtime;"""")]",1,,"...q's parse, from and access errors are q's own too, not permission"
+true,0,0,q,".t.err[(qsp.run;P;`ana;""(select sym,size from trade) lj select first price by sym,trader from trade"");""qsp: not found when the query ran: trader - *""]",1,,"a name q cannot find while evaluating - here a join key the left table lacks - says so, and names it"
+true,0,0,q,"r:@[qsp.run[P;`ana];""(select sym,size from trade) lj select first price by sym,trader from trade"";::]; .t.eq[qsp.classify r;`code`kind`subject!(`q.name;`runtime;""trader"")]",1,,"...and is runtime, a query to fix, never a permission refusal that tells an agent to stop"
+true,0,0,q,"r:@[qsp.run[P;`ana];""select x:sym+size from trade"";::]; .t.eq[(r;(qsp.classify r)`code`kind);(""qsp: type"";`q.type`runtime)]",1,,"...while q's own error words are left as they are: a type error stays q.type, not a missing name"
+true,0,0,q,"r:@[qsp.run[P;`llmu];""select pnl from trade"";::]; .t.eq[(qsp.classify r)`code`kind;`columns.unknown`permission]",1,,"...while a column the user may not read is still refused before it runs, as permission"
 true,0,0,q,"all `permission`shape`limit`runtime in exec distinct kind from qsp.codes[]",1,,the published codes cover every kind
 comment,0,0,q,,1,,receipts in process: signed with a key ring
 run,0,0,q,".t.kd:""/tmp/qspkeys"",string .z.i; system""rm -rf "",.t.kd; system""mkdir -p "",.t.kd",1,,

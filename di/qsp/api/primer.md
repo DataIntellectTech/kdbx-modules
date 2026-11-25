@@ -247,7 +247,9 @@ question asked for; if it did not say, say which you used.
 | You see | It means | Do this |
 |---|---|---|
 | `not valid q (assign): fills is a q function...` | A column is named after a q function | Rename the column it names (section 4) |
+| `not valid q (dup names for cols/groups x)` | The select lists x, and its `by` returns x too | Drop x from the select list: `select n:count i by x from t` |
 | `not valid q (...)` | q could not parse the query | Check brackets, quotes, and right-to-left order |
+| `not found when the query ran: x` | q could not find x while running a query qsp allowed: usually a join key missing from the left table, or a column an inner select did not keep | Keep every key of a keyed join's right side as a column of its left side. Joins chain right to left: in `a lj b lj c`, `c` is joined onto `b` first |
 | `unknown or not-permitted column: x` | x is not a column you are granted, or a column computed inside `wj` | Check `describe`; avoid post-processing `wj` |
 | `x.y: y is not a part q takes after a dot` | A dotted part q does not have | Use the parts it lists, or cast |
 | `full table scan` | A select of a partitioned table does not start with a two-sided bound on the partition column | Put `date=d`, `date in ...` or `date within d0 d1` first, in every nested select too |

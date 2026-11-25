@@ -216,7 +216,7 @@ ruletable:{[p]
     "nested too deeply"];
   r,:enlist mkrule[`refusals;
     "A refusal is an error whose message starts qsp: and names what was refused: change that part and send the query again.";
-    "The same query is refused the same way every time, so retrying it unchanged is pointless. Each rule's refusal lists text its refusals contain: the rule whose text the message contains explains it, and its good examples show the fix. validate makes every check that does not need the query to run, so it catches most refusals without running anything; explain shows what would run. \"qsp: not valid q (...)\" means q could not parse the text. Any other message - type, length, rank - is q itself failing to evaluate what qsp let through: check the types and shapes of what the query combines.";
+    "The same query is refused the same way every time, so retrying it unchanged is pointless. Each rule's refusal lists text its refusals contain: the rule whose text the message contains explains it, and its good examples show the fix. validate makes every check that does not need the query to run, so it catches most refusals without running anything; explain shows what would run. \"qsp: not valid q (...)\" means q could not parse the text. Any other message - type, length, rank - is q itself failing to evaluate what qsp let through: check the types and shapes of what the query combines. \"qsp: not found when the query ran: x\" means q could not find the name x: usually a join whose key is not on its left table, or a column an earlier step did not keep.";
     ();
     ();
     "qsp: "];

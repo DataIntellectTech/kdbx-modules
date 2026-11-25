@@ -131,14 +131,16 @@ start_one() {
     portarg="-p $PORT"
   fi
   local logfile="$LOGDIR/torqx_${TORQXSTACKID}_${procname}.log"
+  # extras are shell words, as TorQ evals its start line: quotes group words and $VARS expand
+  eval "set -- $EXTRAS \"\$@\""
   if [ -n "$TMUX_MODE" ]; then
-    start_one_tmux "$procname" "$portarg" "$logfile" $EXTRAS "$@"
+    start_one_tmux "$procname" "$portarg" "$logfile" "$@"
     return
   fi
   echo "starting $procname ($PROCTYPE)... log: $logfile"
   QINIT="$TORQXBIN/torqx_init.q" nohup $QCMD \
     -torqxstackid "$TORQXSTACKID" -proctype "$PROCTYPE" -procname "$procname" \
-    $portarg $EXTRAS "$@" > "$logfile" 2>&1 &
+    $portarg "$@" > "$logfile" 2>&1 &
   disown
 }
 
@@ -165,7 +167,9 @@ start_one_tmux() {
   # re-source setenv.sh inside the pane so the TORQX*/QPATH/PATH/QCMD vars are correct even if a
   # pre-existing tmux server handed us a stale environment. $extra args are embedded (the pane runs
   # a single bash -c string), then env applies the QHOME/QLIC policy above before exec'ing q.
-  local extra="$*"
+  # Each arg is quoted with %q so a word containing spaces stays one word in the pane.
+  local extra=""
+  if [ $# -gt 0 ]; then extra=$(printf '%q ' "$@"); fi
   tmux new-session -d -s "$sess" -c "$PWD" \
     "bash -c 'source \"$SETENV\" && exec env $uflags QINIT=\"$TORQXBIN/torqx_init.q\" $aflags \$QCMD -torqxstackid \"\$TORQXSTACKID\" -proctype \"$PROCTYPE\" -procname \"$procname\" $portarg $extra'"
   # keep a crashed process's pane (and its stack trace) visible instead of the session vanishing
@@ -206,6 +210,9 @@ export_one() {
   if [ -n "$PORT" ] && [ "$PORT" != "0" ]; then
     portarg="-p $PORT"
   fi
+  # the row's extras as shell words, quoted for the unit's bash -lc line
+  local extras=""
+  if [ -n "$EXTRAS" ]; then extras=$(eval "printf '%q ' $EXTRAS"); fi
   local unitdir="$TORQXAPPHOME/systemd"
   mkdir -p "$unitdir"
   local unitfile="$unitdir/torqx-${TORQXSTACKID}-${procname}.service"
@@ -217,7 +224,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${TORQXAPPHOME}
-ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="${TORQXBIN}/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg} ${EXTRAS}'
+ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="${TORQXBIN}/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg} ${extras}'
 Restart=on-failure
 RestartSec=2
 

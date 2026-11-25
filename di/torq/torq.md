@@ -325,8 +325,10 @@ duplicating any of the identity-resolution logic above - it only reads `process.
 to know *which* processes exist, never to resolve *who a given session is*, which
 stays exclusively `di.torq`'s job). An optional `startwithall` column, as in TorQ, keeps a row with `0` out of
 `torqx.sh start` / `start all`; it can still be started by name. An optional `extras` column, also as in
-TorQ, adds q arguments to that row's process, e.g. `-parentproctype wdb`. They come before any arguments
-given to `torqx.sh` itself, so don't give the same flag in both, and `export-systemd` writes them into the unit.
+TorQ, adds q arguments to that row's process, e.g. `-parentproctype wdb`. It is read as shell words, as TorQ
+evals its start line: quotes group words and `${VARS}` expand, e.g. `-schemafile ${TORQXAPPHOME}/database.q`.
+They come before any arguments given to `torqx.sh` itself, so don't give the same flag in both, and
+`export-systemd` writes them into the unit.
 
 ### Dev mode (tmux)
 

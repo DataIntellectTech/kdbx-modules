@@ -1,0 +1,83 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,st:use`di.state,1,,load the module
+before,0,0,q,st.ignore`.m.di.0k4unit,1,,"leave out k4unit, whose results change between rows"
+true,0,0,q,"st.version~first read0 hsym`$.Q.m.mp[`di.state],""/VERSION""",1,,version comes from the VERSION file
+comment,0,0,q,,1,,capture and compare
+fail,0,0,q,"st.setstate""a""",1,,a state name must be a symbol atom
+run,0,0,q,st.setstate`a,1,,
+run,0,0,q,.tst.x:1;tstv:2,1,,
+run,0,0,q,st.setstate`b,1,,
+true,0,0,q,`a`b~st.statenames[],1,,saved states are listed in order
+run,0,0,q,r:st.comparestate[`a;`b],1,,
+true,0,0,q,"1~count select from r where name=`.tst,ns=`.,kind=`ns,change=`added",1,,a new namespace is one ns row
+true,0,0,q,"(enlist 1)~exec after from r where name=`.tst.x,ns=`.tst,kind=`var,change=`added",1,,a var in a new namespace is reported with its value
+true,0,0,q,"(enlist 2)~exec after from r where name=`tstv,ns=`.,kind=`var,change=`added",1,,a root var keeps its bare name
+true,0,0,q,(enlist(::))~exec before from r where name=`tstv,1,,a missing value shows as ::
+true,0,0,q,`.tst`tstv~exec name from st.collapse r,1,,collapse folds a new namespace to its ns row
+true,0,0,q,"1 0 1 0 0~""j""$value st.summary[r]`.",1,,summary counts the changes in each namespace
+comment,0,0,q,,1,,changes and removals
+run,0,0,q,tstv:3;.tst.sub.a:1,1,,
+run,0,0,q,st.setstate`c,1,,
+run,0,0,q,delete x from `.tst;delete sub from `.tst,1,,
+run,0,0,q,st.setstate`d,1,,
+run,0,0,q,l:st.lastchanges[],1,,
+true,0,0,q,"`.tst.sub.a`.tst.x~asc exec name from l where kind=`var,change=`removed",1,,lastchanges reports removed vars
+true,0,0,q,"(enlist`.tst.sub)~exec name from l where kind=`ns,change=`removed",1,,...and a removed namespace
+true,0,0,q,not `.tst.sub.a in exec name from st.collapse l,1,,collapse folds a removed namespace too
+true,0,0,q,"2 3~first each exec (before;after) from st.comparestate[`b;`c] where name=`tstv,change=`changed",1,,a changed var shows before and after
+comment,0,0,q,,1,,without capturing
+run,0,0,q,.tst.y:5,1,,
+true,0,0,q,`.tst.y in exec name from st.sincelast[],1,,sincelast sees changes since the last capture
+true,0,0,q,`a`b`c`d~st.statenames[],1,,...without saving a state
+true,0,0,q,`.tst.y in exec name from st.sincestartup[],1,,sincestartup sees changes since the load
+run,0,0,q,s0:st.getstate[];.tst.z:1,1,,
+true,0,0,q,(enlist`.tst.z)~exec name from st.diff[s0;st.getstate[]] where ns=`.tst,1,,diff compares any two getstate results
+comment,0,0,q,,1,,what is left out
+true,0,0,q,"not any (string exec name from st.sincestartup[]) like "".m.di.0state*""",1,,...so its saved states are never reported
+run,0,0,q,st.setstate`e;st.setstate`f,1,,
+true,0,0,q,0=count st.lastchanges[],1,,two captures in a row report nothing
+run,0,0,q,st.ignore`.tst,1,,
+true,0,0,q,not any `.tst`.tst.y in exec name from st.sincestartup[],1,,an ignored namespace hides everything below it
+run,0,0,q,st.unignore`.tst,1,,
+true,0,0,q,`.tst.y in exec name from st.sincestartup[],1,,unignore reports it again
+comment,0,0,q,,1,,errors and cleanup
+fail,0,0,q,st.comparestate[`a;`nosuch],1,,comparing with an unknown state fails
+fail,0,0,q,"st.comparestate[""a"";`b]",1,,...and with a name that is not a symbol
+run,0,0,q,st.dropstate`a,1,,
+true,0,0,q,`b`c`d`e`f~st.statenames[],1,,dropstate forgets a state
+fail,0,0,q,st.dropstate`a,1,,...and fails for one that is not saved
+comment,0,0,q,,1,,"attributes, views and system settings"
+run,0,0,q,ta:1 2 3,1,,
+run,0,0,q,st.setstate`p1,1,,
+run,0,0,q,ta:`s#ta,1,,
+run,0,0,q,st.setstate`p2,1,,
+true,0,0,q,(enlist`ta)~exec name from st.lastchanges[] where change=`changed,1,,an attribute added in place is a change
+run,0,0,q,vsrc:1,1,,
+run,0,0,q,vv::vsrc+1,1,,
+run,0,0,q,st.setstate`v1,1,,
+run,0,0,q,vsrc:5,1,,
+run,0,0,q,v:st.sincelast[],1,,
+true,0,0,q,(enlist`view)~exec kind from v where name=`vv,1,,a view is reported as a view
+true,0,0,q,6~first exec after from v where name=`vv,1,,...with the value it gives now
+run,0,0,q,"st.setstate`y1;system""P 5"";st.setstate`y2;system""P 7""",1,,
+true,0,0,q,"(enlist`$""\\P"")~exec name from st.lastchanges[] where kind=`sys",1,,a system setting is reported
+true,0,0,q,`st in exec name from st.sincestartup[],1,,a module handle at root is one variable
+true,0,0,q,"not any (string exec name from st.sincestartup[]) like ""st.*""",1,,...not a namespace
+comment,0,0,q,,1,,around
+run,0,0,q,w:st.around[{[x] .tst.w:x;:x*2;};enlist 21],1,,
+true,0,0,q,42~w`result,1,,around returns what the function gives
+true,0,0,q,(enlist`.tst.w)~exec name from w`changes,1,,...and what it changed
+comment,0,0,q,,1,,fingerprints
+run,0,0,q,st.setfingerprint`f1;.tst.f:1;st.setfingerprint`f2,1,,
+true,0,0,q,(enlist`.tst.f)~exec name from st.lastchanges[] where ns=`.tst,1,,fingerprints show what changed
+run,0,0,q,.tst.f:2,1,,
+true,0,0,q,(enlist`.tst.f)~exec name from st.sincelast[] where change=`changed,1,,a fingerprint compares against the live state
+run,0,0,q,fs:st.fingerprint st.getstate[];.tst.g:1,1,,
+true,0,0,q,fs`fp,1,,fingerprint marks the state
+true,0,0,q,(enlist`.tst.g)~exec name from st.diff[fs;st.getstate[]] where ns=`.tst,1,,diff compares a fingerprint with a state
+run,0,0,q,"fsf:hsym`$""/tmp/statetest"",string .z.i;fsf set fs",1,,
+run,0,0,q,st.addstate[`disk;get fsf],1,,
+true,0,0,q,(enlist`.tst.g)~exec name from st.diff[st.getstate[];get fsf] where ns=`.tst,1,,a fingerprint survives a round trip to disk
+true,0,0,q,`disk in st.statenames[],1,,addstate saves a state
+fail,0,0,q,st.addstate[`bad;1 2 3],1,,...and refuses something that is not a state
+after,0,0,q,"hdel fsf;delete tstv,r,l,s0,ta,vsrc,v,w,fs,fsf from `.;delete x,y,z,w,f,g from `.tst",1,,tidy up

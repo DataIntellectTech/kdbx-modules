@@ -104,6 +104,9 @@ datemounted:{[d] idbdir[]~.Q.dd[hsym `$FIXTUREDIR;d]}
 / a new dated partition appears under the savedir root, as the wdb's first flush of a new day makes
 addpartition:{[d] (` sv (hsym `$FIXTUREDIR,"/",(string d),"/widgets";`)) set .Q.en[hsym `$FIXTUREHDBDIR;([]id:1 2 3;name:`a`b`c)];}
 
+/ the wdb appends rows to a partition that is already mounted, as an intraday flush does
+appendrows:{[d] (` sv (hsym `$FIXTUREDIR,"/",(string d),"/widgets";`)) upsert .Q.en[hsym `$FIXTUREHDBDIR;([]id:4 5;name:`a`b)];}
+
 / a partitioned writedown mode: savedir/<partition>/<int partition>/<table>, as the wdb's partbyenum writes
 setupenumfixture:{[]
   system "rm -rf ",FIXTUREDIR;

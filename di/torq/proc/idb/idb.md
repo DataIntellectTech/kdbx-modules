@@ -12,7 +12,7 @@ sym file and the db (`loaddb`). After that it only reacts to the wdb:
 
 | Call | From | Does |
 |---|---|---|
-| `.idb.intradayreload[]` | the wdb, after a flush that wrote something | reloads the sym file if it grew, remounts if the partition count changed, clears the `.Q.pn` row-count cache |
+| `.idb.intradayreload[]` | the wdb, after a flush that wrote something | reloads the sym file if it grew, remounts if the partition count changed, clears the `.Q.pn` and `.Q.PN` row-count caches |
 | `.idb.rollover[pt]` | the wdb or sort process, at end of day | sets the current partition, moves the mount for it, force-loads the db |
 
 ### What gets mounted
@@ -33,8 +33,10 @@ legacy: they map a sym (or int) value, or a sym's first character, to its int pa
 ### Reloads
 
 `intradayreload` only remounts when `partitioncounthaschanged[]`. Rows appended to a partition
-that is already mounted are seen by a `select` without a remount; only `count` is cached, in
-`.Q.pn`, which `clearrowcountcache[]` resets. In `default` mode a single partition never needs a
+that is already mounted are seen by a `select` without a remount; only `count` is cached.
+kdb-x keeps the counts in `.Q.PN` (the whole db) and `.Q.pn` (the current `.Q.view`), and refills
+`.Q.pn` from `.Q.PN`, so `clearrowcountcache[]` resets both. Legacy resets only `.Q.pn`, which on
+kdb-x leaves `count` stale after an append. In `default` mode a single partition never needs a
 remount at all.
 
 ### The sym file
@@ -87,7 +89,8 @@ wdb within `connecttimeoutms` fails `init`.
 
 `test.csv`/`test.q` (k4unit) cover the dependency checks, the wdb handshake (including a wdb that
 does not publish each variable), the default and `partbyenum` mounts, rollover moving the mount,
-reloads remounting only when the partition count changes, the sym-file change detection and
+reloads remounting only when the partition count changes, `count` after an append to a mounted
+partition, the sym-file change detection and
 retry, and a missing `savedir`. Every `idb[...]` call is bracket-indexed, not `idb.xxx`. Run in a
 fresh q session, as the suite calls `setenv`:
 

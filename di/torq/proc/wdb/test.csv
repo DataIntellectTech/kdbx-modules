@@ -89,6 +89,7 @@ true,0,0,q,enumintact[],1,,the sym column still resolves after the move - the po
 true,0,0,q,discovertables[],1,,no table list means whatever is in the working partition
 true,0,0,q,defaultsavedir[],1,,an empty savedir on the wire falls back to the configured one
 true,0,0,q,workerssetting[],1,,workers sets a negative -s
+true,0,0,q,subsloaded[],1,,sort mode loads di.subscriptions (declared in deps.toml) without subscribing
 true,0,0,q,emptypartition[],1,,a date with no working partition logs the failed move rather than throwing
 true,0,0,q,nooverwrite[],1,,a table already in the hdb partition aborts the move, nothing overwritten
 comment,,,,,,,reload

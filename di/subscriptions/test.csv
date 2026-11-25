@@ -1,7 +1,10 @@
 action,ms,bytes,lang,code,repeat,minver,comment
 before,0,0,q,sub:use`di.subscriptions,1,,load module
+before,0,0,q,TPLOADED:`0tplogmgr in key `.m.di,1,,whether loading the module loaded di.tplogmgr, before the fixture loads it
 before,0,0,q,system "l di/subscriptions/test.q",1,,load fixture helpers
 before,0,0,q,buildlog[4],1,,build a real 4-message tp log via di.tplogmgr
+
+true,0,0,q,TPLOADED,1,,loading di.subscriptions loads its declared dependency di.tplogmgr, so a process that never calls init still passes di.torq's dependency audit
 
 fail,0,0,q,sub.init[()!();()!()],1,,init without the log dependency must error
 fail,0,0,q,"sub.init[()!();`log`handlers!(mocklog[];mockhandlers)]",1,,init without the timer dependency must error

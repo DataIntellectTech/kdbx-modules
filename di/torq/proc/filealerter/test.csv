@@ -1,0 +1,195 @@
+action,ms,bytes,lang,code,repeat,minver,comment
+before,0,0,q,fa:use`di.torq.proc.filealerter,1,,load module
+before,0,0,q,system "l di/torq/proc/filealerter/test.q",1,,load mock deps and fixture helpers
+before,0,0,q,scennewonly[],1,,create the fixture dir and csv
+
+comment,0,0,q,,1,,exports and dependency checks
+true,0,0,q,`init`run`loadcsv`sendtotickerplant`processpcaps`version~key fa,1,,export holds the public api and version only
+true,0,0,q,"(first read0 `:di/torq/proc/filealerter/VERSION)~fa`version",1,,version is read from VERSION
+fail,0,0,q,fa[`run][],1,,run before init errors
+fail,0,0,q,fa[`loadcsv][],1,,loadcsv before init errors
+fail,0,0,q,"fa[`sendtotickerplant][`segmentedtp;`trade;()]",1,,sendtotickerplant before init errors
+fail,0,0,q,"fa[`processpcaps][""/tmp/"";""x.pcap"";`packets]",1,,processpcaps before init errors
+fail,0,0,q,fa[`init][basecfg[];()],1,,init with deps that are not a dict errors
+fail,0,0,q,fa[`init][basecfg[];nolog[]],1,,init without a log dependency errors
+fail,0,0,q,fa[`init][basecfg[];notimer[]],1,,init without a timer dependency errors
+fail,0,0,q,fa[`init][basecfg[];noservers[]],1,,init without a servers dependency errors
+fail,0,0,q,"fa[`init][cfgwith[`inputcsv;FIXDIR,""/nosuch.csv""];mockdeps[]]",1,,init with a missing csv errors as TorQ's startup did
+fail,0,0,q,"fa[`init][cfgwith[`polltime;""junk""];mockdeps[]]",1,,an unreadable polltime errors
+true,0,0,q,"logged[`error;""failed to open *""]",1,,the missing csv was logged
+true,0,0,q,"logged[`error;""*/nosuch.csv : *""]",1,,naming the file
+
+comment,0,0,q,,1,,shipped defaults
+true,0,0,q,`inputcsv`polltime`alreadyprocessed`skipallonstart`moveonfail`tickerplanttype`usemd5~key shippeddefaults[],1,,the settings file declares every tunable
+true,0,0,q,"(0D00:00:10;0b;0b;1b;`segmentedtp)~shippeddefaults[]`polltime`skipallonstart`moveonfail`usemd5`tickerplanttype",1,,the shipped defaults match the code defaults
+
+comment,0,0,q,,1,,init
+run,0,0,q,scennewonly[],1,,fixture with one newonly row
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init with the fixture config
+true,0,0,q,1=count scheduled,1,,init registered one timer job
+true,0,0,q,`filealerter~first scheduled`id,1,,the job id is filealerter
+true,0,0,q,0D00:00:10=first scheduled`period,1,,it polls every 10 seconds by default
+true,0,0,q,1h=first scheduled`mode,1,,mode 1 reschedules from the scheduled start as TorQ's mode 0 did
+true,0,0,q,(enlist `segmentedtp)~last startups,1,,servers startup was asked for the tickerplant type
+true,0,0,q,"11h=type key hsym `$FIXDIR,""/processed""",1,,the processed table was created splayed
+true,0,0,q,0=count processed[],1,,and it is empty
+true,0,0,q,1=count fapriv[`filealertercsv],1,,the csv was loaded
+run,0,0,q,fa[`init][cfgwith[`connections`polltime;(`rdb;"5")];mockdeps[]],1,,a second init with configured connections and polltime
+true,0,0,q,1=count scheduled,1,,a second init does not register a second timer job
+true,0,0,q,`rdb`segmentedtp~last startups,1,,configured connections are kept alongside the tickerplant type
+true,0,0,q,0D00:00:05=fapriv`polltime,1,,a bare polltime number is read as seconds
+
+comment,0,0,q,,1,,newonly rows run once per filename
+run,0,0,q,scennewonly[],1,,fixture with one newonly row
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,first poll
+true,0,0,q,1=nhandled[],1,,the function ran on the new file
+true,0,0,q,"(FIXDIR,""/in/"")~first handled`path",1,,it was passed the directory with a trailing slash
+true,0,0,q,"""a1.csv""~first handled`file",1,,and the bare filename
+true,0,0,q,"(enlist FIXDIR,""/in/a1.csv"")~pfiles[]",1,,the file was recorded as processed
+true,0,0,q,32=count first exec md5hash from processed[],1,,with its md5 hash
+true,0,0,q,"(hcount hsym `$FIXDIR,""/in/a1.csv"")=first exec filesize from processed[]",1,,and its size
+run,0,0,q,fa[`run][],1,,second poll
+true,0,0,q,1=nhandled[],1,,an already processed file is not run again
+run,0,0,q,"mkfile[""a1.csv"";""changed contents""]",1,,change the file
+run,0,0,q,fa[`run][],1,,third poll
+true,0,0,q,1=nhandled[],1,,newonly ignores a changed file with the same name
+true,0,0,q,logged[`info;"no new files found"],1,,a poll with nothing new logs that
+
+comment,0,0,q,,1,,non-newonly rows rerun on a change
+run,0,0,q,scenchanged[],1,,fixture with one row that is not newonly
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,first poll
+run,0,0,q,fa[`run][],1,,second poll with the file unchanged
+true,0,0,q,1=nhandled[],1,,an unchanged file is not run again
+run,0,0,q,"mkfile[""a1.csv"";""jello""]",1,,change the contents but keep the size
+run,0,0,q,fa[`run][],1,,third poll
+true,0,0,q,2=nhandled[],1,,with usemd5 a same-size change is detected
+run,0,0,q,"mkfile[""a1.csv"";""a longer file""]",1,,change the size
+run,0,0,q,fa[`run][],1,,fourth poll
+true,0,0,q,3=nhandled[],1,,a size change is detected
+
+comment,0,0,q,,1,,usemd5 off
+run,0,0,q,scenchanged[],1,,fixture with one row that is not newonly
+run,0,0,q,fa[`init][cfgwith[`usemd5;0b];mockdeps[]],1,,init with usemd5 off
+run,0,0,q,fa[`run][],1,,first poll
+true,0,0,q,"(enlist """")~exec md5hash from processed[]",1,,no md5 hash is recorded
+run,0,0,q,"mkfile[""a1.csv"";""jello""]",1,,change the contents but keep the size
+run,0,0,q,fa[`run][],1,,second poll
+true,0,0,q,1=nhandled[],1,,without md5 a same-size change is not detected
+run,0,0,q,"mkfile[""a1.csv"";""a longer file""]",1,,change the size
+run,0,0,q,fa[`run][],1,,third poll
+true,0,0,q,2=nhandled[],1,,a size change still is
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,restore usemd5
+
+comment,0,0,q,,1,,moving files
+run,0,0,q,scenmove[],1,,fixture with a move directory
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,1=nhandled[],1,,only the matching file was handled
+true,0,0,q,"doneexists[""done"";""a1.csv""]",1,,the handled file was moved
+true,0,0,q,"not inexists ""a1.csv""",1,,and is gone from the scanned directory
+true,0,0,q,"inexists ""b1.csv""",1,,a file the csv does not match is left alone
+
+comment,0,0,q,,1,,failures
+run,0,0,q,scenfail[],1,,fixture with a throwing function
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,"logged[`error;""failed to execute fafail on *a1.csv: boom""]",1,,the failure was logged
+true,0,0,q,"inexists ""a1.csv""",1,,a file whose function failed is not moved
+true,0,0,q,"(enlist FIXDIR,""/in/a1.csv"")~pfiles[]",1,,but it is recorded as processed and so not retried
+run,0,0,q,scenundef[],1,,fixture naming an undefined function
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,"logged[`error;""function nosuchfn has not been defined""]",1,,an undefined function is logged
+true,0,0,q,"inexists ""a1.csv""",1,,and its file is not moved
+run,0,0,q,scentwofn[],1,,fixture with two functions on one file and one fails
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,1=nhandled[],1,,the passing function still ran
+true,0,0,q,"inexists ""a1.csv""",1,,the file is not moved unless every function passed
+run,0,0,q,scenfail[],1,,fixture with a throwing function
+run,0,0,q,fa[`init][cfgwith[`moveonfail;1b];mockdeps[]],1,,init with moveonfail
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,"doneexists[""done"";""a1.csv""]",1,,moveonfail moves a file whose function failed
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,restore moveonfail
+run,0,0,q,scentwodest[],1,,fixture with one file given two move directories
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,2=nhandled[],1,,both functions ran
+true,0,0,q,"inexists ""a1.csv""",1,,a file with two move directories is not moved
+true,0,0,q,"logged[`error;""*two different move-to directories*""]",1,,and that is logged
+
+comment,0,0,q,,1,,skipallonstart
+run,0,0,q,scennewonly[],1,,fixture with one file present at startup
+run,0,0,q,fa[`init][cfgwith[`skipallonstart;1b];mockdeps[]],1,,init with skipallonstart
+true,0,0,q,"(enlist FIXDIR,""/in/a1.csv"")~pfiles[]",1,,the file present at startup is recorded as processed
+true,0,0,q,0=nhandled[],1,,without running anything on it
+run,0,0,q,"mkfile[""a2.csv"";""new""]",1,,a file arriving after startup
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,1=nhandled[],1,,only the new file is handled
+true,0,0,q,"""a2.csv""~first handled`file",1,,and it is the new one
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,restore skipallonstart
+
+comment,0,0,q,,1,,the csv
+run,0,0,q,"resetfixture ()",1,,a csv with a header only
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,"logged[`info;""csv file is empty""]",1,,an empty csv is logged and nothing runs
+run,0,0,q,scennullrows[],1,,a csv with an empty match and a null function
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+true,0,0,q,1=count fapriv`filealertercsv,1,,rows with an empty match or null function are dropped
+true,0,0,q,"logged[`info;""null rows were found*""]",1,,and that is logged
+run,0,0,q,"writecsv (row[""a*.csv"";""fatouch"";""1"";""""];row[""b*.csv"";""fatouch"";""1"";""""])",1,,rewrite the csv with two rows
+run,0,0,q,fa[`loadcsv][],1,,reload it
+true,0,0,q,2=count fapriv`filealertercsv,1,,loadcsv picks up the change
+
+comment,0,0,q,,1,,environment variables in paths
+run,0,0,q,scenenv[],1,,fixture with an {ENVVAR} path
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,1=nhandled[],1,,an {ENVVAR} path is expanded
+run,0,0,q,scenenvprefix[],1,,fixture with a literal prefix before the {ENVVAR}
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,1=nhandled[],1,,the text before the {ENVVAR} is kept
+true,0,0,q,"""/a/b""~fapriv[`expandenv][""/a/b""]",1,,a path with no braces is unchanged
+fail,0,0,q,"fapriv[`expandenv][""/a/{X""]",1,,an unmatched brace errors
+fail,0,0,q,"fapriv[`expandenv][""/a/}X{""]",1,,braces in the wrong order error
+true,0,0,q,"""/a//b""~fapriv[`expandenv][""/a/{FANOSUCHVAR}/b""]",1,,an unset variable expands to empty
+true,0,0,q,"logged[`warn;""*could not resolve environment variable: {FANOSUCHVAR}""]",1,,and is warned about
+
+comment,0,0,q,,1,,the processed table from an older TorQ
+run,0,0,q,scennewonly[],1,,fresh fixture
+run,0,0,q,mkflatprocessed[],1,,write a flat processed table with symbol md5hash
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init converts it
+true,0,0,q,"11h=type key hsym `$FIXDIR,""/processed""",1,,the table is now splayed
+true,0,0,q,"-11h=type key hsym `$FIXDIR,""/processed_bk""",1,,a backup of the flat table was kept
+true,0,0,q,"(enlist ""abc123"")~exec md5hash from processed[]",1,,md5hash was cast to strings
+
+comment,0,0,q,,1,,sendtotickerplant
+run,0,0,q,tphandle:0Ni,1,,no tickerplant connection
+true,0,0,q,"()~fa[`sendtotickerplant][`segmentedtp;`trade;(1 2;3 4)]",1,,with no connection it returns ()
+true,0,0,q,"logged[`error;""no connection to tickerplant*""]",1,,and logs an error
+true,0,0,q,0=count published,1,,and publishes nothing
+run,0,0,q,tphandle:0,1,,a connection: this process
+run,0,0,q,"fa[`sendtotickerplant][`segmentedtp;`trade;(1 2;3 4)]",1,,publish
+true,0,0,q,`trade~first published`tab,1,,.u.upd was called with the table
+true,0,0,q,(1 2;3 4)~first published`data,1,,and the data
+
+comment,0,0,q,,1,,pcap
+true,0,0,q,"expectedpackets[]~fapriv[`buildtable][hsym `$PCAPDIR,""/dummy.pcap""]",1,,the decoder reproduces TorQ's expected packets table
+run,0,0,q,scenpcap[],1,,fixture with the pcap file and a csv row naming a processpcaps wrapper
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,`packets~first published`tab,1,,processpcaps published to packets
+true,0,0,q,"(value flip expectedpackets[])~first published`data",1,,the decoded columns
+run,0,0,q,scenbadpcap[],1,,fixture with a file that is not pcap 2.4
+run,0,0,q,fa[`init][basecfg[];mockdeps[]],1,,init
+run,0,0,q,fa[`run][],1,,poll
+true,0,0,q,"logged[`info;""pcap version number of *""]",1,,the bad version is logged
+true,0,0,q,"logged[`info;""*/bad.pcap is incorrect*""]",1,,naming the file
+true,0,0,q,"inexists ""bad.pcap""",1,,and the file is treated as failed so not moved
+run,0,0,q,tphandle:0Ni,1,,reset the connection
+
+after,0,0,q,teardownfixture[],1,,remove the fixture directory

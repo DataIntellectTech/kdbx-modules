@@ -19,14 +19,19 @@ CFGS:`a`b`c`s`p`m`z!(
   "`procname`schemafile`stplgkdbtplog`stplgbatchmode`stplgmultilog!(`stp2;FIXDIR,\"/schema.q\";`$FIXDIR,\"/b\";`immediate;`singular)";
   "`procname`schemafile`stplgkdbtplog`stplgbatchmode`stplgmultilog!(`stp3;FIXDIR,\"/schema.q\";`$FIXDIR,\"/c\";`memorybatch;`tabular)";
   "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode!(`sctp1;0b;0b;`$FIXDIR,\"/s\";1b;`create)";
-  "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode`sctptickerplantname`sctpsubscribeto`eodtime!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\";`rolltimezone`rolltimeoffset!(\"GMT\";\"0D00:00:00\"))";
+  "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode`sctptickerplantname`sctpsubscribeto`rolltimezone`rolltimeoffset!(`sctp2;0b;0b;`$FIXDIR,\"/p\";1b;\"parent\";\"stp1\";\"\";\"GMT\";\"0D00:00:00\")";
   "`procname`schemafile`stplgkdbtplog`stplgbatchmode!(`stp4;FIXDIR,\"/schema.q\";`$FIXDIR,\"/m\";`memorybatch)";
   "`procname`createlogs`autoreconnect`stplgkdbtplog`sctpchainedtp`sctploggingmode`stplgbatchmode!(`sctp3;0b;0b;`$FIXDIR,\"/z\";1b;`create;`memorybatch)")
 
-/ di.eodtime rolltimezone, datatimezone and rolltimeoffset after init with an [eodtime] section s, as init passes it
-eodinit:{[s]
+/ warnings logged by eoddeps
+WARNS:();
+eodlog:`info`warn`error!({[c;m]};{[c;m] `WARNS set WARNS,enlist m};{[c;m]});
+
+/ di.eodtime rolltimezone, datatimezone and rolltimeoffset after init with config c, as init passes it
+eodinit:{[c]
+  `WARNS set ();
   e:use`di.eodtime;
-  e[`init](enlist[`log]!enlist`info`warn`error!3#enlist{[c;m]}),.m.di.0torq.0proc.0segmentedtp.eodconfig s;
+  e[`init] .m.di.0torq.0proc.0segmentedtp.eoddeps[c;eodlog];
   (e[`getrolltimezone][];e[`getdatatimezone][];e[`getrolltimeoffset][])
   }
 

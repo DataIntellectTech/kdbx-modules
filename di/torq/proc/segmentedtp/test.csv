@@ -16,10 +16,13 @@ true,0,0,q,"{all {[c;k] c[k]~ha ""get "",-3!` sv ``sctp,`$4_string k}[x] each k 
 true,0,0,q,"`:/x/c.csv~.m.di.0torq.0proc.0segmentedtp.apppath`$""/x/c.csv""",1,,an absolute customcsv is kept
 true,0,0,q,"`:/x/c.csv~.m.di.0torq.0proc.0segmentedtp.apppath`:/x/c.csv",1,,an hsym customcsv is kept
 true,0,0,q,"(hsym`$$[count h:getenv`TORQXAPPHOME;h,""/"";""""],""a/c.csv"")~.m.di.0torq.0proc.0segmentedtp.apppath`$""a/c.csv""",1,,a relative customcsv is under the app home
-true,0,0,q,"((`$""America/New_York"");`$""Asia/Tokyo"";0D17:00:00)~eodinit`rolltimezone`datatimezone`rolltimeoffset!(""America/New_York"";""Asia/Tokyo"";""0D17:00:00"")",1,,an [eodtime] section of strings reaches di.eodtime as symbols and a timespan
+true,0,0,q,"((`$""America/New_York"");`$""Asia/Tokyo"";0D17:00:00)~eodinit`rolltimezone`datatimezone`rolltimeoffset!(""America/New_York"";""Asia/Tokyo"";""0D17:00:00"")",1,,top-level eodtime strings reach di.eodtime as symbols and a timespan
+true,0,0,q,0=count WARNS,1,,top-level eodtime keys log no warning
 true,0,0,q,"(`GMT;`GMT;0D01)~eodinit enlist[`rolltimeoffset]!enlist""0D01:00:00""",1,,a string rolltimeoffset alone reaches di.eodtime as a timespan
 true,0,0,q,"(`$""Asia/Tokyo"";`GMT;0D)~eodinit enlist[`rolltimezone]!enlist""Asia/Tokyo""",1,,a string rolltimezone alone reaches di.eodtime as a symbol
 fail,0,0,q,"eodinit enlist[`rolltimeoffset]!enlist""junk""",1,,an unparseable rolltimeoffset errors
+true,0,0,q,"(`GMT;`GMT;0D)~eodinit enlist[`eodtime]!enlist enlist[`rolltimezone]!enlist""Asia/Tokyo""",1,,an [eodtime] section is not read - the defaults apply
+true,0,0,q,"(1=count WARNS) and WARNS[0] like ""*top level*""",1,,and it logs a warning pointing to the top-level keys
 true,0,0,q,"(`immediate;`singular;1D)~hb"".stplg`batchmode`multilog`multilogperiod""",1,,stplg keys override the defaults; singular rolls daily
 true,0,0,q,"1D~hc"".stplg.multilogperiod""",1,,tabular rolls daily
 true,0,0,q,"all `stpps`sctp in ha""exec name from h.list`.z.pc""",1,,.z.pc observers registered

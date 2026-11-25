@@ -6,13 +6,15 @@ named:cfg`named;
 astimespan:cfg`astimespan;
 assym:cfg`assym;
 
-/ di.eodtime settings from an [eodtime] section: timezones as symbols, rolltimeoffset as a timespan
-eodconfig:{[s]
+/ di.eodtime init dict: timezones as symbols, rolltimeoffset as a timespan
+eoddeps:{[config;logdep]
+  if[`eodtime in key config;logdep[`warn][`init;"[eodtime] section ignored: set rolltimezone, datatimezone and rolltimeoffset at the top level"]];
   d:()!();
-  if[`rolltimezone in key s;d:d,enlist[`rolltimezone]!enlist assym s`rolltimezone];
-  if[`datatimezone in key s;d:d,enlist[`datatimezone]!enlist assym s`datatimezone];
-  if[`rolltimeoffset in key s;d:d,enlist[`rolltimeoffset]!enlist named[`rolltimeoffset;astimespan[`second];s`rolltimeoffset]];
-  d
+  if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist assym config`rolltimezone];
+  if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist assym config`datatimezone];
+  if[`rolltimeoffset in key config;d:d,enlist[`rolltimeoffset]!enlist named[`rolltimeoffset;astimespan[`second];config`rolltimeoffset]];
+  / log first, then the eodtime keys
+  (enlist[`log]!enlist logdep),d
   };
 
 / a relative path is under TORQXAPPHOME
@@ -38,7 +40,7 @@ init:{[config;deps]
   r[`.z.pc;`;`stpps;0j;.stpps.closesub];
   .z.m.os:use`di.os;
   .z.m.eod:use`di.eodtime;
-  .z.m.eod.init[(enlist[`log]!enlist deps`log),eodconfig $[`eodtime in key config;config`eodtime;()!()]];
+  .z.m.eod.init eoddeps[config;deps`log];
   if[`stplgkdbtplog in key config;.stplg.kdbtplog:assym config`stplgkdbtplog];
   .stplg.multilog:assym config`stplgmultilog;
   .stplg.multilogperiod:config`stplgmultilogperiod;

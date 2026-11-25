@@ -48,9 +48,9 @@ di.subscriptions defines the tables at root from what the TP returns.
 - **Startup**: `di.torq.servers` connects to the TP + HDB(s); block until a TP is up
   (`waitfortype`); `di.subscriptions.subscribe` registers for live data and replays the
   day's log up to the pre-subscription count.
-- **Accumulate** (`upd`, published at root): a **root-namespace-safe** append — upserts a
-  table payload (live) or a list-of-columns payload (replay) into the root table via
-  `@[`.;t;…]`. Set at root **before** subscribing so replay drives it too.
+- **Accumulate** (`upd`, published at root): `insert`, as TorQ's default `upd`. It appends a
+  table payload (live), a list-of-columns payload (replay) or a single row to the root table in
+  place. Set at root **before** subscribing so replay drives it too.
 - **End of day**: `.u.end[date]` (from a tickerplant or chainedtp) or root `endofday[date;data]` (from a
   segmented tickerplant, which also calls the logging `endofperiod` stub). Behaviour depends on `reloadenabled`:
   - **standalone** (`0b`, default): saves every non-ignored root table to `hdbdir` for `date`
@@ -100,16 +100,18 @@ uses di.pubsub's `callendofday`, which broadcasts `(`.u.end;date)`.
 
 ## Module-namespace notes
 
-A `use`-loaded module can't create/populate root tables via bare symbols (they land in the
-module's private namespace; a bare `insert` under `-11!` replay does too). di.torq.proc.rdb therefore
-reads root tables with bare `value t` (bare **reads** fall through to root), but **writes**
-and **clears** target root explicitly via `@[`.;…]`, and its `upd` is root-safe.
+di.torq.proc.rdb reads root tables with bare `value t` (bare **reads** fall through to root) and
+clears them explicitly via `@[`.;…]`. `upd` is `t insert x` with the table name as a symbol, which
+appends to the root table live, under `-11!` replay, and when the table does not exist yet; the
+tests check the module's own namespace stays empty. An earlier `@[`.;t;{…}]` form copied the
+whole table on every message (9ms and 25MB per one-row append at 1M rows).
 
 ## Testing
 
 `test.csv` (k4unit) covers the dependency contract (init errors without `log`/`timer`), the
 export surface, and standalone end of day (`test.q`: `init` runs to the tickerplant wait against
-mocked servers): attributes kept, the save down hooks, and the `reloadenabled` escape. The full subscribe → replay → live-capture → EOD-save → HDB-reload
+mocked servers): attributes kept, the save down hooks, the `reloadenabled` escape, and `upd`
+(each payload shape, `-11!` replay, and an in-place append checked by bytes allocated). The full subscribe → replay → live-capture → EOD-save → HDB-reload
 flow is proven in the **TorqX-POC end-to-end** (`torqx.sh start tickerplant1 hdb feed1
 rdb1`): the RDB replays the tp log on startup, accumulates live trade/quote, and on a
 forced tickerplant `endofday` writes the partition to the HDB (verified on disk), clears,

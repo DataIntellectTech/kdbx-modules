@@ -10,8 +10,8 @@ resolvedir:cfg`resolvedir;
 aslist:cfg`aslist;
 assym:cfg`assym;
 
-/ upd: append to the root table t, from a table (live) or a list of columns (replay)
-updfn:{[t;x] @[`.;t;{[tab;d] tab upsert $[98h=type d;d;flip (cols tab)!d]}[;x]]}
+/ upd: append x to the root table t
+updfn:{[t;x] t insert x}
 
 / save one root table down to the HDB partition (protected so one failure doesn't stop EOD)
 savefn:{[dir;date;t]

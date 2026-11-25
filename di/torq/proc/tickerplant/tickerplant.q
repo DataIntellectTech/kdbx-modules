@@ -79,6 +79,7 @@ eodcheck:{[] if[(.z.m.eod`getnextroll)[]<.z.p;endofday[]];}
 
 / di.eodtime init dict: timezones as symbols, rolltimeoffset as a timespan
 eoddeps:{[config;logdep]
+  if[`eodtime in key config;logdep[`warn][`init;"[eodtime] section ignored: set rolltimezone, datatimezone and rolltimeoffset at the top level"]];
   d:()!();
   if[`rolltimezone in key config;d:d,enlist[`rolltimezone]!enlist assym config`rolltimezone];
   if[`datatimezone in key config;d:d,enlist[`datatimezone]!enlist assym config`datatimezone];

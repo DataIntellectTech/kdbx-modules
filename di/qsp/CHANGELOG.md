@@ -5,6 +5,18 @@ policy permits; each such change is marked **behaviour**.
 
 ## Unreleased
 
+- **behaviour** `validate` (and `` (`.qsp.api;`validate;...) ``) now makes
+  every check `run` makes before it evaluates a query: `requirepartition` and
+  `maxpartitions` as well as the rewrite, refusing with `run`'s message. It
+  used to stop after the rewrite, so it called a full table scan, or a range
+  of more partitions than `maxpartitions` allows, allowed. To count
+  partitions it evaluates the value of a leading partition constraint, as
+  `run` does; it still records nothing. `maxrows`, `maxsize` and checks on
+  values a query computes still need the query to run.
+- The agent rules (`qsp.api.rules`) point to the other calls where they help:
+  `validate` for the partition checks and refusals, `explain` for the row
+  filter, the `functions` call for the whitelist, and each rule's `refusal`
+  text for matching a refusal to the rule that explains it.
 - **behaviour** A symbol on either side of `#` or `_` is no longer refused.
   q never reads one as a global's name there - `3#`t` is `` `t`t`t ``, and
   `` `a#`t `` and `` `a _ `t `` are type errors - so the check refused
@@ -12,6 +24,25 @@ policy permits; each such change is marked **behaviour**.
   build a grid of minutes, and `d _ `k`, which drops a key. Found by replaying
   the surveillance agent's 739 recorded queries against this version: these
   were the only ones it allowed before and refuses now.
+- `bin/ci.sh` runs every test qsp has in one command, for CI: the unit
+  tests, the example's walkthrough and its policy's tests, `bin/policy.q
+  -test`, the admin UI's endpoint check and the hardening campaign. It runs
+  them all, keeps each one's log, and exits 1 if any failed.
+- `bin/harden.sh` runs no checks until both its servers are listening. A
+  server that will not start is retried on new ports, below the ephemeral
+  range, and after five tries the run stops with its log; the servers' logs
+  are kept beside the report. A server that failed to start used to fail
+  every check with "connection failed", and leave no log saying why.
+- Layout: the submodules are grouped in directories, as other modules lay
+  theirs out. `core/` (`tree`, `fns`, `order`, `walk`) checks and rewrites a
+  query; `policy/` (`init.q`, `f`, `files`, `review`, `suite`) is the policy
+  and what is done with it; `api/` and `admin/` (with the page, now
+  `admin/ui/`) are directory modules. `testserver.q` is `test/server.q` and
+  `setup.md` is `docs/setup.md`. `` use`di.qsp `` and everything it exports
+  are unchanged. The submodules `di.qsp.tree`, `fns`, `order` and `walk` are
+  now `di.qsp.core.*`, and `f`, `files`, `review` and `suite` are
+  `di.qsp.policy.*`; `di.qsp.policy`, `di.qsp.api` and `di.qsp.admin` keep
+  their names.
 
 ## 0.3.0 - 2026-11-13
 

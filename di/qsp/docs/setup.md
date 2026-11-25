@@ -8,7 +8,7 @@ the process. You do not need q to read or change who can see what.
 The worked example throughout is `examples/equities/policy/`, the policy for a
 small equities HDB. To see it working, run `q di/qsp/examples/equities/hdb.q`.
 That builds the HDB, loads the policy, and runs its tests, showing what each
-role can and can't read. See [the example's README](examples/equities/README.md).
+role can and can't read. See [the example's README](../examples/equities/README.md).
 To start from it rather than from a scaffold, copy the directory to where your
 team keeps its policies.
 
@@ -16,7 +16,7 @@ Every step below can also be done in the **admin UI**, a web page served by
 the process itself: `qsp.adminui`local`, then open the address it prints. It
 creates the policy, has forms for grants and memberships, shows what an edit
 changes for whom before you save it, and runs the policy's tests.
-[docs/ui.md](docs/ui.md) is its guide. The files it writes are the same files
+[docs/ui.md](ui.md) is its guide. The files it writes are the same files
 this guide describes, so the review and CI steps apply unchanged.
 
 ## What you are deciding
@@ -76,7 +76,7 @@ each grant line still naming no one.
 
 ## 2. Decide the groups
 
-[docs/concepts.md](docs/concepts.md) explains users, groups, grants and how
+[docs/concepts.md](concepts.md) explains users, groups, grants and how
 they combine, in more depth than this guide.
 
 Before touching `grants.csv`, write down the groups and what each one is for.
@@ -123,8 +123,8 @@ compliance,trades,*,
 | `(side=`buy) or size<1000` | either |
 | `qsp.aged[time;0D00:15]` | only rows at least 15 minutes old. Age the partition column too (`qsp.aged[date;0D]`) to keep today's partition out of every answer. An aged partition column is only an upper bound, so it does not count as the date constraint `requirepartition` asks for: users still name their dates |
 | `account in coveredaccounts qsp.USER` | a lookup run with every query. `qsp.USER` is the user the query runs as, even through a gateway |
-| `time < qsp.NOW - 0D01` | relative to the policy clock. See [docs/time.md](docs/time.md) for which column to age, and pointing the clock at the time your data is stamped in |
-| `fn:deskfilter` | the q function `deskfilter`, called with the user on every query, returning the constraints. Use this when a where clause can't express the filter. What it may return is under [Row filters](qsp.md#row-filters) |
+| `time < qsp.NOW - 0D01` | relative to the policy clock. See [docs/time.md](time.md) for which column to age, and pointing the clock at the time your data is stamped in |
+| `fn:deskfilter` | the q function `deskfilter`, called with the user on every query, returning the constraints. Use this when a where clause can't express the filter. What it may return is under [Row filters](../qsp.md#row-filters) |
 
 Filters are parsed, never evaluated, when the policy loads. A name in a filter
 must be a column of the table or something defined in the process, so a
@@ -188,7 +188,7 @@ maxrows,1000000
 
 Choose `maxpartitions` for your data: the most days a legitimate query reads.
 Write values as q literals: `1b`, `` `first ``, `` `p`g ``. A function is
-written `fn:name`. [Configuration](qsp.md#configuration) lists every setting.
+written `fn:name`. [Configuration](../qsp.md#configuration) lists every setting.
 Start the process with `-T` (query timeout) and `-w` (memory cap) as well.
 Those two bound the work a permitted query can do, and can't be set from
 inside the process.
@@ -196,7 +196,7 @@ inside the process.
 `functions.csv` (`action,name`) adjusts the function whitelist: `allow` and
 `deny` add a q function or remove one, and `call` and `joincall` let a
 function of yours be called by name. `call` is trust: qsp checks the call,
-not what the function does. [Building a policy](qsp.md#building-a-policy)
+not what the function does. [Building a policy](../qsp.md#building-a-policy)
 says what each does.
 
 ## 6. Check it
@@ -253,7 +253,7 @@ quant1,select from trades where sym=`AAPL,refused,full table scan,no date: every
 Each test runs its query as its user and says what qsp must do: return
 `rows`, return none (`empty`), `runs` either way, be `refused` (with text the
 refusal contains), or return exactly a q literal (`equals`).
-[Testing a policy](qsp.md#testing-a-policy) has the details. Write one for
+[Testing a policy](../qsp.md#testing-a-policy) has the details. Write one for
 each thing someone would be upset to see change: who must never see a
 column, whose rows a filter must keep to, what an embargo holds back. The
 example's 31 tests are in `examples/equities/policy/tests.csv`, and `hdb.q`
@@ -331,7 +331,7 @@ logins in `gateways.csv` can open a connection. A group's name, such as
 names, not passwords, so add authentication in front: start the process with
 `-U passwordfile`, or define your own `.z.pw` (LDAP, SSO) **before** calling
 `serve`. qsp keeps it and calls it after its own check. See
-[docs/concepts.md](docs/concepts.md#who-checks-that-a-user-is-who-they-say).
+[docs/concepts.md](concepts.md#who-checks-that-a-user-is-who-they-say).
 
 ## 10. Confirm with real queries
 

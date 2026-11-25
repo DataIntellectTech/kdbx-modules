@@ -1,4 +1,4 @@
-/ di.qsp.order - where the row filter goes in a where clause
+/ di.qsp.core.order - where the row filter goes in a where clause
 / q applies constraints left to right, and that matters twice over:
 /   correctness  a user constraint evaluated before the policy filter sees rows the user may
 /                not. Harmless for size>10; not for "where size=max size", which returns

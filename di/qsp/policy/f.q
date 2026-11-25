@@ -1,11 +1,11 @@
-/ di.qsp.f - row filter builders, so a policy is not written as raw parse trees
+/ di.qsp.policy.f - row filter builders, so a policy is not written as raw parse trees
 / each returns one constraint; a grant's row filter is a list of them, ANDed
 /   qsp.f.isin[`account;`A1`A2]          account in `A1`A2
 /   qsp.f.aged[`time;0D00:15]            only rows at least 15 minutes old
 /   (in;`sym;(`allowedsyms;qsp.USER))    a lookup evaluated as the query runs
 
-tree:use`..tree;
-fns:use`..fns;
+tree:use`...core.tree;
+fns:use`...core.fns;
 
 eq:{[c;v] :((=);c;tree.lit v);};
 ne:{[c;v] :((<>);c;tree.lit v);};

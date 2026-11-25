@@ -120,4 +120,16 @@ true,0,0,q,sdtoml[],1,,a space-separated string and text sleep/cycles (toml or c
 true,0,0,q,()~sdrun[0b;enlist[`startupdeps]!enlist`rdb],1,,connection tracking off: no wait
 true,0,0,q,sdfail[],1,,a wait that runs out of cycles fails init
 
+comment,,,,,,,password files: default -> parentproctype -> proctype -> procname, most specific wins
+run,0,0,q,"setpasswords `default`pptp`rdb`rdb1!(""d:1"";""pp:2"";""rdb:3"";""rdb1:4"")",1,,a password file at every tier
+true,0,0,q,`rdb1:4~.m.di.0torq.passwordfile[`pptp;`rdb;`rdb1],1,,the procname file wins
+run,0,0,q,"setpasswords `default`pptp`rdb!(""d:1"";""pp:2"";""rdb:3"")",1,,no procname file
+true,0,0,q,`rdb:3~.m.di.0torq.passwordfile[`pptp;`rdb;`rdb1],1,,the proctype file beats the parentproctype file
+run,0,0,q,"setpasswords `default`pptp!(""d:1"";""pp:2"")",1,,only default and parentproctype files
+true,0,0,q,`pp:2~.m.di.0torq.passwordfile[`pptp;`rdb;`rdb1],1,,the parentproctype file beats default
+true,0,0,q,`d:1~.m.di.0torq.passwordfile[`;`rdb;`rdb1],1,,without a parentproctype its file is not read
+run,0,0,q,setpasswords ()!(),1,,no password files
+true,0,0,q,null .m.di.0torq.passwordfile[`pptp;`rdb;`rdb1],1,,no file gives a null userpass
+run,0,0,q,"system ""rm -rf "",APPBASE,""/passwords""",1,,remove the password files
+
 after,0,0,q,teardownfixture[],1,,remove the temp app fixture and the temp custom-proctype file

@@ -358,6 +358,10 @@ true,0,0,q,".t.err[(qsp.run;HM;`llmu;""select from ticks where date within 2020.
 true,0,0,q,".t.err[(qsp.run;HM;`llmu;""select from ticks where date within 0001.01.01 9999.12.31"");""qsp: too many partitions*""]",1,,"...so a range that bounds the column and reads everything is refused"
 true,0,0,q,".t.err[(qsp.run;HM;`llmu;""select from ticks"");""qsp: too many partitions*""]",1,,"...and a query that does not prune at all"
 true,0,0,q,".t.eq[count qsp.run[HM;`llmu;""select from ticks where date=2020.01.01""];3]",1,,...and allows one partition
+true,0,0,q,".t.eq[qsp.validate[HR;`llmu;""select count sym from ticks""];(0b;""qsp: full table scan: ticks needs a constraint on `date - date=d, date in ds or date within d0 d1"")]",1,,"validate makes every check run makes before evaluating: requirepartition, with run's message"
+true,0,0,q,".t.eq[qsp.validate[HM;`llmu;""select from ticks where date within 0001.01.01 9999.12.31""];(0b;""qsp: too many partitions: ticks would read 2, more than maxpartitions 1 - narrow the constraint on `date"")]",1,,...and maxpartitions
+true,0,0,q,".t.eq[qsp.validate[HM;`llmu;""select from ticks where date=2020.01.01""];(1b;"""")]",1,,...which one partition passes
+true,0,0,q,".t.eq[ {n:count qsp.audit[];qsp.validate[HM;`llmu;""select from ticks""];count[qsp.audit[]]-n}[];0]",1,,...recording nothing
 true,0,0,q,".t.eq[count qsp.run[HM;`llmu;""select from ticks where date within (2020.01.01;2020.01.01)""];3]",1,,...computed bounds too
 true,0,0,q,".t.eq[count qsp.run[H;`llmu;""select from ticks where date within 0001.01.01 9999.12.31""];6]",1,,"maxpartitions is off by default"
 run,0,0,q,"roll:""select from ticks where date within (2020.01.01 2020.01.01;2020.01.01 2020.01.02) first 1?2""",1,,
@@ -406,7 +410,7 @@ true,0,0,q,".t.err[(qsp.auditto;""x"");""qsp: auditto takes a global name""]",1,
 true,0,0,q,".t.eq[last qsp.runx[P;`llmu;""select from trade""];qsp.explain[P;`llmu;""select from trade""]]",1,,runx returns what ran
 comment,0,0,q,,1,,serving over IPC
 run,0,0,q,.t.port:20000+.z.i mod 20000,1,,
-run,0,0,q,"system""(sleep 120 | q "",.t.mod,""testserver.q -p "",string[.t.port],"" -q) >/dev/null 2>&1 &""",1,,
+run,0,0,q,"system""(sleep 120 | q "",.t.mod,""test/server.q -p "",string[.t.port],"" -q) >/dev/null 2>&1 &""",1,,
 run,0,0,q,g:.t.open`gateway,1,,
 true,0,0,q,not null g,1,,the server came up
 run,0,0,q,u:.t.open`llmu,1,,
@@ -475,7 +479,7 @@ true,0,0,q,".t.eq[u""1"";1]",1,,a one-character query is a char atom
 true,0,0,q,".t.err[(u;""select[<5999] from trade"");""qsp: a sort must be by a column*""]",1,,"the sort hole, over IPC"
 run,0,0,q,"r:raze @[system;""curl -s -m 2 -u llmu:x -d 'select from trade' 'http://localhost:"",string[.t.port],""/' 2>/dev/null"";{enlist""""}]",1,,
 true,0,0,q,"r like ""*qsp: HTTP access is not permitted*""",1,,HTTP POST is refused
-comment,0,0,q,,1,,"testserver.q set a .z.pg and a .z.ps before serve, which keep every message in seen. PS is its policy: P with seen granted"
+comment,0,0,q,,1,,"test/server.q set a .z.pg and a .z.ps before serve, which keep every message in seen. PS is its policy: P with seen granted"
 run,0,0,q,PS:qsp.grant[qsp.table[P;`seen;`h`m];`llm;`seen;qsp.ALL;()],1,,
 true,0,0,q,".t.eq[last exec m from u""select from seen where h=`pg"";(eval;qsp.rewrite[PS;`llmu;""select from seen where h=`pg""])]",1,,"a .z.pg set before serve still runs: it is handed every policed query, as (eval;the rewritten tree)"
 run,0,0,q,"(neg u)""select from trade"";u""1""",1,,
@@ -526,6 +530,7 @@ true,0,0,q,"any qsp.api.rules[qsp.configure[P;([maxpartitions:3])];`q][`rule] li
 true,0,0,q,.t.eq[cols qsp.api.rules[P;`q];`id`rule`detail`good`bad`refusal],1,,"each rule: what to do, why, examples either way, and what its refusal says"
 true,0,0,q,".t.eq[`rowindex in qsp.api.rules[P;`q]`id;1b]",1,,"...a rule for what is off, as well as what is on"
 true,0,0,q,".t.eq[`rowindex in qsp.api.rules[qsp.configure[P;([rowindex:1b])];`q]`id;0b]",1,,...
+true,0,0,q,"all {any (raze raze qsp.api.rules[P;`q]`rule`detail) ss x} each (""validate"";""explain"";""functions call"")",1,,"the rules name the other calls where they help: validate, explain, functions"
 comment,0,0,q,,1,,the api as JSON: the same content
 true,0,0,q,".t.eq[.j.k qsp.api.rules[P;`json];.j.k .j.j qsp.api.rules[P;`q]]",1,,rules
 true,0,0,q,".t.eq[(.j.k qsp.api.describe[P;`llmu;`json])`user`tabs;(""llmu"";.j.k .j.j update partition:(::) from qsp.api.describe[P;`llmu;`q]`tabs)]",1,,describe: a table is a list of objects
@@ -611,7 +616,9 @@ true,0,0,q,.t.eq[qp.info[R;`remote]`attributes;(1#`s)!1#`g],1,,...with its index
 true,0,0,q,".t.report[.t.problems .t.with[SR;`tables;(""tbl,partition"";""remote,day"")]; (""tables.csv"";2;""day is not a column of remote"")]",1,,a partition column the table does not have
 true,0,0,q,".t.report[ .t.problems `tables`grants!((""tbl,partition"";""ticks,sym"");(""entity,tbl,columns,filter"";""x,ticks,*,"")); (""tables.csv"";2;""ticks is partitioned on date, not sym"")]",1,,...or that contradicts the live table
 true,0,0,q,".t.clean[ .t.problems `tables`grants!((""tbl,partition"";""ticks,date"");(""entity,tbl,columns,filter"";""x,ticks,*,""))]",1,,...and agreeing with it is fine
-true,0,0,q,".t.eq[ exec col from .t.load[B,(1#`schema)!enlist(""tbl,col,typ,att"";""trade,ghost,j,"")][`schema] where tbl=`trade;cols trade]",1,,"a live table is read live, whatever schema.csv says about it"
+run,0,0,q,"GD:.t.pol[""p"";B,(1#`schema)!enlist(""tbl,col,typ,att"";""trade,ghost,j,"")]",1,,
+true,0,0,q,".t.eq[ exec col from qf.policyin[GD][`schema] where tbl=`trade;cols trade]",1,,"a live table is read live, whatever schema.csv says about it"
+true,0,0,q,".t.eq[ count qf.schemadrift GD;1+count cols trade]",1,,"...and each difference is one line of fromfiles' warning: ghost, and every live column"
 true,0,0,q,".t.clean[ .t.problems B,(1#`schema)!enlist(""tbl,col,typ,att"";""gone,a,j,"")]",1,,schema rows for a table tables.csv does not list are ignored
 true,0,0,q,".t.report[ .t.problems .t.with[SR;`schema;(""tbl,col,typ,att"";""remote,d,d,"";""remote,s,zz,"";""remote,v,Q,"";""remote,c,C,x""; "",a,j,"";""remote,,j,"";""remote,s,s,g"")]; ((""schema.csv"";3;""type must be one meta type character*found zz""); (""schema.csv"";4;""type must be one meta type character*found Q""); (""schema.csv"";5;""attribute must be blank, p, u, g or s - found x""); (""schema.csv"";6;""no table"");(""schema.csv"";7;""no column""); (""schema.csv"";8;""s of remote is already described on line 3""))]",1,,schema.csv rows are checked
 comment,0,0,q,,1,,grants.csv
@@ -820,7 +827,7 @@ run,0,0,q,"o:.t.tmp,""/hdbexample.out"";c:first system""(q "",.t.mod,""examples/
 true,0,0,q,".t.eq[c;enlist""0""]",1,,"examples/equities/hdb.q builds its HDB, and exits 0: every test in its policy's tests.csv passes"
 true,0,0,q,"""every step went as expected""~last r",1,,...and says so
 true,0,0,q,".t.eq[first .t.tool""-dir "",.t.mod,""examples/equities/policy -init "",.t.mod,""examples/equities/policy/defs.q"";0]",1,,"examples/equities/policy loads with no data, from its schema.csv and defs.q"
-comment,0,0,q,,1,,"the admin UI (admin.q, ui/): its handlers, called in process"
+comment,0,0,q,,1,,"the admin UI (admin/init.q, admin/ui/): its handlers, called in process"
 run,0,0,q,qsp.unserve[],1,,
 run,0,0,q,ZPH:.z.ph,1,,
 run,0,0,q,"AD:.t.pol[""admin"";FD,(1#`tests)!enlist (""user,query,expect,value,note"";""llmu,select from trade,rows"")]",1,,
@@ -841,7 +848,7 @@ true,0,0,q,".t.eq[CR[`data;`state];""broken""]",1,,"create: a policy from the ta
 true,0,0,q,"all (CR[`data;`problems;`error]) like ""no entity*""",1,,...
 true,0,0,q,".t.eq[(.t.post[`open;(enlist`dir)!enlist .t.tmp,""/nosuch""])[`data;`state];""broken""]",1,,open: a directory that is not there does not load
 true,0,0,q,"(.t.post[`run;`user`query!(""llmu"";""1+1"")])[`error] like ""qsp: no policy is loaded*""",1,,...and nothing runs without a policy
-true,0,0,q,".z.ph[enlist """"] like ""HTTP/1.1 200 OK*""",1,,the page is served from ui/
+true,0,0,q,".z.ph[enlist """"] like ""HTTP/1.1 200 OK*""",1,,the page is served from admin/ui/
 true,0,0,q,"{(x like ""HTTP/1.1 200 OK*"")and 0<count x ss ""text/javascript""} .z.ph enlist ""views/map.js""",1,,"...its scripts, as JavaScript"
 true,0,0,q,".z.ph[enlist ""../init.q""] like ""HTTP/1.1 404*""",1,,...and nothing outside it
 true,0,0,q,"(.t.post[`nosuch;()!()])[`error] like ""unknown call*""",1,,an unknown call
@@ -851,6 +858,6 @@ run,0,0,q,qsp.serve P,1,,
 true,0,0,q,".t.err[(qsp.adminui;`local);""qsp: this process serves a policy*""]",1,,never in a process serving a policy: the page can query as anyone
 run,0,0,q,qsp.unserve[],1,,
 true,0,0,q,".t.err[(qsp.adminui;`nosuch);""qsp: access must be `local or `public""]",1,,a mode it does not know
+run,0,0,q,"system""cd "",.t.cwd",1,,
 run,0,0,q,"system""rm -rf "",.t.tmp",1,,
 run,0,0,q,"system""rm -rf /tmp/qspsuite"",string .z.i",1,,
-run,0,0,q,"system""cd "",.t.cwd",1,,

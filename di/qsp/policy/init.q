@@ -14,8 +14,8 @@
 /   gateways  logins allowed to assert another user's identity
 /   config    see defaultconfig
 
-tree:use`..tree;
-fns:use`..fns;
+tree:use`..core.tree;
+fns:use`..core.fns;
 
 / every column, in a grant
 allcols:`$"*";

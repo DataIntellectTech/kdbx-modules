@@ -22,15 +22,15 @@
 / this file is the pipeline (parse, rewrite, pre-checks, evaluate, bound), the audit log, and the
 / message handlers
 
-tree:use`.tree;
+tree:use`.core.tree;
 pol:use`.policy;
-ord:use`.order;
-walker:use`.walk;
-f:use`.f;
+ord:use`.core.order;
+walker:use`.core.walk;
+f:use`.policy.f;
 api:use`.api;
-polfiles:use`.files;
-rev:use`.review;
-suite:use`.suite;
+polfiles:use`.policy.files;
+rev:use`.policy.review;
+suite:use`.policy.suite;
 admin:use`.admin;
 
 / module version from the VERSION file
@@ -248,12 +248,22 @@ rewrite:{[p;u;q] chkpolicy p; chkuser[p;u]; q:toparse q; :@[walker.rewrite[walke
 / explain[p;u;q] -> what would run, as text - the thing to paste into a ticket when someone asks
 / why they saw fewer rows than they expected
 explain:{[p;u;q] :render rewrite[p;u;q];};
-/ validate[p;u;q] -> (allowed;reason). Evaluates nothing, records nothing
-validate:{[p;u;q] :2#@[{(1b;"";rewrite[x;y;z])}[p;u];q;{(0b;x)}];};
+/ validate[p;u;q] -> (allowed;reason): every check run makes before it evaluates the query - the
+/ rewrite, requirepartition and maxpartitions - each refusing with run's message. Records
+/ nothing, and evaluates nothing but the value of a leading partition constraint, as run does to
+/ count the partitions it selects. What depends on the data - a value the query computes, the
+/ size of its result - is known only once it runs
+validate:{[p;u;q]
+  r:@[{(1b;rewrite[x;y;z])}[p;u];q;{(0b;x)}];
+  if[not r 0;:r];
+  m:partitioncheck[p;r 1];
+  if[not count m;m:partitionlimit[p;@[pinparts p;r 1;{[rw;e] rw}r 1]]];
+  :$[count m;(0b;tree.prefix tree.described tree.clean m);(1b;"")];
+  };
 / fullscans[p;u;q] -> tables q would read every partition of
 fullscans:{[p;u;q] :scanned[p;rewrite[p;u;q]];};
 
-/ ------------------------------------------------------------------ a policy's tests (suite.q)
+/ ------------------------------------------------------------------ a policy's tests (policy/suite.q)
 
 / tests[d] -> the tests in policy directory d, from its tests.csv. Signals what is wrong with it
 tests:{[d] :suite.fromdir d;};
@@ -275,11 +285,11 @@ runtests:{[p;t]
   :t,'one each t;
   };
 
-/ ------------------------------------------------------------------ the admin UI (admin.q)
+/ ------------------------------------------------------------------ the admin UI (admin/)
 
 / adminui[x] -> the address of a web page to write, test and explore a policy in, served by this
 / process: x is `local (this machine only), `public, `stop, or a dictionary of access, port and
-/ dir (the policy directory). It lends the page the pipeline - nothing else in admin.q can run a
+/ dir (the policy directory). It lends the page the pipeline - nothing else in admin/ can run a
 / query - and refuses a process that serves a policy
 adminui:{[x]
   :admin.start[([run;runx;rewrite;runtests;audit;version;apis;serving:{[] installed}]);x];
@@ -311,8 +321,8 @@ isgatewaycall:{[p;x]
   };
 
 / ------------------------------------------------------------------ the api
-/ qsp.api: api.q's endpoints, and the pipeline's own, each taking a format last - `q or `json (see
-/ api.q). validate gives a dictionary here, ([allowed;reason]), so it reads the same in JSON
+/ qsp.api: api/init.q's endpoints, and the pipeline's own, each taking a format last - `q or `json (see
+/ api/init.q). validate gives a dictionary here, ([allowed;reason]), so it reads the same in JSON
 apiversion:{[f] :api.encode[f;version];};
 apivalidate:{[p;u;q;f] :api.encode[f;`allowed`reason!validate[p;u;q]];};
 apiexplain:{[p;u;q;f] :api.encode[f;explain[p;u;q]];};

@@ -1,4 +1,4 @@
-/ di.qsp.tree - the shape of a q parse tree
+/ di.qsp.core.tree - the shape of a q parse tree
 / everything qsp knows about how q represents a query lives here, and every shape is detected
 / from q's own parser at load rather than assumed, so a change in representation between q
 / versions shows up as a load failure or a refusal - never as a silently mis-read tree

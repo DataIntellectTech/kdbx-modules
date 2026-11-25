@@ -9,8 +9,9 @@
 / This console is not policed; try qsp.run[p;`llm1;"..."] and qsp.explain[p;`llm1;"..."] here
 
 / this directory, absolute - loading the database moves the working directory into it
-here:{[f] :$[count i:where f="/";(1+last i)#f;"./"];} string .z.f;
-if["/"<>first here;here:system["cd"],"/",here];
+/ (q hdb.q and q ./hdb.q give no directory, or ./ - neither is written into the paths shown)
+here:{[f] d:$[count i:where f="/";(1+last i)#f;""]; if["/"<>first d;d:system["cd"],"/",d];
+  while[d like "*/./*";d:ssr[d;"/./";"/"]]; :d;} string .z.f;
 system"l ",here,"setup.q";
 \c 40 200
 

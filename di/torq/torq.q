@@ -82,14 +82,14 @@ buildhandlersdep:{[overrides;logdep]
   `register`remove`list!(hz`register;hz`remove;hz`list)
   }
 
-/ outbound-connection credentials, read from $TORQXAPPCONFIG/passwords/{default|proctype|procname}.txt -
+/ outbound-connection credentials, read from $TORQXAPPCONFIG/passwords/{default|parentproctype|proctype|procname}.txt -
 / the most specific file that exists wins, mirroring TorQ's hierarchic password load. One line,
 / `user:pass`. A process that permissions its own handlers refuses an unauthenticated peer, so
 / without this file an otherwise healthy stack cannot connect to itself. Plaintext on disk, as
 / TorQ's is; the file's contents are never logged.
-passwordfile:{[proctype;procname]
+passwordfile:{[parentproctype;proctype;procname]
   base:reqenv[`TORQXAPPCONFIG],"/passwords/";
-  files:base,/:(string each distinct `default,proctype,procname),\:".txt";
+  files:base,/:(string each distinct (`default,parentproctype,proctype,procname) except `),\:".txt";
   found:files where {not ()~key hsym `$x} each files;
   $[0=count found;`;`$first read0 hsym `$last found]
   };
@@ -100,7 +100,7 @@ buildserversdep:{[overrides;config;logdep;timerdep;handlersdep]
   modname:$[`servers in key overrides;overrides`servers;`di.torq.servers];
   srv:use modname;
   / credentials come from the password file unless the settings cascade already named them
-  config:$[`userpass in key config;config;config,enlist[`userpass]!enlist passwordfile[config`proctype;config`procname]];
+  config:$[`userpass in key config;config;config,enlist[`userpass]!enlist passwordfile[config`parentproctype;config`proctype;config`procname]];
   / init reads log/timer/handlers and proctype/procname from the config
   (srv`init)[config,`log`timer`handlers!(logdep;timerdep;handlersdep)];
   `startup`getservers`gethandlebytype`waitfortype!((srv`startup);(srv`getservers);(srv`gethandlebytype);(srv`waitfortype))

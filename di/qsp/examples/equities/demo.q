@@ -1,15 +1,16 @@
 / the example's admin UI:   q di/qsp/examples/equities/demo.q [-db DIR] [-policy DIR] [-port 8080] [-public]
 / builds the example database if it is not there, loads it and the policy (setup.q, as hdb.q
 / does), then opens qsp.adminui on it and prints the address. That is all: the page is qsp's own
-/ (admin.q and ui/ in the module), and any process with data loaded can do the same with
+/ (admin/ in the module), and any process with data loaded can do the same with
 /   qsp.adminui`local
 / an admin tool, not a policed process: anyone who reaches the page can query as any user and see
 / the rows the policy hides, so it answers this machine only unless started with -public. Run it
 / in the foreground: q exits when its console's input ends
 
 / this directory, absolute - loading the database moves the working directory into it
-here:{[f] :$[count i:where f="/";(1+last i)#f;"./"];} string .z.f;
-if["/"<>first here;here:system["cd"],"/",here];
+/ (q demo.q and q ./demo.q give no directory, or ./ - neither is written into the paths shown)
+here:{[f] d:$[count i:where f="/";(1+last i)#f;""]; if["/"<>first d;d:system["cd"],"/",d];
+  while[d like "*/./*";d:ssr[d;"/./";"/"]]; :d;} string .z.f;
 system"l ",here,"setup.q";
 \c 40 300
 / floats to 12 significant digits in the page's JSON, which .j.j writes as string does
@@ -53,7 +54,7 @@ if[`check in key o;
   r,:ok["an unknown call is refused";not x`ok];
   pg:.z.ph enlist "views/map.js";
   r,:ok["the page's files are served";pg like "HTTP/1.1 200 OK*"];
-  r,:ok["and nothing else";(.z.ph enlist "../admin.q") like "HTTP/1.1 404*"];
+  r,:ok["and nothing else";(.z.ph enlist "../init.q") like "HTTP/1.1 404*"];
   -1 $[all r;"every call answered";string[sum not r]," call(s) failed"];
   exit `long$not all r];
 

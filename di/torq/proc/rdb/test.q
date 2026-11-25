@@ -36,6 +36,40 @@ freshrdb:{[c]
   `quote set ([]time:2026.01.01D09:00+til 2;sym:`g#`a`b;bid:2#1f);
   };
 
+/ true if the module's private namespace holds no trade table
+nomodtrade:{[] not `trade in key .m.di.0torq.0proc.0rdb};
+
+/ upd appends a table, a list of columns and a single row to the root table
+updpayloads:{[]
+  freshrdb ()!();
+  upd[`trade;([]time:enlist 2026.01.01D10:00;sym:enlist`c;price:enlist 4f)];
+  upd[`trade;(2026.01.01D10:01 2026.01.01D10:02;`d`e;5 6f)];
+  upd[`trade;(2026.01.01D10:03;`f;7f)];
+  chk `prices`gattr`root!(1 2 3 4 5 6 7f~trade`price;`g=attr trade`sym;nomodtrade[])
+  };
+
+/ -11! replay of a tickerplant log drives the published upd into the root table
+updreplay:{[]
+  freshrdb ()!();
+  f:hsym `$BASE,"/tplog";
+  f set ();
+  h:hopen f;
+  h enlist (`upd;`trade;(2026.01.01D10:00 2026.01.01D10:01;`c`d;4 5f));
+  h enlist (`upd;`trade;(2026.01.01D10:02;`e;6f));
+  hclose h;
+  n:-11!f;
+  chk `msgs`prices`root!(2=n;1 2 3 4 5 6f~trade`price;nomodtrade[])
+  };
+
+/ upd appends in place: one row onto a 1M-row table allocates under 1MB
+updinplace:{[]
+  freshrdb ()!();
+  n:1000000;
+  `trade set ([]time:n#2026.01.01D09:00;sym:`g#n#`a`b;price:n#1f);
+  b:last system "ts upd[`trade;([]time:enlist 2026.01.01D10:00;sym:enlist`c;price:enlist 4f)]";
+  chk `rows`bytes!((n+1)=count trade;b<1000000)
+  };
+
 / a saved column from the hdb partition
 disk:{[t;c] (get ` sv (hsym`$BASE),`hdb,(`$string D),t,`) c};
 

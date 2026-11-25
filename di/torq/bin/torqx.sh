@@ -50,6 +50,11 @@ getfield() {
   awk -F, -v n="$1" -v f="$fieldno" 'NR==n{print $f}' "$CSVPATH"
 }
 
+hasfield() {
+  # $1 = column name -> true if process.csv's header has it (getfield on a missing column prints the whole row)
+  head -1 "$CSVPATH" | tr -d '\r' | tr ',' '\n' | grep -qx "$1"
+}
+
 findprocno() {
   awk -F, -v name="$1" 'NR>1 && $4==name{print NR; exit}' "$CSVPATH"
 }
@@ -90,7 +95,7 @@ require_tmux() {
 }
 
 resolverow() {
-  # $1 = procname -> sets PROCTYPE/PORT globals, or returns 1 if not found
+  # $1 = procname -> sets PROCTYPE/PORT/EXTRAS globals, or returns 1 if not found
   local procno
   procno=$(findprocno "$1")
   if [ -z "$procno" ]; then
@@ -99,6 +104,9 @@ resolverow() {
   fi
   PROCTYPE=$(getfield "$procno" proctype)
   PORT=$(getfield "$procno" port)
+  # the optional extras column: extra q args for this process, as TorQ's process.csv
+  EXTRAS=""
+  if hasfield extras; then EXTRAS=$(getfield "$procno" extras | tr -d '\r'); fi
   return 0
 }
 
@@ -123,6 +131,8 @@ start_one() {
     portarg="-p $PORT"
   fi
   local logfile="$LOGDIR/torqx_${TORQXSTACKID}_${procname}.log"
+  # extras are shell words, as TorQ evals its start line: quotes group words and $VARS expand
+  eval "set -- $EXTRAS \"\$@\""
   if [ -n "$TMUX_MODE" ]; then
     start_one_tmux "$procname" "$portarg" "$logfile" "$@"
     return
@@ -157,7 +167,9 @@ start_one_tmux() {
   # re-source setenv.sh inside the pane so the TORQX*/QPATH/PATH/QCMD vars are correct even if a
   # pre-existing tmux server handed us a stale environment. $extra args are embedded (the pane runs
   # a single bash -c string), then env applies the QHOME/QLIC policy above before exec'ing q.
-  local extra="$*"
+  # Each arg is quoted with %q so a word containing spaces stays one word in the pane.
+  local extra=""
+  if [ $# -gt 0 ]; then extra=$(printf '%q ' "$@"); fi
   tmux new-session -d -s "$sess" -c "$PWD" \
     "bash -c 'source \"$SETENV\" && exec env $uflags QINIT=\"$TORQXBIN/torqx_init.q\" $aflags \$QCMD -torqxstackid \"\$TORQXSTACKID\" -proctype \"$PROCTYPE\" -procname \"$procname\" $portarg $extra'"
   # keep a crashed process's pane (and its stack trace) visible instead of the session vanishing
@@ -198,6 +210,9 @@ export_one() {
   if [ -n "$PORT" ] && [ "$PORT" != "0" ]; then
     portarg="-p $PORT"
   fi
+  # the row's extras as shell words, quoted for the unit's bash -lc line
+  local extras=""
+  if [ -n "$EXTRAS" ]; then extras=$(eval "printf '%q ' $EXTRAS"); fi
   local unitdir="$TORQXAPPHOME/systemd"
   mkdir -p "$unitdir"
   local unitfile="$unitdir/torqx-${TORQXSTACKID}-${procname}.service"
@@ -209,7 +224,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${TORQXAPPHOME}
-ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="${TORQXBIN}/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg}'
+ExecStart=/bin/bash -lc 'source "${TORQXAPPHOME}/setenv.sh" && exec env QINIT="${TORQXBIN}/torqx_init.q" \$QCMD -torqxstackid "\$TORQXSTACKID" -proctype ${PROCTYPE} -procname ${procname} ${portarg} ${extras}'
 Restart=on-failure
 RestartSec=2
 
@@ -304,6 +319,7 @@ usage: torqx.sh {start|stop|restart|status|attach|export-systemd} [procname|all]
   attach [procname]                    attach to a process's tmux session; no arg lists sessions
   export-systemd [procname|all]       write systemd --user unit file(s) to
                                        \$TORQXAPPHOME/systemd/, no args means all
+  process.csv's optional extras column adds q args to that row's process, e.g. -parentproctype wdb
 
   dev-mode aliases (equivalent to the --tmux flag):
   devstart [procname|all] [args]      = start --tmux

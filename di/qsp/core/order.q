@@ -176,4 +176,17 @@ prunesby:{[ti;c] :$[movable[ti;c];$[iscompound c;0b;((c 1)~ti`partition)&any nor
 / a bounding partition constraint first, so the constraint that leads is the one to test
 prunes:{[ti;cons] :$[null ti`partition;1b;0=count cons;0b;prunesby[ti] first cons];};
 
-export:([normop;movable;place;prunes;prunesby;guardvalues]);
+/ is c the partition column compared with literal data - =, in, <, <=, >, >=, <> or within - so
+/ that which partitions it selects is known before the query runs? Every row of a partition holds
+/ the partition's value in that column, so such a constraint is true of all of a partition's rows
+/ or of none
+partfixed:{[ti;c]
+  if[null ti`partition;:0b];
+  if[not movable[ti;c];:0b];
+  if[iscompound c;:0b];
+  if[not (c 1)~ti`partition;:0b];
+  if[not any normop[first c]~/:sortops,enlist fns.resolve`$"<>";:0b];
+  :first literal c 2;
+  };
+
+export:([normop;movable;place;prunes;prunesby;partfixed;guardvalues]);
